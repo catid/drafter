@@ -1,0 +1,39 @@
+{
+  "scale": "smoke",
+  "data": "synthetic",
+  "device": "cpu",
+  "status": "passed",
+  "seed": 2026,
+  "generated_tokens": 1152,
+  "elapsed_seconds": 1.0472788950428367,
+  "tokens_per_second": 1099.9935217379511,
+  "rounds": 315,
+  "residual_corrections": 187,
+  "bonus_tokens": 128,
+  "zero_weight_token_parity": true,
+  "greedy_target_parity": true,
+  "online": {
+    "adapter_version": 84,
+    "u": 84,
+    "last_round": 84,
+    "loss_mode": "live_full",
+    "T_train": 1.0,
+    "beta_train": 1.0,
+    "dW_norm": 0.39922645688056946,
+    "dA_norm": 0.4508051574230194,
+    "db_norm": 0.11558161675930023,
+    "db_exact_zero_fraction": 0.0,
+    "active_buckets": 183,
+    "sparse_capacity": 256,
+    "sparse_update_bytes": 2676,
+    "last_full_loss": 0.19958658516407013
+  },
+  "bigram": {
+    "counted_transitions": 128,
+    "exact_ledger_pairs": 13,
+    "retained_prior_pairs": 13,
+    "ledger_retained_for_exact_counts": true,
+    "k_ret": null
+  },
+  "note": "CPU synthetic timing is not a real-model speed result."
+}

@@ -1,0 +1,12 @@
+.venv/
+__pycache__/
+.pytest_cache/
+*.egg-info/
+vendor/
+artifacts/models/
+artifacts/traces/
+artifacts/checkpoints/
+artifacts/*.pt
+artifacts/**/*.lock
+artifacts/*.lock
+*.tmp

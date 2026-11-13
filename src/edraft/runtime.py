@@ -1,0 +1,170 @@
+"""Shared configuration, atomic run records, provenance, and resumable jobs."""
+from __future__ import annotations
+
+import argparse
+from contextlib import contextmanager
+from dataclasses import asdict, dataclass
+import fcntl
+import hashlib
+import importlib.metadata
+import json
+import os
+from pathlib import Path
+import platform
+import shutil
+import subprocess
+import tempfile
+import time
+
+ROOT = Path(__file__).resolve().parents[2]
+
+
+def atomic_json(path, value):
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd, tmp = tempfile.mkstemp(prefix=path.name + '.', suffix='.tmp', dir=path.parent)
+    try:
+        with os.fdopen(fd, 'w') as out:
+            json.dump(value, out, indent=2, allow_nan=False)
+            out.write('\n')
+            out.flush()
+            os.fsync(out.fileno())
+        os.replace(tmp, path)
+    finally:
+        if os.path.exists(tmp):
+            os.unlink(tmp)
+
+
+@contextmanager
+def locked_json(path):
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.with_suffix(path.suffix + '.lock').open('a') as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        value = json.loads(path.read_text()) if path.exists() else {}
+        yield value
+        atomic_json(path, value)
+
+
+def git_commit(directory=ROOT):
+    p = subprocess.run(['git', '-C', str(directory), 'rev-parse', 'HEAD'], capture_output=True, text=True)
+    return p.stdout.strip() if p.returncode == 0 else 'uncommitted'
+
+
+def fingerprint(value):
+    return hashlib.sha256(json.dumps(value, sort_keys=True, separators=(',', ':')).encode()).hexdigest()
+
+
+def common_parser(description):
+    parser = argparse.ArgumentParser(description=description)
+    parser.add_argument('--config', type=Path)
+    parser.add_argument('--scale', choices=['smoke', 'reference', 'full'], default='smoke')
+    parser.add_argument('--allow_download', action='store_true')
+    parser.add_argument('--allow_large_run', action='store_true')
+    parser.add_argument('--seed', type=int, default=2026)
+    parser.add_argument('--device', default='cuda:0')
+    parser.add_argument('--target', default='Qwen/Qwen3-8B')
+    parser.add_argument('--drafter', default='z-lab/Qwen3-8B-DFlash-b16')
+    parser.add_argument('--output', type=Path, default=ROOT / 'artifacts')
+    return parser
+
+
+def parse_config(parser, argv=None):
+    preliminary, _ = parser.parse_known_args(argv)
+    if preliminary.config:
+        config = json.loads(preliminary.config.read_text())
+        unknown = set(config) - {a.dest for a in parser._actions}
+        if unknown:
+            parser.error(f'Unknown config keys: {sorted(unknown)}')
+        parser.set_defaults(**config)
+    args = parser.parse_args(argv)
+    args.output = Path(args.output)
+    if args.scale == 'full' and not args.allow_large_run:
+        parser.error('Full scale requires --allow_large_run')
+    if args.scale == 'smoke':
+        args.device = 'cpu'
+        if args.allow_download:
+            parser.error('Smoke scale never downloads; omit --allow_download')
+    return args
+
+
+def resolved_config(args):
+    return {k: str(v) if isinstance(v, Path) else v for k, v in vars(args).items()}
+
+
+def record_run(args, name):
+    config = resolved_config(args)
+    record = {'scale': args.scale, 'seed': args.seed, 'config': config,
+              'project_git_commit': git_commit(), 'started_at_unix': time.time(),
+              'rank': int(os.environ.get('RANK', 0)), 'pid': os.getpid()}
+    path = args.output / 'runs' / f'{name}-{fingerprint(config)[:16]}-rank{record["rank"]}.json'
+    atomic_json(path, record)
+    return record
+
+
+def environment(config=None):
+    import torch
+    packages = {}
+    for name in ['torch', 'transformers', 'accelerate', 'triton', 'datasets', 'dflash']:
+        try:
+            packages[name] = importlib.metadata.version(name)
+        except importlib.metadata.PackageNotFoundError:
+            packages[name] = None
+    gpus = []
+    for i in range(torch.cuda.device_count()):
+        prop = torch.cuda.get_device_properties(i)
+        free, total = torch.cuda.mem_get_info(i)
+        gpus.append({'index': i, 'name': prop.name, 'compute_capability': [prop.major, prop.minor],
+                     'free_bytes': free, 'total_bytes': total})
+    with locked_json(ROOT / 'artifacts/environment.json') as env:
+        env.update({'os': platform.platform(), 'python': platform.python_version(), 'packages': packages,
+                    'cuda': torch.version.cuda, 'gpus': gpus,
+                    'visible_devices': os.environ.get('CUDA_VISIBLE_DEVICES', 'unset (all visible)'),
+                    'project_git_commit': git_commit(), 'resolved_config': config,
+                    'dflash': {'url': 'https://github.com/z-lab/dflash', 'commit': git_commit(ROOT / 'vendor/dflash')},
+                    'free_disk_bytes': shutil.disk_usage(ROOT).free})
+    return env
+
+
+class Manifest:
+    """One rank owns each file. Every entry is keyed by the full experiment identity."""
+    REQUIRED = {'model_pair', 'prompt', 'condition', 'seed', 'temperature', 'verification_rule',
+                'proposal_mode', 'checkpoint', 'adapter_version'}
+
+    def __init__(self, path):
+        self.path = Path(path)
+        self.data = json.loads(self.path.read_text()) if self.path.exists() else {'jobs': {}}
+
+    def key(self, identity):
+        if not self.REQUIRED <= identity.keys():
+            raise ValueError(f'Missing run identity: {self.REQUIRED - identity.keys()}')
+        return fingerprint(identity)
+
+    def completed(self, identity):
+        item = self.data['jobs'].get(self.key(identity), {})
+        return item.get('status') == 'complete' and Path(item.get('result_path', '')).is_file()
+
+    def finish(self, identity, result_path):
+        self.data['jobs'][self.key(identity)] = {'identity': identity, 'status': 'complete',
+                                                'result_path': str(result_path)}
+        atomic_json(self.path, self.data)
+
+
+def preflight(args, expected_tokens):
+    """Require current smoke evidence and record explicitly rough CPU-based estimate."""
+    path = ROOT / 'artifacts/smoke.json'
+    if not path.exists():
+        raise RuntimeError('Run python -m edraft.smoke --scale smoke before a reference/full run')
+    smoke = json.loads(path.read_text())
+    if smoke.get('status') != 'passed':
+        raise RuntimeError('Smoke gate has not passed')
+    free = shutil.disk_usage(ROOT).free
+    estimate = expected_tokens / smoke['tokens_per_second']
+    record = {'scale': args.scale, 'expected_tokens': expected_tokens, 'smoke_tokens_per_second': smoke['tokens_per_second'],
+              'cpu_smoke_extrapolation_seconds': estimate, 'free_disk_bytes': free,
+              'caveat': 'CPU synthetic extrapolation is not a real-model throughput prediction; refine after pilot.'}
+    with (ROOT / 'NOTES.md').open('a') as out:
+        out.write('\nPre-run estimate: ' + json.dumps(record) + '\n')
+    if free < 50 * 2**30:
+        raise RuntimeError(f'Insufficient free space for reference artifacts: {free} bytes')
+    return record

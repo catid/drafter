@@ -1,0 +1,9 @@
+{
+  "scale": "reference",
+  "seed": 2026,
+  "device": "cuda:0",
+  "target": "Qwen/Qwen3-8B",
+  "drafter": "z-lab/Qwen3-8B-DFlash-b16",
+  "num_prompts": 20,
+  "max_new_tokens": 128
+}

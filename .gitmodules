@@ -1,0 +1,3 @@
+[submodule "vendor/dflash"]
+	path = vendor/dflash
+	url = https://github.com/z-lab/dflash.git

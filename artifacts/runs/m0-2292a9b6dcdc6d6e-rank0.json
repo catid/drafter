@@ -1,0 +1,21 @@
+{
+  "scale": "reference",
+  "seed": 2026,
+  "config": {
+    "config": "configs/reference.json",
+    "scale": "reference",
+    "allow_download": false,
+    "allow_large_run": false,
+    "seed": 2026,
+    "device": "cuda:0",
+    "target": "Qwen/Qwen3-8B",
+    "drafter": "z-lab/Qwen3-8B-DFlash-b16",
+    "output": "/home/catid/drafter/artifacts",
+    "num_prompts": 20,
+    "max_new_tokens": 128
+  },
+  "project_git_commit": "uncommitted",
+  "started_at_unix": 1794608963.208058,
+  "rank": 0,
+  "pid": 2492676
+}
