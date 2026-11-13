@@ -90,3 +90,17 @@ Pre-run estimate: {"scale": "reference", "expected_tokens": 5000, "smoke_tokens_
 Pre-run estimate: {"scale": "reference", "expected_tokens": 8192, "smoke_tokens_per_second": 1546.3288748357218, "cpu_smoke_extrapolation_seconds": 5.29770874314838, "free_disk_bytes": 33796624007168, "caveat": "CPU synthetic extrapolation is not a real-model throughput prediction; refine after pilot."}
 
 M1 runtime planning from real M0 pilot: {"basis": "measured M0 local model generation, no trace diagnostics cost", "tokens": 7128, "seconds": 76.6340094616171, "tokens_per_second": 93.01353341782449, "calibration_8192_tokens_seconds": 88.07320503781808, "collection_primary_500000_tokens_4GPUs_seconds": 1343.8904577303783, "collection_other_budgets": "standard dev/test + pure diagnostics and 44 long outputs additional, output-length dependent", "planning_range_minutes_4GPUs": [45, 90], "uncertainty": "Range includes unmeasured live diagnostic and shard I/O overhead and variable long-output lengths; refine after first completed shards."}
+
+Pre-run estimate: {"scale": "reference", "expected_tokens": 125000, "smoke_tokens_per_second": 1546.3288748357218, "cpu_smoke_extrapolation_seconds": 80.83662022626312, "free_disk_bytes": 33796304400384, "caveat": "CPU synthetic extrapolation is not a real-model throughput prediction; refine after pilot."}
+
+Pre-run estimate: {"scale": "reference", "expected_tokens": 125000, "smoke_tokens_per_second": 1546.3288748357218, "cpu_smoke_extrapolation_seconds": 80.83662022626312, "free_disk_bytes": 33796304388096, "caveat": "CPU synthetic extrapolation is not a real-model throughput prediction; refine after pilot."}
+
+Pre-run estimate: {"scale": "reference", "expected_tokens": 125000, "smoke_tokens_per_second": 1546.3288748357218, "cpu_smoke_extrapolation_seconds": 80.83662022626312, "free_disk_bytes": 33796304388096, "caveat": "CPU synthetic extrapolation is not a real-model throughput prediction; refine after pilot."}
+
+Pre-run estimate: {"scale": "reference", "expected_tokens": 125000, "smoke_tokens_per_second": 1546.3288748357218, "cpu_smoke_extrapolation_seconds": 80.83662022626312, "free_disk_bytes": 33796304384000, "caveat": "CPU synthetic extrapolation is not a real-model throughput prediction; refine after pilot."}
+
+Pre-run estimate: {"scale": "reference", "expected_tokens": 0, "smoke_tokens_per_second": 1546.3288748357218, "cpu_smoke_extrapolation_seconds": 0.0, "free_disk_bytes": 33790582509568, "caveat": "CPU synthetic extrapolation is not a real-model throughput prediction; refine after pilot."}
+
+Pre-run estimate: {"scale": "reference", "expected_tokens": 0, "smoke_tokens_per_second": 1546.3288748357218, "cpu_smoke_extrapolation_seconds": 0.0, "free_disk_bytes": 33789716475904, "caveat": "CPU synthetic extrapolation is not a real-model throughput prediction; refine after pilot."}
+
+Pre-run estimate: {"scale": "reference", "expected_tokens": 0, "smoke_tokens_per_second": 1546.3288748357218, "cpu_smoke_extrapolation_seconds": 0.0, "free_disk_bytes": 33788186333184, "caveat": "CPU synthetic extrapolation is not a real-model throughput prediction; refine after pilot."}

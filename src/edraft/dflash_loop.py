@@ -73,12 +73,6 @@ class PhaseTimer:
         return self.totals
 
 
-def _snapshot(adapter, online_state):
-    if online_state is not None:
-        return online_state.snapshot()
-    return adapter.snapshot() if adapter is not None else None
-
-
 def _is_zero(snapshot):
     if snapshot is None:
         return True
@@ -90,12 +84,19 @@ def _is_zero(snapshot):
 
 
 def _sample_proposal(draft_logits, h_raw, prefix, *, temperature, warper, generator,
-                     snapshot, projection, beta, bigram, timer):
-    # Keep the unwarped unit-temperature values for trace/training, even at T=0.
-    l_unit = draft_logits.float().log_softmax(-1)
-    H = projection(h_raw) if projection is not None else h_raw.float()
+                     snapshot, projection, beta, bigram, timer, need_training_tensors=True):
     K = len(draft_logits)
     bigram_inactive = (bigram is None or bigram.lambda_tr == 0 or not bigram.counts)
+    adapter_active = not _is_zero(snapshot)
+    # Plain evaluation does not pay for adapter-only projection or training transforms.
+    l_unit = None
+    if need_training_tensors or adapter_active or not bigram_inactive:
+        with timer.phase('unit_log_probability'):
+            l_unit = draft_logits.float().log_softmax(-1)
+    H = None
+    if need_training_tensors or adapter_active:
+        with timer.phase('feature_projection'):
+            H = projection(h_raw) if projection is not None else h_raw.float()
     if _is_zero(snapshot) and bigram_inactive:
         # Scores are independent in this case. Batch the categorical draws to
         # preserve the inspected upstream RNG stream. The mathematical causal
@@ -106,11 +107,13 @@ def _sample_proposal(draft_logits, h_raw, prefix, *, temperature, warper, genera
             q = probabilities(draft_logits, temperature, warper)
             tokens = torch.multinomial(q, 1, generator=generator)[:, 0].tolist()
             return tokens, q, l_unit, H
-    with timer.phase("dense_adapter_score"):
-        U = snapshot.unary(H) if snapshot is not None else None
+    U = None
+    if adapter_active:
+        with timer.phase("dense_adapter_score"):
+            U = snapshot.unary(H)
     tokens, qs = [], []
     for i in range(K):
-        score = (snapshot.score_slot(l_unit[i], U[i], prefix, tokens, i, beta=beta, timer=timer)
+        score = (snapshot.score_slot(l_unit[i], U[i] if U is not None else None, prefix, tokens, i, beta=beta, timer=timer)
                  if snapshot is not None else l_unit[i])
         if bigram is not None:
             with timer.phase("bigram_score"):
@@ -125,7 +128,8 @@ def _sample_proposal(draft_logits, h_raw, prefix, *, temperature, warper, genera
 
 
 def _record(*, round_idx, offset, input_context_length, prefix, draft_tokens, q, target_logits,
-            draft_logits, h_raw, H, verification, snapshot, temperature, warper, head_metadata):
+            draft_logits, h_raw, H, verification, snapshot, temperature, warper, head_metadata,
+            l_unit=None, need_training_tensors=True):
     K = len(draft_tokens)
     return {
         "round_idx": round_idx,
@@ -135,13 +139,13 @@ def _record(*, round_idx, offset, input_context_length, prefix, draft_tokens, q,
         "prefix": list(prefix),
         "physical_to_logical": {"anchor_physical_index": 0, "logical_to_physical": list(range(1, K + 1))},
         "draft_tokens": list(draft_tokens),
-        "draft_logits": draft_logits.detach(),
-        "l_unit": draft_logits.float().log_softmax(-1).detach(),
-        "target_logits": target_logits[:K].detach(),
-        "target_bonus_logits": target_logits[K].detach(),
-        "h_raw_bf16": h_raw.detach().to(torch.bfloat16),
-        "h_raw": h_raw.detach(),
-        "h": H.detach(),
+        "draft_logits": draft_logits.detach() if need_training_tensors else None,
+        "l_unit": l_unit.detach() if l_unit is not None and need_training_tensors else None,
+        "target_logits": target_logits[:K].detach() if need_training_tensors else None,
+        "target_bonus_logits": target_logits[K].detach() if need_training_tensors else None,
+        "h_raw_bf16": h_raw.detach().to(torch.bfloat16) if need_training_tensors else None,
+        "h_raw": h_raw.detach() if need_training_tensors else None,
+        "h": H.detach() if H is not None and need_training_tensors else None,
         "draft_lm_head": head_metadata,
         "accepted_length": verification.accepted_length,
         "first_rejection_index": verification.first_rejection,
@@ -230,13 +234,16 @@ def generate_reference(
     start, round_idx, blocks = n, 0, []
     head_metadata = backend.head_metadata()
     static_snapshot = adapter.snapshot() if adapter is not None else None
+    need_training_tensors = on_block is not None or retain_tensors or online_state is not None
     while start + 1 < max_length and not stopped:
         round_idx += 1
         verify_size = min(block_size, max_length - start)
         K = verify_size - 1
         canvas = output_ids[:, start:start + verify_size].clone()
-        prefix = output_ids[0, :start + 1].tolist()
         snapshot = online_state.snapshot() if online_state is not None else static_snapshot
+        history_depth = max(4, len(snapshot.A) if snapshot is not None else 1)
+        prefix_start = 0 if on_block is not None or retain_tensors else max(0, start + 1 - history_depth)
+        prefix = output_ids[0, prefix_start:start + 1].tolist()
         with torch.no_grad(), timer.phase("dflash_draft"):
             noise = F.embedding(canvas, backend.target.get_input_embeddings().weight) * backend.input_embedding_scale
             h_raw = backend.drafter(
@@ -250,7 +257,7 @@ def generate_reference(
             tokens, q, l_unit, H = _sample_proposal(
                 draft_logits, h_raw, prefix, temperature=temperature, warper=warper,
                 generator=generator, snapshot=snapshot, projection=projection, beta=beta,
-                bigram=bigram, timer=timer,
+                bigram=bigram, timer=timer, need_training_tensors=need_training_tensors,
             )
         canvas[0, 1:] = input_ids.new_tensor(tokens)
         with torch.no_grad(), timer.phase("target_verification"):
@@ -265,10 +272,10 @@ def generate_reference(
                 break
         output_ids[0, start + 1:start + 1 + len(emitted)] = input_ids.new_tensor(emitted)
         record = _record(
-            round_idx=round_idx, offset=start + 1 - n, input_context_length=len(prefix), prefix=prefix,
+            round_idx=round_idx, offset=start + 1 - n, input_context_length=start + 1, prefix=prefix,
             draft_tokens=tokens, q=q, target_logits=output.logits[0], draft_logits=draft_logits,
             h_raw=h_raw, H=H, verification=verification, snapshot=snapshot, temperature=temperature,
-            warper=warper, head_metadata=head_metadata,
+            warper=warper, head_metadata=head_metadata, l_unit=l_unit, need_training_tensors=need_training_tensors,
         )
         start += len(emitted)
         crop_cache(target_cache, start)
@@ -300,26 +307,30 @@ def generate_toy(
     timer = PhaseTimer("cpu", measure_phases)
     begun = time.perf_counter()
     static_snapshot = adapter.snapshot() if adapter is not None else None
+    need_training_tensors = on_block is not None or retain_tensors or online_state is not None
     while len(output) < max_new_tokens:
         K = min(block_length, max_new_tokens - len(output))
         snapshot = online_state.snapshot() if online_state is not None else static_snapshot
+        history_depth = max(4, len(snapshot.A) if snapshot is not None else 1)
+        proposal_prefix = context if on_block is not None or retain_tensors else context[-history_depth:]
         with timer.phase("dflash_draft"):
             drafted = drafter.draft(context, K)
         with torch.no_grad():
             tokens, q, l_unit, H = _sample_proposal(
-                drafted.logits, drafted.h_raw, context, temperature=temperature, warper=warper,
+                drafted.logits, drafted.h_raw, proposal_prefix, temperature=temperature, warper=warper,
                 generator=generator, snapshot=snapshot, projection=projection, beta=beta,
-                bigram=bigram, timer=timer,
+                bigram=bigram, timer=timer, need_training_tensors=need_training_tensors,
             )
         with timer.phase("target_verification"):
             target_logits = target.verify_logits(context, tokens)
             verification = verify_block(tokens, q, target_logits, temperature, warper, generator)
         emitted = verification.emitted_tokens[:max_new_tokens - len(output)]
         record = _record(
-            round_idx=len(blocks) + 1, offset=len(output), input_context_length=len(context), prefix=context,
+            round_idx=len(blocks) + 1, offset=len(output), input_context_length=len(context), prefix=proposal_prefix,
             draft_tokens=tokens, q=q, target_logits=target_logits, draft_logits=drafted.logits,
             h_raw=drafted.h_raw, H=H, verification=verification, snapshot=snapshot,
             temperature=temperature, warper=warper, head_metadata=drafter.head_metadata(),
+            l_unit=l_unit, need_training_tensors=need_training_tensors,
         )
         blocks.append(_finish_round(record, snapshot=snapshot, online_state=online_state, bigram=bigram,
                                     committed=emitted, on_block=on_block, retain_tensors=retain_tensors, timer=timer))

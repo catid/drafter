@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import os
 import statistics
 import hashlib
 from pathlib import Path
@@ -53,13 +54,34 @@ def assert_idle(device):
     if device.type != 'cuda':
         return None
     # Query before initializing allocations. Never stop another user's process.
-    row = subprocess.check_output(['nvidia-smi', f'--id={device.index or 0}',
+    logical_index = device.index or 0
+    visible = os.environ.get('CUDA_VISIBLE_DEVICES')
+    selector = visible.split(',')[logical_index].strip() if visible is not None else str(logical_index)
+    row = subprocess.check_output(['nvidia-smi', f'--id={selector}',
         '--query-gpu=memory.used,utilization.gpu,name,compute_cap', '--format=csv,noheader,nounits'], text=True).strip()
     memory, utilization, name, capability = [x.strip() for x in row.split(',')]
     if int(memory) > 128 or int(utilization) > 2:
         raise RuntimeError(f'Benchmark device is not idle: {row}')
-    return {'name': name, 'compute_capability': capability, 'initial_used_MiB': int(memory),
+    return {'name': name, 'logical_device_index': logical_index, 'nvidia_smi_selector': selector, 'compute_capability': capability, 'initial_used_MiB': int(memory),
             'initial_utilization_percent': int(utilization)}
+
+
+def assert_no_external_gpu_processes(device):
+    """Recheck isolation around each long all-arm comparison bundle."""
+    if device.type != 'cuda':
+        return
+    index = device.index or 0
+    visible = os.environ.get('CUDA_VISIBLE_DEVICES')
+    selector = visible.split(',')[index].strip() if visible is not None else str(index)
+    gpu_uuid = subprocess.check_output(['nvidia-smi', f'--id={selector}', '--query-gpu=uuid', '--format=csv,noheader'], text=True).strip()
+    processes = subprocess.check_output(['nvidia-smi', '--query-compute-apps=gpu_uuid,pid', '--format=csv,noheader,nounits'], text=True)
+    external = []
+    for line in processes.splitlines():
+        fields = [field.strip() for field in line.split(',')]
+        if len(fields) == 2 and fields[0] == gpu_uuid and int(fields[1]) != os.getpid():
+            external.append(int(fields[1]))
+    if external:
+        raise RuntimeError(f'Isolated comparison interrupted: external compute processes {external} appeared on {selector}; current all-arm bundle will be rerun on resume')
 
 
 def benchmark(args):

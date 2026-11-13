@@ -1,0 +1,659 @@
+{
+  "scale": "smoke",
+  "data": "synthetic",
+  "identity": "f848296a03565cd1870284fa1874941d339897996398bb256a81c524731f0238",
+  "trace_index": {
+    "primary": {
+      "train": {
+        "generated_output_tokens": 512,
+        "prompts": 8,
+        "shards": 16,
+        "blocks": 159
+      },
+      "dev": {
+        "generated_output_tokens": 128,
+        "prompts": 2,
+        "shards": 4,
+        "blocks": 37
+      },
+      "test": {
+        "generated_output_tokens": 128,
+        "prompts": 2,
+        "shards": 4,
+        "blocks": 37
+      }
+    },
+    "excluded_generated_tokens": {},
+    "primary_train_tokens_by_temperature": {
+      "0.0": 256,
+      "0.7": 256
+    },
+    "source_fingerprint": "399675b4f7535c0b65848169ed65f1c5f5201a3123e4298266c12174d5106ea7"
+  },
+  "head_metadata": {
+    "artifact_id": "builtin-toy-linear-head",
+    "revision": "synthetic-v1",
+    "dtype": "torch.float32",
+    "bias": true,
+    "tied_weights": false,
+    "hook": "post _normalized, pre draft_lm_head",
+    "weight_shape": [
+      8,
+      12
+    ]
+  },
+  "model_pair": [
+    "builtin-target",
+    "builtin-drafter"
+  ],
+  "model_revisions": "synthetic-v1",
+  "implementation_sha256": {
+    "train.py": "a859ba54cf2410c659b45ceb97c08364353a1cce1949d35bb70339342bf9526e",
+    "adapter.py": "b8960babc3f3b126a11e1f990ef144b2a9be6331a181bdbeea3da2f4c0c5b9d5",
+    "features.py": "adfbfa21ab6622f730df33513142c65a7d3c5adc6079ddb7f444d6471e5a6bff",
+    "sparse.py": "66beee3396ade7a6104729086a6a68c0180b5dd2e89909448cf3430344747864",
+    "sparse_stats.py": "62c8a36b8c707a38a8944a2882134893eed9f0ab8d50fd7ab737eeeef358c92c",
+    "traces.py": "cf7aec2d2d3ebdaeb0896a2da86193f87ee07e51a7a0eba1016f31da705b83d8"
+  },
+  "frozen_artifacts": {
+    "hidden_projection_sha256": null,
+    "token_features_sha256": null
+  },
+  "optimizer": {
+    "dense": "AdamW",
+    "learning_rate": 0.001,
+    "weight_decay_W_A": 0.0001,
+    "weight_decay_b": 0.0,
+    "sparse": "SGD+proximal_L1",
+    "sparse_learning_rate": 0.01,
+    "lambda_l1": 1e-05
+  },
+  "training_distribution": "standard_nonthinking, greedy or model-card T=.7 topk20 topp.8 minp0 contexts; unwarped T_train=beta_train=1",
+  "post_rejection_canvas": "off-policy teacher data retained with exp(-i/5) weights",
+  "fixed_required_phases": [
+    "dense",
+    "dense_sparse"
+  ],
+  "extra_tuning_or_sweeps": false,
+  "stages": {
+    "dense": {
+      "train": {
+        "loss_mode": "union_rest_grouped",
+        "weighted_mean_kl": 0.16295733329438092,
+        "weighted_kl_sum": 75.72436946630478,
+        "weight_sum": 464.6883201599121,
+        "logical_slots": 607,
+        "union_overlap_lower_bound": 0.4578912697695625,
+        "grouped_overlap_upper_bound": 0.8082321994574326,
+        "live_full_diagnostic": {
+          "logical_slots": 64,
+          "mean_overlap": 0.7118220664560795,
+          "top1_agreement": 0.578125,
+          "weighted_mean_full_kl": 0.3280274072026702,
+          "weighted_mean_grouped_kl": 0.22225850882787088,
+          "full_minus_grouped_kl": 0.10576889837479934,
+          "proposal_source": "same reconstructed full-vocabulary q for both objectives"
+        },
+        "T_train": 1.0,
+        "beta_train": 1.0,
+        "warpers_used_for_training": false
+      },
+      "dev": {
+        "loss_mode": "union_rest_grouped",
+        "weighted_mean_kl": 0.15594425406118473,
+        "weighted_kl_sum": 16.957926332950592,
+        "weight_sum": 108.74351501464844,
+        "logical_slots": 142,
+        "union_overlap_lower_bound": 0.46483326766272665,
+        "grouped_overlap_upper_bound": 0.8277313228250599,
+        "live_full_diagnostic": {
+          "logical_slots": 142,
+          "mean_overlap": 0.7933854368371023,
+          "top1_agreement": 0.7253521126760564,
+          "weighted_mean_full_kl": 0.22168942562952001,
+          "weighted_mean_grouped_kl": 0.15594424201324045,
+          "full_minus_grouped_kl": 0.06574518361627957,
+          "proposal_source": "same reconstructed full-vocabulary q for both objectives"
+        },
+        "T_train": 1.0,
+        "beta_train": 1.0,
+        "warpers_used_for_training": false
+      },
+      "test": {
+        "loss_mode": "union_rest_grouped",
+        "weighted_mean_kl": 0.15582326832672314,
+        "weighted_kl_sum": 16.94476991891861,
+        "weight_sum": 108.74351501464844,
+        "logical_slots": 142,
+        "union_overlap_lower_bound": 0.46517626678859686,
+        "grouped_overlap_upper_bound": 0.8280743219509301,
+        "live_full_diagnostic": {
+          "logical_slots": 142,
+          "mean_overlap": 0.7938776687836983,
+          "top1_agreement": 0.7253521126760564,
+          "weighted_mean_full_kl": 0.22152169336962987,
+          "weighted_mean_grouped_kl": 0.15582326751951076,
+          "full_minus_grouped_kl": 0.06569842585011912,
+          "proposal_source": "same reconstructed full-vocabulary q for both objectives"
+        },
+        "T_train": 1.0,
+        "beta_train": 1.0,
+        "warpers_used_for_training": false
+      },
+      "parameters": {
+        "W": {
+          "norm": 0.06280821561813354,
+          "exact_zero_fraction": 0.0,
+          "shape": [
+            4,
+            6
+          ],
+          "dtype": "torch.float32"
+        },
+        "A": {
+          "norm": 0.08438529074192047,
+          "exact_zero_fraction": 0.0,
+          "shape": [
+            4,
+            4,
+            4
+          ],
+          "dtype": "torch.float32"
+        },
+        "b": {
+          "norm": 0.0,
+          "exact_zero_fraction": 1.0,
+          "shape": [
+            8
+          ],
+          "dtype": "torch.float32"
+        }
+      }
+    },
+    "dense_sparse": {
+      "train": {
+        "loss_mode": "union_rest_grouped",
+        "weighted_mean_kl": 0.12319305949842858,
+        "weighted_kl_sum": 57.24637587368488,
+        "weight_sum": 464.6883201599121,
+        "logical_slots": 607,
+        "union_overlap_lower_bound": 0.461947609714955,
+        "grouped_overlap_upper_bound": 0.8404152216896096,
+        "live_full_diagnostic": {
+          "logical_slots": 64,
+          "mean_overlap": 0.7249853983521461,
+          "top1_agreement": 0.578125,
+          "weighted_mean_full_kl": 0.28614005349278226,
+          "weighted_mean_grouped_kl": 0.18690297038462786,
+          "full_minus_grouped_kl": 0.0992370831081544,
+          "proposal_source": "same reconstructed full-vocabulary q for both objectives"
+        },
+        "T_train": 1.0,
+        "beta_train": 1.0,
+        "warpers_used_for_training": false
+      },
+      "dev": {
+        "loss_mode": "union_rest_grouped",
+        "weighted_mean_kl": 0.13018766424731007,
+        "weighted_kl_sum": 14.157064221799374,
+        "weight_sum": 108.74351501464844,
+        "logical_slots": 142,
+        "union_overlap_lower_bound": 0.4649466579438935,
+        "grouped_overlap_upper_bound": 0.8504752693173121,
+        "live_full_diagnostic": {
+          "logical_slots": 142,
+          "mean_overlap": 0.8065821083498673,
+          "top1_agreement": 0.7394366197183099,
+          "weighted_mean_full_kl": 0.1959405895360277,
+          "weighted_mean_grouped_kl": 0.13018765953476247,
+          "full_minus_grouped_kl": 0.06575293000126521,
+          "proposal_source": "same reconstructed full-vocabulary q for both objectives"
+        },
+        "T_train": 1.0,
+        "beta_train": 1.0,
+        "warpers_used_for_training": false
+      },
+      "test": {
+        "loss_mode": "union_rest_grouped",
+        "weighted_mean_kl": 0.1298709169644135,
+        "weighted_kl_sum": 14.12262000888586,
+        "weight_sum": 108.74351501464844,
+        "logical_slots": 142,
+        "union_overlap_lower_bound": 0.46553366673244556,
+        "grouped_overlap_upper_bound": 0.850969904338495,
+        "live_full_diagnostic": {
+          "logical_slots": 142,
+          "mean_overlap": 0.8074309708366931,
+          "top1_agreement": 0.7535211267605634,
+          "weighted_mean_full_kl": 0.19548312060249362,
+          "weighted_mean_grouped_kl": 0.12987090664473344,
+          "full_minus_grouped_kl": 0.06561221395776021,
+          "proposal_source": "same reconstructed full-vocabulary q for both objectives"
+        },
+        "T_train": 1.0,
+        "beta_train": 1.0,
+        "warpers_used_for_training": false
+      },
+      "parameters": {
+        "W": {
+          "norm": 0.12202761322259903,
+          "exact_zero_fraction": 0.0,
+          "shape": [
+            4,
+            6
+          ],
+          "dtype": "torch.float32"
+        },
+        "A": {
+          "norm": 0.15091454982757568,
+          "exact_zero_fraction": 0.0,
+          "shape": [
+            4,
+            4,
+            4
+          ],
+          "dtype": "torch.float32"
+        },
+        "b": {
+          "norm": 0.032935041934251785,
+          "exact_zero_fraction": 0.0,
+          "shape": [
+            8
+          ],
+          "dtype": "torch.float32"
+        },
+        "S": {
+          "norm": 0.011906541883945465,
+          "exact_zero_fraction": 0.29296875,
+          "nonzero_buckets": 181,
+          "capacity": 256,
+          "memory_bytes": 1024,
+          "optimizer": "SGD followed by explicit proximal L1"
+        }
+      },
+      "sparse_collision_statistics": {
+        "status": "measured",
+        "coverage": "every lookup in every committed offline sparse-stage optimizer batch",
+        "capacity": 256,
+        "unique_observed_keys": 253,
+        "observed_lookup_events": 9712,
+        "load_factor_unique_keys_per_bucket": 0.98828125,
+        "occupied_buckets": 181,
+        "occupancy_fraction": 0.70703125,
+        "collision_count": 72,
+        "distinct_keys_in_collided_buckets": 140,
+        "frequency_weighted_collision_count": 6474,
+        "collision_definition": "sum over buckets of max(distinct observed keys minus one, zero)",
+        "frequency_weighted_definition": "sum of all lookup frequencies in buckets containing more than one distinct key",
+        "raw_parameter_bytes": 1024,
+        "nonzero_parameter_value_bytes": 724,
+        "exact_key_encoding": "(d*V+previous)*V+current; offsets d start at one",
+        "global_aggregation": "DuckDB exact grouped sum with disk spill",
+        "memory_limit": "512MB",
+        "committed_chunks": 20,
+        "database": "/home/catid/drafter/artifacts/m2_sparse_stats/f848296a03565cd1870284fa1874941d339897996398bb256a81c524731f0238/exact_key_counts.duckdb",
+        "database_bytes": 798720,
+        "chunk_disk_bytes": 26170,
+        "lookup_benchmark": {
+          "device": "cpu",
+          "queries_per_repeat": 4096,
+          "unique_table_keys": 253,
+          "exact_table_bytes": 3036,
+          "sample_method": "deterministic hash sample of global distinct keys; frequency-weighted queries within sample",
+          "exact_table_values": "materialized fitted signed-hash values per observed key; lookup-cost diagnostic only, not an independently fitted model",
+          "warmups": 3,
+          "repeats": 15,
+          "synchronized_wall_timing": true,
+          "query_values_equal": true,
+          "timings": {
+            "signed_feature_hash": {
+              "median_ms": 0.15760096721351147,
+              "p95_ms": 0.17136656679213047,
+              "median_bootstrap_95ci_ms": [
+                0.15331385657191277,
+                0.16481753555126485
+              ],
+              "samples_ms": [
+                0.1730690710246563,
+                0.1603369601070881,
+                0.15597185119986534,
+                0.1550600863993168,
+                0.15405286103487015,
+                0.17063692212104797,
+                0.16729114577174187,
+                0.15760096721351147,
+                0.15317299403250217,
+                0.15249988064169884,
+                0.15331385657191277,
+                0.16083684749901295,
+                0.1659700646996498,
+                0.16478798352181911,
+                0.15256204642355442
+              ],
+              "cuda_event_samples_ms": [],
+              "cuda_event_median_ms": null
+            },
+            "sorted_exact_observed_pairs": {
+              "median_ms": 0.14210212975740433,
+              "p95_ms": 0.1672710990533232,
+              "median_bootstrap_95ci_ms": [
+                0.14179712161421776,
+                0.147524056956172
+              ],
+              "samples_ms": [
+                0.20231097005307674,
+                0.14389120042324066,
+                0.14210212975740433,
+                0.14179712161421776,
+                0.14825188554823399,
+                0.14412193559110165,
+                0.1421179622411728,
+                0.15225401148200035,
+                0.14135707169771194,
+                0.14140503481030464,
+                0.14190096408128738,
+                0.1420008484274149,
+                0.14059804379940033,
+                0.14111888594925404,
+                0.147524056956172
+              ],
+              "cuda_event_samples_ms": [],
+              "cuda_event_median_ms": null
+            }
+          }
+        }
+      }
+    }
+  },
+  "baseline": {
+    "train": {
+      "loss_mode": "union_rest_grouped",
+      "weighted_mean_kl": 0.2225589661881839,
+      "weighted_kl_sum": 103.42055213451385,
+      "weight_sum": 464.6883201599121,
+      "logical_slots": 607,
+      "union_overlap_lower_bound": 0.46661360188704937,
+      "grouped_overlap_upper_bound": 0.7800437662469705,
+      "live_full_diagnostic": {
+        "logical_slots": 64,
+        "mean_overlap": 0.6980026327073574,
+        "top1_agreement": 0.5,
+        "weighted_mean_full_kl": 0.3816195376826706,
+        "weighted_mean_grouped_kl": 0.2615553696826543,
+        "full_minus_grouped_kl": 0.12006416800001632,
+        "proposal_source": "same reconstructed full-vocabulary q for both objectives"
+      },
+      "T_train": 1.0,
+      "beta_train": 1.0,
+      "warpers_used_for_training": false
+    },
+    "dev": {
+      "loss_mode": "union_rest_grouped",
+      "weighted_mean_kl": 0.18981204480986502,
+      "weighted_kl_sum": 20.64082894474268,
+      "weight_sum": 108.74351501464844,
+      "logical_slots": 142,
+      "union_overlap_lower_bound": 0.48148836143000023,
+      "grouped_overlap_upper_bound": 0.8115330733896666,
+      "live_full_diagnostic": {
+        "logical_slots": 142,
+        "mean_overlap": 0.7871922430857806,
+        "top1_agreement": 0.7183098591549296,
+        "weighted_mean_full_kl": 0.26102356966086265,
+        "weighted_mean_grouped_kl": 0.18981203648552775,
+        "full_minus_grouped_kl": 0.0712115331753349,
+        "proposal_source": "same reconstructed full-vocabulary q for both objectives"
+      },
+      "T_train": 1.0,
+      "beta_train": 1.0,
+      "warpers_used_for_training": false
+    },
+    "test": {
+      "loss_mode": "union_rest_grouped",
+      "weighted_mean_kl": 0.18981204590610778,
+      "weighted_kl_sum": 20.64082906395197,
+      "weight_sum": 108.74351501464844,
+      "logical_slots": 142,
+      "union_overlap_lower_bound": 0.48148836143000023,
+      "grouped_overlap_upper_bound": 0.8115330733896666,
+      "live_full_diagnostic": {
+        "logical_slots": 142,
+        "mean_overlap": 0.7871922430857806,
+        "top1_agreement": 0.7183098591549296,
+        "weighted_mean_full_kl": 0.26102356966086265,
+        "weighted_mean_grouped_kl": 0.18981203648552775,
+        "full_minus_grouped_kl": 0.0712115331753349,
+        "proposal_source": "same reconstructed full-vocabulary q for both objectives"
+      },
+      "T_train": 1.0,
+      "beta_train": 1.0,
+      "warpers_used_for_training": false
+    }
+  },
+  "epoch_development": [
+    {
+      "stage": "dense",
+      "epoch": 0,
+      "dev": {
+        "loss_mode": "union_rest_grouped",
+        "weighted_mean_kl": 0.15594425406118473,
+        "weighted_kl_sum": 16.957926332950592,
+        "weight_sum": 108.74351501464844,
+        "logical_slots": 142,
+        "union_overlap_lower_bound": 0.46483326766272665,
+        "grouped_overlap_upper_bound": 0.8277313228250599,
+        "live_full_diagnostic": {
+          "logical_slots": 142,
+          "mean_overlap": 0.7933854368371023,
+          "top1_agreement": 0.7253521126760564,
+          "weighted_mean_full_kl": 0.22168942562952001,
+          "weighted_mean_grouped_kl": 0.15594424201324045,
+          "full_minus_grouped_kl": 0.06574518361627957,
+          "proposal_source": "same reconstructed full-vocabulary q for both objectives"
+        },
+        "T_train": 1.0,
+        "beta_train": 1.0,
+        "warpers_used_for_training": false
+      },
+      "relative_improvement_over_zero": 0.1784280380236444
+    },
+    {
+      "stage": "dense_sparse",
+      "epoch": 0,
+      "dev": {
+        "loss_mode": "union_rest_grouped",
+        "weighted_mean_kl": 0.13018766424731007,
+        "weighted_kl_sum": 14.157064221799374,
+        "weight_sum": 108.74351501464844,
+        "logical_slots": 142,
+        "union_overlap_lower_bound": 0.4649466579438935,
+        "grouped_overlap_upper_bound": 0.8504752693173121,
+        "live_full_diagnostic": {
+          "logical_slots": 142,
+          "mean_overlap": 0.8065821083498673,
+          "top1_agreement": 0.7394366197183099,
+          "weighted_mean_full_kl": 0.1959405895360277,
+          "weighted_mean_grouped_kl": 0.13018765953476247,
+          "full_minus_grouped_kl": 0.06575293000126521,
+          "proposal_source": "same reconstructed full-vocabulary q for both objectives"
+        },
+        "T_train": 1.0,
+        "beta_train": 1.0,
+        "warpers_used_for_training": false
+      },
+      "relative_improvement_over_zero": 0.314123271904482
+    }
+  ],
+  "sparse_statistics_chunks": [
+    {
+      "path": "/home/catid/drafter/artifacts/m2_sparse_stats/f848296a03565cd1870284fa1874941d339897996398bb256a81c524731f0238/epoch000-batch00000000.parquet",
+      "events": 512,
+      "unique_batch_keys": 112,
+      "epoch": 0,
+      "batch": 0,
+      "sha256": "f98f430916d6dab931c337d7b98cf20e22a09e6a6d7a1500216d7b3a0fdbe613"
+    },
+    {
+      "path": "/home/catid/drafter/artifacts/m2_sparse_stats/f848296a03565cd1870284fa1874941d339897996398bb256a81c524731f0238/epoch000-batch00000001.parquet",
+      "events": 512,
+      "unique_batch_keys": 168,
+      "epoch": 0,
+      "batch": 1,
+      "sha256": "7aad1e7311fd1f9475faf4b92fc84cf335d1592905917d670ce096c693d91186"
+    },
+    {
+      "path": "/home/catid/drafter/artifacts/m2_sparse_stats/f848296a03565cd1870284fa1874941d339897996398bb256a81c524731f0238/epoch000-batch00000002.parquet",
+      "events": 480,
+      "unique_batch_keys": 173,
+      "epoch": 0,
+      "batch": 2,
+      "sha256": "4377e8ddb7be9f10c2f9231b2dc5bab124631b3cd227af8953b1b711933ee641"
+    },
+    {
+      "path": "/home/catid/drafter/artifacts/m2_sparse_stats/f848296a03565cd1870284fa1874941d339897996398bb256a81c524731f0238/epoch000-batch00000003.parquet",
+      "events": 480,
+      "unique_batch_keys": 192,
+      "epoch": 0,
+      "batch": 3,
+      "sha256": "d5f937c11cb6ff3ab95403d7050cd376ef9a1013efdbdbf30e59906a75eb1733"
+    },
+    {
+      "path": "/home/catid/drafter/artifacts/m2_sparse_stats/f848296a03565cd1870284fa1874941d339897996398bb256a81c524731f0238/epoch000-batch00000004.parquet",
+      "events": 512,
+      "unique_batch_keys": 103,
+      "epoch": 0,
+      "batch": 4,
+      "sha256": "0e4424cf8b66534d121e3f6ed27c6f94bbe8b80497ab007c80b8f6fb1fc14ad8"
+    },
+    {
+      "path": "/home/catid/drafter/artifacts/m2_sparse_stats/f848296a03565cd1870284fa1874941d339897996398bb256a81c524731f0238/epoch000-batch00000005.parquet",
+      "events": 496,
+      "unique_batch_keys": 130,
+      "epoch": 0,
+      "batch": 5,
+      "sha256": "9f4ad3fc75901c2389ef25eb57d2c15e14db586d84d7cff926e8d04bc9c8dec5"
+    },
+    {
+      "path": "/home/catid/drafter/artifacts/m2_sparse_stats/f848296a03565cd1870284fa1874941d339897996398bb256a81c524731f0238/epoch000-batch00000006.parquet",
+      "events": 512,
+      "unique_batch_keys": 137,
+      "epoch": 0,
+      "batch": 6,
+      "sha256": "8e8b22fb88e306bc953f345692ec9f27411df18f7e84073dbb095099ef51704a"
+    },
+    {
+      "path": "/home/catid/drafter/artifacts/m2_sparse_stats/f848296a03565cd1870284fa1874941d339897996398bb256a81c524731f0238/epoch000-batch00000007.parquet",
+      "events": 480,
+      "unique_batch_keys": 85,
+      "epoch": 0,
+      "batch": 7,
+      "sha256": "0e142f49abf7ce4071c46c7d1197c723ae59566dc21bb344294c150e4ca91f40"
+    },
+    {
+      "path": "/home/catid/drafter/artifacts/m2_sparse_stats/f848296a03565cd1870284fa1874941d339897996398bb256a81c524731f0238/epoch000-batch00000008.parquet",
+      "events": 480,
+      "unique_batch_keys": 156,
+      "epoch": 0,
+      "batch": 8,
+      "sha256": "71cf4a575fded5d43bc1060b1f0ebc9915c40c88fffea42ab78991f040c8c4f8"
+    },
+    {
+      "path": "/home/catid/drafter/artifacts/m2_sparse_stats/f848296a03565cd1870284fa1874941d339897996398bb256a81c524731f0238/epoch000-batch00000009.parquet",
+      "events": 464,
+      "unique_batch_keys": 162,
+      "epoch": 0,
+      "batch": 9,
+      "sha256": "51717ce23777bcd41e2eed47104a6c4a4a83dc61524201c870a41347e25d1998"
+    },
+    {
+      "path": "/home/catid/drafter/artifacts/m2_sparse_stats/f848296a03565cd1870284fa1874941d339897996398bb256a81c524731f0238/epoch000-batch00000010.parquet",
+      "events": 480,
+      "unique_batch_keys": 205,
+      "epoch": 0,
+      "batch": 10,
+      "sha256": "667a5201454c7110b99d526bb78b7a62d673237a6d27fac4953c65dce11b17b4"
+    },
+    {
+      "path": "/home/catid/drafter/artifacts/m2_sparse_stats/f848296a03565cd1870284fa1874941d339897996398bb256a81c524731f0238/epoch000-batch00000011.parquet",
+      "events": 512,
+      "unique_batch_keys": 42,
+      "epoch": 0,
+      "batch": 11,
+      "sha256": "de6433345bf35ad79d8959bb4b7b55effa5a88a6e453b594b3ca5c7fb0f3e6b1"
+    },
+    {
+      "path": "/home/catid/drafter/artifacts/m2_sparse_stats/f848296a03565cd1870284fa1874941d339897996398bb256a81c524731f0238/epoch000-batch00000012.parquet",
+      "events": 464,
+      "unique_batch_keys": 152,
+      "epoch": 0,
+      "batch": 12,
+      "sha256": "9987e17b9d8bac3400917c33864330017bd850e2934d0465946004b6eb062b8c"
+    },
+    {
+      "path": "/home/catid/drafter/artifacts/m2_sparse_stats/f848296a03565cd1870284fa1874941d339897996398bb256a81c524731f0238/epoch000-batch00000013.parquet",
+      "events": 496,
+      "unique_batch_keys": 146,
+      "epoch": 0,
+      "batch": 13,
+      "sha256": "747368ed2a93d0726b45acb8b43175d459713ba249953565582c81ccba0bf3a8"
+    },
+    {
+      "path": "/home/catid/drafter/artifacts/m2_sparse_stats/f848296a03565cd1870284fa1874941d339897996398bb256a81c524731f0238/epoch000-batch00000014.parquet",
+      "events": 512,
+      "unique_batch_keys": 180,
+      "epoch": 0,
+      "batch": 14,
+      "sha256": "d46ccf52d32cd8720f9a0b40014b2ba68e9fa8f2571083da3add4981eaaa63f5"
+    },
+    {
+      "path": "/home/catid/drafter/artifacts/m2_sparse_stats/f848296a03565cd1870284fa1874941d339897996398bb256a81c524731f0238/epoch000-batch00000015.parquet",
+      "events": 464,
+      "unique_batch_keys": 109,
+      "epoch": 0,
+      "batch": 15,
+      "sha256": "d480b70e0355b55f86f81c37e5692db2cb4956281b3e896772e50918c5c2ebd5"
+    },
+    {
+      "path": "/home/catid/drafter/artifacts/m2_sparse_stats/f848296a03565cd1870284fa1874941d339897996398bb256a81c524731f0238/epoch000-batch00000016.parquet",
+      "events": 480,
+      "unique_batch_keys": 118,
+      "epoch": 0,
+      "batch": 16,
+      "sha256": "7383aa0d626f4f6ed2a722348bde0c475bc2a20afa34c2eb4236b1c9bf786376"
+    },
+    {
+      "path": "/home/catid/drafter/artifacts/m2_sparse_stats/f848296a03565cd1870284fa1874941d339897996398bb256a81c524731f0238/epoch000-batch00000017.parquet",
+      "events": 496,
+      "unique_batch_keys": 186,
+      "epoch": 0,
+      "batch": 17,
+      "sha256": "b346d5385ee75105d147e2a0aad32fb7c4f4d93f2f074129d67a2518d5adb041"
+    },
+    {
+      "path": "/home/catid/drafter/artifacts/m2_sparse_stats/f848296a03565cd1870284fa1874941d339897996398bb256a81c524731f0238/epoch000-batch00000018.parquet",
+      "events": 432,
+      "unique_batch_keys": 77,
+      "epoch": 0,
+      "batch": 18,
+      "sha256": "24774d08ed5fa95d78c17a228e2b4c35d5a44d3c3a088384f296558fac518896"
+    },
+    {
+      "path": "/home/catid/drafter/artifacts/m2_sparse_stats/f848296a03565cd1870284fa1874941d339897996398bb256a81c524731f0238/epoch000-batch00000019.parquet",
+      "events": 448,
+      "unique_batch_keys": 91,
+      "epoch": 0,
+      "batch": 19,
+      "sha256": "502d165e60d5560eeed493254bf2b873ed03a0c637422493d63ff3cefc7fe23e"
+    }
+  ],
+  "status": "passed",
+  "relative_dev_improvement": 0.314123271904482,
+  "under_one_percent_stop_tuning": false,
+  "fit_elapsed_seconds_this_invocation": 5.687632131157443,
+  "checkpoints": {
+    "dense": "/home/catid/drafter/artifacts/m2_smoke/dense.pt",
+    "dense_sparse": "/home/catid/drafter/artifacts/m2_smoke/dense_sparse.pt"
+  },
+  "checkpoint_selection": "last completed epoch of each predeclared phase; test never selects",
+  "scope": "complete eligible train/dev/test shard sets; no long/pure-temperature fitting"
+}

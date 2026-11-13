@@ -50,7 +50,7 @@ def run_reference(args):
     if args.num_prompts < 20:
         raise ValueError('M0 reference gate requires at least 20 prompts')
     preflight(args, args.num_prompts * args.max_new_tokens * 7)
-    record_run(args, 'm0')
+    run_provenance = record_run(args, 'm0')
     env = environment(resolved_config(args))
     target_path = fetch_model(args.target, args.allow_download)
     draft_path = fetch_model(args.drafter, args.allow_download)
@@ -127,6 +127,7 @@ def run_reference(args):
             'sequence_mismatch_rate': sum(not r['sequence_equal'] for r in relevant) / len(relevant)}
     status = 'passed' if all(r['argmax_equal'] and r['cache_length'] == r['expected_length'] for r in rollback) else 'failed'
     summary = {'scale': args.scale, 'status': status, 'num_distinct_prompts': args.num_prompts,
+               'run_provenance': run_provenance,
                'comparisons': aggregate, 'cache_rollback': rollback, 'head_metadata': backend.head_metadata(),
                'conditions': [{'name': n, 'temperature': t, 'warper': asdict(w)} for n, t, w in conditions],
                'target_mismatch_investigation_required': any(not r['local_target']['sequence_equal'] for r in greedy)}

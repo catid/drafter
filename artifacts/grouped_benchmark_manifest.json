@@ -1,0 +1,64 @@
+{
+  "jobs": {
+    "213439c5f2700f18b6e27a811581477d905514407a13b5672d07dea9de74535e": {
+      "identity": {
+        "model_pair": "synthetic_score_tensors",
+        "prompt": "cd841896d975db389e276a297cbcd5394ae35d451c5f53d21818acb447f9a07d",
+        "condition": "grouped_loss_microbenchmark",
+        "seed": 2026,
+        "temperature": 1.0,
+        "verification_rule": "not_applicable",
+        "proposal_mode": "full_partition_grouped_loss",
+        "checkpoint": "ebc285d3cb1dc3649fa99698219c56b58c4fb3a89b1cd704dfed6fddca1a4c8f",
+        "adapter_version": 0
+      },
+      "status": "complete",
+      "result_path": "/home/catid/drafter/artifacts/grouped_benchmark_smoke.json"
+    },
+    "d087da651ce9250ea9688909b0320b961d3a1ba7276b6a98f6b564928036989e": {
+      "identity": {
+        "model_pair": "synthetic_score_tensors",
+        "prompt": "facb83cc5328db5026bc16ca37418e42e4d9df17e9a003674240b73937b3fd1d",
+        "condition": "grouped_loss_microbenchmark",
+        "seed": 2026,
+        "temperature": 1.0,
+        "verification_rule": "not_applicable",
+        "proposal_mode": "full_partition_grouped_loss",
+        "checkpoint": "2781bd79a19d1101d9449f0862f51464b9bdf7cbe9db7f71ea272fc31f0d779d",
+        "adapter_version": 0
+      },
+      "status": "complete",
+      "result_path": "/home/catid/drafter/artifacts/grouped_benchmark_reference.json"
+    },
+    "5b07d03048ff62f2b490bd6aa98c7d2a86da812bbab10ecc4b473ba1e0f07985": {
+      "identity": {
+        "model_pair": "synthetic_score_tensors",
+        "prompt": "facb83cc5328db5026bc16ca37418e42e4d9df17e9a003674240b73937b3fd1d",
+        "condition": "grouped_loss_microbenchmark",
+        "seed": 2026,
+        "temperature": 1.0,
+        "verification_rule": "not_applicable",
+        "proposal_mode": "full_partition_grouped_loss",
+        "checkpoint": "4777ac6c0c57dbf929499a69ae14acf1eebd0264a7a235a200738e0d74a69d54",
+        "adapter_version": 0
+      },
+      "status": "complete",
+      "result_path": "/home/catid/drafter/artifacts/grouped_benchmark_reference.json"
+    },
+    "b2c32ceaf079f7f18ea699cd68e8aa9649691c00de25a626485c676b648e3bb2": {
+      "identity": {
+        "model_pair": "synthetic_score_tensors",
+        "prompt": "facb83cc5328db5026bc16ca37418e42e4d9df17e9a003674240b73937b3fd1d",
+        "condition": "grouped_loss_microbenchmark",
+        "seed": 2026,
+        "temperature": 1.0,
+        "verification_rule": "not_applicable",
+        "proposal_mode": "full_partition_grouped_loss",
+        "checkpoint": "eb93e3ad282eb1b3e3088ecb7efc241dbe3c7b92ec3fbe73283ab40fe3019937",
+        "adapter_version": 0
+      },
+      "status": "complete",
+      "result_path": "/home/catid/drafter/artifacts/grouped_benchmark_reference.json"
+    }
+  }
+}

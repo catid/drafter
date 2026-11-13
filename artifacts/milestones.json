@@ -10,11 +10,26 @@
     ]
   },
   "M1-pre": {
-    "status": "not_run",
-    "preparation": "Pinned benchmark prompt manifest and train-only calibration IDs ready"
+    "status": "passed",
+    "evidence": [
+      "artifacts/calibration.json",
+      "artifacts/h_proj.pt",
+      "artifacts/token_features.pt"
+    ],
+    "calibration_prompts": 64,
+    "hidden_vectors": 22377
   },
   "M1a": {
-    "status": "not_run"
+    "status": "running",
+    "launcher_pid": 2555687,
+    "physical_gpus": [
+      2,
+      3,
+      4,
+      6
+    ],
+    "world_size": 4,
+    "manifest": "artifacts/collection-processes.json"
   },
   "M1b": {
     "status": "not_run"

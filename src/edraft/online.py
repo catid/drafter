@@ -118,6 +118,10 @@ class OnlineState:
         self.version = 0
         self.last_round = 0
         self.last_loss = None
+        self.state_bytes_estimate = {'dense_activation_clone': 0, 'dense_optimizer': 0, 'dense_snapshot': 0,
+                                     'sparse_update': 0, 'sparse_snapshot': 0}
+        self.active_bucket_min = None
+        self.active_bucket_max = 0
         self._snapshot = self._make_snapshot()
 
     def _make_snapshot(self):
@@ -182,8 +186,8 @@ class OnlineState:
         with torch.no_grad():
             shrink = 1 + lr * self.lambda_l2
             if not self.bias_sparse_only:
-                self.dW = (dW - lr * dW.grad) / shrink
-                self.dA = (dA - lr * dA.grad) / shrink
+                self.dW = (dW - lr * (dW.grad if dW.grad is not None else torch.zeros_like(dW))) / shrink
+                self.dA = (dA - lr * (dA.grad if dA.grad is not None else torch.zeros_like(dA))) / shrink
             self.db = proximal_l1((db - lr * db.grad) / shrink, lr * self.lambda_l1_b)
             if self.dS is not None:
                 gradient = sparse_values.grad if sparse_values.grad is not None else torch.zeros_like(sparse_values)
@@ -192,6 +196,19 @@ class OnlineState:
             self.version += 1
             self.last_loss = float(loss.detach())
             self._snapshot = self._make_snapshot()
+            dense_bytes = sum(x.numel() * x.element_size() for x in (self.dW, self.dA, self.db))
+            optimized_bytes = self.db.numel() * self.db.element_size() if self.bias_sparse_only else dense_bytes
+            self.state_bytes_estimate['dense_activation_clone'] += 2 * dense_bytes
+            # Conceptual reads/writes, not a profiler-derived hardware traffic count.
+            self.state_bytes_estimate['dense_optimizer'] += 5 * optimized_bytes + 2 * self.db.numel() * self.db.element_size()
+            self.state_bytes_estimate['dense_snapshot'] += 3 * dense_bytes
+            if self.dS is not None:
+                active = len(self.dS.active)
+                snapshot_bytes = active * 16 + (self.dS.u + 1) * 4
+                self.state_bytes_estimate['sparse_update'] += self.dS.last_update_bytes
+                self.state_bytes_estimate['sparse_snapshot'] += 2 * snapshot_bytes
+                self.active_bucket_min = active if self.active_bucket_min is None else min(self.active_bucket_min, active)
+                self.active_bucket_max = max(self.active_bucket_max, active)
         return True
 
     def metrics(self):
@@ -200,6 +217,11 @@ class OnlineState:
                 'dW_norm': float(self.dW.norm()), 'dA_norm': float(self.dA.norm()),
                 'db_norm': float(self.db.norm()), 'db_exact_zero_fraction': float((self.db == 0).float().mean()),
                 'active_buckets': len(self.dS.active) if self.dS is not None else 0,
+                'active_buckets_min_over_updates': self.active_bucket_min,
+                'active_buckets_max_over_updates': self.active_bucket_max,
+                'state_bytes_estimate_by_operation': dict(self.state_bytes_estimate),
+                'state_bytes_estimate_total': sum(self.state_bytes_estimate.values()),
+                'state_bytes_definition': 'conceptual FP32 parameter/timestamp/index reads+writes for state clones, SGD/prox steps and snapshots; excludes E/logit/autograd activation traffic and is not hardware HBM traffic',
                 'sparse_capacity': self.dS.capacity if self.dS is not None else 0,
                 'sparse_update_bytes_estimate': self.dS.last_update_bytes if self.dS is not None else 0,
                 'sparse_snapshot_bytes': (len(self.dS.active) * 16 + (self.dS.u + 1) * 4) if self.dS is not None else 0,

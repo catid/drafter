@@ -86,3 +86,13 @@ def test_bigram_missing_prefix_skips_first_transition():
     baseline.update([], [1, 2, 3])
     assert set(baseline.counts) == {1, 2}
     assert baseline.counts[1][2] == 1
+
+
+def test_online_first_slot_with_missing_history_has_zero_pair_gradient():
+    adapter = DenseAdapter(torch.eye(3), p=2, D=4, M_sparse=2)
+    state = OnlineState(adapter, enable_sparse=True, sparse_capacity=17)
+    state.update(1, torch.tensor([[0., 1., 2.]]).log_softmax(-1), torch.tensor([[2., 1., 0.]]),
+                 torch.tensor([[1., -1.]]), [], [1])
+    assert state.dA.count_nonzero() == 0
+    assert state.db.norm() > 0
+    assert state.u == 1 and state.dS.u == 1

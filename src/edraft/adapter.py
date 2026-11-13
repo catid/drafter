@@ -191,29 +191,44 @@ def full_kl(scores, target_logits, weights=None):
 
 
 def union_rest_grouped(scores, union_ids, target_union_probabilities, target_rest_mass, weights=None):
-    """Exact q partition with one grouped target-tail category (not full KL)."""
+    """Exact full-V normalization and one batched masked-tail logsumexp."""
+    if scores.ndim != 2 or len(union_ids) != len(scores) or len(target_union_probabilities) != len(scores):
+        raise ValueError('scores and union rows must have consistent [N,V] dimensions')
     q_log = torch.log_softmax(scores.float(), -1)
-    losses = []
-    for i, ids in enumerate(union_ids):
-        p = target_union_probabilities[i].float().detach()
-        log_q_u = q_log[i, ids]
-        # Stable complement through logsumexp over the actual unstored vocabulary.
-        rest_mask = torch.ones(scores.shape[-1], dtype=torch.bool, device=scores.device)
-        rest_mask[ids] = False
-        has_rest = bool(rest_mask.any())
-        log_q_rest = torch.logsumexp(q_log[i, rest_mask], 0) if has_rest else scores.new_tensor(0.)
-        rest_p = torch.as_tensor(target_rest_mass[i], device=scores.device, dtype=torch.float32).detach()
-        if not has_rest:
-            if float(rest_p) > 2e-6:
-                raise ValueError('nonzero target rest mass is inconsistent with a full-vocabulary union')
-            rest_p = torch.zeros_like(rest_p)
-        union_loss = torch.xlogy(p, p).sum() - (p * log_q_u).sum()
-        rest_loss = torch.where(rest_p > 0, torch.xlogy(rest_p, rest_p) - rest_p * log_q_rest, rest_p * 0)
-        losses.append(union_loss + rest_loss)
-    losses = torch.stack(losses)
+    N, V = q_log.shape
+    lengths = [len(ids) for ids in union_ids]
+    if any(n > V or len(p) != n for n, p in zip(lengths, target_union_probabilities)):
+        raise ValueError('union ID and target-probability lengths differ or exceed vocabulary')
+    # Canonical unions are sorted unique ID sets. Ragged rows are concatenated
+    # rather than padding to the largest union or launching one kernel per row.
+    ids = torch.cat([x.to(device=scores.device, dtype=torch.long) for x in union_ids])
+    p = torch.cat([x.detach().to(device=scores.device, dtype=torch.float32) for x in target_union_probabilities])
+    lengths_tensor = torch.tensor(lengths, device=scores.device)
+    row = torch.repeat_interleave(torch.arange(N, device=scores.device),
+                                  lengths_tensor, output_size=sum(lengths))
+    union_terms = torch.xlogy(p, p) - p * q_log[row, ids]
+    union_loss = torch.segment_reduce(union_terms, 'sum', lengths=lengths_tensor)
+    rest_p = (target_rest_mass.detach().to(device=scores.device, dtype=torch.float32)
+              if isinstance(target_rest_mass, torch.Tensor) else
+              torch.stack([torch.as_tensor(x, device=scores.device, dtype=torch.float32).detach()
+                           for x in target_rest_mass]))
+    if rest_p.shape != (N,):
+        raise ValueError('target rest mass must have one scalar per score row')
+    full_rows = [i for i, n in enumerate(lengths) if n == V]
+    tail_scores = q_log.index_put((row, ids), q_log.new_full((len(ids),), -torch.inf))
+    if full_rows:
+        full = torch.tensor(full_rows, device=scores.device)
+        if bool((rest_p[full] > 2e-6).any()):
+            raise ValueError('nonzero target rest mass is inconsistent with a full-vocabulary union')
+        rest_p = rest_p.index_fill(0, full, 0.)
+        # logsumexp(-inf,...,-inf) has undefined backward even if multiplied
+        # by zero. A constant sentinel gives these zero-mass rows finite math.
+        tail_scores = tail_scores.index_put((full, torch.zeros_like(full)), q_log.new_zeros(len(full)))
+    log_q_rest = torch.logsumexp(tail_scores, -1)
+    rest_loss = torch.xlogy(rest_p, rest_p) - rest_p * log_q_rest
     if weights is None:
-        weights = loss_weights(len(scores), scores.device)
-    return (losses * weights).sum()
+        weights = loss_weights(N, scores.device)
+    return ((union_loss + rest_loss) * weights).sum()
 
 
 @dataclass

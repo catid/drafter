@@ -124,3 +124,34 @@ def test_zero_strength_bigram_bit_exact_and_initial_transition(backend):
         assert torch.equal(plain.output_ids, baseline.output_ids)
         assert bigram.metrics()["counted_transitions"] == 20
         assert bigram.counts[4][baseline.output_tokens[0]] > 0
+
+
+@pytest.mark.parametrize('arm', ['plain', 'adapter', 'bigram', 'online'])
+def test_bounded_history_preserves_long_prefix_tokens_and_real_context_lengths(backend, arm):
+    from edraft.adapter import DenseAdapter
+    from edraft.online import OnlineState, OnlineBigram
+    torch.manual_seed(818)
+    adapter = DenseAdapter(torch.randn(17, 3), p=24, D=7)
+    with torch.no_grad():
+        adapter.W.normal_(std=.01)
+        adapter.A.normal_(std=.01)
+    ids = torch.tensor([[1, 2, 4, 7, 10] * 12])
+    def options():
+        if arm == 'adapter':
+            return {'adapter': adapter}
+        if arm == 'bigram':
+            return {'bigram': OnlineBigram(17, lambda_tr=.1)}
+        if arm == 'online':
+            return {'online_state': OnlineState(adapter, lr=.001)}
+        return {}
+    torch.manual_seed(19)
+    bounded = generate_reference(backend, ids, 24, temperature=.7, stop_token_ids=[], **options())
+    torch.manual_seed(19)
+    retained = generate_reference(backend, ids, 24, temperature=.7, stop_token_ids=[], retain_tensors=True, **options())
+    assert torch.equal(bounded.output_ids, retained.output_ids)
+    assert len(bounded.blocks) == len(retained.blocks)
+    for short, full in zip(bounded.blocks, retained.blocks):
+        assert short['input_context_length'] == ids.shape[1] + short['absolute_output_offset']
+        assert short['input_context_length'] == len(full['prefix'])
+        assert short['verified_prefix_tail'] == full['verified_prefix_tail']
+        assert len(short['verified_prefix_tail']) <= (7 if arm in ('adapter', 'online') else 4)
