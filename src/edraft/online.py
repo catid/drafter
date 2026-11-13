@@ -7,7 +7,7 @@ from typing import Callable
 import torch
 
 from .adapter import (ProposalSnapshot, block_unary, slot_correction, top_candidates,
-                      prev_token, full_kl)
+                      prev_token, full_kl, loss_weights)
 from .sparse import LazySignedHash, SumSparse, hash_keys, proximal_l1
 
 
@@ -96,7 +96,8 @@ class OnlineState:
     def __init__(self, offline, lr: float | Callable[[int], float] = 0.01,
                  update_stride: int = 1, lambda_l2: float = 0., lambda_l1_b: float = 0.,
                  lambda_l1_s: float = 0., sparse_capacity: int = 2**20,
-                 enable_sparse: bool | None = None, bias_sparse_only: bool = False):
+                 enable_sparse: bool | None = None, bias_sparse_only: bool = False,
+                 weighting_mode: str = 'exponential', gamma: float = 5.):
         if update_stride < 1 or min(lambda_l2, lambda_l1_b, lambda_l1_s) < 0:
             raise ValueError('invalid online stride or regularization')
         if not callable(lr) and lr < 0:
@@ -104,6 +105,9 @@ class OnlineState:
         self.offline = offline.snapshot() if hasattr(offline, 'snapshot') else offline
         self.lr, self.update_stride = lr, update_stride
         self.lambda_l2, self.lambda_l1_b, self.lambda_l1_s = lambda_l2, lambda_l1_b, lambda_l1_s
+        if weighting_mode not in ('exponential', 'rejection_relative', 'cutoff') or gamma <= 0:
+            raise ValueError('invalid online weighting mode or gamma')
+        self.weighting_mode, self.gamma = weighting_mode, gamma
         self.bias_sparse_only = bias_sparse_only
         self.dW = torch.zeros_like(self.offline.W, dtype=torch.float32)
         self.dA = torch.zeros_like(self.offline.A, dtype=torch.float32)
@@ -132,7 +136,7 @@ class OnlineState:
     def snapshot(self, C0=None):
         return self._snapshot if C0 is None else self._snapshot.with_candidates(C0)
 
-    def update(self, round_idx, l_unit, target_logits, H, prefix, tokens, weights=None):
+    def update(self, round_idx, l_unit, target_logits, H, prefix, tokens, weights=None, first_rejection=None):
         if round_idx < 1 or round_idx <= self.last_round:
             raise ValueError('round_idx must increase and is one-based')
         self.last_round = round_idx
@@ -140,6 +144,8 @@ class OnlineState:
             return False
         # Permit a caller whose model loop uses no_grad or inference_mode.
         with torch.inference_mode(False), torch.enable_grad():
+            if weights is None:
+                weights = loss_weights(len(l_unit), l_unit.device, self.weighting_mode, self.gamma, first_rejection)
             return self._update(l_unit, target_logits, H, prefix, tokens, weights)
 
     def _update(self, l_unit, target_logits, H, prefix, tokens, weights):

@@ -94,3 +94,74 @@ def test_compact_union_cannot_silently_substitute_for_full_diagnostics():
     del block['diagnostics']
     with pytest.raises(ValueError, match='compact union'):
         DiagnosticAccumulator().add_block(block)
+
+
+@pytest.fixture
+def audited_sources(tmp_path):
+    import hashlib
+    from edraft.runtime import atomic_json, fingerprint
+    digest = lambda path: hashlib.sha256(path.read_bytes()).hexdigest()
+    traces = tmp_path / 'traces'
+    (traces / 'rank0').mkdir(parents=True)
+    path = traces / 'rank0' / 'accepted.pt'
+    path.write_bytes(b'accepted immutable trace')
+    identity = {'prompt': 'p1', 'projection_sha256': 'fixed'}
+    atomic_json(path.with_suffix('.pt.json'), {'identity': identity, 'sha256': digest(path)})
+    # A stale on-disk shard has no authority merely because it matches a glob.
+    (traces / 'rank0' / 'superseded.pt').write_bytes(b'not audited')
+    artifacts = {}
+    for name in ['h_proj.pt', 'token_features.pt']:
+        artifact = tmp_path / name
+        artifact.write_bytes(name.encode())
+        artifacts[name] = digest(artifact)
+    prompts = tmp_path / 'prompts.json'
+    prompts.write_text('{"prompts": []}')
+    source = {'path': str(path), 'sha256': digest(path), 'identity_sha256': fingerprint(identity)}
+    report = {'status': 'passed', 'scale': 'reference', 'shards': [str(path)], 'source_shards': [source],
+              'calibration': {'artifact_sha256': artifacts,
+                              'resolved_config': {'prompt_manifest': str(prompts)},
+                              'identity': {'prompt_manifest_sha256': digest(prompts)}}}
+    audit = tmp_path / 'm1_audit.json'
+    atomic_json(audit, report)
+    return audit, traces, path, report
+
+
+def test_diagnosis_uses_only_audited_sources_and_records_provenance(audited_sources):
+    from edraft.diagnose import audited_trace_sources
+    audit, traces, path, report = audited_sources
+    sources, provenance = audited_trace_sources(audit, 'reference', traces)
+    assert sources == report['source_shards']
+    assert [s['path'] for s in sources] == [str(path)]
+    assert len(provenance['audit_sha256']) == 64
+    assert len(provenance['source_set_sha256']) == 64
+
+
+def test_diagnosis_rejects_shard_and_sidecar_changed_together(audited_sources):
+    import hashlib
+    from edraft.diagnose import audited_trace_sources
+    audit, traces, path, report = audited_sources
+    path.write_bytes(b'new trace whose ordinary sidecar is internally valid')
+    side = json.loads(path.with_suffix('.pt.json').read_text())
+    side['sha256'] = hashlib.sha256(path.read_bytes()).hexdigest()
+    path.with_suffix('.pt.json').write_text(json.dumps(side))
+    with pytest.raises(RuntimeError, match='checksum changed'):
+        audited_trace_sources(audit, 'reference', traces)
+
+
+@pytest.mark.parametrize('change,error', [('duplicate', 'duplicate'), ('calibration', 'calibration artifact'),
+                                        ('prompts', 'Prompt manifest'), ('status', 'passed M1 audit')])
+def test_diagnosis_rejects_stale_or_duplicate_provenance(audited_sources, change, error):
+    from edraft.diagnose import audited_trace_sources
+    audit, traces, path, report = audited_sources
+    if change == 'duplicate':
+        report['source_shards'] *= 2
+        audit.write_text(json.dumps(report))
+    elif change == 'calibration':
+        (audit.parent / 'h_proj.pt').write_bytes(b'changed projection')
+    elif change == 'prompts':
+        (audit.parent / 'prompts.json').write_text('{"prompts": ["changed"]}')
+    else:
+        report['status'] = 'incomplete'
+        audit.write_text(json.dumps(report))
+    with pytest.raises(RuntimeError, match=error):
+        audited_trace_sources(audit, 'reference', traces)

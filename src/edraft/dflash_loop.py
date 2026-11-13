@@ -168,7 +168,8 @@ def _finish_round(record, *, snapshot, online_state, bigram, committed, on_block
     with timer.phase("online_update"):
         if online_state is not None:
             online_state.update(record["round_idx"], record["l_unit"], record["target_logits"],
-                                record["h"], record["prefix"], record["draft_tokens"])
+                                record["h"], record["prefix"], record["draft_tokens"],
+                                first_rejection=record["first_rejection_index"])
         if bigram is not None:
             bigram.update(record["prefix"], committed)
     if getattr(snapshot, "version", 0) != version:

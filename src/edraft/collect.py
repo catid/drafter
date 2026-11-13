@@ -497,7 +497,7 @@ def audit(args):
                 for job in planned_jobs(all_args, prompt_manifest)}
     totals = Counter()
     prompts = defaultdict(set)
-    generations, shards, head_checks, excluded = [], [], [], []
+    generations, shards, source_shards, head_checks, excluded = [], [], [], [], []
     seen = {}
     for manifest_path in sorted((args.output / "traces").glob("manifest-rank*.json")):
         manifest = json.loads(manifest_path.read_text())
@@ -539,6 +539,8 @@ def audit(args):
                     totals[f"primary_train_T={T}"] += gen["realized_length"]
             generations.append({k: v for k, v in gen.items() if k != "output_tokens"})
             shards.append(str(path))
+            source_shards.append({"path": str(path.resolve()), "sha256": sidecar["sha256"],
+                                  "identity_sha256": canonical_key})
     for path in args.output.glob("head_reconstruction-rank*.json"):
         head_checks.extend(row for row in json.loads(path.read_text()) if row["shard"] in shards)
     floors = {"train_tokens": 64 if args.scale == "smoke" else 500000 if args.scale == "reference" else 2000000,
@@ -570,6 +572,7 @@ def audit(args):
     report = {"scale": args.scale, "status": "passed" if all(requirements.values()) else "incomplete",
               "requirements": requirements, "floors": floors, "token_counts": dict(totals),
               "prompt_counts": {k: len(v) for k, v in prompts.items()}, "shards": shards,
+              "source_shards": source_shards,
               "generations": generations, "long_condition": long_condition, "head_reconstruction": head_checks,
               "excluded_shards": excluded, "calibration": calibration_record,
               "project_git_commit": git_commit()}

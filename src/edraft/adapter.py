@@ -200,10 +200,15 @@ def union_rest_grouped(scores, union_ids, target_union_probabilities, target_res
         # Stable complement through logsumexp over the actual unstored vocabulary.
         rest_mask = torch.ones(scores.shape[-1], dtype=torch.bool, device=scores.device)
         rest_mask[ids] = False
-        log_q_rest = torch.logsumexp(q_log[i, rest_mask], 0) if bool(rest_mask.any()) else scores.new_tensor(-torch.inf)
+        has_rest = bool(rest_mask.any())
+        log_q_rest = torch.logsumexp(q_log[i, rest_mask], 0) if has_rest else scores.new_tensor(0.)
         rest_p = torch.as_tensor(target_rest_mass[i], device=scores.device, dtype=torch.float32).detach()
+        if not has_rest:
+            if float(rest_p) > 2e-6:
+                raise ValueError('nonzero target rest mass is inconsistent with a full-vocabulary union')
+            rest_p = torch.zeros_like(rest_p)
         union_loss = torch.xlogy(p, p).sum() - (p * log_q_u).sum()
-        rest_loss = torch.where(rest_p > 0, torch.xlogy(rest_p, rest_p) - rest_p * log_q_rest.clamp_min(-1e30), rest_p * 0)
+        rest_loss = torch.where(rest_p > 0, torch.xlogy(rest_p, rest_p) - rest_p * log_q_rest, rest_p * 0)
         losses.append(union_loss + rest_loss)
     losses = torch.stack(losses)
     if weights is None:

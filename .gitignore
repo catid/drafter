@@ -8,6 +8,8 @@ artifacts/traces/
 artifacts/checkpoints/
 artifacts/*.pt
 artifacts/**/*.pt
+artifacts/**/*.parquet
+artifacts/m2_sparse_stats/
 artifacts/**/*.lock
 artifacts/*.lock
 *.tmp

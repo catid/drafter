@@ -65,6 +65,17 @@ def test_greedy_context_still_stores_full_soft_targets(live_record):
     assert all(bool((row > 0).all() and (row < 1).all()) for row in block["target_probs_union"])
 
 
+def test_full_vocabulary_union_has_exactly_zero_tail_despite_float_roundoff(live_record):
+    from edraft.adapter import union_rest_grouped
+    record, metadata, _ = live_record
+    block = compact_block(record, metadata)  # Defaults cover all 16 toy IDs.
+    assert block["target_rest_mass"].count_nonzero() == 0
+    scores = record["target_logits"].float()
+    loss = union_rest_grouped(scores, block["union_ids"], block["target_probs_union"],
+                             block["target_rest_mass"])
+    assert abs(float(loss)) < 2e-6
+
+
 def test_atomic_shard_roundtrip_safe_load_and_live_full_gap_data(live_record, tmp_path):
     record, metadata, _ = live_record
     compact = compact_block(record, metadata, M_draft=2, M_target=1, retain_live_full=True)

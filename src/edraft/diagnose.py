@@ -315,9 +315,60 @@ def smoke_diagnostic(args):
     return accumulator.report()
 
 
+def _file_sha256(path):
+    digest = hashlib.sha256()
+    with Path(path).open('rb') as stream:
+        while chunk := stream.read(8 * 1024 * 1024):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def audited_trace_sources(audit_path, scale, trace_dir=None):
+    """Consume the exact audited shard set, never a directory-wide glob.
+
+    The audit's frozen checksums prevent a sidecar and shard changed together
+    after acceptance from entering diagnostics. Duplicate/superseded jobs that
+    remain on disk are deliberately outside this source set.
+    """
+    audit_path = Path(audit_path)
+    report = json.loads(audit_path.read_text())
+    if report.get('status') != 'passed' or report.get('scale') != scale:
+        raise RuntimeError('M1b requires a passed M1 audit at the requested scale')
+    sources = report.get('source_shards')
+    if not sources:
+        raise RuntimeError('M1 audit lacks frozen source checksums; rerun collect --stage audit')
+    paths = [str(Path(row['path']).resolve()) for row in sources]
+    if len(paths) != len(set(paths)) or set(paths) != {str(Path(p).resolve()) for p in report['shards']}:
+        raise RuntimeError('M1 audit has duplicate or inconsistent accepted source paths')
+    seen_identities = set()
+    for source, path_text in zip(sources, paths):
+        path = Path(path_text)
+        if trace_dir is not None and not path.is_relative_to(Path(trace_dir).resolve()):
+            raise RuntimeError('Audited source lies outside the selected trace directory')
+        sidecar = json.loads(path.with_suffix('.pt.json').read_text())
+        identity_hash = fingerprint(sidecar['identity'])
+        if identity_hash in seen_identities or identity_hash != source['identity_sha256']:
+            raise RuntimeError('Audited source identity changed or is duplicated')
+        seen_identities.add(identity_hash)
+        if sidecar['sha256'] != source['sha256'] or _file_sha256(path) != source['sha256']:
+            raise RuntimeError(f'Audited trace checksum changed: {path}')
+    calibration = report['calibration']
+    for name, expected in calibration['artifact_sha256'].items():
+        if _file_sha256(audit_path.parent / name) != expected:
+            raise RuntimeError(f'Frozen calibration artifact changed after audit: {name}')
+    prompt_manifest = Path(calibration['resolved_config']['prompt_manifest'])
+    if _file_sha256(prompt_manifest) != calibration['identity']['prompt_manifest_sha256']:
+        raise RuntimeError('Prompt manifest changed after the accepted M1 audit')
+    return sources, {'audit_path': str(audit_path.resolve()), 'audit_sha256': _file_sha256(audit_path),
+                     'source_set_sha256': fingerprint(sources),
+                     'frozen_artifact_sha256': calibration['artifact_sha256'],
+                     'prompt_manifest_sha256': calibration['identity']['prompt_manifest_sha256']}
+
+
 def main(argv=None):
     parser = common_parser(__doc__)
     parser.add_argument('--trace_dir', type=Path)
+    parser.add_argument('--m1_audit', type=Path)
     parser.add_argument('--context_edges', type=int, nargs='+', default=list(DEFAULT_CONTEXT_EDGES))
     parser.add_argument('--outlier_threshold', type=float, default=5.)
     args = parse_config(parser, argv)
@@ -326,14 +377,15 @@ def main(argv=None):
     if args.scale == 'smoke':
         report = smoke_diagnostic(args)
         sources = []
+        audit_provenance = None
     else:
         from .traces import read_shard
         from .runtime import preflight
         if args.trace_dir is None:
             parser.error('Reference/full diagnosis requires --trace_dir from the completed M1a collection')
-        paths = sorted(args.trace_dir.glob('rank*/*.pt'))
-        if not paths:
-            raise RuntimeError('No trace shards found; M1a must complete before M1b')
+        accepted, audit_provenance = audited_trace_sources(
+            args.m1_audit or args.output / 'm1_audit.json', args.scale, args.trace_dir)
+        paths = [Path(source['path']) for source in accepted]
         preflight(args, 0)
         accumulator = DiagnosticAccumulator(args.context_edges, args.outlier_threshold, args.seed)
         sources = []
@@ -357,7 +409,8 @@ def main(argv=None):
             sources.append({'path': str(path), 'sha256': sidecar['sha256']})
         report = accumulator.report()
     report.update({'label': 'synthetic' if args.scale == 'smoke' else args.scale, 'scale': args.scale,
-                   'status': 'measured', 'run': record, 'source_shards': sources})
+                   'status': 'measured', 'run': record, 'source_shards': sources,
+                   'audit_provenance': audit_provenance})
     path = args.output / f'diagnostic_{args.scale}.json'
     atomic_json(path, report)
     identity = {'model_pair': [args.target, args.drafter], 'prompt': fingerprint(sources),

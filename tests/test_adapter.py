@@ -260,3 +260,12 @@ def test_controlled_shared_free_energy_small_step_descent_with_line_search():
             accepted = True
             break
     assert accepted
+
+
+def test_grouped_full_union_has_no_numerical_tail():
+    logits = torch.tensor([[1., 2., 3.]], requires_grad=True)
+    p = logits.detach().softmax(-1)[0]
+    loss = union_rest_grouped(logits, [torch.arange(3)], [p], torch.tensor([1e-8]))
+    assert abs(float(loss.detach())) < 1e-6
+    with pytest.raises(ValueError, match='full-vocabulary union'):
+        union_rest_grouped(logits, [torch.arange(3)], [p], torch.tensor([.1]))

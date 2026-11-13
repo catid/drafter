@@ -104,7 +104,8 @@ def record_run(args, name):
     config = resolved_config(args)
     record = {'scale': args.scale, 'seed': args.seed, 'config': config,
               **source_provenance(), 'started_at_unix': time.time(),
-              'rank': int(os.environ.get('RANK', 0)), 'pid': os.getpid()}
+              'rank': int(os.environ.get('RANK', 0)), 'pid': os.getpid(),
+              'visible_devices': os.environ.get('CUDA_VISIBLE_DEVICES', 'unset (all visible)')}
     path = args.output / 'runs' / f'{name}-{fingerprint(config)[:16]}-rank{record["rank"]}.json'
     atomic_json(path, record)
     return record

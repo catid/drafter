@@ -105,7 +105,10 @@ def compact_block(record: Mapping, metadata: Mapping, M_draft: int = 256, M_targ
         target_union.append(p.cpu())
         # FP64 sum avoids losing a small tail while accumulating compact FP32
         # entries. Tiny negative rounding errors are clipped and validated.
-        rest.append((1 - p.double().sum()).clamp_min(0).float().cpu())
+        # A full-vocabulary union has no tail category. FP32 normalization
+        # roundoff must not invent positive target mass on an empty q support.
+        rest.append(torch.tensor(0., dtype=torch.float32) if len(ids) == V
+                    else (1 - p.double().sum()).clamp_min(0).float().cpu())
     result = _cpu_tree(dict(metadata))
     result.update({key: _cpu_tree(record[key]) for key in _COPY_FIELDS})
     result.update({key: _cpu_tree(record[key]) for key in _OPTIONAL_FIELDS if key in record})
