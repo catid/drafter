@@ -1,0 +1,649 @@
+{
+  "prompt_id": "m0-009",
+  "prompt_text": "Describe the water cycle for a primary school student.",
+  "first_output_divergence": 113,
+  "round_idx": 51,
+  "logical_slot": 1,
+  "common_prefix_length": 135,
+  "conditioning_prefix_verified_equal": true,
+  "recorded_local_token": 12987,
+  "recorded_target_token": 11263,
+  "recorded_local_token_reproduced": true,
+  "recorded_target_token_reproduced": true,
+  "block": {
+    "argmax": 12987,
+    "decoded_argmax": "water",
+    "top1_minus_top2": 0.25,
+    "number_tied_for_max": 1,
+    "top5": [
+      {
+        "id": 12987,
+        "text": "water",
+        "logit": 36.25
+      },
+      {
+        "id": 11263,
+        "text": "dro",
+        "logit": 36.0
+      },
+      {
+        "id": 90512,
+        "text": "drops",
+        "logit": 34.5
+      },
+      {
+        "id": 12361,
+        "text": "cloud",
+        "logit": 31.75
+      },
+      {
+        "id": 53637,
+        "text": "liquid",
+        "logit": 30.0
+      }
+    ],
+    "selected_logits": {
+      "12987": 36.25,
+      "11263": 36.0
+    }
+  },
+  "target_sequential": {
+    "argmax": 11263,
+    "decoded_argmax": "dro",
+    "top1_minus_top2": 0.0,
+    "number_tied_for_max": 2,
+    "top5": [
+      {
+        "id": 11263,
+        "text": "dro",
+        "logit": 36.25
+      },
+      {
+        "id": 12987,
+        "text": "water",
+        "logit": 36.25
+      },
+      {
+        "id": 90512,
+        "text": "drops",
+        "logit": 34.75
+      },
+      {
+        "id": 12361,
+        "text": "cloud",
+        "logit": 31.75
+      },
+      {
+        "id": 53637,
+        "text": "liquid",
+        "logit": 30.125
+      }
+    ],
+    "selected_logits": {
+      "12987": 36.25,
+      "11263": 36.25
+    }
+  },
+  "fresh_full_prefix": {
+    "argmax": 11263,
+    "decoded_argmax": "dro",
+    "top1_minus_top2": 0.0,
+    "number_tied_for_max": 2,
+    "top5": [
+      {
+        "id": 11263,
+        "text": "dro",
+        "logit": 36.25
+      },
+      {
+        "id": 12987,
+        "text": "water",
+        "logit": 36.25
+      },
+      {
+        "id": 90512,
+        "text": "drops",
+        "logit": 34.75
+      },
+      {
+        "id": 12361,
+        "text": "cloud",
+        "logit": 31.625
+      },
+      {
+        "id": 53637,
+        "text": "liquid",
+        "logit": 30.0
+      }
+    ],
+    "selected_logits": {
+      "12987": 36.25,
+      "11263": 36.25
+    }
+  },
+  "single_query_same_prior_cache": {
+    "argmax": 12987,
+    "decoded_argmax": "water",
+    "top1_minus_top2": 0.25,
+    "number_tied_for_max": 1,
+    "top5": [
+      {
+        "id": 12987,
+        "text": "water",
+        "logit": 36.25
+      },
+      {
+        "id": 11263,
+        "text": "dro",
+        "logit": 36.0
+      },
+      {
+        "id": 90512,
+        "text": "drops",
+        "logit": 34.75
+      },
+      {
+        "id": 12361,
+        "text": "cloud",
+        "logit": 31.75
+      },
+      {
+        "id": 53637,
+        "text": "liquid",
+        "logit": 30.0
+      }
+    ],
+    "selected_logits": {
+      "12987": 36.25,
+      "11263": 36.0
+    }
+  },
+  "fp32_head_block": {
+    "argmax": 12987,
+    "decoded_argmax": "water",
+    "top1_minus_top2": 0.15926361083984375,
+    "number_tied_for_max": 1,
+    "top5": [
+      {
+        "id": 12987,
+        "text": "water",
+        "logit": 36.220458984375
+      },
+      {
+        "id": 11263,
+        "text": "dro",
+        "logit": 36.061195373535156
+      },
+      {
+        "id": 90512,
+        "text": "drops",
+        "logit": 34.53514099121094
+      },
+      {
+        "id": 12361,
+        "text": "cloud",
+        "logit": 31.785478591918945
+      },
+      {
+        "id": 53637,
+        "text": "liquid",
+        "logit": 30.0292911529541
+      }
+    ],
+    "selected_logits": {
+      "12987": 36.220458984375,
+      "11263": 36.061195373535156
+    }
+  },
+  "fp32_head_target_sequential": {
+    "argmax": 11263,
+    "decoded_argmax": "dro",
+    "top1_minus_top2": 0.07472991943359375,
+    "number_tied_for_max": 1,
+    "top5": [
+      {
+        "id": 11263,
+        "text": "dro",
+        "logit": 36.23814010620117
+      },
+      {
+        "id": 12987,
+        "text": "water",
+        "logit": 36.16341018676758
+      },
+      {
+        "id": 90512,
+        "text": "drops",
+        "logit": 34.755130767822266
+      },
+      {
+        "id": 12361,
+        "text": "cloud",
+        "logit": 31.79935646057129
+      },
+      {
+        "id": 53637,
+        "text": "liquid",
+        "logit": 30.112083435058594
+      }
+    ],
+    "selected_logits": {
+      "12987": 36.16341018676758,
+      "11263": 36.23814010620117
+    }
+  },
+  "fp32_head_single_query": {
+    "argmax": 12987,
+    "decoded_argmax": "water",
+    "top1_minus_top2": 0.1214141845703125,
+    "number_tied_for_max": 1,
+    "top5": [
+      {
+        "id": 12987,
+        "text": "water",
+        "logit": 36.22835159301758
+      },
+      {
+        "id": 11263,
+        "text": "dro",
+        "logit": 36.106937408447266
+      },
+      {
+        "id": 90512,
+        "text": "drops",
+        "logit": 34.63462829589844
+      },
+      {
+        "id": 12361,
+        "text": "cloud",
+        "logit": 31.72612953186035
+      },
+      {
+        "id": 53637,
+        "text": "liquid",
+        "logit": 29.981182098388672
+      }
+    ],
+    "selected_logits": {
+      "12987": 36.22835159301758,
+      "11263": 36.106937408447266
+    }
+  },
+  "block_vs_sequential_logits": {
+    "max_abs": 0.3125,
+    "mean_abs": 0.04019405320286751,
+    "rms": 0.054295655339956284,
+    "argmax_equal": false
+  },
+  "block_vs_single_query_same_prior_logits": {
+    "max_abs": 0.25,
+    "mean_abs": 0.039458055049180984,
+    "rms": 0.0535358190536499,
+    "argmax_equal": true
+  },
+  "block_vs_fresh_logits": {
+    "max_abs": 0.265625,
+    "mean_abs": 0.04214615747332573,
+    "rms": 0.05769810453057289,
+    "argmax_equal": false
+  },
+  "block_head_bf16_vs_fp32": {
+    "max_abs": 0.06249809265136719,
+    "mean_abs": 0.011140424758195877,
+    "rms": 0.01482817716896534,
+    "argmax_equal": true
+  },
+  "future_tokens_perturbation": {
+    "max_abs": 0.0,
+    "mean_abs": 0.0,
+    "rms": 0.0,
+    "argmax_equal": true
+  },
+  "rolled_cache_vs_sequential_prior": {
+    "lengths_equal": true,
+    "length": 133,
+    "max_key_abs_by_layer": [
+      0.0,
+      0.375,
+      0.25,
+      0.125,
+      0.5,
+      0.5,
+      0.25,
+      0.125,
+      0.25,
+      0.15625,
+      0.375,
+      0.25,
+      0.25,
+      0.1875,
+      0.25,
+      0.25,
+      0.125,
+      0.1875,
+      0.25,
+      0.15625,
+      0.1640625,
+      0.1875,
+      0.21875,
+      0.25,
+      0.15625,
+      0.1875,
+      0.129150390625,
+      0.15625,
+      0.15625,
+      0.1875,
+      0.1875,
+      0.1875,
+      0.15625,
+      0.21875,
+      0.2109375,
+      0.3125
+    ],
+    "max_value_abs_by_layer": [
+      0.0,
+      0.001953125,
+      0.001953125,
+      0.00390625,
+      0.005859375,
+      0.00390625,
+      0.0078125,
+      0.009765625,
+      0.015625,
+      0.021484375,
+      0.044921875,
+      0.03125,
+      0.021484375,
+      0.03125,
+      0.0625,
+      0.1875,
+      0.15625,
+      0.25,
+      0.1875,
+      0.064453125,
+      0.0703125,
+      0.08203125,
+      0.140625,
+      0.09130859375,
+      0.09375,
+      0.1640625,
+      0.10546875,
+      0.109375,
+      0.125,
+      0.25,
+      0.25,
+      0.5,
+      0.375,
+      0.625,
+      0.625,
+      0.94140625
+    ],
+    "max_key_abs": 0.5,
+    "max_value_abs": 0.94140625
+  },
+  "rollback_lengths": [
+    {
+      "round": 1,
+      "length": 27,
+      "expected": 27
+    },
+    {
+      "round": 2,
+      "length": 29,
+      "expected": 29
+    },
+    {
+      "round": 3,
+      "length": 31,
+      "expected": 31
+    },
+    {
+      "round": 4,
+      "length": 32,
+      "expected": 32
+    },
+    {
+      "round": 5,
+      "length": 34,
+      "expected": 34
+    },
+    {
+      "round": 6,
+      "length": 35,
+      "expected": 35
+    },
+    {
+      "round": 7,
+      "length": 39,
+      "expected": 39
+    },
+    {
+      "round": 8,
+      "length": 43,
+      "expected": 43
+    },
+    {
+      "round": 9,
+      "length": 44,
+      "expected": 44
+    },
+    {
+      "round": 10,
+      "length": 51,
+      "expected": 51
+    },
+    {
+      "round": 11,
+      "length": 53,
+      "expected": 53
+    },
+    {
+      "round": 12,
+      "length": 55,
+      "expected": 55
+    },
+    {
+      "round": 13,
+      "length": 58,
+      "expected": 58
+    },
+    {
+      "round": 14,
+      "length": 59,
+      "expected": 59
+    },
+    {
+      "round": 15,
+      "length": 61,
+      "expected": 61
+    },
+    {
+      "round": 16,
+      "length": 62,
+      "expected": 62
+    },
+    {
+      "round": 17,
+      "length": 65,
+      "expected": 65
+    },
+    {
+      "round": 18,
+      "length": 66,
+      "expected": 66
+    },
+    {
+      "round": 19,
+      "length": 69,
+      "expected": 69
+    },
+    {
+      "round": 20,
+      "length": 71,
+      "expected": 71
+    },
+    {
+      "round": 21,
+      "length": 74,
+      "expected": 74
+    },
+    {
+      "round": 22,
+      "length": 76,
+      "expected": 76
+    },
+    {
+      "round": 23,
+      "length": 78,
+      "expected": 78
+    },
+    {
+      "round": 24,
+      "length": 80,
+      "expected": 80
+    },
+    {
+      "round": 25,
+      "length": 81,
+      "expected": 81
+    },
+    {
+      "round": 26,
+      "length": 82,
+      "expected": 82
+    },
+    {
+      "round": 27,
+      "length": 83,
+      "expected": 83
+    },
+    {
+      "round": 28,
+      "length": 84,
+      "expected": 84
+    },
+    {
+      "round": 29,
+      "length": 88,
+      "expected": 88
+    },
+    {
+      "round": 30,
+      "length": 90,
+      "expected": 90
+    },
+    {
+      "round": 31,
+      "length": 91,
+      "expected": 91
+    },
+    {
+      "round": 32,
+      "length": 92,
+      "expected": 92
+    },
+    {
+      "round": 33,
+      "length": 94,
+      "expected": 94
+    },
+    {
+      "round": 34,
+      "length": 95,
+      "expected": 95
+    },
+    {
+      "round": 35,
+      "length": 98,
+      "expected": 98
+    },
+    {
+      "round": 36,
+      "length": 99,
+      "expected": 99
+    },
+    {
+      "round": 37,
+      "length": 102,
+      "expected": 102
+    },
+    {
+      "round": 38,
+      "length": 103,
+      "expected": 103
+    },
+    {
+      "round": 39,
+      "length": 105,
+      "expected": 105
+    },
+    {
+      "round": 40,
+      "length": 106,
+      "expected": 106
+    },
+    {
+      "round": 41,
+      "length": 108,
+      "expected": 108
+    },
+    {
+      "round": 42,
+      "length": 109,
+      "expected": 109
+    },
+    {
+      "round": 43,
+      "length": 116,
+      "expected": 116
+    },
+    {
+      "round": 44,
+      "length": 119,
+      "expected": 119
+    },
+    {
+      "round": 45,
+      "length": 121,
+      "expected": 121
+    },
+    {
+      "round": 46,
+      "length": 123,
+      "expected": 123
+    },
+    {
+      "round": 47,
+      "length": 126,
+      "expected": 126
+    },
+    {
+      "round": 48,
+      "length": 128,
+      "expected": 128
+    },
+    {
+      "round": 49,
+      "length": 131,
+      "expected": 131
+    },
+    {
+      "round": 50,
+      "length": 133,
+      "expected": 133
+    },
+    {
+      "round": 51,
+      "length": 135,
+      "expected": 135
+    }
+  ],
+  "all_rollback_lengths_exact": true,
+  "target_attention": {
+    "implementation": "sdpa",
+    "sliding_window": null,
+    "causal": true,
+    "padded_input": false
+  },
+  "diagnosis": "Same-prefix BF16 numerical/tie sensitivity; future-token masking and exact rollback lengths verified."
+}

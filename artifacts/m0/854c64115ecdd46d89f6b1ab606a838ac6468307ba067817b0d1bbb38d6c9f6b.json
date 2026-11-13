@@ -1,0 +1,6372 @@
+{
+  "scale": "reference",
+  "identity": {
+    "model_pair": [
+      "Qwen/Qwen3-8B",
+      "z-lab/Qwen3-8B-DFlash-b16"
+    ],
+    "prompt": "m0-005",
+    "condition": "model_card_nonthinking",
+    "seed": 2031,
+    "temperature": 0.7,
+    "verification_rule": "ratio",
+    "proposal_mode": "adapter_disabled",
+    "checkpoint": [
+      "b968826d9c46dd6066d109eabc6255188de91218",
+      "9b41424b7109f9c5413454f481b09a82b85333f4"
+    ],
+    "adapter_version": 0,
+    "sampling_warp_config": {
+      "top_k": 20,
+      "top_p": 0.8,
+      "min_p": 0.0
+    },
+    "max_new_tokens": 128,
+    "enable_thinking": false,
+    "dflash_commit": "07ebd93db9f472af339b644bb70221ad8428328a",
+    "project_git_commit": "uncommitted"
+  },
+  "prompt_text": "Write a short story about a gardener finding a mysterious key.",
+  "upstream_local": {
+    "mismatched_tokens": 0,
+    "compared_tokens": 128,
+    "sequence_equal": true,
+    "first_mismatch": null
+  },
+  "upstream_tokens": [
+    641,
+    279,
+    11340,
+    14126,
+    315,
+    64349,
+    42266,
+    11,
+    1380,
+    279,
+    33828,
+    891,
+    10812,
+    14371,
+    57266,
+    7343,
+    315,
+    2310,
+    323,
+    279,
+    3720,
+    572,
+    2677,
+    42227,
+    291,
+    448,
+    279,
+    40366,
+    315,
+    14211,
+    17765,
+    80360,
+    11,
+    1052,
+    12163,
+    264,
+    21881,
+    798,
+    6941,
+    85656,
+    13,
+    5301,
+    6078,
+    11,
+    1618,
+    36488,
+    323,
+    9104,
+    291,
+    11,
+    1033,
+    438,
+    11285,
+    448,
+    279,
+    17171,
+    438,
+    807,
+    1033,
+    448,
+    279,
+    36290,
+    315,
+    279,
+    15584,
+    13,
+    7209,
+    6556,
+    11,
+    1573,
+    279,
+    7015,
+    1030,
+    7225,
+    40382,
+    11,
+    85656,
+    1035,
+    4227,
+    1526,
+    279,
+    14126,
+    11,
+    259,
+    2459,
+    311,
+    279,
+    35436,
+    429,
+    31293,
+    279,
+    6290,
+    9334,
+    323,
+    279,
+    10415,
+    315,
+    279,
+    24824,
+    40931,
+    382,
+    3966,
+    41854,
+    41674,
+    6556,
+    11,
+    438,
+    279,
+    10901,
+    83752,
+    304,
+    279,
+    9956,
+    323,
+    279,
+    3720,
+    11691,
+    279,
+    11222,
+    315,
+    2297,
+    11,
+    85656,
+    1730,
+    5561,
+    304,
+    279,
+    2310
+  ],
+  "local_tokens": [
+    641,
+    279,
+    11340,
+    14126,
+    315,
+    64349,
+    42266,
+    11,
+    1380,
+    279,
+    33828,
+    891,
+    10812,
+    14371,
+    57266,
+    7343,
+    315,
+    2310,
+    323,
+    279,
+    3720,
+    572,
+    2677,
+    42227,
+    291,
+    448,
+    279,
+    40366,
+    315,
+    14211,
+    17765,
+    80360,
+    11,
+    1052,
+    12163,
+    264,
+    21881,
+    798,
+    6941,
+    85656,
+    13,
+    5301,
+    6078,
+    11,
+    1618,
+    36488,
+    323,
+    9104,
+    291,
+    11,
+    1033,
+    438,
+    11285,
+    448,
+    279,
+    17171,
+    438,
+    807,
+    1033,
+    448,
+    279,
+    36290,
+    315,
+    279,
+    15584,
+    13,
+    7209,
+    6556,
+    11,
+    1573,
+    279,
+    7015,
+    1030,
+    7225,
+    40382,
+    11,
+    85656,
+    1035,
+    4227,
+    1526,
+    279,
+    14126,
+    11,
+    259,
+    2459,
+    311,
+    279,
+    35436,
+    429,
+    31293,
+    279,
+    6290,
+    9334,
+    323,
+    279,
+    10415,
+    315,
+    279,
+    24824,
+    40931,
+    382,
+    3966,
+    41854,
+    41674,
+    6556,
+    11,
+    438,
+    279,
+    10901,
+    83752,
+    304,
+    279,
+    9956,
+    323,
+    279,
+    3720,
+    11691,
+    279,
+    11222,
+    315,
+    2297,
+    11,
+    85656,
+    1730,
+    5561,
+    304,
+    279,
+    2310
+  ],
+  "blocks": [
+    {
+      "round_idx": 1,
+      "absolute_output_offset": 1,
+      "input_context_length": 26,
+      "verified_prefix_tail": [
+        271,
+        151668,
+        271,
+        641
+      ],
+      "physical_to_logical": {
+        "anchor_physical_index": 0,
+        "logical_to_physical": [
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11,
+          12,
+          13,
+          14,
+          15
+        ]
+      },
+      "draft_tokens": [
+        279,
+        11340,
+        14126,
+        315,
+        1948,
+        64349,
+        50415,
+        11,
+        1948,
+        279,
+        34131,
+        34131,
+        1052,
+        279,
+        12163
+      ],
+      "draft_lm_head": {
+        "artifact_id": "/home/catid/.cache/huggingface/hub/models--Qwen--Qwen3-8B/snapshots/b968826d9c46dd6066d109eabc6255188de91218",
+        "revision": "b968826d9c46dd6066d109eabc6255188de91218",
+        "module": "Qwen3ForCausalLM.lm_head",
+        "hook": "DFlashDraftModel.norm output, logical slots [1:]",
+        "shape": [
+          151936,
+          4096
+        ],
+        "dtype": "torch.bfloat16",
+        "bias": false,
+        "tied_weights": false,
+        "output_multiplier": 1.0,
+        "final_logit_softcapping": null
+      },
+      "accepted_length": 4,
+      "first_rejection_index": 4,
+      "replacement_token": 64349,
+      "bonus_token": null,
+      "decisions": [
+        true,
+        true,
+        true,
+        true,
+        false
+      ],
+      "proposal_token_probs": [
+        1.0,
+        1.0,
+        0.3741215169429779,
+        1.0,
+        1.0
+      ],
+      "target_token_probs": [
+        1.0,
+        1.0,
+        0.5265853404998779,
+        1.0,
+        0.0
+      ],
+      "adapter_version": 0,
+      "proposal_mode": "plain_dflash",
+      "verification_rule": "ratio",
+      "collection_temperature": 0.7,
+      "loss_temperature": 1.0,
+      "sampling_warp_config": {
+        "top_k": 20,
+        "top_p": 0.8,
+        "min_p": 0.0
+      },
+      "off_policy_teacher_positions": [
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14
+      ],
+      "target_cache_length_after_rollback": 30,
+      "committed_tokens": [
+        279,
+        11340,
+        14126,
+        315,
+        64349
+      ],
+      "next_adapter_version": 0
+    },
+    {
+      "round_idx": 2,
+      "absolute_output_offset": 6,
+      "input_context_length": 31,
+      "verified_prefix_tail": [
+        11340,
+        14126,
+        315,
+        64349
+      ],
+      "physical_to_logical": {
+        "anchor_physical_index": 0,
+        "logical_to_physical": [
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11,
+          12,
+          13,
+          14,
+          15
+        ]
+      },
+      "draft_tokens": [
+        6660,
+        11,
+        1380,
+        1948,
+        279,
+        34131,
+        31293,
+        34855,
+        279,
+        88,
+        323,
+        323,
+        11,
+        264,
+        264
+      ],
+      "draft_lm_head": {
+        "artifact_id": "/home/catid/.cache/huggingface/hub/models--Qwen--Qwen3-8B/snapshots/b968826d9c46dd6066d109eabc6255188de91218",
+        "revision": "b968826d9c46dd6066d109eabc6255188de91218",
+        "module": "Qwen3ForCausalLM.lm_head",
+        "hook": "DFlashDraftModel.norm output, logical slots [1:]",
+        "shape": [
+          151936,
+          4096
+        ],
+        "dtype": "torch.bfloat16",
+        "bias": false,
+        "tied_weights": false,
+        "output_multiplier": 1.0,
+        "final_logit_softcapping": null
+      },
+      "accepted_length": 0,
+      "first_rejection_index": 0,
+      "replacement_token": 42266,
+      "bonus_token": null,
+      "decisions": [
+        false
+      ],
+      "proposal_token_probs": [
+        0.2251189649105072
+      ],
+      "target_token_probs": [
+        0.0
+      ],
+      "adapter_version": 0,
+      "proposal_mode": "plain_dflash",
+      "verification_rule": "ratio",
+      "collection_temperature": 0.7,
+      "loss_temperature": 1.0,
+      "sampling_warp_config": {
+        "top_k": 20,
+        "top_p": 0.8,
+        "min_p": 0.0
+      },
+      "off_policy_teacher_positions": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14
+      ],
+      "target_cache_length_after_rollback": 31,
+      "committed_tokens": [
+        42266
+      ],
+      "next_adapter_version": 0
+    },
+    {
+      "round_idx": 3,
+      "absolute_output_offset": 7,
+      "input_context_length": 32,
+      "verified_prefix_tail": [
+        14126,
+        315,
+        64349,
+        42266
+      ],
+      "physical_to_logical": {
+        "anchor_physical_index": 0,
+        "logical_to_physical": [
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11,
+          12,
+          13,
+          14,
+          15
+        ]
+      },
+      "draft_tokens": [
+        11,
+        1380,
+        1948,
+        12408,
+        57266,
+        23594,
+        291,
+        279,
+        323,
+        11,
+        323,
+        12163,
+        11,
+        11,
+        1052
+      ],
+      "draft_lm_head": {
+        "artifact_id": "/home/catid/.cache/huggingface/hub/models--Qwen--Qwen3-8B/snapshots/b968826d9c46dd6066d109eabc6255188de91218",
+        "revision": "b968826d9c46dd6066d109eabc6255188de91218",
+        "module": "Qwen3ForCausalLM.lm_head",
+        "hook": "DFlashDraftModel.norm output, logical slots [1:]",
+        "shape": [
+          151936,
+          4096
+        ],
+        "dtype": "torch.bfloat16",
+        "bias": false,
+        "tied_weights": false,
+        "output_multiplier": 1.0,
+        "final_logit_softcapping": null
+      },
+      "accepted_length": 2,
+      "first_rejection_index": 2,
+      "replacement_token": 279,
+      "bonus_token": null,
+      "decisions": [
+        true,
+        true,
+        false
+      ],
+      "proposal_token_probs": [
+        1.0,
+        1.0,
+        0.22270014882087708
+      ],
+      "target_token_probs": [
+        1.0,
+        0.7772998809814453,
+        0.0
+      ],
+      "adapter_version": 0,
+      "proposal_mode": "plain_dflash",
+      "verification_rule": "ratio",
+      "collection_temperature": 0.7,
+      "loss_temperature": 1.0,
+      "sampling_warp_config": {
+        "top_k": 20,
+        "top_p": 0.8,
+        "min_p": 0.0
+      },
+      "off_policy_teacher_positions": [
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14
+      ],
+      "target_cache_length_after_rollback": 34,
+      "committed_tokens": [
+        11,
+        1380,
+        279
+      ],
+      "next_adapter_version": 0
+    },
+    {
+      "round_idx": 4,
+      "absolute_output_offset": 10,
+      "input_context_length": 35,
+      "verified_prefix_tail": [
+        42266,
+        11,
+        1380,
+        279
+      ],
+      "physical_to_logical": {
+        "anchor_physical_index": 0,
+        "logical_to_physical": [
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11,
+          12,
+          13,
+          14,
+          15
+        ]
+      },
+      "draft_tokens": [
+        3720,
+        57266,
+        2061,
+        323,
+        323,
+        323,
+        323,
+        279,
+        323,
+        11,
+        279,
+        12163,
+        2310,
+        1052,
+        11
+      ],
+      "draft_lm_head": {
+        "artifact_id": "/home/catid/.cache/huggingface/hub/models--Qwen--Qwen3-8B/snapshots/b968826d9c46dd6066d109eabc6255188de91218",
+        "revision": "b968826d9c46dd6066d109eabc6255188de91218",
+        "module": "Qwen3ForCausalLM.lm_head",
+        "hook": "DFlashDraftModel.norm output, logical slots [1:]",
+        "shape": [
+          151936,
+          4096
+        ],
+        "dtype": "torch.bfloat16",
+        "bias": false,
+        "tied_weights": false,
+        "output_multiplier": 1.0,
+        "final_logit_softcapping": null
+      },
+      "accepted_length": 0,
+      "first_rejection_index": 0,
+      "replacement_token": 33828,
+      "bonus_token": null,
+      "decisions": [
+        false
+      ],
+      "proposal_token_probs": [
+        0.2591693103313446
+      ],
+      "target_token_probs": [
+        0.0
+      ],
+      "adapter_version": 0,
+      "proposal_mode": "plain_dflash",
+      "verification_rule": "ratio",
+      "collection_temperature": 0.7,
+      "loss_temperature": 1.0,
+      "sampling_warp_config": {
+        "top_k": 20,
+        "top_p": 0.8,
+        "min_p": 0.0
+      },
+      "off_policy_teacher_positions": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14
+      ],
+      "target_cache_length_after_rollback": 35,
+      "committed_tokens": [
+        33828
+      ],
+      "next_adapter_version": 0
+    },
+    {
+      "round_idx": 5,
+      "absolute_output_offset": 11,
+      "input_context_length": 36,
+      "verified_prefix_tail": [
+        11,
+        1380,
+        279,
+        33828
+      ],
+      "physical_to_logical": {
+        "anchor_physical_index": 0,
+        "logical_to_physical": [
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11,
+          12,
+          13,
+          14,
+          15
+        ]
+      },
+      "draft_tokens": [
+        891,
+        550,
+        83752,
+        291,
+        1526,
+        279,
+        323,
+        279,
+        7015,
+        11,
+        279,
+        11,
+        2310,
+        264,
+        11
+      ],
+      "draft_lm_head": {
+        "artifact_id": "/home/catid/.cache/huggingface/hub/models--Qwen--Qwen3-8B/snapshots/b968826d9c46dd6066d109eabc6255188de91218",
+        "revision": "b968826d9c46dd6066d109eabc6255188de91218",
+        "module": "Qwen3ForCausalLM.lm_head",
+        "hook": "DFlashDraftModel.norm output, logical slots [1:]",
+        "shape": [
+          151936,
+          4096
+        ],
+        "dtype": "torch.bfloat16",
+        "bias": false,
+        "tied_weights": false,
+        "output_multiplier": 1.0,
+        "final_logit_softcapping": null
+      },
+      "accepted_length": 1,
+      "first_rejection_index": 1,
+      "replacement_token": 10812,
+      "bonus_token": null,
+      "decisions": [
+        true,
+        false
+      ],
+      "proposal_token_probs": [
+        1.0,
+        0.4214300811290741
+      ],
+      "target_token_probs": [
+        1.0,
+        0.0
+      ],
+      "adapter_version": 0,
+      "proposal_mode": "plain_dflash",
+      "verification_rule": "ratio",
+      "collection_temperature": 0.7,
+      "loss_temperature": 1.0,
+      "sampling_warp_config": {
+        "top_k": 20,
+        "top_p": 0.8,
+        "min_p": 0.0
+      },
+      "off_policy_teacher_positions": [
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14
+      ],
+      "target_cache_length_after_rollback": 37,
+      "committed_tokens": [
+        891,
+        10812
+      ],
+      "next_adapter_version": 0
+    },
+    {
+      "round_idx": 6,
+      "absolute_output_offset": 13,
+      "input_context_length": 38,
+      "verified_prefix_tail": [
+        279,
+        33828,
+        891,
+        10812
+      ],
+      "physical_to_logical": {
+        "anchor_physical_index": 0,
+        "logical_to_physical": [
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11,
+          12,
+          13,
+          14,
+          15
+        ]
+      },
+      "draft_tokens": [
+        14371,
+        1033,
+        31293,
+        323,
+        279,
+        323,
+        323,
+        279,
+        323,
+        291,
+        11,
+        11,
+        2310,
+        11,
+        11
+      ],
+      "draft_lm_head": {
+        "artifact_id": "/home/catid/.cache/huggingface/hub/models--Qwen--Qwen3-8B/snapshots/b968826d9c46dd6066d109eabc6255188de91218",
+        "revision": "b968826d9c46dd6066d109eabc6255188de91218",
+        "module": "Qwen3ForCausalLM.lm_head",
+        "hook": "DFlashDraftModel.norm output, logical slots [1:]",
+        "shape": [
+          151936,
+          4096
+        ],
+        "dtype": "torch.bfloat16",
+        "bias": false,
+        "tied_weights": false,
+        "output_multiplier": 1.0,
+        "final_logit_softcapping": null
+      },
+      "accepted_length": 1,
+      "first_rejection_index": 1,
+      "replacement_token": 57266,
+      "bonus_token": null,
+      "decisions": [
+        true,
+        false
+      ],
+      "proposal_token_probs": [
+        1.0,
+        1.0
+      ],
+      "target_token_probs": [
+        1.0,
+        0.15719226002693176
+      ],
+      "adapter_version": 0,
+      "proposal_mode": "plain_dflash",
+      "verification_rule": "ratio",
+      "collection_temperature": 0.7,
+      "loss_temperature": 1.0,
+      "sampling_warp_config": {
+        "top_k": 20,
+        "top_p": 0.8,
+        "min_p": 0.0
+      },
+      "off_policy_teacher_positions": [
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14
+      ],
+      "target_cache_length_after_rollback": 39,
+      "committed_tokens": [
+        14371,
+        57266
+      ],
+      "next_adapter_version": 0
+    },
+    {
+      "round_idx": 7,
+      "absolute_output_offset": 15,
+      "input_context_length": 40,
+      "verified_prefix_tail": [
+        891,
+        10812,
+        14371,
+        57266
+      ],
+      "physical_to_logical": {
+        "anchor_physical_index": 0,
+        "logical_to_physical": [
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11,
+          12,
+          13,
+          14,
+          15
+        ]
+      },
+      "draft_tokens": [
+        7343,
+        323,
+        279,
+        279,
+        323,
+        279,
+        291,
+        617,
+        315,
+        12163,
+        2310,
+        2310,
+        264,
+        264,
+        264
+      ],
+      "draft_lm_head": {
+        "artifact_id": "/home/catid/.cache/huggingface/hub/models--Qwen--Qwen3-8B/snapshots/b968826d9c46dd6066d109eabc6255188de91218",
+        "revision": "b968826d9c46dd6066d109eabc6255188de91218",
+        "module": "Qwen3ForCausalLM.lm_head",
+        "hook": "DFlashDraftModel.norm output, logical slots [1:]",
+        "shape": [
+          151936,
+          4096
+        ],
+        "dtype": "torch.bfloat16",
+        "bias": false,
+        "tied_weights": false,
+        "output_multiplier": 1.0,
+        "final_logit_softcapping": null
+      },
+      "accepted_length": 1,
+      "first_rejection_index": 1,
+      "replacement_token": 315,
+      "bonus_token": null,
+      "decisions": [
+        true,
+        false
+      ],
+      "proposal_token_probs": [
+        0.2093159556388855,
+        0.3691849112510681
+      ],
+      "target_token_probs": [
+        0.672511100769043,
+        0.0
+      ],
+      "adapter_version": 0,
+      "proposal_mode": "plain_dflash",
+      "verification_rule": "ratio",
+      "collection_temperature": 0.7,
+      "loss_temperature": 1.0,
+      "sampling_warp_config": {
+        "top_k": 20,
+        "top_p": 0.8,
+        "min_p": 0.0
+      },
+      "off_policy_teacher_positions": [
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14
+      ],
+      "target_cache_length_after_rollback": 41,
+      "committed_tokens": [
+        7343,
+        315
+      ],
+      "next_adapter_version": 0
+    },
+    {
+      "round_idx": 8,
+      "absolute_output_offset": 17,
+      "input_context_length": 42,
+      "verified_prefix_tail": [
+        14371,
+        57266,
+        7343,
+        315
+      ],
+      "physical_to_logical": {
+        "anchor_physical_index": 0,
+        "logical_to_physical": [
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11,
+          12,
+          13,
+          14,
+          15
+        ]
+      },
+      "draft_tokens": [
+        279,
+        323,
+        323,
+        279,
+        3720,
+        572,
+        448,
+        448,
+        279,
+        2310,
+        11,
+        264,
+        12163,
+        264,
+        11
+      ],
+      "draft_lm_head": {
+        "artifact_id": "/home/catid/.cache/huggingface/hub/models--Qwen--Qwen3-8B/snapshots/b968826d9c46dd6066d109eabc6255188de91218",
+        "revision": "b968826d9c46dd6066d109eabc6255188de91218",
+        "module": "Qwen3ForCausalLM.lm_head",
+        "hook": "DFlashDraftModel.norm output, logical slots [1:]",
+        "shape": [
+          151936,
+          4096
+        ],
+        "dtype": "torch.bfloat16",
+        "bias": false,
+        "tied_weights": false,
+        "output_multiplier": 1.0,
+        "final_logit_softcapping": null
+      },
+      "accepted_length": 0,
+      "first_rejection_index": 0,
+      "replacement_token": 2310,
+      "bonus_token": null,
+      "decisions": [
+        false
+      ],
+      "proposal_token_probs": [
+        0.8066786527633667
+      ],
+      "target_token_probs": [
+        0.0
+      ],
+      "adapter_version": 0,
+      "proposal_mode": "plain_dflash",
+      "verification_rule": "ratio",
+      "collection_temperature": 0.7,
+      "loss_temperature": 1.0,
+      "sampling_warp_config": {
+        "top_k": 20,
+        "top_p": 0.8,
+        "min_p": 0.0
+      },
+      "off_policy_teacher_positions": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14
+      ],
+      "target_cache_length_after_rollback": 42,
+      "committed_tokens": [
+        2310
+      ],
+      "next_adapter_version": 0
+    },
+    {
+      "round_idx": 9,
+      "absolute_output_offset": 18,
+      "input_context_length": 43,
+      "verified_prefix_tail": [
+        57266,
+        7343,
+        315,
+        2310
+      ],
+      "physical_to_logical": {
+        "anchor_physical_index": 0,
+        "logical_to_physical": [
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11,
+          12,
+          13,
+          14,
+          15
+        ]
+      },
+      "draft_tokens": [
+        323,
+        323,
+        279,
+        40366,
+        12163,
+        2310,
+        11,
+        2310,
+        11,
+        264,
+        11,
+        264,
+        264,
+        1030,
+        13
+      ],
+      "draft_lm_head": {
+        "artifact_id": "/home/catid/.cache/huggingface/hub/models--Qwen--Qwen3-8B/snapshots/b968826d9c46dd6066d109eabc6255188de91218",
+        "revision": "b968826d9c46dd6066d109eabc6255188de91218",
+        "module": "Qwen3ForCausalLM.lm_head",
+        "hook": "DFlashDraftModel.norm output, logical slots [1:]",
+        "shape": [
+          151936,
+          4096
+        ],
+        "dtype": "torch.bfloat16",
+        "bias": false,
+        "tied_weights": false,
+        "output_multiplier": 1.0,
+        "final_logit_softcapping": null
+      },
+      "accepted_length": 1,
+      "first_rejection_index": 1,
+      "replacement_token": 279,
+      "bonus_token": null,
+      "decisions": [
+        true,
+        false
+      ],
+      "proposal_token_probs": [
+        0.8949993252754211,
+        0.7094793319702148
+      ],
+      "target_token_probs": [
+        1.0,
+        0.0
+      ],
+      "adapter_version": 0,
+      "proposal_mode": "plain_dflash",
+      "verification_rule": "ratio",
+      "collection_temperature": 0.7,
+      "loss_temperature": 1.0,
+      "sampling_warp_config": {
+        "top_k": 20,
+        "top_p": 0.8,
+        "min_p": 0.0
+      },
+      "off_policy_teacher_positions": [
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14
+      ],
+      "target_cache_length_after_rollback": 44,
+      "committed_tokens": [
+        323,
+        279
+      ],
+      "next_adapter_version": 0
+    },
+    {
+      "round_idx": 10,
+      "absolute_output_offset": 20,
+      "input_context_length": 45,
+      "verified_prefix_tail": [
+        315,
+        2310,
+        323,
+        279
+      ],
+      "physical_to_logical": {
+        "anchor_physical_index": 0,
+        "logical_to_physical": [
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11,
+          12,
+          13,
+          14,
+          15
+        ]
+      },
+      "draft_tokens": [
+        7015,
+        5644,
+        2061,
+        448,
+        279,
+        11,
+        11,
+        11,
+        12163,
+        264,
+        264,
+        11,
+        264,
+        6941,
+        264
+      ],
+      "draft_lm_head": {
+        "artifact_id": "/home/catid/.cache/huggingface/hub/models--Qwen--Qwen3-8B/snapshots/b968826d9c46dd6066d109eabc6255188de91218",
+        "revision": "b968826d9c46dd6066d109eabc6255188de91218",
+        "module": "Qwen3ForCausalLM.lm_head",
+        "hook": "DFlashDraftModel.norm output, logical slots [1:]",
+        "shape": [
+          151936,
+          4096
+        ],
+        "dtype": "torch.bfloat16",
+        "bias": false,
+        "tied_weights": false,
+        "output_multiplier": 1.0,
+        "final_logit_softcapping": null
+      },
+      "accepted_length": 0,
+      "first_rejection_index": 0,
+      "replacement_token": 3720,
+      "bonus_token": null,
+      "decisions": [
+        false
+      ],
+      "proposal_token_probs": [
+        0.809954047203064
+      ],
+      "target_token_probs": [
+        0.0
+      ],
+      "adapter_version": 0,
+      "proposal_mode": "plain_dflash",
+      "verification_rule": "ratio",
+      "collection_temperature": 0.7,
+      "loss_temperature": 1.0,
+      "sampling_warp_config": {
+        "top_k": 20,
+        "top_p": 0.8,
+        "min_p": 0.0
+      },
+      "off_policy_teacher_positions": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14
+      ],
+      "target_cache_length_after_rollback": 45,
+      "committed_tokens": [
+        3720
+      ],
+      "next_adapter_version": 0
+    },
+    {
+      "round_idx": 11,
+      "absolute_output_offset": 21,
+      "input_context_length": 46,
+      "verified_prefix_tail": [
+        2310,
+        323,
+        279,
+        3720
+      ],
+      "physical_to_logical": {
+        "anchor_physical_index": 0,
+        "logical_to_physical": [
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11,
+          12,
+          13,
+          14,
+          15
+        ]
+      },
+      "draft_tokens": [
+        85698,
+        41854,
+        398,
+        279,
+        40366,
+        17765,
+        17765,
+        264,
+        11,
+        12163,
+        264,
+        264,
+        21881,
+        13,
+        76924
+      ],
+      "draft_lm_head": {
+        "artifact_id": "/home/catid/.cache/huggingface/hub/models--Qwen--Qwen3-8B/snapshots/b968826d9c46dd6066d109eabc6255188de91218",
+        "revision": "b968826d9c46dd6066d109eabc6255188de91218",
+        "module": "Qwen3ForCausalLM.lm_head",
+        "hook": "DFlashDraftModel.norm output, logical slots [1:]",
+        "shape": [
+          151936,
+          4096
+        ],
+        "dtype": "torch.bfloat16",
+        "bias": false,
+        "tied_weights": false,
+        "output_multiplier": 1.0,
+        "final_logit_softcapping": null
+      },
+      "accepted_length": 0,
+      "first_rejection_index": 0,
+      "replacement_token": 572,
+      "bonus_token": null,
+      "decisions": [
+        false
+      ],
+      "proposal_token_probs": [
+        0.6138646006584167
+      ],
+      "target_token_probs": [
+        0.0
+      ],
+      "adapter_version": 0,
+      "proposal_mode": "plain_dflash",
+      "verification_rule": "ratio",
+      "collection_temperature": 0.7,
+      "loss_temperature": 1.0,
+      "sampling_warp_config": {
+        "top_k": 20,
+        "top_p": 0.8,
+        "min_p": 0.0
+      },
+      "off_policy_teacher_positions": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14
+      ],
+      "target_cache_length_after_rollback": 46,
+      "committed_tokens": [
+        572
+      ],
+      "next_adapter_version": 0
+    },
+    {
+      "round_idx": 12,
+      "absolute_output_offset": 22,
+      "input_context_length": 47,
+      "verified_prefix_tail": [
+        323,
+        279,
+        3720,
+        572
+      ],
+      "physical_to_logical": {
+        "anchor_physical_index": 0,
+        "logical_to_physical": [
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11,
+          12,
+          13,
+          14,
+          15
+        ]
+      },
+      "draft_tokens": [
+        2677,
+        448,
+        279,
+        279,
+        315,
+        9393,
+        17765,
+        11,
+        11,
+        264,
+        264,
+        264,
+        21881,
+        8341,
+        13
+      ],
+      "draft_lm_head": {
+        "artifact_id": "/home/catid/.cache/huggingface/hub/models--Qwen--Qwen3-8B/snapshots/b968826d9c46dd6066d109eabc6255188de91218",
+        "revision": "b968826d9c46dd6066d109eabc6255188de91218",
+        "module": "Qwen3ForCausalLM.lm_head",
+        "hook": "DFlashDraftModel.norm output, logical slots [1:]",
+        "shape": [
+          151936,
+          4096
+        ],
+        "dtype": "torch.bfloat16",
+        "bias": false,
+        "tied_weights": false,
+        "output_multiplier": 1.0,
+        "final_logit_softcapping": null
+      },
+      "accepted_length": 1,
+      "first_rejection_index": 1,
+      "replacement_token": 42227,
+      "bonus_token": null,
+      "decisions": [
+        true,
+        false
+      ],
+      "proposal_token_probs": [
+        1.0,
+        1.0
+      ],
+      "target_token_probs": [
+        1.0,
+        0.0
+      ],
+      "adapter_version": 0,
+      "proposal_mode": "plain_dflash",
+      "verification_rule": "ratio",
+      "collection_temperature": 0.7,
+      "loss_temperature": 1.0,
+      "sampling_warp_config": {
+        "top_k": 20,
+        "top_p": 0.8,
+        "min_p": 0.0
+      },
+      "off_policy_teacher_positions": [
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14
+      ],
+      "target_cache_length_after_rollback": 48,
+      "committed_tokens": [
+        2677,
+        42227
+      ],
+      "next_adapter_version": 0
+    },
+    {
+      "round_idx": 13,
+      "absolute_output_offset": 24,
+      "input_context_length": 49,
+      "verified_prefix_tail": [
+        3720,
+        572,
+        2677,
+        42227
+      ],
+      "physical_to_logical": {
+        "anchor_physical_index": 0,
+        "logical_to_physical": [
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11,
+          12,
+          13,
+          14,
+          15
+        ]
+      },
+      "draft_tokens": [
+        291,
+        448,
+        279,
+        40366,
+        315,
+        80360,
+        9393,
+        11,
+        11,
+        264,
+        6941,
+        21881,
+        8341,
+        76924,
+        1260
+      ],
+      "draft_lm_head": {
+        "artifact_id": "/home/catid/.cache/huggingface/hub/models--Qwen--Qwen3-8B/snapshots/b968826d9c46dd6066d109eabc6255188de91218",
+        "revision": "b968826d9c46dd6066d109eabc6255188de91218",
+        "module": "Qwen3ForCausalLM.lm_head",
+        "hook": "DFlashDraftModel.norm output, logical slots [1:]",
+        "shape": [
+          151936,
+          4096
+        ],
+        "dtype": "torch.bfloat16",
+        "bias": false,
+        "tied_weights": false,
+        "output_multiplier": 1.0,
+        "final_logit_softcapping": null
+      },
+      "accepted_length": 5,
+      "first_rejection_index": 5,
+      "replacement_token": 14211,
+      "bonus_token": null,
+      "decisions": [
+        true,
+        true,
+        true,
+        true,
+        true,
+        false
+      ],
+      "proposal_token_probs": [
+        1.0,
+        1.0,
+        1.0,
+        1.0,
+        1.0,
+        0.1944856345653534
+      ],
+      "target_token_probs": [
+        1.0,
+        1.0,
+        1.0,
+        1.0,
+        1.0,
+        0.0
+      ],
+      "adapter_version": 0,
+      "proposal_mode": "plain_dflash",
+      "verification_rule": "ratio",
+      "collection_temperature": 0.7,
+      "loss_temperature": 1.0,
+      "sampling_warp_config": {
+        "top_k": 20,
+        "top_p": 0.8,
+        "min_p": 0.0
+      },
+      "off_policy_teacher_positions": [
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14
+      ],
+      "target_cache_length_after_rollback": 54,
+      "committed_tokens": [
+        291,
+        448,
+        279,
+        40366,
+        315,
+        14211
+      ],
+      "next_adapter_version": 0
+    },
+    {
+      "round_idx": 14,
+      "absolute_output_offset": 30,
+      "input_context_length": 55,
+      "verified_prefix_tail": [
+        279,
+        40366,
+        315,
+        14211
+      ],
+      "physical_to_logical": {
+        "anchor_physical_index": 0,
+        "logical_to_physical": [
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11,
+          12,
+          13,
+          14,
+          15
+        ]
+      },
+      "draft_tokens": [
+        17765,
+        19281,
+        11,
+        12163,
+        264,
+        264,
+        6941,
+        6941,
+        85656,
+        21881,
+        5301,
+        5301,
+        572,
+        264,
+        21881
+      ],
+      "draft_lm_head": {
+        "artifact_id": "/home/catid/.cache/huggingface/hub/models--Qwen--Qwen3-8B/snapshots/b968826d9c46dd6066d109eabc6255188de91218",
+        "revision": "b968826d9c46dd6066d109eabc6255188de91218",
+        "module": "Qwen3ForCausalLM.lm_head",
+        "hook": "DFlashDraftModel.norm output, logical slots [1:]",
+        "shape": [
+          151936,
+          4096
+        ],
+        "dtype": "torch.bfloat16",
+        "bias": false,
+        "tied_weights": false,
+        "output_multiplier": 1.0,
+        "final_logit_softcapping": null
+      },
+      "accepted_length": 1,
+      "first_rejection_index": 1,
+      "replacement_token": 80360,
+      "bonus_token": null,
+      "decisions": [
+        true,
+        false
+      ],
+      "proposal_token_probs": [
+        1.0,
+        0.5262793898582458
+      ],
+      "target_token_probs": [
+        1.0,
+        0.0
+      ],
+      "adapter_version": 0,
+      "proposal_mode": "plain_dflash",
+      "verification_rule": "ratio",
+      "collection_temperature": 0.7,
+      "loss_temperature": 1.0,
+      "sampling_warp_config": {
+        "top_k": 20,
+        "top_p": 0.8,
+        "min_p": 0.0
+      },
+      "off_policy_teacher_positions": [
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14
+      ],
+      "target_cache_length_after_rollback": 56,
+      "committed_tokens": [
+        17765,
+        80360
+      ],
+      "next_adapter_version": 0
+    },
+    {
+      "round_idx": 15,
+      "absolute_output_offset": 32,
+      "input_context_length": 57,
+      "verified_prefix_tail": [
+        315,
+        14211,
+        17765,
+        80360
+      ],
+      "physical_to_logical": {
+        "anchor_physical_index": 0,
+        "logical_to_physical": [
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11,
+          12,
+          13,
+          14,
+          15
+        ]
+      },
+      "draft_tokens": [
+        11,
+        12163,
+        264,
+        264,
+        2310,
+        6941,
+        6941,
+        13,
+        5301,
+        1260,
+        572,
+        572,
+        572,
+        1030,
+        448
+      ],
+      "draft_lm_head": {
+        "artifact_id": "/home/catid/.cache/huggingface/hub/models--Qwen--Qwen3-8B/snapshots/b968826d9c46dd6066d109eabc6255188de91218",
+        "revision": "b968826d9c46dd6066d109eabc6255188de91218",
+        "module": "Qwen3ForCausalLM.lm_head",
+        "hook": "DFlashDraftModel.norm output, logical slots [1:]",
+        "shape": [
+          151936,
+          4096
+        ],
+        "dtype": "torch.bfloat16",
+        "bias": false,
+        "tied_weights": false,
+        "output_multiplier": 1.0,
+        "final_logit_softcapping": null
+      },
+      "accepted_length": 1,
+      "first_rejection_index": 1,
+      "replacement_token": 1052,
+      "bonus_token": null,
+      "decisions": [
+        true,
+        false
+      ],
+      "proposal_token_probs": [
+        1.0,
+        0.6713476777076721
+      ],
+      "target_token_probs": [
+        1.0,
+        0.25513193011283875
+      ],
+      "adapter_version": 0,
+      "proposal_mode": "plain_dflash",
+      "verification_rule": "ratio",
+      "collection_temperature": 0.7,
+      "loss_temperature": 1.0,
+      "sampling_warp_config": {
+        "top_k": 20,
+        "top_p": 0.8,
+        "min_p": 0.0
+      },
+      "off_policy_teacher_positions": [
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14
+      ],
+      "target_cache_length_after_rollback": 58,
+      "committed_tokens": [
+        11,
+        1052
+      ],
+      "next_adapter_version": 0
+    },
+    {
+      "round_idx": 16,
+      "absolute_output_offset": 34,
+      "input_context_length": 59,
+      "verified_prefix_tail": [
+        17765,
+        80360,
+        11,
+        1052
+      ],
+      "physical_to_logical": {
+        "anchor_physical_index": 0,
+        "logical_to_physical": [
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11,
+          12,
+          13,
+          14,
+          15
+        ]
+      },
+      "draft_tokens": [
+        12163,
+        264,
+        21881,
+        798,
+        6941,
+        6941,
+        1260,
+        1260,
+        572,
+        1260,
+        264,
+        2310,
+        369,
+        2310,
+        448
+      ],
+      "draft_lm_head": {
+        "artifact_id": "/home/catid/.cache/huggingface/hub/models--Qwen--Qwen3-8B/snapshots/b968826d9c46dd6066d109eabc6255188de91218",
+        "revision": "b968826d9c46dd6066d109eabc6255188de91218",
+        "module": "Qwen3ForCausalLM.lm_head",
+        "hook": "DFlashDraftModel.norm output, logical slots [1:]",
+        "shape": [
+          151936,
+          4096
+        ],
+        "dtype": "torch.bfloat16",
+        "bias": false,
+        "tied_weights": false,
+        "output_multiplier": 1.0,
+        "final_logit_softcapping": null
+      },
+      "accepted_length": 5,
+      "first_rejection_index": 5,
+      "replacement_token": 85656,
+      "bonus_token": null,
+      "decisions": [
+        true,
+        true,
+        true,
+        true,
+        true,
+        false
+      ],
+      "proposal_token_probs": [
+        1.0,
+        1.0,
+        0.4554753303527832,
+        0.39400723576545715,
+        1.0,
+        0.11416465789079666
+      ],
+      "target_token_probs": [
+        1.0,
+        1.0,
+        1.0,
+        1.0,
+        1.0,
+        0.0
+      ],
+      "adapter_version": 0,
+      "proposal_mode": "plain_dflash",
+      "verification_rule": "ratio",
+      "collection_temperature": 0.7,
+      "loss_temperature": 1.0,
+      "sampling_warp_config": {
+        "top_k": 20,
+        "top_p": 0.8,
+        "min_p": 0.0
+      },
+      "off_policy_teacher_positions": [
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14
+      ],
+      "target_cache_length_after_rollback": 64,
+      "committed_tokens": [
+        12163,
+        264,
+        21881,
+        798,
+        6941,
+        85656
+      ],
+      "next_adapter_version": 0
+    },
+    {
+      "round_idx": 17,
+      "absolute_output_offset": 40,
+      "input_context_length": 65,
+      "verified_prefix_tail": [
+        21881,
+        798,
+        6941,
+        85656
+      ],
+      "physical_to_logical": {
+        "anchor_physical_index": 0,
+        "logical_to_physical": [
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11,
+          12,
+          13,
+          14,
+          15
+        ]
+      },
+      "draft_tokens": [
+        76924,
+        1260,
+        572,
+        572,
+        572,
+        572,
+        369,
+        11,
+        279,
+        323,
+        323,
+        369,
+        369,
+        264,
+        264
+      ],
+      "draft_lm_head": {
+        "artifact_id": "/home/catid/.cache/huggingface/hub/models--Qwen--Qwen3-8B/snapshots/b968826d9c46dd6066d109eabc6255188de91218",
+        "revision": "b968826d9c46dd6066d109eabc6255188de91218",
+        "module": "Qwen3ForCausalLM.lm_head",
+        "hook": "DFlashDraftModel.norm output, logical slots [1:]",
+        "shape": [
+          151936,
+          4096
+        ],
+        "dtype": "torch.bfloat16",
+        "bias": false,
+        "tied_weights": false,
+        "output_multiplier": 1.0,
+        "final_logit_softcapping": null
+      },
+      "accepted_length": 0,
+      "first_rejection_index": 0,
+      "replacement_token": 13,
+      "bonus_token": null,
+      "decisions": [
+        false
+      ],
+      "proposal_token_probs": [
+        0.699442446231842
+      ],
+      "target_token_probs": [
+        0.0
+      ],
+      "adapter_version": 0,
+      "proposal_mode": "plain_dflash",
+      "verification_rule": "ratio",
+      "collection_temperature": 0.7,
+      "loss_temperature": 1.0,
+      "sampling_warp_config": {
+        "top_k": 20,
+        "top_p": 0.8,
+        "min_p": 0.0
+      },
+      "off_policy_teacher_positions": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14
+      ],
+      "target_cache_length_after_rollback": 65,
+      "committed_tokens": [
+        13
+      ],
+      "next_adapter_version": 0
+    },
+    {
+      "round_idx": 18,
+      "absolute_output_offset": 41,
+      "input_context_length": 66,
+      "verified_prefix_tail": [
+        798,
+        6941,
+        85656,
+        13
+      ],
+      "physical_to_logical": {
+        "anchor_physical_index": 0,
+        "logical_to_physical": [
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11,
+          12,
+          13,
+          14,
+          15
+        ]
+      },
+      "draft_tokens": [
+        5301,
+        1030,
+        264,
+        369,
+        806,
+        369,
+        264,
+        806,
+        806,
+        806,
+        369,
+        315,
+        369,
+        279,
+        279
+      ],
+      "draft_lm_head": {
+        "artifact_id": "/home/catid/.cache/huggingface/hub/models--Qwen--Qwen3-8B/snapshots/b968826d9c46dd6066d109eabc6255188de91218",
+        "revision": "b968826d9c46dd6066d109eabc6255188de91218",
+        "module": "Qwen3ForCausalLM.lm_head",
+        "hook": "DFlashDraftModel.norm output, logical slots [1:]",
+        "shape": [
+          151936,
+          4096
+        ],
+        "dtype": "torch.bfloat16",
+        "bias": false,
+        "tied_weights": false,
+        "output_multiplier": 1.0,
+        "final_logit_softcapping": null
+      },
+      "accepted_length": 1,
+      "first_rejection_index": 1,
+      "replacement_token": 6078,
+      "bonus_token": null,
+      "decisions": [
+        true,
+        false
+      ],
+      "proposal_token_probs": [
+        0.1933213323354721,
+        0.5883482694625854
+      ],
+      "target_token_probs": [
+        0.40168046951293945,
+        0.0
+      ],
+      "adapter_version": 0,
+      "proposal_mode": "plain_dflash",
+      "verification_rule": "ratio",
+      "collection_temperature": 0.7,
+      "loss_temperature": 1.0,
+      "sampling_warp_config": {
+        "top_k": 20,
+        "top_p": 0.8,
+        "min_p": 0.0
+      },
+      "off_policy_teacher_positions": [
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14
+      ],
+      "target_cache_length_after_rollback": 67,
+      "committed_tokens": [
+        5301,
+        6078
+      ],
+      "next_adapter_version": 0
+    },
+    {
+      "round_idx": 19,
+      "absolute_output_offset": 43,
+      "input_context_length": 68,
+      "verified_prefix_tail": [
+        85656,
+        13,
+        5301,
+        6078
+      ],
+      "physical_to_logical": {
+        "anchor_physical_index": 0,
+        "logical_to_physical": [
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11,
+          12,
+          13,
+          14,
+          15
+        ]
+      },
+      "draft_tokens": [
+        1033,
+        3881,
+        369,
+        315,
+        315,
+        11,
+        2459,
+        323,
+        323,
+        11,
+        11,
+        323,
+        279,
+        323,
+        264
+      ],
+      "draft_lm_head": {
+        "artifact_id": "/home/catid/.cache/huggingface/hub/models--Qwen--Qwen3-8B/snapshots/b968826d9c46dd6066d109eabc6255188de91218",
+        "revision": "b968826d9c46dd6066d109eabc6255188de91218",
+        "module": "Qwen3ForCausalLM.lm_head",
+        "hook": "DFlashDraftModel.norm output, logical slots [1:]",
+        "shape": [
+          151936,
+          4096
+        ],
+        "dtype": "torch.bfloat16",
+        "bias": false,
+        "tied_weights": false,
+        "output_multiplier": 1.0,
+        "final_logit_softcapping": null
+      },
+      "accepted_length": 0,
+      "first_rejection_index": 0,
+      "replacement_token": 11,
+      "bonus_token": null,
+      "decisions": [
+        false
+      ],
+      "proposal_token_probs": [
+        1.0
+      ],
+      "target_token_probs": [
+        0.6713476777076721
+      ],
+      "adapter_version": 0,
+      "proposal_mode": "plain_dflash",
+      "verification_rule": "ratio",
+      "collection_temperature": 0.7,
+      "loss_temperature": 1.0,
+      "sampling_warp_config": {
+        "top_k": 20,
+        "top_p": 0.8,
+        "min_p": 0.0
+      },
+      "off_policy_teacher_positions": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14
+      ],
+      "target_cache_length_after_rollback": 68,
+      "committed_tokens": [
+        11
+      ],
+      "next_adapter_version": 0
+    },
+    {
+      "round_idx": 20,
+      "absolute_output_offset": 44,
+      "input_context_length": 69,
+      "verified_prefix_tail": [
+        13,
+        5301,
+        6078,
+        11
+      ],
+      "physical_to_logical": {
+        "anchor_physical_index": 0,
+        "logical_to_physical": [
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11,
+          12,
+          13,
+          14,
+          15
+        ]
+      },
+      "draft_tokens": [
+        1618,
+        1618,
+        448,
+        1635,
+        11,
+        1033,
+        279,
+        279,
+        11,
+        11,
+        806,
+        311,
+        279,
+        264,
+        11
+      ],
+      "draft_lm_head": {
+        "artifact_id": "/home/catid/.cache/huggingface/hub/models--Qwen--Qwen3-8B/snapshots/b968826d9c46dd6066d109eabc6255188de91218",
+        "revision": "b968826d9c46dd6066d109eabc6255188de91218",
+        "module": "Qwen3ForCausalLM.lm_head",
+        "hook": "DFlashDraftModel.norm output, logical slots [1:]",
+        "shape": [
+          151936,
+          4096
+        ],
+        "dtype": "torch.bfloat16",
+        "bias": false,
+        "tied_weights": false,
+        "output_multiplier": 1.0,
+        "final_logit_softcapping": null
+      },
+      "accepted_length": 1,
+      "first_rejection_index": 1,
+      "replacement_token": 36488,
+      "bonus_token": null,
+      "decisions": [
+        true,
+        false
+      ],
+      "proposal_token_probs": [
+        1.0,
+        0.7782124876976013
+      ],
+      "target_token_probs": [
+        0.8066790103912354,
+        0.0
+      ],
+      "adapter_version": 0,
+      "proposal_mode": "plain_dflash",
+      "verification_rule": "ratio",
+      "collection_temperature": 0.7,
+      "loss_temperature": 1.0,
+      "sampling_warp_config": {
+        "top_k": 20,
+        "top_p": 0.8,
+        "min_p": 0.0
+      },
+      "off_policy_teacher_positions": [
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14
+      ],
+      "target_cache_length_after_rollback": 70,
+      "committed_tokens": [
+        1618,
+        36488
+      ],
+      "next_adapter_version": 0
+    },
+    {
+      "round_idx": 21,
+      "absolute_output_offset": 46,
+      "input_context_length": 71,
+      "verified_prefix_tail": [
+        6078,
+        11,
+        1618,
+        36488
+      ],
+      "physical_to_logical": {
+        "anchor_physical_index": 0,
+        "logical_to_physical": [
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11,
+          12,
+          13,
+          14,
+          15
+        ]
+      },
+      "draft_tokens": [
+        323,
+        1635,
+        11,
+        9104,
+        448,
+        448,
+        311,
+        448,
+        279,
+        311,
+        279,
+        315,
+        11,
+        279,
+        11
+      ],
+      "draft_lm_head": {
+        "artifact_id": "/home/catid/.cache/huggingface/hub/models--Qwen--Qwen3-8B/snapshots/b968826d9c46dd6066d109eabc6255188de91218",
+        "revision": "b968826d9c46dd6066d109eabc6255188de91218",
+        "module": "Qwen3ForCausalLM.lm_head",
+        "hook": "DFlashDraftModel.norm output, logical slots [1:]",
+        "shape": [
+          151936,
+          4096
+        ],
+        "dtype": "torch.bfloat16",
+        "bias": false,
+        "tied_weights": false,
+        "output_multiplier": 1.0,
+        "final_logit_softcapping": null
+      },
+      "accepted_length": 1,
+      "first_rejection_index": 1,
+      "replacement_token": 9104,
+      "bonus_token": null,
+      "decisions": [
+        true,
+        false
+      ],
+      "proposal_token_probs": [
+        0.38680967688560486,
+        1.0
+      ],
+      "target_token_probs": [
+        0.5883488059043884,
+        0.0
+      ],
+      "adapter_version": 0,
+      "proposal_mode": "plain_dflash",
+      "verification_rule": "ratio",
+      "collection_temperature": 0.7,
+      "loss_temperature": 1.0,
+      "sampling_warp_config": {
+        "top_k": 20,
+        "top_p": 0.8,
+        "min_p": 0.0
+      },
+      "off_policy_teacher_positions": [
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14
+      ],
+      "target_cache_length_after_rollback": 72,
+      "committed_tokens": [
+        323,
+        9104
+      ],
+      "next_adapter_version": 0
+    },
+    {
+      "round_idx": 22,
+      "absolute_output_offset": 48,
+      "input_context_length": 73,
+      "verified_prefix_tail": [
+        1618,
+        36488,
+        323,
+        9104
+      ],
+      "physical_to_logical": {
+        "anchor_physical_index": 0,
+        "logical_to_physical": [
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11,
+          12,
+          13,
+          14,
+          15
+        ]
+      },
+      "draft_tokens": [
+        291,
+        11,
+        1030,
+        7391,
+        369,
+        315,
+        315,
+        279,
+        323,
+        315,
+        279,
+        11,
+        315,
+        11,
+        806
+      ],
+      "draft_lm_head": {
+        "artifact_id": "/home/catid/.cache/huggingface/hub/models--Qwen--Qwen3-8B/snapshots/b968826d9c46dd6066d109eabc6255188de91218",
+        "revision": "b968826d9c46dd6066d109eabc6255188de91218",
+        "module": "Qwen3ForCausalLM.lm_head",
+        "hook": "DFlashDraftModel.norm output, logical slots [1:]",
+        "shape": [
+          151936,
+          4096
+        ],
+        "dtype": "torch.bfloat16",
+        "bias": false,
+        "tied_weights": false,
+        "output_multiplier": 1.0,
+        "final_logit_softcapping": null
+      },
+      "accepted_length": 2,
+      "first_rejection_index": 2,
+      "replacement_token": 1033,
+      "bonus_token": null,
+      "decisions": [
+        true,
+        true,
+        false
+      ],
+      "proposal_token_probs": [
+        1.0,
+        1.0,
+        0.6298519968986511
+      ],
+      "target_token_probs": [
+        1.0,
+        1.0,
+        0.5
+      ],
+      "adapter_version": 0,
+      "proposal_mode": "plain_dflash",
+      "verification_rule": "ratio",
+      "collection_temperature": 0.7,
+      "loss_temperature": 1.0,
+      "sampling_warp_config": {
+        "top_k": 20,
+        "top_p": 0.8,
+        "min_p": 0.0
+      },
+      "off_policy_teacher_positions": [
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14
+      ],
+      "target_cache_length_after_rollback": 75,
+      "committed_tokens": [
+        291,
+        11,
+        1033
+      ],
+      "next_adapter_version": 0
+    },
+    {
+      "round_idx": 23,
+      "absolute_output_offset": 51,
+      "input_context_length": 76,
+      "verified_prefix_tail": [
+        9104,
+        291,
+        11,
+        1033
+      ],
+      "physical_to_logical": {
+        "anchor_physical_index": 0,
+        "logical_to_physical": [
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11,
+          12,
+          13,
+          14,
+          15
+        ]
+      },
+      "draft_tokens": [
+        3881,
+        7341,
+        311,
+        279,
+        315,
+        279,
+        315,
+        11,
+        11,
+        11,
+        323,
+        6556,
+        11,
+        1030,
+        382
+      ],
+      "draft_lm_head": {
+        "artifact_id": "/home/catid/.cache/huggingface/hub/models--Qwen--Qwen3-8B/snapshots/b968826d9c46dd6066d109eabc6255188de91218",
+        "revision": "b968826d9c46dd6066d109eabc6255188de91218",
+        "module": "Qwen3ForCausalLM.lm_head",
+        "hook": "DFlashDraftModel.norm output, logical slots [1:]",
+        "shape": [
+          151936,
+          4096
+        ],
+        "dtype": "torch.bfloat16",
+        "bias": false,
+        "tied_weights": false,
+        "output_multiplier": 1.0,
+        "final_logit_softcapping": null
+      },
+      "accepted_length": 0,
+      "first_rejection_index": 0,
+      "replacement_token": 438,
+      "bonus_token": null,
+      "decisions": [
+        false
+      ],
+      "proposal_token_probs": [
+        0.5445246696472168
+      ],
+      "target_token_probs": [
+        0.0
+      ],
+      "adapter_version": 0,
+      "proposal_mode": "plain_dflash",
+      "verification_rule": "ratio",
+      "collection_temperature": 0.7,
+      "loss_temperature": 1.0,
+      "sampling_warp_config": {
+        "top_k": 20,
+        "top_p": 0.8,
+        "min_p": 0.0
+      },
+      "off_policy_teacher_positions": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14
+      ],
+      "target_cache_length_after_rollback": 76,
+      "committed_tokens": [
+        438
+      ],
+      "next_adapter_version": 0
+    },
+    {
+      "round_idx": 24,
+      "absolute_output_offset": 52,
+      "input_context_length": 77,
+      "verified_prefix_tail": [
+        291,
+        11,
+        1033,
+        438
+      ],
+      "physical_to_logical": {
+        "anchor_physical_index": 0,
+        "logical_to_physical": [
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11,
+          12,
+          13,
+          14,
+          15
+        ]
+      },
+      "draft_tokens": [
+        25530,
+        438,
+        279,
+        7391,
+        279,
+        315,
+        7391,
+        806,
+        279,
+        11,
+        1030,
+        6556,
+        11,
+        264,
+        71829
+      ],
+      "draft_lm_head": {
+        "artifact_id": "/home/catid/.cache/huggingface/hub/models--Qwen--Qwen3-8B/snapshots/b968826d9c46dd6066d109eabc6255188de91218",
+        "revision": "b968826d9c46dd6066d109eabc6255188de91218",
+        "module": "Qwen3ForCausalLM.lm_head",
+        "hook": "DFlashDraftModel.norm output, logical slots [1:]",
+        "shape": [
+          151936,
+          4096
+        ],
+        "dtype": "torch.bfloat16",
+        "bias": false,
+        "tied_weights": false,
+        "output_multiplier": 1.0,
+        "final_logit_softcapping": null
+      },
+      "accepted_length": 0,
+      "first_rejection_index": 0,
+      "replacement_token": 11285,
+      "bonus_token": null,
+      "decisions": [
+        false
+      ],
+      "proposal_token_probs": [
+        0.7645651698112488
+      ],
+      "target_token_probs": [
+        0.0
+      ],
+      "adapter_version": 0,
+      "proposal_mode": "plain_dflash",
+      "verification_rule": "ratio",
+      "collection_temperature": 0.7,
+      "loss_temperature": 1.0,
+      "sampling_warp_config": {
+        "top_k": 20,
+        "top_p": 0.8,
+        "min_p": 0.0
+      },
+      "off_policy_teacher_positions": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14
+      ],
+      "target_cache_length_after_rollback": 77,
+      "committed_tokens": [
+        11285
+      ],
+      "next_adapter_version": 0
+    },
+    {
+      "round_idx": 25,
+      "absolute_output_offset": 53,
+      "input_context_length": 78,
+      "verified_prefix_tail": [
+        11,
+        1033,
+        438,
+        11285
+      ],
+      "physical_to_logical": {
+        "anchor_physical_index": 0,
+        "logical_to_physical": [
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11,
+          12,
+          13,
+          14,
+          15
+        ]
+      },
+      "draft_tokens": [
+        438,
+        279,
+        13551,
+        438,
+        279,
+        806,
+        279,
+        11,
+        7391,
+        382,
+        6556,
+        1030,
+        279,
+        6556,
+        264
+      ],
+      "draft_lm_head": {
+        "artifact_id": "/home/catid/.cache/huggingface/hub/models--Qwen--Qwen3-8B/snapshots/b968826d9c46dd6066d109eabc6255188de91218",
+        "revision": "b968826d9c46dd6066d109eabc6255188de91218",
+        "module": "Qwen3ForCausalLM.lm_head",
+        "hook": "DFlashDraftModel.norm output, logical slots [1:]",
+        "shape": [
+          151936,
+          4096
+        ],
+        "dtype": "torch.bfloat16",
+        "bias": false,
+        "tied_weights": false,
+        "output_multiplier": 1.0,
+        "final_logit_softcapping": null
+      },
+      "accepted_length": 0,
+      "first_rejection_index": 0,
+      "replacement_token": 448,
+      "bonus_token": null,
+      "decisions": [
+        false
+      ],
+      "proposal_token_probs": [
+        1.0
+      ],
+      "target_token_probs": [
+        0.0
+      ],
+      "adapter_version": 0,
+      "proposal_mode": "plain_dflash",
+      "verification_rule": "ratio",
+      "collection_temperature": 0.7,
+      "loss_temperature": 1.0,
+      "sampling_warp_config": {
+        "top_k": 20,
+        "top_p": 0.8,
+        "min_p": 0.0
+      },
+      "off_policy_teacher_positions": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14
+      ],
+      "target_cache_length_after_rollback": 78,
+      "committed_tokens": [
+        448
+      ],
+      "next_adapter_version": 0
+    },
+    {
+      "round_idx": 26,
+      "absolute_output_offset": 54,
+      "input_context_length": 79,
+      "verified_prefix_tail": [
+        1033,
+        438,
+        11285,
+        448
+      ],
+      "physical_to_logical": {
+        "anchor_physical_index": 0,
+        "logical_to_physical": [
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11,
+          12,
+          13,
+          14,
+          15
+        ]
+      },
+      "draft_tokens": [
+        279,
+        13551,
+        438,
+        279,
+        438,
+        279,
+        279,
+        1030,
+        6556,
+        6556,
+        1030,
+        382,
+        382,
+        1030,
+        6556
+      ],
+      "draft_lm_head": {
+        "artifact_id": "/home/catid/.cache/huggingface/hub/models--Qwen--Qwen3-8B/snapshots/b968826d9c46dd6066d109eabc6255188de91218",
+        "revision": "b968826d9c46dd6066d109eabc6255188de91218",
+        "module": "Qwen3ForCausalLM.lm_head",
+        "hook": "DFlashDraftModel.norm output, logical slots [1:]",
+        "shape": [
+          151936,
+          4096
+        ],
+        "dtype": "torch.bfloat16",
+        "bias": false,
+        "tied_weights": false,
+        "output_multiplier": 1.0,
+        "final_logit_softcapping": null
+      },
+      "accepted_length": 1,
+      "first_rejection_index": 1,
+      "replacement_token": 17171,
+      "bonus_token": null,
+      "decisions": [
+        true,
+        false
+      ],
+      "proposal_token_probs": [
+        1.0,
+        0.7643435597419739
+      ],
+      "target_token_probs": [
+        1.0,
+        0.0
+      ],
+      "adapter_version": 0,
+      "proposal_mode": "plain_dflash",
+      "verification_rule": "ratio",
+      "collection_temperature": 0.7,
+      "loss_temperature": 1.0,
+      "sampling_warp_config": {
+        "top_k": 20,
+        "top_p": 0.8,
+        "min_p": 0.0
+      },
+      "off_policy_teacher_positions": [
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14
+      ],
+      "target_cache_length_after_rollback": 80,
+      "committed_tokens": [
+        279,
+        17171
+      ],
+      "next_adapter_version": 0
+    },
+    {
+      "round_idx": 27,
+      "absolute_output_offset": 56,
+      "input_context_length": 81,
+      "verified_prefix_tail": [
+        11285,
+        448,
+        279,
+        17171
+      ],
+      "physical_to_logical": {
+        "anchor_physical_index": 0,
+        "logical_to_physical": [
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11,
+          12,
+          13,
+          14,
+          15
+        ]
+      },
+      "draft_tokens": [
+        438,
+        279,
+        13551,
+        448,
+        438,
+        438,
+        13,
+        13,
+        382,
+        11,
+        41854,
+        6556,
+        6556,
+        264,
+        1030
+      ],
+      "draft_lm_head": {
+        "artifact_id": "/home/catid/.cache/huggingface/hub/models--Qwen--Qwen3-8B/snapshots/b968826d9c46dd6066d109eabc6255188de91218",
+        "revision": "b968826d9c46dd6066d109eabc6255188de91218",
+        "module": "Qwen3ForCausalLM.lm_head",
+        "hook": "DFlashDraftModel.norm output, logical slots [1:]",
+        "shape": [
+          151936,
+          4096
+        ],
+        "dtype": "torch.bfloat16",
+        "bias": false,
+        "tied_weights": false,
+        "output_multiplier": 1.0,
+        "final_logit_softcapping": null
+      },
+      "accepted_length": 1,
+      "first_rejection_index": 1,
+      "replacement_token": 807,
+      "bonus_token": null,
+      "decisions": [
+        true,
+        false
+      ],
+      "proposal_token_probs": [
+        1.0,
+        1.0
+      ],
+      "target_token_probs": [
+        1.0,
+        0.0
+      ],
+      "adapter_version": 0,
+      "proposal_mode": "plain_dflash",
+      "verification_rule": "ratio",
+      "collection_temperature": 0.7,
+      "loss_temperature": 1.0,
+      "sampling_warp_config": {
+        "top_k": 20,
+        "top_p": 0.8,
+        "min_p": 0.0
+      },
+      "off_policy_teacher_positions": [
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14
+      ],
+      "target_cache_length_after_rollback": 82,
+      "committed_tokens": [
+        438,
+        807
+      ],
+      "next_adapter_version": 0
+    },
+    {
+      "round_idx": 28,
+      "absolute_output_offset": 58,
+      "input_context_length": 83,
+      "verified_prefix_tail": [
+        279,
+        17171,
+        438,
+        807
+      ],
+      "physical_to_logical": {
+        "anchor_physical_index": 0,
+        "logical_to_physical": [
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11,
+          12,
+          13,
+          14,
+          15
+        ]
+      },
+      "draft_tokens": [
+        1033,
+        806,
+        279,
+        279,
+        1030,
+        382,
+        1030,
+        382,
+        71829,
+        1030,
+        1030,
+        6556,
+        279,
+        6556,
+        279
+      ],
+      "draft_lm_head": {
+        "artifact_id": "/home/catid/.cache/huggingface/hub/models--Qwen--Qwen3-8B/snapshots/b968826d9c46dd6066d109eabc6255188de91218",
+        "revision": "b968826d9c46dd6066d109eabc6255188de91218",
+        "module": "Qwen3ForCausalLM.lm_head",
+        "hook": "DFlashDraftModel.norm output, logical slots [1:]",
+        "shape": [
+          151936,
+          4096
+        ],
+        "dtype": "torch.bfloat16",
+        "bias": false,
+        "tied_weights": false,
+        "output_multiplier": 1.0,
+        "final_logit_softcapping": null
+      },
+      "accepted_length": 1,
+      "first_rejection_index": 1,
+      "replacement_token": 448,
+      "bonus_token": null,
+      "decisions": [
+        true,
+        false
+      ],
+      "proposal_token_probs": [
+        1.0,
+        0.24229863286018372
+      ],
+      "target_token_probs": [
+        1.0,
+        0.0
+      ],
+      "adapter_version": 0,
+      "proposal_mode": "plain_dflash",
+      "verification_rule": "ratio",
+      "collection_temperature": 0.7,
+      "loss_temperature": 1.0,
+      "sampling_warp_config": {
+        "top_k": 20,
+        "top_p": 0.8,
+        "min_p": 0.0
+      },
+      "off_policy_teacher_positions": [
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14
+      ],
+      "target_cache_length_after_rollback": 84,
+      "committed_tokens": [
+        1033,
+        448
+      ],
+      "next_adapter_version": 0
+    },
+    {
+      "round_idx": 29,
+      "absolute_output_offset": 60,
+      "input_context_length": 85,
+      "verified_prefix_tail": [
+        438,
+        807,
+        1033,
+        448
+      ],
+      "physical_to_logical": {
+        "anchor_physical_index": 0,
+        "logical_to_physical": [
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11,
+          12,
+          13,
+          14,
+          15
+        ]
+      },
+      "draft_tokens": [
+        279,
+        40363,
+        315,
+        806,
+        382,
+        1030,
+        36,
+        1030,
+        71829,
+        6556,
+        279,
+        11,
+        279,
+        11,
+        315
+      ],
+      "draft_lm_head": {
+        "artifact_id": "/home/catid/.cache/huggingface/hub/models--Qwen--Qwen3-8B/snapshots/b968826d9c46dd6066d109eabc6255188de91218",
+        "revision": "b968826d9c46dd6066d109eabc6255188de91218",
+        "module": "Qwen3ForCausalLM.lm_head",
+        "hook": "DFlashDraftModel.norm output, logical slots [1:]",
+        "shape": [
+          151936,
+          4096
+        ],
+        "dtype": "torch.bfloat16",
+        "bias": false,
+        "tied_weights": false,
+        "output_multiplier": 1.0,
+        "final_logit_softcapping": null
+      },
+      "accepted_length": 1,
+      "first_rejection_index": 1,
+      "replacement_token": 36290,
+      "bonus_token": null,
+      "decisions": [
+        true,
+        false
+      ],
+      "proposal_token_probs": [
+        1.0,
+        0.11631359905004501
+      ],
+      "target_token_probs": [
+        1.0,
+        0.0
+      ],
+      "adapter_version": 0,
+      "proposal_mode": "plain_dflash",
+      "verification_rule": "ratio",
+      "collection_temperature": 0.7,
+      "loss_temperature": 1.0,
+      "sampling_warp_config": {
+        "top_k": 20,
+        "top_p": 0.8,
+        "min_p": 0.0
+      },
+      "off_policy_teacher_positions": [
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14
+      ],
+      "target_cache_length_after_rollback": 86,
+      "committed_tokens": [
+        279,
+        36290
+      ],
+      "next_adapter_version": 0
+    },
+    {
+      "round_idx": 30,
+      "absolute_output_offset": 62,
+      "input_context_length": 87,
+      "verified_prefix_tail": [
+        1033,
+        448,
+        279,
+        36290
+      ],
+      "physical_to_logical": {
+        "anchor_physical_index": 0,
+        "logical_to_physical": [
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11,
+          12,
+          13,
+          14,
+          15
+        ]
+      },
+      "draft_tokens": [
+        315,
+        279,
+        15584,
+        13,
+        71829,
+        71829,
+        71829,
+        1030,
+        6556,
+        279,
+        1030,
+        279,
+        6556,
+        806,
+        279
+      ],
+      "draft_lm_head": {
+        "artifact_id": "/home/catid/.cache/huggingface/hub/models--Qwen--Qwen3-8B/snapshots/b968826d9c46dd6066d109eabc6255188de91218",
+        "revision": "b968826d9c46dd6066d109eabc6255188de91218",
+        "module": "Qwen3ForCausalLM.lm_head",
+        "hook": "DFlashDraftModel.norm output, logical slots [1:]",
+        "shape": [
+          151936,
+          4096
+        ],
+        "dtype": "torch.bfloat16",
+        "bias": false,
+        "tied_weights": false,
+        "output_multiplier": 1.0,
+        "final_logit_softcapping": null
+      },
+      "accepted_length": 4,
+      "first_rejection_index": 4,
+      "replacement_token": 7209,
+      "bonus_token": null,
+      "decisions": [
+        true,
+        true,
+        true,
+        true,
+        false
+      ],
+      "proposal_token_probs": [
+        1.0,
+        1.0,
+        0.08626605570316315,
+        0.41165125370025635,
+        0.12865906953811646
+      ],
+      "target_token_probs": [
+        1.0,
+        1.0,
+        1.0,
+        0.744868814945221,
+        0.0
+      ],
+      "adapter_version": 0,
+      "proposal_mode": "plain_dflash",
+      "verification_rule": "ratio",
+      "collection_temperature": 0.7,
+      "loss_temperature": 1.0,
+      "sampling_warp_config": {
+        "top_k": 20,
+        "top_p": 0.8,
+        "min_p": 0.0
+      },
+      "off_policy_teacher_positions": [
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14
+      ],
+      "target_cache_length_after_rollback": 91,
+      "committed_tokens": [
+        315,
+        279,
+        15584,
+        13,
+        7209
+      ],
+      "next_adapter_version": 0
+    },
+    {
+      "round_idx": 31,
+      "absolute_output_offset": 67,
+      "input_context_length": 92,
+      "verified_prefix_tail": [
+        279,
+        15584,
+        13,
+        7209
+      ],
+      "physical_to_logical": {
+        "anchor_physical_index": 0,
+        "logical_to_physical": [
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11,
+          12,
+          13,
+          14,
+          15
+        ]
+      },
+      "draft_tokens": [
+        6556,
+        11,
+        279,
+        1030,
+        279,
+        279,
+        264,
+        315,
+        11,
+        11,
+        11,
+        279,
+        11,
+        323,
+        11
+      ],
+      "draft_lm_head": {
+        "artifact_id": "/home/catid/.cache/huggingface/hub/models--Qwen--Qwen3-8B/snapshots/b968826d9c46dd6066d109eabc6255188de91218",
+        "revision": "b968826d9c46dd6066d109eabc6255188de91218",
+        "module": "Qwen3ForCausalLM.lm_head",
+        "hook": "DFlashDraftModel.norm output, logical slots [1:]",
+        "shape": [
+          151936,
+          4096
+        ],
+        "dtype": "torch.bfloat16",
+        "bias": false,
+        "tied_weights": false,
+        "output_multiplier": 1.0,
+        "final_logit_softcapping": null
+      },
+      "accepted_length": 2,
+      "first_rejection_index": 2,
+      "replacement_token": 1573,
+      "bonus_token": null,
+      "decisions": [
+        true,
+        true,
+        false
+      ],
+      "proposal_token_probs": [
+        1.0,
+        1.0,
+        0.3286527395248413
+      ],
+      "target_token_probs": [
+        1.0,
+        1.0,
+        0.0
+      ],
+      "adapter_version": 0,
+      "proposal_mode": "plain_dflash",
+      "verification_rule": "ratio",
+      "collection_temperature": 0.7,
+      "loss_temperature": 1.0,
+      "sampling_warp_config": {
+        "top_k": 20,
+        "top_p": 0.8,
+        "min_p": 0.0
+      },
+      "off_policy_teacher_positions": [
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14
+      ],
+      "target_cache_length_after_rollback": 94,
+      "committed_tokens": [
+        6556,
+        11,
+        1573
+      ],
+      "next_adapter_version": 0
+    },
+    {
+      "round_idx": 32,
+      "absolute_output_offset": 70,
+      "input_context_length": 95,
+      "verified_prefix_tail": [
+        7209,
+        6556,
+        11,
+        1573
+      ],
+      "physical_to_logical": {
+        "anchor_physical_index": 0,
+        "logical_to_physical": [
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11,
+          12,
+          13,
+          14,
+          15
+        ]
+      },
+      "draft_tokens": [
+        279,
+        7015,
+        1035,
+        1526,
+        38393,
+        11,
+        1035,
+        1035,
+        279,
+        38393,
+        806,
+        11,
+        315,
+        323,
+        279
+      ],
+      "draft_lm_head": {
+        "artifact_id": "/home/catid/.cache/huggingface/hub/models--Qwen--Qwen3-8B/snapshots/b968826d9c46dd6066d109eabc6255188de91218",
+        "revision": "b968826d9c46dd6066d109eabc6255188de91218",
+        "module": "Qwen3ForCausalLM.lm_head",
+        "hook": "DFlashDraftModel.norm output, logical slots [1:]",
+        "shape": [
+          151936,
+          4096
+        ],
+        "dtype": "torch.bfloat16",
+        "bias": false,
+        "tied_weights": false,
+        "output_multiplier": 1.0,
+        "final_logit_softcapping": null
+      },
+      "accepted_length": 2,
+      "first_rejection_index": 2,
+      "replacement_token": 1030,
+      "bonus_token": null,
+      "decisions": [
+        true,
+        true,
+        false
+      ],
+      "proposal_token_probs": [
+        0.5458338260650635,
+        1.0,
+        0.06022954732179642
+      ],
+      "target_token_probs": [
+        1.0,
+        1.0,
+        0.0
+      ],
+      "adapter_version": 0,
+      "proposal_mode": "plain_dflash",
+      "verification_rule": "ratio",
+      "collection_temperature": 0.7,
+      "loss_temperature": 1.0,
+      "sampling_warp_config": {
+        "top_k": 20,
+        "top_p": 0.8,
+        "min_p": 0.0
+      },
+      "off_policy_teacher_positions": [
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14
+      ],
+      "target_cache_length_after_rollback": 97,
+      "committed_tokens": [
+        279,
+        7015,
+        1030
+      ],
+      "next_adapter_version": 0
+    },
+    {
+      "round_idx": 33,
+      "absolute_output_offset": 73,
+      "input_context_length": 98,
+      "verified_prefix_tail": [
+        1573,
+        279,
+        7015,
+        1030
+      ],
+      "physical_to_logical": {
+        "anchor_physical_index": 0,
+        "logical_to_physical": [
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11,
+          12,
+          13,
+          14,
+          15
+        ]
+      },
+      "draft_tokens": [
+        40382,
+        40382,
+        3403,
+        11,
+        1035,
+        11,
+        806,
+        1526,
+        279,
+        1526,
+        11,
+        279,
+        11,
+        11,
+        11
+      ],
+      "draft_lm_head": {
+        "artifact_id": "/home/catid/.cache/huggingface/hub/models--Qwen--Qwen3-8B/snapshots/b968826d9c46dd6066d109eabc6255188de91218",
+        "revision": "b968826d9c46dd6066d109eabc6255188de91218",
+        "module": "Qwen3ForCausalLM.lm_head",
+        "hook": "DFlashDraftModel.norm output, logical slots [1:]",
+        "shape": [
+          151936,
+          4096
+        ],
+        "dtype": "torch.bfloat16",
+        "bias": false,
+        "tied_weights": false,
+        "output_multiplier": 1.0,
+        "final_logit_softcapping": null
+      },
+      "accepted_length": 0,
+      "first_rejection_index": 0,
+      "replacement_token": 7225,
+      "bonus_token": null,
+      "decisions": [
+        false
+      ],
+      "proposal_token_probs": [
+        1.0
+      ],
+      "target_token_probs": [
+        0.0
+      ],
+      "adapter_version": 0,
+      "proposal_mode": "plain_dflash",
+      "verification_rule": "ratio",
+      "collection_temperature": 0.7,
+      "loss_temperature": 1.0,
+      "sampling_warp_config": {
+        "top_k": 20,
+        "top_p": 0.8,
+        "min_p": 0.0
+      },
+      "off_policy_teacher_positions": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14
+      ],
+      "target_cache_length_after_rollback": 98,
+      "committed_tokens": [
+        7225
+      ],
+      "next_adapter_version": 0
+    },
+    {
+      "round_idx": 34,
+      "absolute_output_offset": 74,
+      "input_context_length": 99,
+      "verified_prefix_tail": [
+        279,
+        7015,
+        1030,
+        7225
+      ],
+      "physical_to_logical": {
+        "anchor_physical_index": 0,
+        "logical_to_physical": [
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11,
+          12,
+          13,
+          14,
+          15
+        ]
+      },
+      "draft_tokens": [
+        40382,
+        11,
+        279,
+        1035,
+        1035,
+        806,
+        279,
+        806,
+        279,
+        279,
+        13551,
+        1380,
+        311,
+        323,
+        11
+      ],
+      "draft_lm_head": {
+        "artifact_id": "/home/catid/.cache/huggingface/hub/models--Qwen--Qwen3-8B/snapshots/b968826d9c46dd6066d109eabc6255188de91218",
+        "revision": "b968826d9c46dd6066d109eabc6255188de91218",
+        "module": "Qwen3ForCausalLM.lm_head",
+        "hook": "DFlashDraftModel.norm output, logical slots [1:]",
+        "shape": [
+          151936,
+          4096
+        ],
+        "dtype": "torch.bfloat16",
+        "bias": false,
+        "tied_weights": false,
+        "output_multiplier": 1.0,
+        "final_logit_softcapping": null
+      },
+      "accepted_length": 2,
+      "first_rejection_index": 2,
+      "replacement_token": 85656,
+      "bonus_token": null,
+      "decisions": [
+        true,
+        true,
+        false
+      ],
+      "proposal_token_probs": [
+        1.0,
+        0.655241072177887,
+        0.4896700978279114
+      ],
+      "target_token_probs": [
+        1.0,
+        1.0,
+        0.0
+      ],
+      "adapter_version": 0,
+      "proposal_mode": "plain_dflash",
+      "verification_rule": "ratio",
+      "collection_temperature": 0.7,
+      "loss_temperature": 1.0,
+      "sampling_warp_config": {
+        "top_k": 20,
+        "top_p": 0.8,
+        "min_p": 0.0
+      },
+      "off_policy_teacher_positions": [
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14
+      ],
+      "target_cache_length_after_rollback": 101,
+      "committed_tokens": [
+        40382,
+        11,
+        85656
+      ],
+      "next_adapter_version": 0
+    },
+    {
+      "round_idx": 35,
+      "absolute_output_offset": 77,
+      "input_context_length": 102,
+      "verified_prefix_tail": [
+        7225,
+        40382,
+        11,
+        85656
+      ],
+      "physical_to_logical": {
+        "anchor_physical_index": 0,
+        "logical_to_physical": [
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11,
+          12,
+          13,
+          14,
+          15
+        ]
+      },
+      "draft_tokens": [
+        1035,
+        4227,
+        1526,
+        1526,
+        34131,
+        11,
+        11,
+        279,
+        323,
+        311,
+        279,
+        323,
+        11,
+        279,
+        311
+      ],
+      "draft_lm_head": {
+        "artifact_id": "/home/catid/.cache/huggingface/hub/models--Qwen--Qwen3-8B/snapshots/b968826d9c46dd6066d109eabc6255188de91218",
+        "revision": "b968826d9c46dd6066d109eabc6255188de91218",
+        "module": "Qwen3ForCausalLM.lm_head",
+        "hook": "DFlashDraftModel.norm output, logical slots [1:]",
+        "shape": [
+          151936,
+          4096
+        ],
+        "dtype": "torch.bfloat16",
+        "bias": false,
+        "tied_weights": false,
+        "output_multiplier": 1.0,
+        "final_logit_softcapping": null
+      },
+      "accepted_length": 3,
+      "first_rejection_index": 3,
+      "replacement_token": 279,
+      "bonus_token": null,
+      "decisions": [
+        true,
+        true,
+        true,
+        false
+      ],
+      "proposal_token_probs": [
+        1.0,
+        0.22270014882087708,
+        0.5050501227378845,
+        0.09502314776182175
+      ],
+      "target_token_probs": [
+        1.0,
+        0.06379560381174088,
+        1.0,
+        0.0
+      ],
+      "adapter_version": 0,
+      "proposal_mode": "plain_dflash",
+      "verification_rule": "ratio",
+      "collection_temperature": 0.7,
+      "loss_temperature": 1.0,
+      "sampling_warp_config": {
+        "top_k": 20,
+        "top_p": 0.8,
+        "min_p": 0.0
+      },
+      "off_policy_teacher_positions": [
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14
+      ],
+      "target_cache_length_after_rollback": 105,
+      "committed_tokens": [
+        1035,
+        4227,
+        1526,
+        279
+      ],
+      "next_adapter_version": 0
+    },
+    {
+      "round_idx": 36,
+      "absolute_output_offset": 81,
+      "input_context_length": 106,
+      "verified_prefix_tail": [
+        1035,
+        4227,
+        1526,
+        279
+      ],
+      "physical_to_logical": {
+        "anchor_physical_index": 0,
+        "logical_to_physical": [
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11,
+          12,
+          13,
+          14,
+          15
+        ]
+      },
+      "draft_tokens": [
+        13551,
+        315,
+        279,
+        279,
+        11,
+        806,
+        11,
+        279,
+        11,
+        11,
+        279,
+        806,
+        279,
+        311,
+        382
+      ],
+      "draft_lm_head": {
+        "artifact_id": "/home/catid/.cache/huggingface/hub/models--Qwen--Qwen3-8B/snapshots/b968826d9c46dd6066d109eabc6255188de91218",
+        "revision": "b968826d9c46dd6066d109eabc6255188de91218",
+        "module": "Qwen3ForCausalLM.lm_head",
+        "hook": "DFlashDraftModel.norm output, logical slots [1:]",
+        "shape": [
+          151936,
+          4096
+        ],
+        "dtype": "torch.bfloat16",
+        "bias": false,
+        "tied_weights": false,
+        "output_multiplier": 1.0,
+        "final_logit_softcapping": null
+      },
+      "accepted_length": 0,
+      "first_rejection_index": 0,
+      "replacement_token": 14126,
+      "bonus_token": null,
+      "decisions": [
+        false
+      ],
+      "proposal_token_probs": [
+        0.27332329750061035
+      ],
+      "target_token_probs": [
+        0.0
+      ],
+      "adapter_version": 0,
+      "proposal_mode": "plain_dflash",
+      "verification_rule": "ratio",
+      "collection_temperature": 0.7,
+      "loss_temperature": 1.0,
+      "sampling_warp_config": {
+        "top_k": 20,
+        "top_p": 0.8,
+        "min_p": 0.0
+      },
+      "off_policy_teacher_positions": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14
+      ],
+      "target_cache_length_after_rollback": 106,
+      "committed_tokens": [
+        14126
+      ],
+      "next_adapter_version": 0
+    },
+    {
+      "round_idx": 37,
+      "absolute_output_offset": 82,
+      "input_context_length": 107,
+      "verified_prefix_tail": [
+        4227,
+        1526,
+        279,
+        14126
+      ],
+      "physical_to_logical": {
+        "anchor_physical_index": 0,
+        "logical_to_physical": [
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11,
+          12,
+          13,
+          14,
+          15
+        ]
+      },
+      "draft_tokens": [
+        11,
+        806,
+        279,
+        806,
+        279,
+        11,
+        323,
+        323,
+        279,
+        11,
+        279,
+        323,
+        323,
+        11,
+        382
+      ],
+      "draft_lm_head": {
+        "artifact_id": "/home/catid/.cache/huggingface/hub/models--Qwen--Qwen3-8B/snapshots/b968826d9c46dd6066d109eabc6255188de91218",
+        "revision": "b968826d9c46dd6066d109eabc6255188de91218",
+        "module": "Qwen3ForCausalLM.lm_head",
+        "hook": "DFlashDraftModel.norm output, logical slots [1:]",
+        "shape": [
+          151936,
+          4096
+        ],
+        "dtype": "torch.bfloat16",
+        "bias": false,
+        "tied_weights": false,
+        "output_multiplier": 1.0,
+        "final_logit_softcapping": null
+      },
+      "accepted_length": 1,
+      "first_rejection_index": 1,
+      "replacement_token": 259,
+      "bonus_token": null,
+      "decisions": [
+        true,
+        false
+      ],
+      "proposal_token_probs": [
+        0.6308150887489319,
+        0.547974705696106
+      ],
+      "target_token_probs": [
+        1.0,
+        0.0
+      ],
+      "adapter_version": 0,
+      "proposal_mode": "plain_dflash",
+      "verification_rule": "ratio",
+      "collection_temperature": 0.7,
+      "loss_temperature": 1.0,
+      "sampling_warp_config": {
+        "top_k": 20,
+        "top_p": 0.8,
+        "min_p": 0.0
+      },
+      "off_policy_teacher_positions": [
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14
+      ],
+      "target_cache_length_after_rollback": 108,
+      "committed_tokens": [
+        11,
+        259
+      ],
+      "next_adapter_version": 0
+    },
+    {
+      "round_idx": 38,
+      "absolute_output_offset": 84,
+      "input_context_length": 109,
+      "verified_prefix_tail": [
+        279,
+        14126,
+        11,
+        259
+      ],
+      "physical_to_logical": {
+        "anchor_physical_index": 0,
+        "logical_to_physical": [
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11,
+          12,
+          13,
+          14,
+          15
+        ]
+      },
+      "draft_tokens": [
+        2459,
+        916,
+        315,
+        11,
+        323,
+        311,
+        323,
+        11,
+        279,
+        315,
+        11,
+        566,
+        315,
+        11,
+        279
+      ],
+      "draft_lm_head": {
+        "artifact_id": "/home/catid/.cache/huggingface/hub/models--Qwen--Qwen3-8B/snapshots/b968826d9c46dd6066d109eabc6255188de91218",
+        "revision": "b968826d9c46dd6066d109eabc6255188de91218",
+        "module": "Qwen3ForCausalLM.lm_head",
+        "hook": "DFlashDraftModel.norm output, logical slots [1:]",
+        "shape": [
+          151936,
+          4096
+        ],
+        "dtype": "torch.bfloat16",
+        "bias": false,
+        "tied_weights": false,
+        "output_multiplier": 1.0,
+        "final_logit_softcapping": null
+      },
+      "accepted_length": 1,
+      "first_rejection_index": 1,
+      "replacement_token": 311,
+      "bonus_token": null,
+      "decisions": [
+        true,
+        false
+      ],
+      "proposal_token_probs": [
+        1.0,
+        0.17428985238075256
+      ],
+      "target_token_probs": [
+        1.0,
+        0.0
+      ],
+      "adapter_version": 0,
+      "proposal_mode": "plain_dflash",
+      "verification_rule": "ratio",
+      "collection_temperature": 0.7,
+      "loss_temperature": 1.0,
+      "sampling_warp_config": {
+        "top_k": 20,
+        "top_p": 0.8,
+        "min_p": 0.0
+      },
+      "off_policy_teacher_positions": [
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14
+      ],
+      "target_cache_length_after_rollback": 110,
+      "committed_tokens": [
+        2459,
+        311
+      ],
+      "next_adapter_version": 0
+    },
+    {
+      "round_idx": 39,
+      "absolute_output_offset": 86,
+      "input_context_length": 111,
+      "verified_prefix_tail": [
+        11,
+        259,
+        2459,
+        311
+      ],
+      "physical_to_logical": {
+        "anchor_physical_index": 0,
+        "logical_to_physical": [
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11,
+          12,
+          13,
+          14,
+          15
+        ]
+      },
+      "draft_tokens": [
+        279,
+        35436,
+        11,
+        11,
+        11,
+        279,
+        11,
+        11,
+        323,
+        323,
+        279,
+        11,
+        11,
+        11,
+        11
+      ],
+      "draft_lm_head": {
+        "artifact_id": "/home/catid/.cache/huggingface/hub/models--Qwen--Qwen3-8B/snapshots/b968826d9c46dd6066d109eabc6255188de91218",
+        "revision": "b968826d9c46dd6066d109eabc6255188de91218",
+        "module": "Qwen3ForCausalLM.lm_head",
+        "hook": "DFlashDraftModel.norm output, logical slots [1:]",
+        "shape": [
+          151936,
+          4096
+        ],
+        "dtype": "torch.bfloat16",
+        "bias": false,
+        "tied_weights": false,
+        "output_multiplier": 1.0,
+        "final_logit_softcapping": null
+      },
+      "accepted_length": 2,
+      "first_rejection_index": 2,
+      "replacement_token": 429,
+      "bonus_token": null,
+      "decisions": [
+        true,
+        true,
+        false
+      ],
+      "proposal_token_probs": [
+        0.8066786527633667,
+        0.7440822124481201,
+        0.41165125370025635
+      ],
+      "target_token_probs": [
+        1.0,
+        1.0,
+        0.0
+      ],
+      "adapter_version": 0,
+      "proposal_mode": "plain_dflash",
+      "verification_rule": "ratio",
+      "collection_temperature": 0.7,
+      "loss_temperature": 1.0,
+      "sampling_warp_config": {
+        "top_k": 20,
+        "top_p": 0.8,
+        "min_p": 0.0
+      },
+      "off_policy_teacher_positions": [
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14
+      ],
+      "target_cache_length_after_rollback": 113,
+      "committed_tokens": [
+        279,
+        35436,
+        429
+      ],
+      "next_adapter_version": 0
+    },
+    {
+      "round_idx": 40,
+      "absolute_output_offset": 89,
+      "input_context_length": 114,
+      "verified_prefix_tail": [
+        311,
+        279,
+        35436,
+        429
+      ],
+      "physical_to_logical": {
+        "anchor_physical_index": 0,
+        "logical_to_physical": [
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11,
+          12,
+          13,
+          14,
+          15
+        ]
+      },
+      "draft_tokens": [
+        1030,
+        806,
+        806,
+        279,
+        382,
+        382,
+        279,
+        279,
+        264,
+        11,
+        279,
+        1030,
+        438,
+        11,
+        382
+      ],
+      "draft_lm_head": {
+        "artifact_id": "/home/catid/.cache/huggingface/hub/models--Qwen--Qwen3-8B/snapshots/b968826d9c46dd6066d109eabc6255188de91218",
+        "revision": "b968826d9c46dd6066d109eabc6255188de91218",
+        "module": "Qwen3ForCausalLM.lm_head",
+        "hook": "DFlashDraftModel.norm output, logical slots [1:]",
+        "shape": [
+          151936,
+          4096
+        ],
+        "dtype": "torch.bfloat16",
+        "bias": false,
+        "tied_weights": false,
+        "output_multiplier": 1.0,
+        "final_logit_softcapping": null
+      },
+      "accepted_length": 0,
+      "first_rejection_index": 0,
+      "replacement_token": 31293,
+      "bonus_token": null,
+      "decisions": [
+        false
+      ],
+      "proposal_token_probs": [
+        0.5310319662094116
+      ],
+      "target_token_probs": [
+        0.0
+      ],
+      "adapter_version": 0,
+      "proposal_mode": "plain_dflash",
+      "verification_rule": "ratio",
+      "collection_temperature": 0.7,
+      "loss_temperature": 1.0,
+      "sampling_warp_config": {
+        "top_k": 20,
+        "top_p": 0.8,
+        "min_p": 0.0
+      },
+      "off_policy_teacher_positions": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14
+      ],
+      "target_cache_length_after_rollback": 114,
+      "committed_tokens": [
+        31293
+      ],
+      "next_adapter_version": 0
+    },
+    {
+      "round_idx": 41,
+      "absolute_output_offset": 90,
+      "input_context_length": 115,
+      "verified_prefix_tail": [
+        279,
+        35436,
+        429,
+        31293
+      ],
+      "physical_to_logical": {
+        "anchor_physical_index": 0,
+        "logical_to_physical": [
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11,
+          12,
+          13,
+          14,
+          15
+        ]
+      },
+      "draft_tokens": [
+        279,
+        6290,
+        1075,
+        264,
+        279,
+        279,
+        279,
+        323,
+        6556,
+        6556,
+        279,
+        382,
+        41854,
+        382,
+        279
+      ],
+      "draft_lm_head": {
+        "artifact_id": "/home/catid/.cache/huggingface/hub/models--Qwen--Qwen3-8B/snapshots/b968826d9c46dd6066d109eabc6255188de91218",
+        "revision": "b968826d9c46dd6066d109eabc6255188de91218",
+        "module": "Qwen3ForCausalLM.lm_head",
+        "hook": "DFlashDraftModel.norm output, logical slots [1:]",
+        "shape": [
+          151936,
+          4096
+        ],
+        "dtype": "torch.bfloat16",
+        "bias": false,
+        "tied_weights": false,
+        "output_multiplier": 1.0,
+        "final_logit_softcapping": null
+      },
+      "accepted_length": 2,
+      "first_rejection_index": 2,
+      "replacement_token": 9334,
+      "bonus_token": null,
+      "decisions": [
+        true,
+        true,
+        false
+      ],
+      "proposal_token_probs": [
+        0.6308150887489319,
+        0.5776451230049133,
+        0.2824353575706482
+      ],
+      "target_token_probs": [
+        1.0,
+        0.43073636293411255,
+        0.0
+      ],
+      "adapter_version": 0,
+      "proposal_mode": "plain_dflash",
+      "verification_rule": "ratio",
+      "collection_temperature": 0.7,
+      "loss_temperature": 1.0,
+      "sampling_warp_config": {
+        "top_k": 20,
+        "top_p": 0.8,
+        "min_p": 0.0
+      },
+      "off_policy_teacher_positions": [
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14
+      ],
+      "target_cache_length_after_rollback": 117,
+      "committed_tokens": [
+        279,
+        6290,
+        9334
+      ],
+      "next_adapter_version": 0
+    },
+    {
+      "round_idx": 42,
+      "absolute_output_offset": 93,
+      "input_context_length": 118,
+      "verified_prefix_tail": [
+        31293,
+        279,
+        6290,
+        9334
+      ],
+      "physical_to_logical": {
+        "anchor_physical_index": 0,
+        "logical_to_physical": [
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11,
+          12,
+          13,
+          14,
+          15
+        ]
+      },
+      "draft_tokens": [
+        382,
+        3966,
+        1899,
+        279,
+        41854,
+        315,
+        41854,
+        279,
+        11,
+        264,
+        279,
+        11,
+        11,
+        11,
+        1030
+      ],
+      "draft_lm_head": {
+        "artifact_id": "/home/catid/.cache/huggingface/hub/models--Qwen--Qwen3-8B/snapshots/b968826d9c46dd6066d109eabc6255188de91218",
+        "revision": "b968826d9c46dd6066d109eabc6255188de91218",
+        "module": "Qwen3ForCausalLM.lm_head",
+        "hook": "DFlashDraftModel.norm output, logical slots [1:]",
+        "shape": [
+          151936,
+          4096
+        ],
+        "dtype": "torch.bfloat16",
+        "bias": false,
+        "tied_weights": false,
+        "output_multiplier": 1.0,
+        "final_logit_softcapping": null
+      },
+      "accepted_length": 0,
+      "first_rejection_index": 0,
+      "replacement_token": 323,
+      "bonus_token": null,
+      "decisions": [
+        false
+      ],
+      "proposal_token_probs": [
+        0.5445241928100586
+      ],
+      "target_token_probs": [
+        0.2032705396413803
+      ],
+      "adapter_version": 0,
+      "proposal_mode": "plain_dflash",
+      "verification_rule": "ratio",
+      "collection_temperature": 0.7,
+      "loss_temperature": 1.0,
+      "sampling_warp_config": {
+        "top_k": 20,
+        "top_p": 0.8,
+        "min_p": 0.0
+      },
+      "off_policy_teacher_positions": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14
+      ],
+      "target_cache_length_after_rollback": 118,
+      "committed_tokens": [
+        323
+      ],
+      "next_adapter_version": 0
+    },
+    {
+      "round_idx": 43,
+      "absolute_output_offset": 94,
+      "input_context_length": 119,
+      "verified_prefix_tail": [
+        279,
+        6290,
+        9334,
+        323
+      ],
+      "physical_to_logical": {
+        "anchor_physical_index": 0,
+        "logical_to_physical": [
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11,
+          12,
+          13,
+          14,
+          15
+        ]
+      },
+      "draft_tokens": [
+        279,
+        279,
+        382,
+        382,
+        382,
+        1030,
+        41854,
+        41854,
+        11,
+        264,
+        41854,
+        438,
+        41854,
+        11,
+        279
+      ],
+      "draft_lm_head": {
+        "artifact_id": "/home/catid/.cache/huggingface/hub/models--Qwen--Qwen3-8B/snapshots/b968826d9c46dd6066d109eabc6255188de91218",
+        "revision": "b968826d9c46dd6066d109eabc6255188de91218",
+        "module": "Qwen3ForCausalLM.lm_head",
+        "hook": "DFlashDraftModel.norm output, logical slots [1:]",
+        "shape": [
+          151936,
+          4096
+        ],
+        "dtype": "torch.bfloat16",
+        "bias": false,
+        "tied_weights": false,
+        "output_multiplier": 1.0,
+        "final_logit_softcapping": null
+      },
+      "accepted_length": 1,
+      "first_rejection_index": 1,
+      "replacement_token": 10415,
+      "bonus_token": null,
+      "decisions": [
+        true,
+        false
+      ],
+      "proposal_token_probs": [
+        1.0,
+        0.5877544283866882
+      ],
+      "target_token_probs": [
+        1.0,
+        0.0
+      ],
+      "adapter_version": 0,
+      "proposal_mode": "plain_dflash",
+      "verification_rule": "ratio",
+      "collection_temperature": 0.7,
+      "loss_temperature": 1.0,
+      "sampling_warp_config": {
+        "top_k": 20,
+        "top_p": 0.8,
+        "min_p": 0.0
+      },
+      "off_policy_teacher_positions": [
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14
+      ],
+      "target_cache_length_after_rollback": 120,
+      "committed_tokens": [
+        279,
+        10415
+      ],
+      "next_adapter_version": 0
+    },
+    {
+      "round_idx": 44,
+      "absolute_output_offset": 96,
+      "input_context_length": 121,
+      "verified_prefix_tail": [
+        9334,
+        323,
+        279,
+        10415
+      ],
+      "physical_to_logical": {
+        "anchor_physical_index": 0,
+        "logical_to_physical": [
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11,
+          12,
+          13,
+          14,
+          15
+        ]
+      },
+      "draft_tokens": [
+        315,
+        279,
+        6290,
+        382,
+        1519,
+        3966,
+        1030,
+        11,
+        41854,
+        438,
+        11,
+        11,
+        279,
+        572,
+        11
+      ],
+      "draft_lm_head": {
+        "artifact_id": "/home/catid/.cache/huggingface/hub/models--Qwen--Qwen3-8B/snapshots/b968826d9c46dd6066d109eabc6255188de91218",
+        "revision": "b968826d9c46dd6066d109eabc6255188de91218",
+        "module": "Qwen3ForCausalLM.lm_head",
+        "hook": "DFlashDraftModel.norm output, logical slots [1:]",
+        "shape": [
+          151936,
+          4096
+        ],
+        "dtype": "torch.bfloat16",
+        "bias": false,
+        "tied_weights": false,
+        "output_multiplier": 1.0,
+        "final_logit_softcapping": null
+      },
+      "accepted_length": 2,
+      "first_rejection_index": 2,
+      "replacement_token": 24824,
+      "bonus_token": null,
+      "decisions": [
+        true,
+        true,
+        false
+      ],
+      "proposal_token_probs": [
+        1.0,
+        0.5445246696472168,
+        0.1998019814491272
+      ],
+      "target_token_probs": [
+        1.0,
+        1.0,
+        0.0
+      ],
+      "adapter_version": 0,
+      "proposal_mode": "plain_dflash",
+      "verification_rule": "ratio",
+      "collection_temperature": 0.7,
+      "loss_temperature": 1.0,
+      "sampling_warp_config": {
+        "top_k": 20,
+        "top_p": 0.8,
+        "min_p": 0.0
+      },
+      "off_policy_teacher_positions": [
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14
+      ],
+      "target_cache_length_after_rollback": 123,
+      "committed_tokens": [
+        315,
+        279,
+        24824
+      ],
+      "next_adapter_version": 0
+    },
+    {
+      "round_idx": 45,
+      "absolute_output_offset": 99,
+      "input_context_length": 124,
+      "verified_prefix_tail": [
+        10415,
+        315,
+        279,
+        24824
+      ],
+      "physical_to_logical": {
+        "anchor_physical_index": 0,
+        "logical_to_physical": [
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11,
+          12,
+          13,
+          14,
+          15
+        ]
+      },
+      "draft_tokens": [
+        40931,
+        1519,
+        1030,
+        41854,
+        41854,
+        11,
+        41854,
+        279,
+        11,
+        279,
+        264,
+        279,
+        264,
+        11,
+        11
+      ],
+      "draft_lm_head": {
+        "artifact_id": "/home/catid/.cache/huggingface/hub/models--Qwen--Qwen3-8B/snapshots/b968826d9c46dd6066d109eabc6255188de91218",
+        "revision": "b968826d9c46dd6066d109eabc6255188de91218",
+        "module": "Qwen3ForCausalLM.lm_head",
+        "hook": "DFlashDraftModel.norm output, logical slots [1:]",
+        "shape": [
+          151936,
+          4096
+        ],
+        "dtype": "torch.bfloat16",
+        "bias": false,
+        "tied_weights": false,
+        "output_multiplier": 1.0,
+        "final_logit_softcapping": null
+      },
+      "accepted_length": 1,
+      "first_rejection_index": 1,
+      "replacement_token": 382,
+      "bonus_token": null,
+      "decisions": [
+        true,
+        false
+      ],
+      "proposal_token_probs": [
+        1.0,
+        0.07735349982976913
+      ],
+      "target_token_probs": [
+        1.0,
+        0.0
+      ],
+      "adapter_version": 0,
+      "proposal_mode": "plain_dflash",
+      "verification_rule": "ratio",
+      "collection_temperature": 0.7,
+      "loss_temperature": 1.0,
+      "sampling_warp_config": {
+        "top_k": 20,
+        "top_p": 0.8,
+        "min_p": 0.0
+      },
+      "off_policy_teacher_positions": [
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14
+      ],
+      "target_cache_length_after_rollback": 125,
+      "committed_tokens": [
+        40931,
+        382
+      ],
+      "next_adapter_version": 0
+    },
+    {
+      "round_idx": 46,
+      "absolute_output_offset": 101,
+      "input_context_length": 126,
+      "verified_prefix_tail": [
+        279,
+        24824,
+        40931,
+        382
+      ],
+      "physical_to_logical": {
+        "anchor_physical_index": 0,
+        "logical_to_physical": [
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11,
+          12,
+          13,
+          14,
+          15
+        ]
+      },
+      "draft_tokens": [
+        3966,
+        41854,
+        11,
+        438,
+        11,
+        279,
+        264,
+        279,
+        279,
+        304,
+        11,
+        264,
+        279,
+        11,
+        323
+      ],
+      "draft_lm_head": {
+        "artifact_id": "/home/catid/.cache/huggingface/hub/models--Qwen--Qwen3-8B/snapshots/b968826d9c46dd6066d109eabc6255188de91218",
+        "revision": "b968826d9c46dd6066d109eabc6255188de91218",
+        "module": "Qwen3ForCausalLM.lm_head",
+        "hook": "DFlashDraftModel.norm output, logical slots [1:]",
+        "shape": [
+          151936,
+          4096
+        ],
+        "dtype": "torch.bfloat16",
+        "bias": false,
+        "tied_weights": false,
+        "output_multiplier": 1.0,
+        "final_logit_softcapping": null
+      },
+      "accepted_length": 2,
+      "first_rejection_index": 2,
+      "replacement_token": 41674,
+      "bonus_token": null,
+      "decisions": [
+        true,
+        true,
+        false
+      ],
+      "proposal_token_probs": [
+        0.8564011454582214,
+        0.3682233989238739,
+        0.6713476777076721
+      ],
+      "target_token_probs": [
+        1.0,
+        1.0,
+        0.0
+      ],
+      "adapter_version": 0,
+      "proposal_mode": "plain_dflash",
+      "verification_rule": "ratio",
+      "collection_temperature": 0.7,
+      "loss_temperature": 1.0,
+      "sampling_warp_config": {
+        "top_k": 20,
+        "top_p": 0.8,
+        "min_p": 0.0
+      },
+      "off_policy_teacher_positions": [
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14
+      ],
+      "target_cache_length_after_rollback": 128,
+      "committed_tokens": [
+        3966,
+        41854,
+        41674
+      ],
+      "next_adapter_version": 0
+    },
+    {
+      "round_idx": 47,
+      "absolute_output_offset": 104,
+      "input_context_length": 129,
+      "verified_prefix_tail": [
+        382,
+        3966,
+        41854,
+        41674
+      ],
+      "physical_to_logical": {
+        "anchor_physical_index": 0,
+        "logical_to_physical": [
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11,
+          12,
+          13,
+          14,
+          15
+        ]
+      },
+      "draft_tokens": [
+        6556,
+        11,
+        438,
+        279,
+        7015,
+        572,
+        304,
+        279,
+        279,
+        323,
+        566,
+        264,
+        279,
+        279,
+        264
+      ],
+      "draft_lm_head": {
+        "artifact_id": "/home/catid/.cache/huggingface/hub/models--Qwen--Qwen3-8B/snapshots/b968826d9c46dd6066d109eabc6255188de91218",
+        "revision": "b968826d9c46dd6066d109eabc6255188de91218",
+        "module": "Qwen3ForCausalLM.lm_head",
+        "hook": "DFlashDraftModel.norm output, logical slots [1:]",
+        "shape": [
+          151936,
+          4096
+        ],
+        "dtype": "torch.bfloat16",
+        "bias": false,
+        "tied_weights": false,
+        "output_multiplier": 1.0,
+        "final_logit_softcapping": null
+      },
+      "accepted_length": 4,
+      "first_rejection_index": 4,
+      "replacement_token": 10901,
+      "bonus_token": null,
+      "decisions": [
+        true,
+        true,
+        true,
+        true,
+        false
+      ],
+      "proposal_token_probs": [
+        1.0,
+        1.0,
+        1.0,
+        0.9241418242454529,
+        0.34886279702186584
+      ],
+      "target_token_probs": [
+        1.0,
+        1.0,
+        1.0,
+        0.6713477373123169,
+        0.0
+      ],
+      "adapter_version": 0,
+      "proposal_mode": "plain_dflash",
+      "verification_rule": "ratio",
+      "collection_temperature": 0.7,
+      "loss_temperature": 1.0,
+      "sampling_warp_config": {
+        "top_k": 20,
+        "top_p": 0.8,
+        "min_p": 0.0
+      },
+      "off_policy_teacher_positions": [
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14
+      ],
+      "target_cache_length_after_rollback": 133,
+      "committed_tokens": [
+        6556,
+        11,
+        438,
+        279,
+        10901
+      ],
+      "next_adapter_version": 0
+    },
+    {
+      "round_idx": 48,
+      "absolute_output_offset": 109,
+      "input_context_length": 134,
+      "verified_prefix_tail": [
+        11,
+        438,
+        279,
+        10901
+      ],
+      "physical_to_logical": {
+        "anchor_physical_index": 0,
+        "logical_to_physical": [
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11,
+          12,
+          13,
+          14,
+          15
+        ]
+      },
+      "draft_tokens": [
+        11052,
+        291,
+        20866,
+        279,
+        279,
+        315,
+        6623,
+        11,
+        6623,
+        279,
+        264,
+        11,
+        5193,
+        43697,
+        43697
+      ],
+      "draft_lm_head": {
+        "artifact_id": "/home/catid/.cache/huggingface/hub/models--Qwen--Qwen3-8B/snapshots/b968826d9c46dd6066d109eabc6255188de91218",
+        "revision": "b968826d9c46dd6066d109eabc6255188de91218",
+        "module": "Qwen3ForCausalLM.lm_head",
+        "hook": "DFlashDraftModel.norm output, logical slots [1:]",
+        "shape": [
+          151936,
+          4096
+        ],
+        "dtype": "torch.bfloat16",
+        "bias": false,
+        "tied_weights": false,
+        "output_multiplier": 1.0,
+        "final_logit_softcapping": null
+      },
+      "accepted_length": 0,
+      "first_rejection_index": 0,
+      "replacement_token": 83752,
+      "bonus_token": null,
+      "decisions": [
+        false
+      ],
+      "proposal_token_probs": [
+        0.06812489777803421
+      ],
+      "target_token_probs": [
+        0.0
+      ],
+      "adapter_version": 0,
+      "proposal_mode": "plain_dflash",
+      "verification_rule": "ratio",
+      "collection_temperature": 0.7,
+      "loss_temperature": 1.0,
+      "sampling_warp_config": {
+        "top_k": 20,
+        "top_p": 0.8,
+        "min_p": 0.0
+      },
+      "off_policy_teacher_positions": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14
+      ],
+      "target_cache_length_after_rollback": 134,
+      "committed_tokens": [
+        83752
+      ],
+      "next_adapter_version": 0
+    },
+    {
+      "round_idx": 49,
+      "absolute_output_offset": 110,
+      "input_context_length": 135,
+      "verified_prefix_tail": [
+        438,
+        279,
+        10901,
+        83752
+      ],
+      "physical_to_logical": {
+        "anchor_physical_index": 0,
+        "logical_to_physical": [
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11,
+          12,
+          13,
+          14,
+          15
+        ]
+      },
+      "draft_tokens": [
+        304,
+        279,
+        12408,
+        323,
+        6623,
+        11,
+        5561,
+        1119,
+        85656,
+        43697,
+        264,
+        264,
+        264,
+        11,
+        572
+      ],
+      "draft_lm_head": {
+        "artifact_id": "/home/catid/.cache/huggingface/hub/models--Qwen--Qwen3-8B/snapshots/b968826d9c46dd6066d109eabc6255188de91218",
+        "revision": "b968826d9c46dd6066d109eabc6255188de91218",
+        "module": "Qwen3ForCausalLM.lm_head",
+        "hook": "DFlashDraftModel.norm output, logical slots [1:]",
+        "shape": [
+          151936,
+          4096
+        ],
+        "dtype": "torch.bfloat16",
+        "bias": false,
+        "tied_weights": false,
+        "output_multiplier": 1.0,
+        "final_logit_softcapping": null
+      },
+      "accepted_length": 2,
+      "first_rejection_index": 2,
+      "replacement_token": 9956,
+      "bonus_token": null,
+      "decisions": [
+        true,
+        true,
+        false
+      ],
+      "proposal_token_probs": [
+        1.0,
+        1.0,
+        0.05307828634977341
+      ],
+      "target_token_probs": [
+        1.0,
+        1.0,
+        0.0
+      ],
+      "adapter_version": 0,
+      "proposal_mode": "plain_dflash",
+      "verification_rule": "ratio",
+      "collection_temperature": 0.7,
+      "loss_temperature": 1.0,
+      "sampling_warp_config": {
+        "top_k": 20,
+        "top_p": 0.8,
+        "min_p": 0.0
+      },
+      "off_policy_teacher_positions": [
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14
+      ],
+      "target_cache_length_after_rollback": 137,
+      "committed_tokens": [
+        304,
+        279,
+        9956
+      ],
+      "next_adapter_version": 0
+    },
+    {
+      "round_idx": 50,
+      "absolute_output_offset": 113,
+      "input_context_length": 138,
+      "verified_prefix_tail": [
+        83752,
+        304,
+        279,
+        9956
+      ],
+      "physical_to_logical": {
+        "anchor_physical_index": 0,
+        "logical_to_physical": [
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11,
+          12,
+          13,
+          14,
+          15
+        ]
+      },
+      "draft_tokens": [
+        323,
+        85656,
+        3720,
+        264,
+        315,
+        315,
+        11,
+        11,
+        566,
+        264,
+        85656,
+        5193,
+        43697,
+        572,
+        13
+      ],
+      "draft_lm_head": {
+        "artifact_id": "/home/catid/.cache/huggingface/hub/models--Qwen--Qwen3-8B/snapshots/b968826d9c46dd6066d109eabc6255188de91218",
+        "revision": "b968826d9c46dd6066d109eabc6255188de91218",
+        "module": "Qwen3ForCausalLM.lm_head",
+        "hook": "DFlashDraftModel.norm output, logical slots [1:]",
+        "shape": [
+          151936,
+          4096
+        ],
+        "dtype": "torch.bfloat16",
+        "bias": false,
+        "tied_weights": false,
+        "output_multiplier": 1.0,
+        "final_logit_softcapping": null
+      },
+      "accepted_length": 1,
+      "first_rejection_index": 1,
+      "replacement_token": 279,
+      "bonus_token": null,
+      "decisions": [
+        true,
+        false
+      ],
+      "proposal_token_probs": [
+        1.0,
+        0.7448683977127075
+      ],
+      "target_token_probs": [
+        1.0,
+        0.0
+      ],
+      "adapter_version": 0,
+      "proposal_mode": "plain_dflash",
+      "verification_rule": "ratio",
+      "collection_temperature": 0.7,
+      "loss_temperature": 1.0,
+      "sampling_warp_config": {
+        "top_k": 20,
+        "top_p": 0.8,
+        "min_p": 0.0
+      },
+      "off_policy_teacher_positions": [
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14
+      ],
+      "target_cache_length_after_rollback": 139,
+      "committed_tokens": [
+        323,
+        279
+      ],
+      "next_adapter_version": 0
+    },
+    {
+      "round_idx": 51,
+      "absolute_output_offset": 115,
+      "input_context_length": 140,
+      "verified_prefix_tail": [
+        279,
+        9956,
+        323,
+        279
+      ],
+      "physical_to_logical": {
+        "anchor_physical_index": 0,
+        "logical_to_physical": [
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11,
+          12,
+          13
+        ]
+      },
+      "draft_tokens": [
+        3720,
+        6519,
+        291,
+        279,
+        315,
+        6623,
+        315,
+        11,
+        85656,
+        264,
+        43697,
+        49057,
+        264
+      ],
+      "draft_lm_head": {
+        "artifact_id": "/home/catid/.cache/huggingface/hub/models--Qwen--Qwen3-8B/snapshots/b968826d9c46dd6066d109eabc6255188de91218",
+        "revision": "b968826d9c46dd6066d109eabc6255188de91218",
+        "module": "Qwen3ForCausalLM.lm_head",
+        "hook": "DFlashDraftModel.norm output, logical slots [1:]",
+        "shape": [
+          151936,
+          4096
+        ],
+        "dtype": "torch.bfloat16",
+        "bias": false,
+        "tied_weights": false,
+        "output_multiplier": 1.0,
+        "final_logit_softcapping": null
+      },
+      "accepted_length": 1,
+      "first_rejection_index": 1,
+      "replacement_token": 11691,
+      "bonus_token": null,
+      "decisions": [
+        true,
+        false
+      ],
+      "proposal_token_probs": [
+        0.8769959211349487,
+        0.9241418242454529
+      ],
+      "target_token_probs": [
+        0.8330144286155701,
+        0.0
+      ],
+      "adapter_version": 0,
+      "proposal_mode": "plain_dflash",
+      "verification_rule": "ratio",
+      "collection_temperature": 0.7,
+      "loss_temperature": 1.0,
+      "sampling_warp_config": {
+        "top_k": 20,
+        "top_p": 0.8,
+        "min_p": 0.0
+      },
+      "off_policy_teacher_positions": [
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12
+      ],
+      "target_cache_length_after_rollback": 141,
+      "committed_tokens": [
+        3720,
+        11691
+      ],
+      "next_adapter_version": 0
+    },
+    {
+      "round_idx": 52,
+      "absolute_output_offset": 117,
+      "input_context_length": 142,
+      "verified_prefix_tail": [
+        323,
+        279,
+        3720,
+        11691
+      ],
+      "physical_to_logical": {
+        "anchor_physical_index": 0,
+        "logical_to_physical": [
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11
+        ]
+      },
+      "draft_tokens": [
+        279,
+        37578,
+        315,
+        315,
+        11,
+        11,
+        85656,
+        85656,
+        85656,
+        43697,
+        264
+      ],
+      "draft_lm_head": {
+        "artifact_id": "/home/catid/.cache/huggingface/hub/models--Qwen--Qwen3-8B/snapshots/b968826d9c46dd6066d109eabc6255188de91218",
+        "revision": "b968826d9c46dd6066d109eabc6255188de91218",
+        "module": "Qwen3ForCausalLM.lm_head",
+        "hook": "DFlashDraftModel.norm output, logical slots [1:]",
+        "shape": [
+          151936,
+          4096
+        ],
+        "dtype": "torch.bfloat16",
+        "bias": false,
+        "tied_weights": false,
+        "output_multiplier": 1.0,
+        "final_logit_softcapping": null
+      },
+      "accepted_length": 1,
+      "first_rejection_index": 1,
+      "replacement_token": 11222,
+      "bonus_token": null,
+      "decisions": [
+        true,
+        false
+      ],
+      "proposal_token_probs": [
+        1.0,
+        0.21720963716506958
+      ],
+      "target_token_probs": [
+        1.0,
+        0.15306733548641205
+      ],
+      "adapter_version": 0,
+      "proposal_mode": "plain_dflash",
+      "verification_rule": "ratio",
+      "collection_temperature": 0.7,
+      "loss_temperature": 1.0,
+      "sampling_warp_config": {
+        "top_k": 20,
+        "top_p": 0.8,
+        "min_p": 0.0
+      },
+      "off_policy_teacher_positions": [
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10
+      ],
+      "target_cache_length_after_rollback": 143,
+      "committed_tokens": [
+        279,
+        11222
+      ],
+      "next_adapter_version": 0
+    },
+    {
+      "round_idx": 53,
+      "absolute_output_offset": 119,
+      "input_context_length": 144,
+      "verified_prefix_tail": [
+        3720,
+        11691,
+        279,
+        11222
+      ],
+      "physical_to_logical": {
+        "anchor_physical_index": 0,
+        "logical_to_physical": [
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9
+        ]
+      },
+      "draft_tokens": [
+        315,
+        264,
+        11,
+        85656,
+        85656,
+        81194,
+        81194,
+        18511,
+        458
+      ],
+      "draft_lm_head": {
+        "artifact_id": "/home/catid/.cache/huggingface/hub/models--Qwen--Qwen3-8B/snapshots/b968826d9c46dd6066d109eabc6255188de91218",
+        "revision": "b968826d9c46dd6066d109eabc6255188de91218",
+        "module": "Qwen3ForCausalLM.lm_head",
+        "hook": "DFlashDraftModel.norm output, logical slots [1:]",
+        "shape": [
+          151936,
+          4096
+        ],
+        "dtype": "torch.bfloat16",
+        "bias": false,
+        "tied_weights": false,
+        "output_multiplier": 1.0,
+        "final_logit_softcapping": null
+      },
+      "accepted_length": 1,
+      "first_rejection_index": 1,
+      "replacement_token": 2297,
+      "bonus_token": null,
+      "decisions": [
+        true,
+        false
+      ],
+      "proposal_token_probs": [
+        1.0,
+        1.0
+      ],
+      "target_token_probs": [
+        1.0,
+        0.0
+      ],
+      "adapter_version": 0,
+      "proposal_mode": "plain_dflash",
+      "verification_rule": "ratio",
+      "collection_temperature": 0.7,
+      "loss_temperature": 1.0,
+      "sampling_warp_config": {
+        "top_k": 20,
+        "top_p": 0.8,
+        "min_p": 0.0
+      },
+      "off_policy_teacher_positions": [
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8
+      ],
+      "target_cache_length_after_rollback": 145,
+      "committed_tokens": [
+        315,
+        2297
+      ],
+      "next_adapter_version": 0
+    },
+    {
+      "round_idx": 54,
+      "absolute_output_offset": 121,
+      "input_context_length": 146,
+      "verified_prefix_tail": [
+        279,
+        11222,
+        315,
+        2297
+      ],
+      "physical_to_logical": {
+        "anchor_physical_index": 0,
+        "logical_to_physical": [
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7
+        ]
+      },
+      "draft_tokens": [
+        11,
+        85656,
+        1730,
+        5193,
+        264,
+        8177,
+        43697
+      ],
+      "draft_lm_head": {
+        "artifact_id": "/home/catid/.cache/huggingface/hub/models--Qwen--Qwen3-8B/snapshots/b968826d9c46dd6066d109eabc6255188de91218",
+        "revision": "b968826d9c46dd6066d109eabc6255188de91218",
+        "module": "Qwen3ForCausalLM.lm_head",
+        "hook": "DFlashDraftModel.norm output, logical slots [1:]",
+        "shape": [
+          151936,
+          4096
+        ],
+        "dtype": "torch.bfloat16",
+        "bias": false,
+        "tied_weights": false,
+        "output_multiplier": 1.0,
+        "final_logit_softcapping": null
+      },
+      "accepted_length": 3,
+      "first_rejection_index": 3,
+      "replacement_token": 5561,
+      "bonus_token": null,
+      "decisions": [
+        true,
+        true,
+        true,
+        false
+      ],
+      "proposal_token_probs": [
+        1.0,
+        1.0,
+        0.6713983416557312,
+        0.3547936975955963
+      ],
+      "target_token_probs": [
+        1.0,
+        1.0,
+        0.3286523222923279,
+        0.0
+      ],
+      "adapter_version": 0,
+      "proposal_mode": "plain_dflash",
+      "verification_rule": "ratio",
+      "collection_temperature": 0.7,
+      "loss_temperature": 1.0,
+      "sampling_warp_config": {
+        "top_k": 20,
+        "top_p": 0.8,
+        "min_p": 0.0
+      },
+      "off_policy_teacher_positions": [
+        4,
+        5,
+        6
+      ],
+      "target_cache_length_after_rollback": 149,
+      "committed_tokens": [
+        11,
+        85656,
+        1730,
+        5561
+      ],
+      "next_adapter_version": 0
+    },
+    {
+      "round_idx": 55,
+      "absolute_output_offset": 125,
+      "input_context_length": 150,
+      "verified_prefix_tail": [
+        11,
+        85656,
+        1730,
+        5561
+      ],
+      "physical_to_logical": {
+        "anchor_physical_index": 0,
+        "logical_to_physical": [
+          1,
+          2,
+          3
+        ]
+      },
+      "draft_tokens": [
+        304,
+        304,
+        2310
+      ],
+      "draft_lm_head": {
+        "artifact_id": "/home/catid/.cache/huggingface/hub/models--Qwen--Qwen3-8B/snapshots/b968826d9c46dd6066d109eabc6255188de91218",
+        "revision": "b968826d9c46dd6066d109eabc6255188de91218",
+        "module": "Qwen3ForCausalLM.lm_head",
+        "hook": "DFlashDraftModel.norm output, logical slots [1:]",
+        "shape": [
+          151936,
+          4096
+        ],
+        "dtype": "torch.bfloat16",
+        "bias": false,
+        "tied_weights": false,
+        "output_multiplier": 1.0,
+        "final_logit_softcapping": null
+      },
+      "accepted_length": 1,
+      "first_rejection_index": 1,
+      "replacement_token": 279,
+      "bonus_token": null,
+      "decisions": [
+        true,
+        false
+      ],
+      "proposal_token_probs": [
+        0.09171632677316666,
+        0.12032759934663773
+      ],
+      "target_token_probs": [
+        0.7448680996894836,
+        0.0
+      ],
+      "adapter_version": 0,
+      "proposal_mode": "plain_dflash",
+      "verification_rule": "ratio",
+      "collection_temperature": 0.7,
+      "loss_temperature": 1.0,
+      "sampling_warp_config": {
+        "top_k": 20,
+        "top_p": 0.8,
+        "min_p": 0.0
+      },
+      "off_policy_teacher_positions": [
+        2
+      ],
+      "target_cache_length_after_rollback": 151,
+      "committed_tokens": [
+        304,
+        279
+      ],
+      "next_adapter_version": 0
+    },
+    {
+      "round_idx": 56,
+      "absolute_output_offset": 127,
+      "input_context_length": 152,
+      "verified_prefix_tail": [
+        1730,
+        5561,
+        304,
+        279
+      ],
+      "physical_to_logical": {
+        "anchor_physical_index": 0,
+        "logical_to_physical": [
+          1
+        ]
+      },
+      "draft_tokens": [
+        2310
+      ],
+      "draft_lm_head": {
+        "artifact_id": "/home/catid/.cache/huggingface/hub/models--Qwen--Qwen3-8B/snapshots/b968826d9c46dd6066d109eabc6255188de91218",
+        "revision": "b968826d9c46dd6066d109eabc6255188de91218",
+        "module": "Qwen3ForCausalLM.lm_head",
+        "hook": "DFlashDraftModel.norm output, logical slots [1:]",
+        "shape": [
+          151936,
+          4096
+        ],
+        "dtype": "torch.bfloat16",
+        "bias": false,
+        "tied_weights": false,
+        "output_multiplier": 1.0,
+        "final_logit_softcapping": null
+      },
+      "accepted_length": 1,
+      "first_rejection_index": 1,
+      "replacement_token": null,
+      "bonus_token": 48693,
+      "decisions": [
+        true
+      ],
+      "proposal_token_probs": [
+        0.9106362462043762
+      ],
+      "target_token_probs": [
+        0.7246868014335632
+      ],
+      "adapter_version": 0,
+      "proposal_mode": "plain_dflash",
+      "verification_rule": "ratio",
+      "collection_temperature": 0.7,
+      "loss_temperature": 1.0,
+      "sampling_warp_config": {
+        "top_k": 20,
+        "top_p": 0.8,
+        "min_p": 0.0
+      },
+      "off_policy_teacher_positions": [],
+      "target_cache_length_after_rollback": 152,
+      "committed_tokens": [
+        2310
+      ],
+      "next_adapter_version": 0
+    }
+  ],
+  "phase_ms": {
+    "target_feature_extraction": 22.77744056470692,
+    "dflash_draft": 225.7661120891571,
+    "sequential_sampling": 25.0972158908844,
+    "target_verification": 1362.4712657928467,
+    "online_update": 0.3893439993262291
+  },
+  "local_elapsed_seconds": 1.6708568900357932
+}

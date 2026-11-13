@@ -18,6 +18,9 @@ class HiddenProjection:
     def __call__(self, h_raw: torch.Tensor) -> torch.Tensor:
         return (h_raw.float() @ self.matrix.to(h_raw.device).T - self.mean.to(h_raw.device)) / self.std.to(h_raw.device)
 
+    def to(self, device) -> 'HiddenProjection':
+        return HiddenProjection(self.matrix.to(device), self.mean.to(device), self.std.to(device), self.metadata)
+
     def save(self, path: str | Path) -> None:
         path = Path(path)
         path.parent.mkdir(parents=True, exist_ok=True)

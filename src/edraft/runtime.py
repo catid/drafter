@@ -55,6 +55,14 @@ def fingerprint(value):
     return hashlib.sha256(json.dumps(value, sort_keys=True, separators=(',', ':')).encode()).hexdigest()
 
 
+def source_provenance():
+    paths = sorted((ROOT / 'src/edraft').glob('*.py'))
+    files = {str(path.relative_to(ROOT)): hashlib.sha256(path.read_bytes()).hexdigest() for path in paths}
+    status = subprocess.run(['git', '-C', str(ROOT), 'status', '--porcelain'], capture_output=True, text=True)
+    return {'project_git_commit': git_commit(), 'git_dirty': bool(status.stdout.strip()),
+            'source_tree_sha256': fingerprint(files), 'source_files_sha256': files}
+
+
 def common_parser(description):
     parser = argparse.ArgumentParser(description=description)
     parser.add_argument('--config', type=Path)
@@ -95,7 +103,7 @@ def resolved_config(args):
 def record_run(args, name):
     config = resolved_config(args)
     record = {'scale': args.scale, 'seed': args.seed, 'config': config,
-              'project_git_commit': git_commit(), 'started_at_unix': time.time(),
+              **source_provenance(), 'started_at_unix': time.time(),
               'rank': int(os.environ.get('RANK', 0)), 'pid': os.getpid()}
     path = args.output / 'runs' / f'{name}-{fingerprint(config)[:16]}-rank{record["rank"]}.json'
     atomic_json(path, record)
@@ -110,12 +118,17 @@ def environment(config=None):
             packages[name] = importlib.metadata.version(name)
         except importlib.metadata.PackageNotFoundError:
             packages[name] = None
+    # nvidia-smi inventory avoids creating a CUDA context on every visible GPU.
+    # In particular, a collection worker must not reserve memory on other ranks.
     gpus = []
-    for i in range(torch.cuda.device_count()):
-        prop = torch.cuda.get_device_properties(i)
-        free, total = torch.cuda.mem_get_info(i)
-        gpus.append({'index': i, 'name': prop.name, 'compute_capability': [prop.major, prop.minor],
-                     'free_bytes': free, 'total_bytes': total})
+    inventory = subprocess.run(['nvidia-smi', '--query-gpu=index,name,compute_cap,memory.free,memory.total',
+                                '--format=csv,noheader,nounits'], capture_output=True, text=True)
+    if inventory.returncode == 0:
+        for line in inventory.stdout.strip().splitlines():
+            index, name, capability, free, total = [x.strip() for x in line.split(',')]
+            gpus.append({'physical_index': int(index), 'name': name,
+                         'compute_capability': [int(x) for x in capability.split('.')],
+                         'free_bytes': int(free) * 2**20, 'total_bytes': int(total) * 2**20})
     with locked_json(ROOT / 'artifacts/environment.json') as env:
         env.update({'os': platform.platform(), 'python': platform.python_version(), 'packages': packages,
                     'cuda': torch.version.cuda, 'gpus': gpus,

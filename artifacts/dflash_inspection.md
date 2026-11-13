@@ -122,3 +122,22 @@ proposals, bf16 raw-feature/head reconstruction, clean-anchor logical mapping,
 EOS and output caps, zero-adapter exact parity, and CPU live online updates with
 between-round versions. These tests do not satisfy the real reference M0 gate;
 the real checkpoint run is reported separately by `edraft.m0`.
+
+## Real M0 numerical investigation
+
+`artifacts/m0.json` reports upstream/local token parity in all 60 prompt/condition runs (20 distinct prompts at greedy, recommended warped positive T, and pure T=1), covering 7,128 compared output tokens. Both DFlash paths differ from target-only greedy on 8 of 20 prompts (607 of 2,388 compared greedy output positions, 25.42%; sequence mismatch rate 40%). These rates include downstream divergence after the first changed token; they are not 607 independent numerical errors.
+
+All eight first divergences were replayed on identical prefixes on GPU 2. The numerical artifact is `artifacts/m0_numerics.json`, produced by `python -m edraft.investigate_m0 --scale reference --device cuda:2`. Every recorded local/target-only token reproduced; every rollback had the expected cache length; perturbing future canvas tokens left the relevant target logits bit-exact. Every case had a BF16 maximum-logit tie in at least one path. Different query shapes and accumulated BF16 cache arithmetic shift near-tied logits. No changed attention mask or rollback repair was indicated.
+
+| Prompt | First output offset | Block margin | Sequential margin | Maximum absolute block/sequential logit difference |
+|---|---:|---:|---:|---:|
+| m0-001 | 82 | 0.250 | 0.000 | 0.2500 |
+| m0-003 | 32 | 0.250 | 0.000 | 0.2500 |
+| m0-004 | 3 | 0.250 | 0.000 | 0.2500 |
+| m0-005 | 10 | 0.000 | 0.125 | 0.2188 |
+| m0-006 | 34 | 0.000 | 0.250 | 0.2500 |
+| m0-009 | 113 | 0.250 | 0.000 | 0.3125 |
+| m0-013 | 16 | 0.000 | 0.250 | 0.3125 |
+| m0-017 | 4 | 0.000 | 0.250 | 0.2500 |
+
+The independent held-out stable-sort prompt supplied four full 15-slot blocks (60 raw feature vectors). Reapplying the original BF16 head reproduced live unit log probabilities bit-for-bit. FP32-accumulated head reconstruction passed the shared trace diagnostic at `logprob atol=0.15, rtol=0.01` and `probability atol=0.01, rtol=0.05` over all 9,116,160 vocabulary entries. Maximum absolute log-probability error was 0.11353, maximum absolute probability error 0.02283, and per-block mean KL was 0.000338–0.000463. All 60 reconstructed argmax tokens matched live draft argmax. The configured tolerance allows ordinary BF16 output quantization and is not a claim of FP32 bit identity. M1 still must check an actual held-out stored trace shard after serialization.

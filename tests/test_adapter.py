@@ -138,7 +138,7 @@ def test_lookahead_shared_energy_partial_derivatives(domain):
     # Sparse mass outside support is deliberately nonzero in full mode and is
     # never renormalized into support; this detects the common wrong derivative.
     if domain == 'full_vocabulary':
-        assert all(float(state.raw_support_mass(i).sum()) < 1 for i in range(4))
+        assert all(float(state.raw_support_mass(i).sum().detach()) < 1 for i in range(4))
 
 
 def test_lookahead_backward_transpose_and_boundaries():
@@ -194,3 +194,69 @@ def test_fixed_projection_calibration_roundtrip(tmp_path):
     E, metadata = fit_token_features(torch.randn(20, 8), r=3, calibration_token_ids=torch.arange(10))
     torch.testing.assert_close(E[:10].mean(0), torch.zeros(3), atol=1e-6, rtol=0)
     assert metadata['calibration_token_count'] == 10
+
+
+def test_true_candidate_dense_scores_match_full_on_same_support():
+    adapter, H, l_unit, _ = fixture_adapter()
+    with torch.no_grad():
+        adapter.W.normal_(std=.1)
+        adapter.A.normal_(std=.1)
+        adapter.b.normal_(std=.1)
+    snap = adapter.snapshot(C0=[torch.tensor([1, 4, 6])] * len(H))
+    full_U = snap.unary(H)
+    candidate_U = snap.unary(H, proposal_mode='dense_candidate')
+    assert all(len(row) == 3 for row in candidate_U)
+    for i in range(len(H)):
+        full = snap.score_slot(l_unit[i], full_U[i], [3, 1], [2] * i, i)
+        candidate = snap.score_slot(l_unit[i], candidate_U[i], [3, 1], [2] * i, i, proposal_mode='dense_candidate')
+        ids = snap.C0[i]
+        torch.testing.assert_close(candidate[ids], full[ids], rtol=1e-5, atol=1e-6)
+        outside = torch.ones(7, dtype=torch.bool)
+        outside[ids] = False
+        assert torch.isneginf(candidate[outside]).all()
+
+
+def test_full_vocabulary_candidate_unary_handles_permuted_all_token_ids():
+    adapter, H, l_unit, _ = fixture_adapter()
+    with torch.no_grad():
+        adapter.W.normal_(std=.1)
+    ids = torch.tensor([5, 1, 3, 6, 0, 4, 2])
+    snap = adapter.snapshot(C0=[ids] * len(H))
+    selected_U = snap.unary(H, proposal_mode='dense_candidate')
+    full_U = snap.unary(H)
+    for i in range(len(H)):
+        candidate = snap.score_slot(l_unit[i], selected_U[i], [], [1] * i, i, proposal_mode='dense_candidate')
+        full = snap.score_slot(l_unit[i], full_U[i], [], [1] * i, i)
+        torch.testing.assert_close(candidate, full)
+
+
+def test_controlled_shared_free_energy_small_step_descent_with_line_search():
+    adapter, H, l_unit, _ = fixture_adapter(sparse=True)
+    with torch.no_grad():
+        adapter.A.normal_(std=.03)
+        adapter.W.normal_(std=.03)
+        adapter.sparse.values.normal_(std=.03)
+    state = initialize_lookahead(adapter.snapshot(), l_unit, H, [2, 4], domain='candidate_masked')
+    # Perturb beliefs away from their unary optimum while keeping interior mass.
+    state.r = [torch.full_like(r, 1 / len(r)) for r in state.r]
+    state.mu = [r @ state.snapshot.E[ids] for r, ids in zip(state.r, state.support)]
+    def free_energy():
+        return lookahead_energy(state) + sum((r * (r.log() - l_unit[i, ids])).sum()
+            for i, (r, ids) in enumerate(zip(state.r, state.support)))
+    initial = free_energy().detach()
+    original = [r.clone() for r in state.r]
+    forward, backward = lookahead_fields(state)
+    gradient = [state.U_all[i, ids] + forward[i, ids] + backward[i, ids] + r.log() + 1 - l_unit[i, ids]
+                for i, (r, ids) in enumerate(zip(state.r, state.support))]
+    tangent = [g - g.mean() for g in gradient]
+    accepted = False
+    for step in [1., .5, .25, .125, .0625, .03125, .015625, .0078125]:
+        candidate = [r - step * g for r, g in zip(original, tangent)]
+        if any(bool((r <= 0).any()) for r in candidate):
+            continue
+        state.r = candidate
+        state.mu = [r @ state.snapshot.E[ids] for r, ids in zip(state.r, state.support)]
+        if free_energy() < initial:
+            accepted = True
+            break
+    assert accepted

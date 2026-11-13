@@ -1,0 +1,28 @@
+{
+  "scale": "reference",
+  "seed": 2026,
+  "config": {
+    "config": null,
+    "scale": "reference",
+    "allow_download": false,
+    "allow_large_run": false,
+    "seed": 2026,
+    "device": "cuda:1",
+    "target": "Qwen/Qwen3-8B",
+    "drafter": "z-lab/Qwen3-8B-DFlash-b16",
+    "output": "/home/catid/drafter/artifacts",
+    "vocab_size": 151936,
+    "block_length": 15,
+    "rank": 64,
+    "projection_dim": 256,
+    "history_depth": 4,
+    "candidates": 256,
+    "hash_capacity": 16777216,
+    "warmups": 5,
+    "repeats": 30
+  },
+  "project_git_commit": "2751da28e7cdd2dc74212535b424638e88de689c",
+  "started_at_unix": 1794609224.3017626,
+  "rank": 0,
+  "pid": 2510582
+}

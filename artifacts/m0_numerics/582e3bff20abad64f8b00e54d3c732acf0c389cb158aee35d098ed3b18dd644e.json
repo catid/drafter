@@ -1,0 +1,399 @@
+{
+  "prompt_id": "m0-004",
+  "prompt_text": "Give a simple proof that there are infinitely many prime numbers.",
+  "first_output_divergence": 3,
+  "round_idx": 1,
+  "logical_slot": 2,
+  "common_prefix_length": 27,
+  "conditioning_prefix_verified_equal": true,
+  "recorded_local_token": 4285,
+  "recorded_target_token": 3070,
+  "recorded_local_token_reproduced": true,
+  "recorded_target_token_reproduced": true,
+  "block": {
+    "argmax": 4285,
+    "decoded_argmax": " simple",
+    "top1_minus_top2": 0.25,
+    "number_tied_for_max": 1,
+    "top5": [
+      {
+        "id": 4285,
+        "text": " simple",
+        "logit": 38.25
+      },
+      {
+        "id": 3070,
+        "text": " **",
+        "logit": 38.0
+      },
+      {
+        "id": 11416,
+        "text": " classic",
+        "logit": 31.5
+      },
+      {
+        "id": 353,
+        "text": " *",
+        "logit": 30.125
+      },
+      {
+        "id": 1602,
+        "text": " very",
+        "logit": 28.75
+      }
+    ],
+    "selected_logits": {
+      "4285": 38.25,
+      "3070": 38.0
+    }
+  },
+  "target_sequential": {
+    "argmax": 3070,
+    "decoded_argmax": " **",
+    "top1_minus_top2": 0.0,
+    "number_tied_for_max": 2,
+    "top5": [
+      {
+        "id": 3070,
+        "text": " **",
+        "logit": 38.25
+      },
+      {
+        "id": 4285,
+        "text": " simple",
+        "logit": 38.25
+      },
+      {
+        "id": 11416,
+        "text": " classic",
+        "logit": 31.625
+      },
+      {
+        "id": 353,
+        "text": " *",
+        "logit": 30.375
+      },
+      {
+        "id": 1602,
+        "text": " very",
+        "logit": 29.0
+      }
+    ],
+    "selected_logits": {
+      "4285": 38.25,
+      "3070": 38.25
+    }
+  },
+  "fresh_full_prefix": {
+    "argmax": 4285,
+    "decoded_argmax": " simple",
+    "top1_minus_top2": 0.25,
+    "number_tied_for_max": 1,
+    "top5": [
+      {
+        "id": 4285,
+        "text": " simple",
+        "logit": 38.25
+      },
+      {
+        "id": 3070,
+        "text": " **",
+        "logit": 38.0
+      },
+      {
+        "id": 11416,
+        "text": " classic",
+        "logit": 31.5
+      },
+      {
+        "id": 353,
+        "text": " *",
+        "logit": 30.25
+      },
+      {
+        "id": 1602,
+        "text": " very",
+        "logit": 28.75
+      }
+    ],
+    "selected_logits": {
+      "4285": 38.25,
+      "3070": 38.0
+    }
+  },
+  "single_query_same_prior_cache": {
+    "argmax": 3070,
+    "decoded_argmax": " **",
+    "top1_minus_top2": 0.0,
+    "number_tied_for_max": 2,
+    "top5": [
+      {
+        "id": 3070,
+        "text": " **",
+        "logit": 38.25
+      },
+      {
+        "id": 4285,
+        "text": " simple",
+        "logit": 38.25
+      },
+      {
+        "id": 11416,
+        "text": " classic",
+        "logit": 31.625
+      },
+      {
+        "id": 353,
+        "text": " *",
+        "logit": 30.375
+      },
+      {
+        "id": 1602,
+        "text": " very",
+        "logit": 29.0
+      }
+    ],
+    "selected_logits": {
+      "4285": 38.25,
+      "3070": 38.25
+    }
+  },
+  "fp32_head_block": {
+    "argmax": 4285,
+    "decoded_argmax": " simple",
+    "top1_minus_top2": 0.17837905883789062,
+    "number_tied_for_max": 1,
+    "top5": [
+      {
+        "id": 4285,
+        "text": " simple",
+        "logit": 38.19969940185547
+      },
+      {
+        "id": 3070,
+        "text": " **",
+        "logit": 38.02132034301758
+      },
+      {
+        "id": 11416,
+        "text": " classic",
+        "logit": 31.514429092407227
+      },
+      {
+        "id": 353,
+        "text": " *",
+        "logit": 30.167747497558594
+      },
+      {
+        "id": 1602,
+        "text": " very",
+        "logit": 28.76630210876465
+      }
+    ],
+    "selected_logits": {
+      "4285": 38.19969940185547,
+      "3070": 38.02132034301758
+    }
+  },
+  "fp32_head_target_sequential": {
+    "argmax": 4285,
+    "decoded_argmax": " simple",
+    "top1_minus_top2": 0.10365676879882812,
+    "number_tied_for_max": 1,
+    "top5": [
+      {
+        "id": 4285,
+        "text": " simple",
+        "logit": 38.325172424316406
+      },
+      {
+        "id": 3070,
+        "text": " **",
+        "logit": 38.22151565551758
+      },
+      {
+        "id": 11416,
+        "text": " classic",
+        "logit": 31.67454719543457
+      },
+      {
+        "id": 353,
+        "text": " *",
+        "logit": 30.334829330444336
+      },
+      {
+        "id": 1602,
+        "text": " very",
+        "logit": 28.949254989624023
+      }
+    ],
+    "selected_logits": {
+      "4285": 38.325172424316406,
+      "3070": 38.22151565551758
+    }
+  },
+  "fp32_head_single_query": {
+    "argmax": 4285,
+    "decoded_argmax": " simple",
+    "top1_minus_top2": 0.10365676879882812,
+    "number_tied_for_max": 1,
+    "top5": [
+      {
+        "id": 4285,
+        "text": " simple",
+        "logit": 38.325172424316406
+      },
+      {
+        "id": 3070,
+        "text": " **",
+        "logit": 38.22151565551758
+      },
+      {
+        "id": 11416,
+        "text": " classic",
+        "logit": 31.67454719543457
+      },
+      {
+        "id": 353,
+        "text": " *",
+        "logit": 30.334829330444336
+      },
+      {
+        "id": 1602,
+        "text": " very",
+        "logit": 28.949254989624023
+      }
+    ],
+    "selected_logits": {
+      "4285": 38.325172424316406,
+      "3070": 38.22151565551758
+    }
+  },
+  "block_vs_sequential_logits": {
+    "max_abs": 0.25,
+    "mean_abs": 0.029849927872419357,
+    "rms": 0.03890787437558174,
+    "argmax_equal": false
+  },
+  "block_vs_single_query_same_prior_logits": {
+    "max_abs": 0.25,
+    "mean_abs": 0.029849927872419357,
+    "rms": 0.03890787437558174,
+    "argmax_equal": false
+  },
+  "block_vs_fresh_logits": {
+    "max_abs": 0.125,
+    "mean_abs": 0.019712230190634727,
+    "rms": 0.02706846408545971,
+    "argmax_equal": true
+  },
+  "block_head_bf16_vs_fp32": {
+    "max_abs": 0.062213897705078125,
+    "mean_abs": 0.00491087231785059,
+    "rms": 0.007028296124190092,
+    "argmax_equal": true
+  },
+  "future_tokens_perturbation": {
+    "max_abs": 0.0,
+    "mean_abs": 0.0,
+    "rms": 0.0,
+    "argmax_equal": true
+  },
+  "rolled_cache_vs_sequential_prior": {
+    "lengths_equal": true,
+    "length": 24,
+    "max_key_abs_by_layer": [
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+    ],
+    "max_value_abs_by_layer": [
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+    ],
+    "max_key_abs": 0.0,
+    "max_value_abs": 0.0
+  },
+  "rollback_lengths": [
+    {
+      "round": 1,
+      "length": 27,
+      "expected": 27
+    }
+  ],
+  "all_rollback_lengths_exact": true,
+  "target_attention": {
+    "implementation": "sdpa",
+    "sliding_window": null,
+    "causal": true,
+    "padded_input": false
+  },
+  "diagnosis": "Same-prefix BF16 numerical/tie sensitivity; future-token masking and exact rollback lengths verified."
+}

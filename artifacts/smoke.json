@@ -5,8 +5,8 @@
   "status": "passed",
   "seed": 2026,
   "generated_tokens": 1152,
-  "elapsed_seconds": 1.0472788950428367,
-  "tokens_per_second": 1099.9935217379511,
+  "elapsed_seconds": 0.7449902920052409,
+  "tokens_per_second": 1546.3288748357218,
   "rounds": 315,
   "residual_corrections": 187,
   "bonus_tokens": 128,
@@ -25,7 +25,11 @@
     "db_exact_zero_fraction": 0.0,
     "active_buckets": 183,
     "sparse_capacity": 256,
-    "sparse_update_bytes": 2676,
+    "sparse_update_bytes_estimate": 2676,
+    "sparse_snapshot_bytes": 3268,
+    "dense_snapshot_bytes": 384,
+    "sparse_snapshot_strategy": "compact_active_bucket_copy",
+    "sparse_update_strategy": "dirty_lazy_catchup_and_active_list_compaction",
     "last_full_loss": 0.19958658516407013
   },
   "bigram": {

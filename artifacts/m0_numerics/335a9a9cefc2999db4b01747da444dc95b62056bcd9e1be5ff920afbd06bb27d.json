@@ -1,0 +1,399 @@
+{
+  "prompt_id": "m0-017",
+  "prompt_text": "Suggest a seven day plan for learning basic Spanish.",
+  "first_output_divergence": 4,
+  "round_idx": 1,
+  "logical_slot": 3,
+  "common_prefix_length": 27,
+  "conditioning_prefix_verified_equal": true,
+  "recorded_local_token": 22,
+  "recorded_target_token": 80185,
+  "recorded_local_token_reproduced": true,
+  "recorded_target_token_reproduced": true,
+  "block": {
+    "argmax": 22,
+    "decoded_argmax": "7",
+    "top1_minus_top2": 0.0,
+    "number_tied_for_max": 2,
+    "top5": [
+      {
+        "id": 22,
+        "text": "7",
+        "logit": 32.75
+      },
+      {
+        "id": 80185,
+        "text": "seven",
+        "logit": 32.75
+      },
+      {
+        "id": 59528,
+        "text": "Seven",
+        "logit": 27.25
+      },
+      {
+        "id": 10264,
+        "text": "week",
+        "logit": 23.375
+      },
+      {
+        "id": 874,
+        "text": "com",
+        "logit": 23.0
+      }
+    ],
+    "selected_logits": {
+      "22": 32.75,
+      "80185": 32.75
+    }
+  },
+  "target_sequential": {
+    "argmax": 80185,
+    "decoded_argmax": "seven",
+    "top1_minus_top2": 0.25,
+    "number_tied_for_max": 1,
+    "top5": [
+      {
+        "id": 80185,
+        "text": "seven",
+        "logit": 33.0
+      },
+      {
+        "id": 22,
+        "text": "7",
+        "logit": 32.75
+      },
+      {
+        "id": 59528,
+        "text": "Seven",
+        "logit": 27.25
+      },
+      {
+        "id": 10264,
+        "text": "week",
+        "logit": 23.375
+      },
+      {
+        "id": 874,
+        "text": "com",
+        "logit": 23.125
+      }
+    ],
+    "selected_logits": {
+      "22": 32.75,
+      "80185": 33.0
+    }
+  },
+  "fresh_full_prefix": {
+    "argmax": 80185,
+    "decoded_argmax": "seven",
+    "top1_minus_top2": 0.25,
+    "number_tied_for_max": 1,
+    "top5": [
+      {
+        "id": 80185,
+        "text": "seven",
+        "logit": 33.0
+      },
+      {
+        "id": 22,
+        "text": "7",
+        "logit": 32.75
+      },
+      {
+        "id": 59528,
+        "text": "Seven",
+        "logit": 27.25
+      },
+      {
+        "id": 10264,
+        "text": "week",
+        "logit": 23.375
+      },
+      {
+        "id": 874,
+        "text": "com",
+        "logit": 23.125
+      }
+    ],
+    "selected_logits": {
+      "22": 32.75,
+      "80185": 33.0
+    }
+  },
+  "single_query_same_prior_cache": {
+    "argmax": 80185,
+    "decoded_argmax": "seven",
+    "top1_minus_top2": 0.25,
+    "number_tied_for_max": 1,
+    "top5": [
+      {
+        "id": 80185,
+        "text": "seven",
+        "logit": 33.0
+      },
+      {
+        "id": 22,
+        "text": "7",
+        "logit": 32.75
+      },
+      {
+        "id": 59528,
+        "text": "Seven",
+        "logit": 27.25
+      },
+      {
+        "id": 10264,
+        "text": "week",
+        "logit": 23.375
+      },
+      {
+        "id": 874,
+        "text": "com",
+        "logit": 23.125
+      }
+    ],
+    "selected_logits": {
+      "22": 32.75,
+      "80185": 33.0
+    }
+  },
+  "fp32_head_block": {
+    "argmax": 80185,
+    "decoded_argmax": "seven",
+    "top1_minus_top2": 0.19038772583007812,
+    "number_tied_for_max": 1,
+    "top5": [
+      {
+        "id": 80185,
+        "text": "seven",
+        "logit": 32.83142852783203
+      },
+      {
+        "id": 22,
+        "text": "7",
+        "logit": 32.64104080200195
+      },
+      {
+        "id": 59528,
+        "text": "Seven",
+        "logit": 27.206735610961914
+      },
+      {
+        "id": 10264,
+        "text": "week",
+        "logit": 23.340789794921875
+      },
+      {
+        "id": 874,
+        "text": "com",
+        "logit": 23.06036949157715
+      }
+    ],
+    "selected_logits": {
+      "22": 32.64104080200195,
+      "80185": 32.83142852783203
+    }
+  },
+  "fp32_head_target_sequential": {
+    "argmax": 80185,
+    "decoded_argmax": "seven",
+    "top1_minus_top2": 0.23000335693359375,
+    "number_tied_for_max": 1,
+    "top5": [
+      {
+        "id": 80185,
+        "text": "seven",
+        "logit": 32.97836685180664
+      },
+      {
+        "id": 22,
+        "text": "7",
+        "logit": 32.74836349487305
+      },
+      {
+        "id": 59528,
+        "text": "Seven",
+        "logit": 27.29121208190918
+      },
+      {
+        "id": 10264,
+        "text": "week",
+        "logit": 23.38804054260254
+      },
+      {
+        "id": 874,
+        "text": "com",
+        "logit": 23.11204719543457
+      }
+    ],
+    "selected_logits": {
+      "22": 32.74836349487305,
+      "80185": 32.97836685180664
+    }
+  },
+  "fp32_head_single_query": {
+    "argmax": 80185,
+    "decoded_argmax": "seven",
+    "top1_minus_top2": 0.23000335693359375,
+    "number_tied_for_max": 1,
+    "top5": [
+      {
+        "id": 80185,
+        "text": "seven",
+        "logit": 32.97836685180664
+      },
+      {
+        "id": 22,
+        "text": "7",
+        "logit": 32.74836349487305
+      },
+      {
+        "id": 59528,
+        "text": "Seven",
+        "logit": 27.29121208190918
+      },
+      {
+        "id": 10264,
+        "text": "week",
+        "logit": 23.38804054260254
+      },
+      {
+        "id": 874,
+        "text": "com",
+        "logit": 23.11204719543457
+      }
+    ],
+    "selected_logits": {
+      "22": 32.74836349487305,
+      "80185": 32.97836685180664
+    }
+  },
+  "block_vs_sequential_logits": {
+    "max_abs": 0.25,
+    "mean_abs": 0.03256801888346672,
+    "rms": 0.04196656495332718,
+    "argmax_equal": false
+  },
+  "block_vs_single_query_same_prior_logits": {
+    "max_abs": 0.25,
+    "mean_abs": 0.03256801888346672,
+    "rms": 0.04196656495332718,
+    "argmax_equal": false
+  },
+  "block_vs_fresh_logits": {
+    "max_abs": 0.25,
+    "mean_abs": 0.05633137375116348,
+    "rms": 0.06480947136878967,
+    "argmax_equal": false
+  },
+  "block_head_bf16_vs_fp32": {
+    "max_abs": 0.10895919799804688,
+    "mean_abs": 0.006635404657572508,
+    "rms": 0.00907116662710905,
+    "argmax_equal": false
+  },
+  "future_tokens_perturbation": {
+    "max_abs": 0.0,
+    "mean_abs": 0.0,
+    "rms": 0.0,
+    "argmax_equal": true
+  },
+  "rolled_cache_vs_sequential_prior": {
+    "lengths_equal": true,
+    "length": 23,
+    "max_key_abs_by_layer": [
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+    ],
+    "max_value_abs_by_layer": [
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+    ],
+    "max_key_abs": 0.0,
+    "max_value_abs": 0.0
+  },
+  "rollback_lengths": [
+    {
+      "round": 1,
+      "length": 27,
+      "expected": 27
+    }
+  ],
+  "all_rollback_lengths_exact": true,
+  "target_attention": {
+    "implementation": "sdpa",
+    "sliding_window": null,
+    "causal": true,
+    "padded_input": false
+  },
+  "diagnosis": "Same-prefix BF16 numerical/tie sensitivity; future-token masking and exact rollback lengths verified."
+}

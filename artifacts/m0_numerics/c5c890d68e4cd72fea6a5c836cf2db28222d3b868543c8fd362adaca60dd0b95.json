@@ -1,0 +1,469 @@
+{
+  "prompt_id": "m0-006",
+  "prompt_text": "Explain how a refrigerator moves heat.",
+  "first_output_divergence": 34,
+  "round_idx": 15,
+  "logical_slot": 0,
+  "common_prefix_length": 54,
+  "conditioning_prefix_verified_equal": true,
+  "recorded_local_token": 315,
+  "recorded_target_token": 320,
+  "recorded_local_token_reproduced": true,
+  "recorded_target_token_reproduced": true,
+  "block": {
+    "argmax": 315,
+    "decoded_argmax": " of",
+    "top1_minus_top2": 0.0,
+    "number_tied_for_max": 2,
+    "top5": [
+      {
+        "id": 320,
+        "text": " (",
+        "logit": 36.0
+      },
+      {
+        "id": 315,
+        "text": " of",
+        "logit": 36.0
+      },
+      {
+        "id": 43498,
+        "text": " compartment",
+        "logit": 34.75
+      },
+      {
+        "id": 323,
+        "text": " and",
+        "logit": 34.25
+      },
+      {
+        "id": 11,
+        "text": ",",
+        "logit": 32.0
+      }
+    ],
+    "selected_logits": {
+      "315": 36.0,
+      "320": 36.0
+    }
+  },
+  "target_sequential": {
+    "argmax": 320,
+    "decoded_argmax": " (",
+    "top1_minus_top2": 0.25,
+    "number_tied_for_max": 1,
+    "top5": [
+      {
+        "id": 320,
+        "text": " (",
+        "logit": 36.25
+      },
+      {
+        "id": 315,
+        "text": " of",
+        "logit": 36.0
+      },
+      {
+        "id": 43498,
+        "text": " compartment",
+        "logit": 34.75
+      },
+      {
+        "id": 323,
+        "text": " and",
+        "logit": 34.25
+      },
+      {
+        "id": 11,
+        "text": ",",
+        "logit": 32.0
+      }
+    ],
+    "selected_logits": {
+      "315": 36.0,
+      "320": 36.25
+    }
+  },
+  "fresh_full_prefix": {
+    "argmax": 320,
+    "decoded_argmax": " (",
+    "top1_minus_top2": 0.25,
+    "number_tied_for_max": 1,
+    "top5": [
+      {
+        "id": 320,
+        "text": " (",
+        "logit": 36.25
+      },
+      {
+        "id": 315,
+        "text": " of",
+        "logit": 36.0
+      },
+      {
+        "id": 43498,
+        "text": " compartment",
+        "logit": 34.75
+      },
+      {
+        "id": 323,
+        "text": " and",
+        "logit": 34.25
+      },
+      {
+        "id": 11,
+        "text": ",",
+        "logit": 32.0
+      }
+    ],
+    "selected_logits": {
+      "315": 36.0,
+      "320": 36.25
+    }
+  },
+  "single_query_same_prior_cache": {
+    "argmax": 320,
+    "decoded_argmax": " (",
+    "top1_minus_top2": 0.25,
+    "number_tied_for_max": 1,
+    "top5": [
+      {
+        "id": 320,
+        "text": " (",
+        "logit": 36.25
+      },
+      {
+        "id": 315,
+        "text": " of",
+        "logit": 36.0
+      },
+      {
+        "id": 43498,
+        "text": " compartment",
+        "logit": 34.75
+      },
+      {
+        "id": 323,
+        "text": " and",
+        "logit": 34.5
+      },
+      {
+        "id": 11,
+        "text": ",",
+        "logit": 32.25
+      }
+    ],
+    "selected_logits": {
+      "315": 36.0,
+      "320": 36.25
+    }
+  },
+  "fp32_head_block": {
+    "argmax": 320,
+    "decoded_argmax": " (",
+    "top1_minus_top2": 0.17039108276367188,
+    "number_tied_for_max": 1,
+    "top5": [
+      {
+        "id": 320,
+        "text": " (",
+        "logit": 36.05437469482422
+      },
+      {
+        "id": 315,
+        "text": " of",
+        "logit": 35.88398361206055
+      },
+      {
+        "id": 43498,
+        "text": " compartment",
+        "logit": 34.7720832824707
+      },
+      {
+        "id": 323,
+        "text": " and",
+        "logit": 34.2516975402832
+      },
+      {
+        "id": 11,
+        "text": ",",
+        "logit": 32.00922775268555
+      }
+    ],
+    "selected_logits": {
+      "315": 35.88398361206055,
+      "320": 36.05437469482422
+    }
+  },
+  "fp32_head_target_sequential": {
+    "argmax": 320,
+    "decoded_argmax": " (",
+    "top1_minus_top2": 0.29987335205078125,
+    "number_tied_for_max": 1,
+    "top5": [
+      {
+        "id": 320,
+        "text": " (",
+        "logit": 36.18012237548828
+      },
+      {
+        "id": 315,
+        "text": " of",
+        "logit": 35.8802490234375
+      },
+      {
+        "id": 43498,
+        "text": " compartment",
+        "logit": 34.86002731323242
+      },
+      {
+        "id": 323,
+        "text": " and",
+        "logit": 34.31245040893555
+      },
+      {
+        "id": 11,
+        "text": ",",
+        "logit": 32.01958465576172
+      }
+    ],
+    "selected_logits": {
+      "315": 35.8802490234375,
+      "320": 36.18012237548828
+    }
+  },
+  "fp32_head_single_query": {
+    "argmax": 320,
+    "decoded_argmax": " (",
+    "top1_minus_top2": 0.3384971618652344,
+    "number_tied_for_max": 1,
+    "top5": [
+      {
+        "id": 320,
+        "text": " (",
+        "logit": 36.237030029296875
+      },
+      {
+        "id": 315,
+        "text": " of",
+        "logit": 35.89853286743164
+      },
+      {
+        "id": 43498,
+        "text": " compartment",
+        "logit": 34.821998596191406
+      },
+      {
+        "id": 323,
+        "text": " and",
+        "logit": 34.38166427612305
+      },
+      {
+        "id": 11,
+        "text": ",",
+        "logit": 32.15129089355469
+      }
+    ],
+    "selected_logits": {
+      "315": 35.89853286743164,
+      "320": 36.237030029296875
+    }
+  },
+  "block_vs_sequential_logits": {
+    "max_abs": 0.25,
+    "mean_abs": 0.03984968364238739,
+    "rms": 0.05218745023012161,
+    "argmax_equal": false
+  },
+  "block_vs_single_query_same_prior_logits": {
+    "max_abs": 0.25,
+    "mean_abs": 0.03848971426486969,
+    "rms": 0.05099686235189438,
+    "argmax_equal": false
+  },
+  "block_vs_fresh_logits": {
+    "max_abs": 0.3125,
+    "mean_abs": 0.0630662813782692,
+    "rms": 0.07613836973905563,
+    "argmax_equal": false
+  },
+  "block_head_bf16_vs_fp32": {
+    "max_abs": 0.11601638793945312,
+    "mean_abs": 0.007955165579915047,
+    "rms": 0.010891950689256191,
+    "argmax_equal": false
+  },
+  "future_tokens_perturbation": {
+    "max_abs": 0.0,
+    "mean_abs": 0.0,
+    "rms": 0.0,
+    "argmax_equal": true
+  },
+  "rolled_cache_vs_sequential_prior": {
+    "lengths_equal": true,
+    "length": 53,
+    "max_key_abs_by_layer": [
+      0.0,
+      0.25,
+      0.125,
+      0.125,
+      0.25,
+      0.5,
+      0.25,
+      0.125,
+      0.25,
+      0.125,
+      0.25,
+      0.25,
+      0.125,
+      0.125,
+      0.1875,
+      0.125,
+      0.1875,
+      0.15625,
+      0.21875,
+      0.125,
+      0.15625,
+      0.125,
+      0.1875,
+      0.25,
+      0.125,
+      0.125,
+      0.09375,
+      0.125,
+      0.125,
+      0.125,
+      0.25,
+      0.15625,
+      0.125,
+      0.12890625,
+      0.1875,
+      0.1875
+    ],
+    "max_value_abs_by_layer": [
+      0.0,
+      0.001953125,
+      0.00244140625,
+      0.00390625,
+      0.00390625,
+      0.005859375,
+      0.015625,
+      0.01171875,
+      0.01171875,
+      0.015625,
+      0.0234375,
+      0.015625,
+      0.0234375,
+      0.03125,
+      0.046875,
+      0.1875,
+      0.09375,
+      0.09375,
+      0.0625,
+      0.0546875,
+      0.046875,
+      0.0625,
+      0.078125,
+      0.0625,
+      0.09375,
+      0.068359375,
+      0.07958984375,
+      0.09375,
+      0.0859375,
+      0.1875,
+      0.1875,
+      0.21875,
+      0.265625,
+      0.5,
+      0.40625,
+      0.25
+    ],
+    "max_key_abs": 0.5,
+    "max_value_abs": 0.5
+  },
+  "rollback_lengths": [
+    {
+      "round": 1,
+      "length": 24,
+      "expected": 24
+    },
+    {
+      "round": 2,
+      "length": 25,
+      "expected": 25
+    },
+    {
+      "round": 3,
+      "length": 27,
+      "expected": 27
+    },
+    {
+      "round": 4,
+      "length": 28,
+      "expected": 28
+    },
+    {
+      "round": 5,
+      "length": 32,
+      "expected": 32
+    },
+    {
+      "round": 6,
+      "length": 33,
+      "expected": 33
+    },
+    {
+      "round": 7,
+      "length": 38,
+      "expected": 38
+    },
+    {
+      "round": 8,
+      "length": 40,
+      "expected": 40
+    },
+    {
+      "round": 9,
+      "length": 42,
+      "expected": 42
+    },
+    {
+      "round": 10,
+      "length": 44,
+      "expected": 44
+    },
+    {
+      "round": 11,
+      "length": 45,
+      "expected": 45
+    },
+    {
+      "round": 12,
+      "length": 49,
+      "expected": 49
+    },
+    {
+      "round": 13,
+      "length": 52,
+      "expected": 52
+    },
+    {
+      "round": 14,
+      "length": 53,
+      "expected": 53
+    },
+    {
+      "round": 15,
+      "length": 54,
+      "expected": 54
+    }
+  ],
+  "all_rollback_lengths_exact": true,
+  "target_attention": {
+    "implementation": "sdpa",
+    "sliding_window": null,
+    "causal": true,
+    "padded_input": false
+  },
+  "diagnosis": "Same-prefix BF16 numerical/tie sensitivity; future-token masking and exact rollback lengths verified."
+}

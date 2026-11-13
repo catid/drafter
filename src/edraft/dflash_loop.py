@@ -110,10 +110,10 @@ def _sample_proposal(draft_logits, h_raw, prefix, *, temperature, warper, genera
         U = snapshot.unary(H) if snapshot is not None else None
     tokens, qs = [], []
     for i in range(K):
-        with timer.phase("adapter_causal_score"):
-            score = (snapshot.score_slot(l_unit[i], U[i], prefix, tokens, i, beta=beta)
-                     if snapshot is not None else l_unit[i])
-            if bigram is not None:
+        score = (snapshot.score_slot(l_unit[i], U[i], prefix, tokens, i, beta=beta, timer=timer)
+                 if snapshot is not None else l_unit[i])
+        if bigram is not None:
+            with timer.phase("bigram_score"):
                 previous = tokens[-1] if tokens else (prefix[-1] if prefix else None)
                 score = bigram.score(score, previous)
         with timer.phase("sequential_sampling"):
@@ -228,13 +228,14 @@ def generate_reference(
     stopped = token in stops
     start, round_idx, blocks = n, 0, []
     head_metadata = backend.head_metadata()
+    static_snapshot = adapter.snapshot() if adapter is not None else None
     while start + 1 < max_length and not stopped:
         round_idx += 1
         verify_size = min(block_size, max_length - start)
         K = verify_size - 1
         canvas = output_ids[:, start:start + verify_size].clone()
         prefix = output_ids[0, :start + 1].tolist()
-        snapshot = _snapshot(adapter, online_state)
+        snapshot = online_state.snapshot() if online_state is not None else static_snapshot
         with torch.no_grad(), timer.phase("dflash_draft"):
             noise = F.embedding(canvas, backend.target.get_input_embeddings().weight) * backend.input_embedding_scale
             h_raw = backend.drafter(
@@ -297,9 +298,10 @@ def generate_toy(
     n = len(context)
     timer = PhaseTimer("cpu", measure_phases)
     begun = time.perf_counter()
+    static_snapshot = adapter.snapshot() if adapter is not None else None
     while len(output) < max_new_tokens:
         K = min(block_length, max_new_tokens - len(output))
-        snapshot = _snapshot(adapter, online_state)
+        snapshot = online_state.snapshot() if online_state is not None else static_snapshot
         with timer.phase("dflash_draft"):
             drafted = drafter.draft(context, K)
         with torch.no_grad():

@@ -64,6 +64,7 @@ def test_bigram_normalized_evicted_prior_and_empty_equivalence(k_ret):
     baseline = OnlineBigram(7, alpha=.3, lambda_tr=.5, k_ret=k_ret)
     l_unit = torch.tensor([0., 1., 1., -2., -3., -1., -1.])
     assert baseline.score(l_unit, None) is l_unit
+    assert torch.equal(baseline.prior(None), torch.zeros(7))
     assert baseline.score(l_unit, 4) is l_unit
     for token in [0, 1, 1, 2, 2, 2, 3, 4, 5, 6]:
         baseline.update([4], [token])

@@ -77,27 +77,25 @@ def verify_block(
     if q.shape != (K, V):
         raise ValueError("proposal_probs must have shape [K,V]")
     P = probabilities(target_logits, temperature, warper)
-    proposal_token_probs = []
-    target_token_probs = []
-    decisions = []
+    token_indices = torch.tensor(tokens, device=q.device, dtype=torch.long)[:, None]
+    q_selected = q.gather(-1, token_indices)[:, 0]
+    p_selected = P[:K].gather(-1, token_indices)[:, 0]
+    if not bool(((q_selected > 0) & torch.isfinite(q_selected)).all()):
+        raise ValueError("a realized draft token must have positive finite proposal mass")
+    # Preserve the complete realized canvas probabilities for off-policy teacher
+    # diagnostics, including slots beyond the first rejection.
+    proposal_token_probs = q_selected.tolist()
+    target_token_probs = p_selected.tolist()
     # Draw every slot's acceptance uniform before any residual draw, matching
     # the inspected upstream ratio sampler's seeded RNG consumption.
     uniforms = torch.rand((K,), device=P.device, dtype=P.dtype, generator=generator)
-    for i, token in enumerate(tokens):
-        q_y = q[i, token]
-        p_y = P[i, token]
-        if not bool(q_y > 0) or not bool(torch.isfinite(q_y)):
-            raise ValueError("a realized draft token must have positive finite proposal mass")
-        # u*q < P is algebraically u < min(1,P/q) and avoids division
-        # roundoff relative to upstream. The positive-q check is mandatory.
-        accepted = bool(uniforms[i] * q_y < p_y)
-        proposal_token_probs.append(float(q_y))
-        target_token_probs.append(float(p_y))
-        decisions.append(accepted)
+    # u*q < P is algebraically u < min(1,P/q), matching upstream.
+    decisions_all = (uniforms * q_selected < p_selected).tolist()
+    for i, accepted in enumerate(decisions_all):
         if not accepted:
             replacement = draw(residual_distribution(P[i], q[i]), generator)
             return VerificationResult(tokens[:i] + [replacement], i, i, replacement, None,
-                                      decisions, proposal_token_probs, target_token_probs)
+                                      decisions_all[:i + 1], proposal_token_probs, target_token_probs)
     bonus = draw(P[K], generator)
-    return VerificationResult(tokens + [bonus], K, K, None, bonus, decisions,
+    return VerificationResult(tokens + [bonus], K, K, None, bonus, decisions_all,
                               proposal_token_probs, target_token_probs)

@@ -1,0 +1,64 @@
+{
+  "jobs": {
+    "733987d82fbba3f4911ceb6a12a715b227862cdfc2a6c8f8cd2f93f303dc4e95": {
+      "identity": {
+        "model_pair": [
+          "Qwen/Qwen3-8B",
+          "z-lab/Qwen3-8B-DFlash-b16"
+        ],
+        "prompt": "random_tensor_microbenchmark",
+        "condition": "synthetic",
+        "seed": 2026,
+        "temperature": 1.0,
+        "verification_rule": "not_applicable",
+        "proposal_mode": "all_measured_modes",
+        "checkpoint": "2a3e059467bf58e0ada01b5ed6df6e2059e8e17f6dd9fcbdc1a41d974ab05433",
+        "adapter_version": 0
+      },
+      "status": "complete",
+      "result_path": "/home/catid/drafter/artifacts/adapter_benchmark_smoke.json"
+    },
+    "774256d93a236ee963b6ce145219b1035692e16f0786d5939c9f2953497de7fb": {
+      "identity": {
+        "model_pair": [
+          "Qwen/Qwen3-8B",
+          "z-lab/Qwen3-8B-DFlash-b16"
+        ],
+        "prompt": "random_tensor_microbenchmark",
+        "condition": "synthetic",
+        "seed": 2026,
+        "temperature": 1.0,
+        "verification_rule": "not_applicable",
+        "proposal_mode": "all_measured_modes",
+        "checkpoint": {
+          "configuration": "129edd8021e550501fe823b898d3228c4f47f026ff361425a42b47d4541cb7c6",
+          "source_sha256": "3afa5ee0e41b2c102201704350da8b99c21ca6803418baefde2a461ce13177af"
+        },
+        "adapter_version": 0
+      },
+      "status": "complete",
+      "result_path": "/home/catid/drafter/artifacts/adapter_benchmark_smoke_774256d93a23.json"
+    },
+    "473f8db1731762f932998572cf09838543118dbbf9bafaf60f37430a305015d3": {
+      "identity": {
+        "model_pair": [
+          "Qwen/Qwen3-8B",
+          "z-lab/Qwen3-8B-DFlash-b16"
+        ],
+        "prompt": "random_tensor_microbenchmark",
+        "condition": "synthetic",
+        "seed": 2026,
+        "temperature": 1.0,
+        "verification_rule": "not_applicable",
+        "proposal_mode": "all_measured_modes",
+        "checkpoint": {
+          "configuration": "ad9ab9b0d21aabf9d2a5b0cbaa4c658ff77cd5075eca0e86fb84781c0c5b63ae",
+          "source_sha256": "3afa5ee0e41b2c102201704350da8b99c21ca6803418baefde2a461ce13177af"
+        },
+        "adapter_version": 0
+      },
+      "status": "complete",
+      "result_path": "/home/catid/drafter/artifacts/adapter_benchmark_reference_473f8db17317.json"
+    }
+  }
+}

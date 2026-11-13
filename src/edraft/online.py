@@ -43,7 +43,9 @@ class OnlineBigram:
             self.version += 1
 
     def prior(self, previous: int | None, device=None, dtype=torch.float32):
-        if previous is None or not self.counts.get(int(previous)):
+        if previous is None:
+            return torch.zeros(self.vocab_size, device=device, dtype=dtype)
+        if not self.counts.get(int(previous)):
             return torch.full((self.vocab_size,), -torch.log(torch.tensor(float(self.vocab_size))).item(), device=device, dtype=dtype)
         counts = self.counts[int(previous)]
         total = sum(counts.values())
@@ -193,5 +195,9 @@ class OnlineState:
                 'db_norm': float(self.db.norm()), 'db_exact_zero_fraction': float((self.db == 0).float().mean()),
                 'active_buckets': len(self.dS.active) if self.dS is not None else 0,
                 'sparse_capacity': self.dS.capacity if self.dS is not None else 0,
-                'sparse_update_bytes': self.dS.last_update_bytes if self.dS is not None else 0,
+                'sparse_update_bytes_estimate': self.dS.last_update_bytes if self.dS is not None else 0,
+                'sparse_snapshot_bytes': (len(self.dS.active) * 16 + (self.dS.u + 1) * 4) if self.dS is not None else 0,
+                'dense_snapshot_bytes': sum(x.numel() * x.element_size() for x in (self._snapshot.W, self._snapshot.A, self._snapshot.b)),
+                'sparse_snapshot_strategy': 'compact_active_bucket_copy',
+                'sparse_update_strategy': 'dirty_lazy_catchup_and_active_list_compaction',
                 'last_full_loss': self.last_loss}

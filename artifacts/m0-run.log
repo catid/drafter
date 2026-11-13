@@ -1,3 +1,162 @@
 Loading reference pair on cuda:0
 Loading weights:   0%|          | 0/399 [00:00<?, ?it/s]Loading weights: 100%|██████████| 399/399 [00:00<00:00, 9463.46it/s]
 Loading weights:   0%|          | 0/58 [00:00<?, ?it/s]Loading weights: 100%|██████████| 58/58 [00:00<00:00, 4395.51it/s]
+1/20 greedy: parity=True, 74 tokens, 1.17s
+1/20 model_card_nonthinking: parity=True, 58 tokens, 0.83s
+1/20 pure_temperature_diagnostic: parity=True, 74 tokens, 1.29s
+2/20 greedy: parity=True, 128 tokens, 0.47s
+2/20 model_card_nonthinking: parity=True, 128 tokens, 0.53s
+2/20 pure_temperature_diagnostic: parity=True, 128 tokens, 0.75s
+3/20 greedy: parity=True, 128 tokens, 0.53s
+3/20 model_card_nonthinking: parity=True, 128 tokens, 0.54s
+3/20 pure_temperature_diagnostic: parity=True, 128 tokens, 0.54s
+4/20 greedy: parity=True, 128 tokens, 1.40s
+4/20 model_card_nonthinking: parity=True, 128 tokens, 1.51s
+4/20 pure_temperature_diagnostic: parity=True, 128 tokens, 1.58s
+5/20 greedy: parity=True, 128 tokens, 1.09s
+5/20 model_card_nonthinking: parity=True, 128 tokens, 1.26s
+5/20 pure_temperature_diagnostic: parity=True, 128 tokens, 1.24s
+6/20 greedy: parity=True, 128 tokens, 1.77s
+6/20 model_card_nonthinking: parity=True, 128 tokens, 1.67s
+6/20 pure_temperature_diagnostic: parity=True, 128 tokens, 2.01s
+7/20 greedy: parity=True, 128 tokens, 1.52s
+7/20 model_card_nonthinking: parity=True, 128 tokens, 1.70s
+7/20 pure_temperature_diagnostic: parity=True, 128 tokens, 1.72s
+8/20 greedy: parity=True, 128 tokens, 1.23s
+8/20 model_card_nonthinking: parity=True, 128 tokens, 1.29s
+8/20 pure_temperature_diagnostic: parity=True, 128 tokens, 1.60s
+9/20 greedy: parity=True, 13 tokens, 0.19s
+9/20 model_card_nonthinking: parity=True, 13 tokens, 0.23s
+9/20 pure_temperature_diagnostic: parity=True, 13 tokens, 0.25s
+10/20 greedy: parity=True, 128 tokens, 1.61s
+10/20 model_card_nonthinking: parity=True, 128 tokens, 1.89s
+10/20 pure_temperature_diagnostic: parity=True, 128 tokens, 1.81s
+11/20 greedy: parity=True, 128 tokens, 0.93s
+11/20 model_card_nonthinking: parity=True, 128 tokens, 0.75s
+11/20 pure_temperature_diagnostic: parity=True, 128 tokens, 1.04s
+12/20 greedy: parity=True, 128 tokens, 1.56s
+12/20 model_card_nonthinking: parity=True, 128 tokens, 1.12s
+12/20 pure_temperature_diagnostic: parity=True, 128 tokens, 1.33s
+13/20 greedy: parity=True, 128 tokens, 1.67s
+13/20 model_card_nonthinking: parity=True, 128 tokens, 1.68s
+13/20 pure_temperature_diagnostic: parity=True, 128 tokens, 1.70s
+14/20 greedy: parity=True, 128 tokens, 0.79s
+14/20 model_card_nonthinking: parity=True, 128 tokens, 0.81s
+14/20 pure_temperature_diagnostic: parity=True, 128 tokens, 1.05s
+15/20 greedy: parity=True, 128 tokens, 1.64s
+15/20 model_card_nonthinking: parity=True, 128 tokens, 1.71s
+15/20 pure_temperature_diagnostic: parity=True, 128 tokens, 1.92s
+16/20 greedy: parity=True, 128 tokens, 0.90s
+16/20 model_card_nonthinking: parity=True, 128 tokens, 0.96s
+16/20 pure_temperature_diagnostic: parity=True, 128 tokens, 1.49s
+17/20 greedy: parity=True, 128 tokens, 0.66s
+17/20 model_card_nonthinking: parity=True, 128 tokens, 0.86s
+17/20 pure_temperature_diagnostic: parity=True, 128 tokens, 0.67s
+18/20 greedy: parity=True, 128 tokens, 1.62s
+18/20 model_card_nonthinking: parity=True, 128 tokens, 1.55s
+18/20 pure_temperature_diagnostic: parity=True, 128 tokens, 1.89s
+19/20 greedy: parity=True, 128 tokens, 1.51s
+19/20 model_card_nonthinking: parity=True, 128 tokens, 1.69s
+19/20 pure_temperature_diagnostic: parity=True, 128 tokens, 1.94s
+20/20 greedy: parity=True, 125 tokens, 2.26s
+20/20 model_card_nonthinking: parity=True, 102 tokens, 1.42s
+20/20 pure_temperature_diagnostic: parity=True, 128 tokens, 2.28s
+{
+  "scale": "reference",
+  "status": "passed",
+  "num_distinct_prompts": 20,
+  "comparisons": {
+    "upstream_local": {
+      "mismatched_tokens": 0,
+      "compared_tokens": 7128,
+      "token_mismatch_rate": 0.0,
+      "sequence_mismatch_rate": 0.0
+    },
+    "upstream_target": {
+      "mismatched_tokens": 607,
+      "compared_tokens": 2388,
+      "token_mismatch_rate": 0.25418760469011725,
+      "sequence_mismatch_rate": 0.4
+    },
+    "local_target": {
+      "mismatched_tokens": 607,
+      "compared_tokens": 2388,
+      "token_mismatch_rate": 0.25418760469011725,
+      "sequence_mismatch_rate": 0.4
+    }
+  },
+  "cache_rollback": [
+    {
+      "cache_length": 24,
+      "expected_length": 24,
+      "accepted_length": 0,
+      "max_abs_logit_error": 0.25,
+      "argmax_equal": true,
+      "rolled_argmax": 13,
+      "fresh_argmax": 13
+    },
+    {
+      "cache_length": 25,
+      "expected_length": 25,
+      "accepted_length": 1,
+      "max_abs_logit_error": 0.1875,
+      "argmax_equal": true,
+      "rolled_argmax": 12884,
+      "fresh_argmax": 12884
+    },
+    {
+      "cache_length": 27,
+      "expected_length": 27,
+      "accepted_length": 3,
+      "max_abs_logit_error": 0.149169921875,
+      "argmax_equal": true,
+      "rolled_argmax": 6303,
+      "fresh_argmax": 6303
+    }
+  ],
+  "head_metadata": {
+    "artifact_id": "/home/catid/.cache/huggingface/hub/models--Qwen--Qwen3-8B/snapshots/b968826d9c46dd6066d109eabc6255188de91218",
+    "revision": "b968826d9c46dd6066d109eabc6255188de91218",
+    "module": "Qwen3ForCausalLM.lm_head",
+    "hook": "DFlashDraftModel.norm output, logical slots [1:]",
+    "shape": [
+      151936,
+      4096
+    ],
+    "dtype": "torch.bfloat16",
+    "bias": false,
+    "tied_weights": false,
+    "output_multiplier": 1.0,
+    "final_logit_softcapping": null
+  },
+  "conditions": [
+    {
+      "name": "greedy",
+      "temperature": 0.0,
+      "warper": {
+        "top_k": 0,
+        "top_p": 1.0,
+        "min_p": 0.0
+      }
+    },
+    {
+      "name": "model_card_nonthinking",
+      "temperature": 0.7,
+      "warper": {
+        "top_k": 20,
+        "top_p": 0.8,
+        "min_p": 0.0
+      }
+    },
+    {
+      "name": "pure_temperature_diagnostic",
+      "temperature": 1.0,
+      "warper": {
+        "top_k": 0,
+        "top_p": 1.0,
+        "min_p": 0.0
+      }
+    }
+  ],
+  "target_mismatch_investigation_required": true
+}

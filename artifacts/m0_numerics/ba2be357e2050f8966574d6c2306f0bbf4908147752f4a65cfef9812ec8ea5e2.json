@@ -1,0 +1,444 @@
+{
+  "prompt_id": "m0-001",
+  "prompt_text": "Write a Python function that merges two sorted lists and explain its complexity.",
+  "first_output_divergence": 82,
+  "round_idx": 10,
+  "logical_slot": 0,
+  "common_prefix_length": 108,
+  "conditioning_prefix_verified_equal": true,
+  "recorded_local_token": 624,
+  "recorded_target_token": 320,
+  "recorded_local_token_reproduced": true,
+  "recorded_target_token_reproduced": true,
+  "block": {
+    "argmax": 624,
+    "decoded_argmax": ".\n",
+    "top1_minus_top2": 0.25,
+    "number_tied_for_max": 1,
+    "top5": [
+      {
+        "id": 624,
+        "text": ".\n",
+        "logit": 33.0
+      },
+      {
+        "id": 320,
+        "text": " (",
+        "logit": 32.75
+      },
+      {
+        "id": 198,
+        "text": "\n",
+        "logit": 30.0
+      },
+      {
+        "id": 304,
+        "text": " in",
+        "logit": 28.375
+      },
+      {
+        "id": 11,
+        "text": ",",
+        "logit": 24.5
+      }
+    ],
+    "selected_logits": {
+      "624": 33.0,
+      "320": 32.75
+    }
+  },
+  "target_sequential": {
+    "argmax": 320,
+    "decoded_argmax": " (",
+    "top1_minus_top2": 0.0,
+    "number_tied_for_max": 2,
+    "top5": [
+      {
+        "id": 320,
+        "text": " (",
+        "logit": 33.0
+      },
+      {
+        "id": 624,
+        "text": ".\n",
+        "logit": 33.0
+      },
+      {
+        "id": 198,
+        "text": "\n",
+        "logit": 30.0
+      },
+      {
+        "id": 304,
+        "text": " in",
+        "logit": 28.625
+      },
+      {
+        "id": 11,
+        "text": ",",
+        "logit": 24.625
+      }
+    ],
+    "selected_logits": {
+      "624": 33.0,
+      "320": 33.0
+    }
+  },
+  "fresh_full_prefix": {
+    "argmax": 320,
+    "decoded_argmax": " (",
+    "top1_minus_top2": 0.0,
+    "number_tied_for_max": 2,
+    "top5": [
+      {
+        "id": 320,
+        "text": " (",
+        "logit": 33.0
+      },
+      {
+        "id": 624,
+        "text": ".\n",
+        "logit": 33.0
+      },
+      {
+        "id": 198,
+        "text": "\n",
+        "logit": 30.0
+      },
+      {
+        "id": 304,
+        "text": " in",
+        "logit": 28.625
+      },
+      {
+        "id": 11,
+        "text": ",",
+        "logit": 24.625
+      }
+    ],
+    "selected_logits": {
+      "624": 33.0,
+      "320": 33.0
+    }
+  },
+  "single_query_same_prior_cache": {
+    "argmax": 320,
+    "decoded_argmax": " (",
+    "top1_minus_top2": 0.0,
+    "number_tied_for_max": 2,
+    "top5": [
+      {
+        "id": 320,
+        "text": " (",
+        "logit": 33.0
+      },
+      {
+        "id": 624,
+        "text": ".\n",
+        "logit": 33.0
+      },
+      {
+        "id": 198,
+        "text": "\n",
+        "logit": 30.125
+      },
+      {
+        "id": 304,
+        "text": " in",
+        "logit": 28.5
+      },
+      {
+        "id": 11,
+        "text": ",",
+        "logit": 24.625
+      }
+    ],
+    "selected_logits": {
+      "624": 33.0,
+      "320": 33.0
+    }
+  },
+  "fp32_head_block": {
+    "argmax": 624,
+    "decoded_argmax": ".\n",
+    "top1_minus_top2": 0.12024307250976562,
+    "number_tied_for_max": 1,
+    "top5": [
+      {
+        "id": 624,
+        "text": ".\n",
+        "logit": 32.95145034790039
+      },
+      {
+        "id": 320,
+        "text": " (",
+        "logit": 32.831207275390625
+      },
+      {
+        "id": 198,
+        "text": "\n",
+        "logit": 30.055025100708008
+      },
+      {
+        "id": 304,
+        "text": " in",
+        "logit": 28.397226333618164
+      },
+      {
+        "id": 11,
+        "text": ",",
+        "logit": 24.475130081176758
+      }
+    ],
+    "selected_logits": {
+      "624": 32.95145034790039,
+      "320": 32.831207275390625
+    }
+  },
+  "fp32_head_target_sequential": {
+    "argmax": 624,
+    "decoded_argmax": ".\n",
+    "top1_minus_top2": 0.044368743896484375,
+    "number_tied_for_max": 1,
+    "top5": [
+      {
+        "id": 624,
+        "text": ".\n",
+        "logit": 32.96989822387695
+      },
+      {
+        "id": 320,
+        "text": " (",
+        "logit": 32.92552947998047
+      },
+      {
+        "id": 198,
+        "text": "\n",
+        "logit": 30.05961036682129
+      },
+      {
+        "id": 304,
+        "text": " in",
+        "logit": 28.61298179626465
+      },
+      {
+        "id": 11,
+        "text": ",",
+        "logit": 24.60310935974121
+      }
+    ],
+    "selected_logits": {
+      "624": 32.96989822387695,
+      "320": 32.92552947998047
+    }
+  },
+  "fp32_head_single_query": {
+    "argmax": 624,
+    "decoded_argmax": ".\n",
+    "top1_minus_top2": 0.12186813354492188,
+    "number_tied_for_max": 1,
+    "top5": [
+      {
+        "id": 624,
+        "text": ".\n",
+        "logit": 33.0329475402832
+      },
+      {
+        "id": 320,
+        "text": " (",
+        "logit": 32.91107940673828
+      },
+      {
+        "id": 198,
+        "text": "\n",
+        "logit": 30.150020599365234
+      },
+      {
+        "id": 304,
+        "text": " in",
+        "logit": 28.53767204284668
+      },
+      {
+        "id": 11,
+        "text": ",",
+        "logit": 24.606292724609375
+      }
+    ],
+    "selected_logits": {
+      "624": 33.0329475402832,
+      "320": 32.91107940673828
+    }
+  },
+  "block_vs_sequential_logits": {
+    "max_abs": 0.25,
+    "mean_abs": 0.029919113963842392,
+    "rms": 0.038708630949258804,
+    "argmax_equal": false
+  },
+  "block_vs_single_query_same_prior_logits": {
+    "max_abs": 0.25,
+    "mean_abs": 0.02238142490386963,
+    "rms": 0.029581090435385704,
+    "argmax_equal": false
+  },
+  "block_vs_fresh_logits": {
+    "max_abs": 0.25,
+    "mean_abs": 0.02732226625084877,
+    "rms": 0.03556683287024498,
+    "argmax_equal": false
+  },
+  "block_head_bf16_vs_fp32": {
+    "max_abs": 0.081207275390625,
+    "mean_abs": 0.0037919238675385714,
+    "rms": 0.005522572435438633,
+    "argmax_equal": true
+  },
+  "future_tokens_perturbation": {
+    "max_abs": 0.0,
+    "mean_abs": 0.0,
+    "rms": 0.0,
+    "argmax_equal": true
+  },
+  "rolled_cache_vs_sequential_prior": {
+    "lengths_equal": true,
+    "length": 107,
+    "max_key_abs_by_layer": [
+      0.0,
+      0.25,
+      0.125,
+      0.125,
+      0.375,
+      0.5,
+      0.25,
+      0.125,
+      0.25,
+      0.125,
+      0.375,
+      0.25,
+      0.1875,
+      0.162109375,
+      0.25,
+      0.1875,
+      0.3046875,
+      0.375,
+      0.453125,
+      0.30859375,
+      0.4140625,
+      0.2890625,
+      0.296875,
+      0.286376953125,
+      0.28125,
+      0.25,
+      0.25,
+      0.1875,
+      0.1953125,
+      0.15625,
+      0.1875,
+      0.185546875,
+      0.125,
+      0.1875,
+      0.25,
+      0.25
+    ],
+    "max_value_abs_by_layer": [
+      0.0,
+      0.001953125,
+      0.001953125,
+      0.00390625,
+      0.0054931640625,
+      0.005859375,
+      0.0078125,
+      0.01171875,
+      0.01953125,
+      0.01953125,
+      0.03125,
+      0.01953125,
+      0.01953125,
+      0.25,
+      0.15625,
+      0.5,
+      0.4375,
+      0.75,
+      0.65625,
+      0.09765625,
+      0.103515625,
+      0.15234375,
+      0.23046875,
+      0.21484375,
+      0.169921875,
+      0.171478271484375,
+      0.171875,
+      0.15625,
+      0.15625,
+      0.28125,
+      0.2734375,
+      0.265625,
+      0.375,
+      0.5,
+      0.4375,
+      0.53125
+    ],
+    "max_key_abs": 0.5,
+    "max_value_abs": 0.75
+  },
+  "rollback_lengths": [
+    {
+      "round": 1,
+      "length": 36,
+      "expected": 36
+    },
+    {
+      "round": 2,
+      "length": 42,
+      "expected": 42
+    },
+    {
+      "round": 3,
+      "length": 47,
+      "expected": 47
+    },
+    {
+      "round": 4,
+      "length": 51,
+      "expected": 51
+    },
+    {
+      "round": 5,
+      "length": 52,
+      "expected": 52
+    },
+    {
+      "round": 6,
+      "length": 64,
+      "expected": 64
+    },
+    {
+      "round": 7,
+      "length": 80,
+      "expected": 80
+    },
+    {
+      "round": 8,
+      "length": 91,
+      "expected": 91
+    },
+    {
+      "round": 9,
+      "length": 107,
+      "expected": 107
+    },
+    {
+      "round": 10,
+      "length": 109,
+      "expected": 109
+    }
+  ],
+  "all_rollback_lengths_exact": true,
+  "target_attention": {
+    "implementation": "sdpa",
+    "sliding_window": null,
+    "causal": true,
+    "padded_input": false
+  },
+  "diagnosis": "Same-prefix BF16 numerical/tie sensitivity; future-token masking and exact rollback lengths verified."
+}

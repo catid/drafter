@@ -2,8 +2,9 @@
 
 This repository tests whether a small learned energy correction improves a parallel
 DFlash drafter after its scoring, sampling, verification, and update costs. The full
-experiment specification is [prompt.md](prompt.md). Work is in progress: M0 is being
-validated; M1–M4 have not run. No improvement claim is established.
+experiment specification is [prompt.md](prompt.md). Work is in progress: M0 passed
+the real reference reproduction gate; M1 is being prepared and M2–M4 have not run.
+No adapter improvement claim is established.
 
 The supported reference pair is `Qwen/Qwen3-8B` with
 `z-lab/Qwen3-8B-DFlash-b16`, using Hugging Face Transformers. Source and dependencies

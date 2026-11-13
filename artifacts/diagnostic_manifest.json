@@ -1,0 +1,22 @@
+{
+  "jobs": {
+    "d1c92a826723ff0d9dd3c87a8af2372c1ae3289bfe26dfad1458b900b1ec8126": {
+      "identity": {
+        "model_pair": [
+          "Qwen/Qwen3-8B",
+          "z-lab/Qwen3-8B-DFlash-b16"
+        ],
+        "prompt": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+        "condition": "separate_conditions_in_report",
+        "seed": 2026,
+        "temperature": "separate_temperatures",
+        "verification_rule": "ratio_stochastic_greedy_argmax",
+        "proposal_mode": "plain_dflash",
+        "checkpoint": "392133ffe6a5340de6b88d6d111976448acb1eeb491b056f70d8357c5fda4c07",
+        "adapter_version": 0
+      },
+      "status": "complete",
+      "result_path": "/home/catid/drafter/artifacts/diagnostic_smoke.json"
+    }
+  }
+}

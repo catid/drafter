@@ -269,6 +269,87 @@
       ],
       "disk_usage_bytes": 2097703648,
       "seconds": 13.431369066238403
+    },
+    {
+      "repo_id": "openai/gsm8k",
+      "repo_type": "dataset",
+      "revision": "740312add88f781978c0658806c59bc2815b9866",
+      "path": "/home/catid/.cache/huggingface/hub/datasets--openai--gsm8k/snapshots/740312add88f781978c0658806c59bc2815b9866",
+      "disk_usage_bytes": 5897822,
+      "files": [
+        {
+          "path": "README.md",
+          "bytes": 7935,
+          "sha256": "a17e882503578c9e324560630e31017617714ee025c87cf4fea6fd916895f3c1",
+          "url": "https://huggingface.co/datasets/openai/gsm8k/resolve/740312add88f781978c0658806c59bc2815b9866/README.md"
+        },
+        {
+          "path": "main/test-00000-of-00001.parquet",
+          "bytes": 419088,
+          "sha256": "ee7b8da9e381df27b9e3f7758a159ab2bdaa4dbaa910546cbbc47e0cb44e4f59",
+          "url": "https://huggingface.co/datasets/openai/gsm8k/resolve/740312add88f781978c0658806c59bc2815b9866/main/test-00000-of-00001.parquet"
+        },
+        {
+          "path": "main/train-00000-of-00001.parquet",
+          "bytes": 2306545,
+          "sha256": "ea82612ea9582142387730c793eb67d3b12849002bc0b7fa6f8efafa7351419d",
+          "url": "https://huggingface.co/datasets/openai/gsm8k/resolve/740312add88f781978c0658806c59bc2815b9866/main/train-00000-of-00001.parquet"
+        },
+        {
+          "path": "socratic/test-00000-of-00001.parquet",
+          "bytes": 486995,
+          "sha256": "477dba7028204b465491b8f346ec774262ccd77147d942a0881e94cc6da7c99e",
+          "url": "https://huggingface.co/datasets/openai/gsm8k/resolve/740312add88f781978c0658806c59bc2815b9866/socratic/test-00000-of-00001.parquet"
+        },
+        {
+          "path": "socratic/train-00000-of-00001.parquet",
+          "bytes": 2677259,
+          "sha256": "54eb5fd2105a9126ac6410541b2e9dbe0199701258957c9af02d9ed675c90378",
+          "url": "https://huggingface.co/datasets/openai/gsm8k/resolve/740312add88f781978c0658806c59bc2815b9866/socratic/train-00000-of-00001.parquet"
+        }
+      ]
+    },
+    {
+      "repo_id": "openai/openai_humaneval",
+      "repo_type": "dataset",
+      "revision": "7dce6050a7d6d172f3cc5c32aa97f52fa1a2e544",
+      "path": "/home/catid/.cache/huggingface/hub/datasets--openai--openai_humaneval/snapshots/7dce6050a7d6d172f3cc5c32aa97f52fa1a2e544",
+      "disk_usage_bytes": 90443,
+      "files": [
+        {
+          "path": "README.md",
+          "bytes": 6523,
+          "sha256": "f81cb59f7dae73d1ee1069d7de3ba1c0f9d2bd80f4df6d6990d12bf488e5b5ef",
+          "url": "https://huggingface.co/datasets/openai/openai_humaneval/resolve/7dce6050a7d6d172f3cc5c32aa97f52fa1a2e544/README.md"
+        },
+        {
+          "path": "openai_humaneval/test-00000-of-00001.parquet",
+          "bytes": 83920,
+          "sha256": "2f2871a15fbc95b6c683043359f4ed8e144c5a1c4f24f25f66bc51f598dfcfb6",
+          "url": "https://huggingface.co/datasets/openai/openai_humaneval/resolve/7dce6050a7d6d172f3cc5c32aa97f52fa1a2e544/openai_humaneval/test-00000-of-00001.parquet"
+        }
+      ]
+    },
+    {
+      "repo_id": "HuggingFaceH4/MATH-500",
+      "repo_type": "dataset",
+      "revision": "6e4ed1a2a79af7d8630a6b768ec859cb5af4d3be",
+      "path": "/home/catid/.cache/huggingface/hub/datasets--HuggingFaceH4--MATH-500/snapshots/6e4ed1a2a79af7d8630a6b768ec859cb5af4d3be",
+      "disk_usage_bytes": 446976,
+      "files": [
+        {
+          "path": "README.md",
+          "bytes": 412,
+          "sha256": "5d32f78943f75423da61419c5bb98cee964d5a29183b11a5294f661fb96f69f7",
+          "url": "https://huggingface.co/datasets/HuggingFaceH4/MATH-500/resolve/6e4ed1a2a79af7d8630a6b768ec859cb5af4d3be/README.md"
+        },
+        {
+          "path": "test.jsonl",
+          "bytes": 446564,
+          "sha256": "35dc41080a3680858b27fa7e0533d2d547825316fc5dafe5d316f4ccc5a06132",
+          "url": "https://huggingface.co/datasets/HuggingFaceH4/MATH-500/resolve/6e4ed1a2a79af7d8630a6b768ec859cb5af4d3be/test.jsonl"
+        }
+      ]
     }
   ],
   "model_artifacts": {
@@ -529,5 +610,88 @@
       "total_bytes": 287471173632
     }
   ],
-  "free_disk_bytes": 33796328579072
+  "free_disk_bytes": 33796328579072,
+  "dataset_artifacts": {
+    "openai/gsm8k": {
+      "repo_id": "openai/gsm8k",
+      "repo_type": "dataset",
+      "revision": "740312add88f781978c0658806c59bc2815b9866",
+      "path": "/home/catid/.cache/huggingface/hub/datasets--openai--gsm8k/snapshots/740312add88f781978c0658806c59bc2815b9866",
+      "disk_usage_bytes": 5897822,
+      "files": [
+        {
+          "path": "README.md",
+          "bytes": 7935,
+          "sha256": "a17e882503578c9e324560630e31017617714ee025c87cf4fea6fd916895f3c1",
+          "url": "https://huggingface.co/datasets/openai/gsm8k/resolve/740312add88f781978c0658806c59bc2815b9866/README.md"
+        },
+        {
+          "path": "main/test-00000-of-00001.parquet",
+          "bytes": 419088,
+          "sha256": "ee7b8da9e381df27b9e3f7758a159ab2bdaa4dbaa910546cbbc47e0cb44e4f59",
+          "url": "https://huggingface.co/datasets/openai/gsm8k/resolve/740312add88f781978c0658806c59bc2815b9866/main/test-00000-of-00001.parquet"
+        },
+        {
+          "path": "main/train-00000-of-00001.parquet",
+          "bytes": 2306545,
+          "sha256": "ea82612ea9582142387730c793eb67d3b12849002bc0b7fa6f8efafa7351419d",
+          "url": "https://huggingface.co/datasets/openai/gsm8k/resolve/740312add88f781978c0658806c59bc2815b9866/main/train-00000-of-00001.parquet"
+        },
+        {
+          "path": "socratic/test-00000-of-00001.parquet",
+          "bytes": 486995,
+          "sha256": "477dba7028204b465491b8f346ec774262ccd77147d942a0881e94cc6da7c99e",
+          "url": "https://huggingface.co/datasets/openai/gsm8k/resolve/740312add88f781978c0658806c59bc2815b9866/socratic/test-00000-of-00001.parquet"
+        },
+        {
+          "path": "socratic/train-00000-of-00001.parquet",
+          "bytes": 2677259,
+          "sha256": "54eb5fd2105a9126ac6410541b2e9dbe0199701258957c9af02d9ed675c90378",
+          "url": "https://huggingface.co/datasets/openai/gsm8k/resolve/740312add88f781978c0658806c59bc2815b9866/socratic/train-00000-of-00001.parquet"
+        }
+      ]
+    },
+    "openai/openai_humaneval": {
+      "repo_id": "openai/openai_humaneval",
+      "repo_type": "dataset",
+      "revision": "7dce6050a7d6d172f3cc5c32aa97f52fa1a2e544",
+      "path": "/home/catid/.cache/huggingface/hub/datasets--openai--openai_humaneval/snapshots/7dce6050a7d6d172f3cc5c32aa97f52fa1a2e544",
+      "disk_usage_bytes": 90443,
+      "files": [
+        {
+          "path": "README.md",
+          "bytes": 6523,
+          "sha256": "f81cb59f7dae73d1ee1069d7de3ba1c0f9d2bd80f4df6d6990d12bf488e5b5ef",
+          "url": "https://huggingface.co/datasets/openai/openai_humaneval/resolve/7dce6050a7d6d172f3cc5c32aa97f52fa1a2e544/README.md"
+        },
+        {
+          "path": "openai_humaneval/test-00000-of-00001.parquet",
+          "bytes": 83920,
+          "sha256": "2f2871a15fbc95b6c683043359f4ed8e144c5a1c4f24f25f66bc51f598dfcfb6",
+          "url": "https://huggingface.co/datasets/openai/openai_humaneval/resolve/7dce6050a7d6d172f3cc5c32aa97f52fa1a2e544/openai_humaneval/test-00000-of-00001.parquet"
+        }
+      ]
+    },
+    "HuggingFaceH4/MATH-500": {
+      "repo_id": "HuggingFaceH4/MATH-500",
+      "repo_type": "dataset",
+      "revision": "6e4ed1a2a79af7d8630a6b768ec859cb5af4d3be",
+      "path": "/home/catid/.cache/huggingface/hub/datasets--HuggingFaceH4--MATH-500/snapshots/6e4ed1a2a79af7d8630a6b768ec859cb5af4d3be",
+      "disk_usage_bytes": 446976,
+      "files": [
+        {
+          "path": "README.md",
+          "bytes": 412,
+          "sha256": "5d32f78943f75423da61419c5bb98cee964d5a29183b11a5294f661fb96f69f7",
+          "url": "https://huggingface.co/datasets/HuggingFaceH4/MATH-500/resolve/6e4ed1a2a79af7d8630a6b768ec859cb5af4d3be/README.md"
+        },
+        {
+          "path": "test.jsonl",
+          "bytes": 446564,
+          "sha256": "35dc41080a3680858b27fa7e0533d2d547825316fc5dafe5d316f4ccc5a06132",
+          "url": "https://huggingface.co/datasets/HuggingFaceH4/MATH-500/resolve/6e4ed1a2a79af7d8630a6b768ec859cb5af4d3be/test.jsonl"
+        }
+      ]
+    }
+  }
 }

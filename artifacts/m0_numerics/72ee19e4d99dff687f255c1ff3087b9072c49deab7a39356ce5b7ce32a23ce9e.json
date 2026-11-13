@@ -1,0 +1,459 @@
+{
+  "prompt_id": "m0-003",
+  "prompt_text": "Describe the difference between a process and a thread.",
+  "first_output_divergence": 32,
+  "round_idx": 13,
+  "logical_slot": 0,
+  "common_prefix_length": 54,
+  "conditioning_prefix_verified_equal": true,
+  "recorded_local_token": 12745,
+  "recorded_target_token": 9233,
+  "recorded_local_token_reproduced": true,
+  "recorded_target_token_reproduced": true,
+  "block": {
+    "argmax": 12745,
+    "decoded_argmax": "resources",
+    "top1_minus_top2": 0.25,
+    "number_tied_for_max": 1,
+    "top5": [
+      {
+        "id": 12745,
+        "text": "resources",
+        "logit": 34.5
+      },
+      {
+        "id": 9233,
+        "text": "resource",
+        "logit": 34.25
+      },
+      {
+        "id": 258,
+        "text": "in",
+        "logit": 33.5
+      },
+      {
+        "id": 285,
+        "text": "is",
+        "logit": 32.25
+      },
+      {
+        "id": 17269,
+        "text": "memory",
+        "logit": 28.875
+      }
+    ],
+    "selected_logits": {
+      "12745": 34.5,
+      "9233": 34.25
+    }
+  },
+  "target_sequential": {
+    "argmax": 9233,
+    "decoded_argmax": "resource",
+    "top1_minus_top2": 0.0,
+    "number_tied_for_max": 2,
+    "top5": [
+      {
+        "id": 9233,
+        "text": "resource",
+        "logit": 34.25
+      },
+      {
+        "id": 12745,
+        "text": "resources",
+        "logit": 34.25
+      },
+      {
+        "id": 258,
+        "text": "in",
+        "logit": 33.5
+      },
+      {
+        "id": 285,
+        "text": "is",
+        "logit": 32.0
+      },
+      {
+        "id": 17269,
+        "text": "memory",
+        "logit": 28.75
+      }
+    ],
+    "selected_logits": {
+      "12745": 34.25,
+      "9233": 34.25
+    }
+  },
+  "fresh_full_prefix": {
+    "argmax": 9233,
+    "decoded_argmax": "resource",
+    "top1_minus_top2": 0.0,
+    "number_tied_for_max": 2,
+    "top5": [
+      {
+        "id": 9233,
+        "text": "resource",
+        "logit": 34.25
+      },
+      {
+        "id": 12745,
+        "text": "resources",
+        "logit": 34.25
+      },
+      {
+        "id": 258,
+        "text": "in",
+        "logit": 33.5
+      },
+      {
+        "id": 285,
+        "text": "is",
+        "logit": 32.0
+      },
+      {
+        "id": 17269,
+        "text": "memory",
+        "logit": 28.625
+      }
+    ],
+    "selected_logits": {
+      "12745": 34.25,
+      "9233": 34.25
+    }
+  },
+  "single_query_same_prior_cache": {
+    "argmax": 9233,
+    "decoded_argmax": "resource",
+    "top1_minus_top2": 0.0,
+    "number_tied_for_max": 2,
+    "top5": [
+      {
+        "id": 9233,
+        "text": "resource",
+        "logit": 34.25
+      },
+      {
+        "id": 12745,
+        "text": "resources",
+        "logit": 34.25
+      },
+      {
+        "id": 258,
+        "text": "in",
+        "logit": 33.25
+      },
+      {
+        "id": 285,
+        "text": "is",
+        "logit": 32.0
+      },
+      {
+        "id": 17269,
+        "text": "memory",
+        "logit": 28.75
+      }
+    ],
+    "selected_logits": {
+      "12745": 34.25,
+      "9233": 34.25
+    }
+  },
+  "fp32_head_block": {
+    "argmax": 12745,
+    "decoded_argmax": "resources",
+    "top1_minus_top2": 0.12104415893554688,
+    "number_tied_for_max": 1,
+    "top5": [
+      {
+        "id": 12745,
+        "text": "resources",
+        "logit": 34.476016998291016
+      },
+      {
+        "id": 9233,
+        "text": "resource",
+        "logit": 34.35497283935547
+      },
+      {
+        "id": 258,
+        "text": "in",
+        "logit": 33.563377380371094
+      },
+      {
+        "id": 285,
+        "text": "is",
+        "logit": 32.144996643066406
+      },
+      {
+        "id": 17269,
+        "text": "memory",
+        "logit": 28.823556900024414
+      }
+    ],
+    "selected_logits": {
+      "12745": 34.476016998291016,
+      "9233": 34.35497283935547
+    }
+  },
+  "fp32_head_target_sequential": {
+    "argmax": 12745,
+    "decoded_argmax": "resources",
+    "top1_minus_top2": 0.1130523681640625,
+    "number_tied_for_max": 1,
+    "top5": [
+      {
+        "id": 12745,
+        "text": "resources",
+        "logit": 34.337860107421875
+      },
+      {
+        "id": 9233,
+        "text": "resource",
+        "logit": 34.22480773925781
+      },
+      {
+        "id": 258,
+        "text": "in",
+        "logit": 33.54940414428711
+      },
+      {
+        "id": 285,
+        "text": "is",
+        "logit": 32.008636474609375
+      },
+      {
+        "id": 17269,
+        "text": "memory",
+        "logit": 28.70690155029297
+      }
+    ],
+    "selected_logits": {
+      "12745": 34.337860107421875,
+      "9233": 34.22480773925781
+    }
+  },
+  "fp32_head_single_query": {
+    "argmax": 12745,
+    "decoded_argmax": "resources",
+    "top1_minus_top2": 0.11256027221679688,
+    "number_tied_for_max": 1,
+    "top5": [
+      {
+        "id": 12745,
+        "text": "resources",
+        "logit": 34.34174346923828
+      },
+      {
+        "id": 9233,
+        "text": "resource",
+        "logit": 34.229183197021484
+      },
+      {
+        "id": 258,
+        "text": "in",
+        "logit": 33.343177795410156
+      },
+      {
+        "id": 285,
+        "text": "is",
+        "logit": 32.018531799316406
+      },
+      {
+        "id": 17269,
+        "text": "memory",
+        "logit": 28.734281539916992
+      }
+    ],
+    "selected_logits": {
+      "12745": 34.34174346923828,
+      "9233": 34.229183197021484
+    }
+  },
+  "block_vs_sequential_logits": {
+    "max_abs": 0.25,
+    "mean_abs": 0.04796810448169708,
+    "rms": 0.06051873415708542,
+    "argmax_equal": false
+  },
+  "block_vs_single_query_same_prior_logits": {
+    "max_abs": 0.25,
+    "mean_abs": 0.03095276840031147,
+    "rms": 0.043919507414102554,
+    "argmax_equal": false
+  },
+  "block_vs_fresh_logits": {
+    "max_abs": 0.3125,
+    "mean_abs": 0.056548506021499634,
+    "rms": 0.07227454334497452,
+    "argmax_equal": false
+  },
+  "block_head_bf16_vs_fp32": {
+    "max_abs": 0.10500335693359375,
+    "mean_abs": 0.01091478019952774,
+    "rms": 0.014498702250421047,
+    "argmax_equal": true
+  },
+  "future_tokens_perturbation": {
+    "max_abs": 0.0,
+    "mean_abs": 0.0,
+    "rms": 0.0,
+    "argmax_equal": true
+  },
+  "rolled_cache_vs_sequential_prior": {
+    "lengths_equal": true,
+    "length": 53,
+    "max_key_abs_by_layer": [
+      0.0,
+      0.25,
+      0.125,
+      0.125,
+      0.375,
+      0.5,
+      0.125,
+      0.125,
+      0.375,
+      0.1796875,
+      0.375,
+      0.25,
+      0.25,
+      0.1875,
+      0.1875,
+      0.125,
+      0.15625,
+      0.125,
+      0.1875,
+      0.125,
+      0.125,
+      0.125,
+      0.1875,
+      0.125,
+      0.125,
+      0.15625,
+      0.09375,
+      0.125,
+      0.125,
+      0.1875,
+      0.125,
+      0.125,
+      0.140625,
+      0.125,
+      0.1875,
+      0.25
+    ],
+    "max_value_abs_by_layer": [
+      0.0,
+      0.001953125,
+      0.001953125,
+      0.0029296875,
+      0.00390625,
+      0.00390625,
+      0.0078125,
+      0.015625,
+      0.015625,
+      0.015625,
+      0.0234375,
+      0.015625,
+      0.0234375,
+      0.0546875,
+      0.0234375,
+      0.03125,
+      0.0390625,
+      0.0390625,
+      0.04296875,
+      0.04736328125,
+      0.044921875,
+      0.0546875,
+      0.0625,
+      0.0634765625,
+      0.0859375,
+      0.09375,
+      0.09375,
+      0.109375,
+      0.09375,
+      0.21875,
+      0.1875,
+      0.28125,
+      0.3125,
+      0.4375,
+      0.375,
+      0.53125
+    ],
+    "max_key_abs": 0.5,
+    "max_value_abs": 0.53125
+  },
+  "rollback_lengths": [
+    {
+      "round": 1,
+      "length": 32,
+      "expected": 32
+    },
+    {
+      "round": 2,
+      "length": 33,
+      "expected": 33
+    },
+    {
+      "round": 3,
+      "length": 35,
+      "expected": 35
+    },
+    {
+      "round": 4,
+      "length": 38,
+      "expected": 38
+    },
+    {
+      "round": 5,
+      "length": 41,
+      "expected": 41
+    },
+    {
+      "round": 6,
+      "length": 44,
+      "expected": 44
+    },
+    {
+      "round": 7,
+      "length": 45,
+      "expected": 45
+    },
+    {
+      "round": 8,
+      "length": 46,
+      "expected": 46
+    },
+    {
+      "round": 9,
+      "length": 47,
+      "expected": 47
+    },
+    {
+      "round": 10,
+      "length": 48,
+      "expected": 48
+    },
+    {
+      "round": 11,
+      "length": 49,
+      "expected": 49
+    },
+    {
+      "round": 12,
+      "length": 53,
+      "expected": 53
+    },
+    {
+      "round": 13,
+      "length": 54,
+      "expected": 54
+    }
+  ],
+  "all_rollback_lengths_exact": true,
+  "target_attention": {
+    "implementation": "sdpa",
+    "sliding_window": null,
+    "causal": true,
+    "padded_input": false
+  },
+  "diagnosis": "Same-prefix BF16 numerical/tie sensitivity; future-token masking and exact rollback lengths verified."
+}

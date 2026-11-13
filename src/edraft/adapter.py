@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from contextlib import nullcontext
 from typing import Sequence
 import torch
 from torch import nn
@@ -29,22 +30,30 @@ def block_unary(E, W, b, H):
     return (H.to(W.dtype) @ W.T) @ E.to(W.dtype).T + b
 
 
-def slot_correction(E, A, U_i, l_unit_i, prefix, realized, i, sparse=None, M_sparse=256, beta=1.0):
-    message = torch.zeros(E.shape[1], dtype=A.dtype, device=A.device)
-    predecessors = []
-    for d in range(1, len(A) + 1):
-        previous = prev_token(prefix, realized, i, d)
-        if previous is not None:
-            message = message + A[d - 1] @ E[previous].to(A.dtype)
-            predecessors.append((d, previous))
-    dense = U_i + E.to(A.dtype) @ message
+def _phase(timer, name):
+    return nullcontext() if timer is None else timer.phase(name)
+
+
+def slot_correction(E, A, U_i, l_unit_i, prefix, realized, i, sparse=None, M_sparse=256, beta=1.0, timer=None):
+    with _phase(timer, 'dense_pair_score'):
+        message = torch.zeros(E.shape[1], dtype=A.dtype, device=A.device)
+        predecessors = []
+        for d in range(1, len(A) + 1):
+            previous = prev_token(prefix, realized, i, d)
+            if previous is not None:
+                message = message + A[d - 1] @ E[previous].to(A.dtype)
+                predecessors.append((d, previous))
+        dense = U_i + E.to(A.dtype) @ message
     if sparse is None or not predecessors:
         return dense
-    candidates = top_candidates(l_unit_i - beta * dense, M_sparse)
-    values = torch.zeros(len(candidates), dtype=dense.dtype, device=dense.device)
-    for d, previous in predecessors:
-        values = values + sparse.lookup(d, previous, candidates).to(dense.dtype)
-    return dense + torch.zeros_like(dense).scatter(0, candidates, values)
+    with _phase(timer, 'sparse_lookup'):
+        candidates = top_candidates(l_unit_i - beta * dense, M_sparse)
+        # All logical offsets share one vectorized hash invocation for this slot.
+        offsets = torch.tensor([d for d, _ in predecessors], device=dense.device)[:, None]
+        previous = torch.tensor([p for _, p in predecessors], device=dense.device)[:, None]
+        values = sparse.lookup(offsets, previous, candidates[None, :]).to(dense.dtype).sum(0)
+        correction = dense + torch.zeros_like(dense).scatter(0, candidates, values)
+    return correction
 
 
 @dataclass(frozen=True)
@@ -60,27 +69,57 @@ class ProposalSnapshot:
     is_zero: bool = False
 
     @property
+    def D(self):
+        return len(self.A)
+
+    @property
     def adapter_version(self):
         return self.version
 
-    def unary(self, H):
-        return block_unary(self.E, self.W, self.b, H)
+    def unary(self, H, proposal_mode='dense_full'):
+        if proposal_mode == 'dense_full':
+            return block_unary(self.E, self.W, self.b, H)
+        if proposal_mode != 'dense_candidate' or self.C0 is None:
+            raise ValueError('candidate unary requires frozen C0')
+        hidden = H.to(self.W.dtype) @ self.W.T
+        # Only candidate rows of E are read; no K-by-V dense GEMM occurs here.
+        return [self.E[ids].to(self.W.dtype) @ hidden[i] + self.b[ids]
+                for i, ids in enumerate(self.C0)]
 
-    def score_slot(self, l_unit_i, U_i, prefix, realized, i, beta=1.0, proposal_mode='dense_full'):
-        if beta == 0 or self.is_zero:
-            scores = l_unit_i
-        else:
-            correction = slot_correction(self.E, self.A, U_i, l_unit_i, prefix, realized, i,
-                                         self.sparse, self.M_sparse, beta)
-            scores = l_unit_i - beta * correction
+    def score_slot(self, l_unit_i, U_i, prefix, realized, i, beta=1.0, proposal_mode='dense_full', timer=None):
         if proposal_mode == 'dense_candidate':
             if self.C0 is None:
                 raise ValueError('dense_candidate requires the frozen C0 matched-support snapshot')
-            masked = torch.full_like(scores, -torch.inf)
-            return masked.scatter(0, self.C0[i], scores[self.C0[i]])
+            ids = self.C0[i]
+            if beta == 0 or self.is_zero:
+                selected = l_unit_i[ids]
+            else:
+                if U_i.shape[-1] != len(ids):
+                    raise ValueError('candidate scoring requires candidate unary rows; call unary(..., proposal_mode=dense_candidate)')
+                unary = U_i
+                with _phase(timer, 'dense_pair_score'):
+                    message = torch.zeros(self.E.shape[1], dtype=self.A.dtype, device=self.A.device)
+                    predecessors = []
+                    for d in range(1, len(self.A) + 1):
+                        previous = prev_token(prefix, realized, i, d)
+                        if previous is not None:
+                            message = message + self.A[d - 1] @ self.E[previous]
+                            predecessors.append((d, previous))
+                    correction = unary + self.E[ids] @ message
+                if self.sparse is not None and predecessors:
+                    with _phase(timer, 'sparse_lookup'):
+                        offsets = torch.tensor([d for d, _ in predecessors], device=ids.device)[:, None]
+                        previous_ids = torch.tensor([p for _, p in predecessors], device=ids.device)[:, None]
+                        correction = correction + self.sparse.lookup(offsets, previous_ids, ids[None, :]).sum(0)
+                selected = l_unit_i[ids] - beta * correction
+            return torch.full_like(l_unit_i, -torch.inf).scatter(0, ids, selected)
         if proposal_mode != 'dense_full':
             raise ValueError('unknown proposal mode')
-        return scores
+        if beta == 0 or self.is_zero:
+            return l_unit_i
+        correction = slot_correction(self.E, self.A, U_i, l_unit_i, prefix, realized, i,
+                                     self.sparse, self.M_sparse, beta, timer=timer)
+        return l_unit_i - beta * correction
 
     def with_candidates(self, C0):
         return ProposalSnapshot(self.E, self.W, self.A, self.b, self.version, self.sparse,

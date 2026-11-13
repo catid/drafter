@@ -1,0 +1,99 @@
+{
+  "scale": "reference",
+  "status": "passed",
+  "num_distinct_prompts": 20,
+  "comparisons": {
+    "upstream_local": {
+      "mismatched_tokens": 0,
+      "compared_tokens": 7128,
+      "token_mismatch_rate": 0.0,
+      "sequence_mismatch_rate": 0.0
+    },
+    "upstream_target": {
+      "mismatched_tokens": 607,
+      "compared_tokens": 2388,
+      "token_mismatch_rate": 0.25418760469011725,
+      "sequence_mismatch_rate": 0.4
+    },
+    "local_target": {
+      "mismatched_tokens": 607,
+      "compared_tokens": 2388,
+      "token_mismatch_rate": 0.25418760469011725,
+      "sequence_mismatch_rate": 0.4
+    }
+  },
+  "cache_rollback": [
+    {
+      "cache_length": 24,
+      "expected_length": 24,
+      "accepted_length": 0,
+      "max_abs_logit_error": 0.25,
+      "argmax_equal": true,
+      "rolled_argmax": 13,
+      "fresh_argmax": 13
+    },
+    {
+      "cache_length": 25,
+      "expected_length": 25,
+      "accepted_length": 1,
+      "max_abs_logit_error": 0.1875,
+      "argmax_equal": true,
+      "rolled_argmax": 12884,
+      "fresh_argmax": 12884
+    },
+    {
+      "cache_length": 27,
+      "expected_length": 27,
+      "accepted_length": 3,
+      "max_abs_logit_error": 0.149169921875,
+      "argmax_equal": true,
+      "rolled_argmax": 6303,
+      "fresh_argmax": 6303
+    }
+  ],
+  "head_metadata": {
+    "artifact_id": "/home/catid/.cache/huggingface/hub/models--Qwen--Qwen3-8B/snapshots/b968826d9c46dd6066d109eabc6255188de91218",
+    "revision": "b968826d9c46dd6066d109eabc6255188de91218",
+    "module": "Qwen3ForCausalLM.lm_head",
+    "hook": "DFlashDraftModel.norm output, logical slots [1:]",
+    "shape": [
+      151936,
+      4096
+    ],
+    "dtype": "torch.bfloat16",
+    "bias": false,
+    "tied_weights": false,
+    "output_multiplier": 1.0,
+    "final_logit_softcapping": null
+  },
+  "conditions": [
+    {
+      "name": "greedy",
+      "temperature": 0.0,
+      "warper": {
+        "top_k": 0,
+        "top_p": 1.0,
+        "min_p": 0.0
+      }
+    },
+    {
+      "name": "model_card_nonthinking",
+      "temperature": 0.7,
+      "warper": {
+        "top_k": 20,
+        "top_p": 0.8,
+        "min_p": 0.0
+      }
+    },
+    {
+      "name": "pure_temperature_diagnostic",
+      "temperature": 1.0,
+      "warper": {
+        "top_k": 0,
+        "top_p": 1.0,
+        "min_p": 0.0
+      }
+    }
+  ],
+  "target_mismatch_investigation_required": true
+}

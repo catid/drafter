@@ -1,0 +1,1804 @@
+{
+  "jobs": {
+    "dbc7542cce2075b5d219843329b415e723d24af83c1ade8085ae3c331ca83d06": {
+      "identity": {
+        "model_pair": [
+          "Qwen/Qwen3-8B",
+          "z-lab/Qwen3-8B-DFlash-b16"
+        ],
+        "prompt": "m0-000",
+        "condition": "greedy",
+        "seed": 2026,
+        "temperature": 0.0,
+        "verification_rule": "greedy",
+        "proposal_mode": "adapter_disabled",
+        "checkpoint": [
+          "b968826d9c46dd6066d109eabc6255188de91218",
+          "9b41424b7109f9c5413454f481b09a82b85333f4"
+        ],
+        "adapter_version": 0,
+        "sampling_warp_config": {
+          "top_k": 0,
+          "top_p": 1.0,
+          "min_p": 0.0
+        },
+        "max_new_tokens": 128,
+        "enable_thinking": false,
+        "dflash_commit": "07ebd93db9f472af339b644bb70221ad8428328a",
+        "project_git_commit": "uncommitted"
+      },
+      "status": "complete",
+      "result_path": "/home/catid/drafter/artifacts/m0/dbc7542cce2075b5d219843329b415e723d24af83c1ade8085ae3c331ca83d06.json"
+    },
+    "3c158efd1acc8fa625b0e544cd879cbd05e0dd339d88c95787edd2691055adeb": {
+      "identity": {
+        "model_pair": [
+          "Qwen/Qwen3-8B",
+          "z-lab/Qwen3-8B-DFlash-b16"
+        ],
+        "prompt": "m0-000",
+        "condition": "model_card_nonthinking",
+        "seed": 2026,
+        "temperature": 0.7,
+        "verification_rule": "ratio",
+        "proposal_mode": "adapter_disabled",
+        "checkpoint": [
+          "b968826d9c46dd6066d109eabc6255188de91218",
+          "9b41424b7109f9c5413454f481b09a82b85333f4"
+        ],
+        "adapter_version": 0,
+        "sampling_warp_config": {
+          "top_k": 20,
+          "top_p": 0.8,
+          "min_p": 0.0
+        },
+        "max_new_tokens": 128,
+        "enable_thinking": false,
+        "dflash_commit": "07ebd93db9f472af339b644bb70221ad8428328a",
+        "project_git_commit": "uncommitted"
+      },
+      "status": "complete",
+      "result_path": "/home/catid/drafter/artifacts/m0/3c158efd1acc8fa625b0e544cd879cbd05e0dd339d88c95787edd2691055adeb.json"
+    },
+    "1c2cdea7e9b3d07723f3b97e250b262f4611ac99e432a4ec1e4e40e616198e72": {
+      "identity": {
+        "model_pair": [
+          "Qwen/Qwen3-8B",
+          "z-lab/Qwen3-8B-DFlash-b16"
+        ],
+        "prompt": "m0-000",
+        "condition": "pure_temperature_diagnostic",
+        "seed": 2026,
+        "temperature": 1.0,
+        "verification_rule": "ratio",
+        "proposal_mode": "adapter_disabled",
+        "checkpoint": [
+          "b968826d9c46dd6066d109eabc6255188de91218",
+          "9b41424b7109f9c5413454f481b09a82b85333f4"
+        ],
+        "adapter_version": 0,
+        "sampling_warp_config": {
+          "top_k": 0,
+          "top_p": 1.0,
+          "min_p": 0.0
+        },
+        "max_new_tokens": 128,
+        "enable_thinking": false,
+        "dflash_commit": "07ebd93db9f472af339b644bb70221ad8428328a",
+        "project_git_commit": "uncommitted"
+      },
+      "status": "complete",
+      "result_path": "/home/catid/drafter/artifacts/m0/1c2cdea7e9b3d07723f3b97e250b262f4611ac99e432a4ec1e4e40e616198e72.json"
+    },
+    "6d5a57ad2048948977f82384b5c0d7e496011a203c8cd1cb8991c983c0743581": {
+      "identity": {
+        "model_pair": [
+          "Qwen/Qwen3-8B",
+          "z-lab/Qwen3-8B-DFlash-b16"
+        ],
+        "prompt": "m0-001",
+        "condition": "greedy",
+        "seed": 2027,
+        "temperature": 0.0,
+        "verification_rule": "greedy",
+        "proposal_mode": "adapter_disabled",
+        "checkpoint": [
+          "b968826d9c46dd6066d109eabc6255188de91218",
+          "9b41424b7109f9c5413454f481b09a82b85333f4"
+        ],
+        "adapter_version": 0,
+        "sampling_warp_config": {
+          "top_k": 0,
+          "top_p": 1.0,
+          "min_p": 0.0
+        },
+        "max_new_tokens": 128,
+        "enable_thinking": false,
+        "dflash_commit": "07ebd93db9f472af339b644bb70221ad8428328a",
+        "project_git_commit": "uncommitted"
+      },
+      "status": "complete",
+      "result_path": "/home/catid/drafter/artifacts/m0/6d5a57ad2048948977f82384b5c0d7e496011a203c8cd1cb8991c983c0743581.json"
+    },
+    "e3ca17c13af2b34ea4c616e57ac98f72d427311e95b4a1961c87d29ee5befdbd": {
+      "identity": {
+        "model_pair": [
+          "Qwen/Qwen3-8B",
+          "z-lab/Qwen3-8B-DFlash-b16"
+        ],
+        "prompt": "m0-001",
+        "condition": "model_card_nonthinking",
+        "seed": 2027,
+        "temperature": 0.7,
+        "verification_rule": "ratio",
+        "proposal_mode": "adapter_disabled",
+        "checkpoint": [
+          "b968826d9c46dd6066d109eabc6255188de91218",
+          "9b41424b7109f9c5413454f481b09a82b85333f4"
+        ],
+        "adapter_version": 0,
+        "sampling_warp_config": {
+          "top_k": 20,
+          "top_p": 0.8,
+          "min_p": 0.0
+        },
+        "max_new_tokens": 128,
+        "enable_thinking": false,
+        "dflash_commit": "07ebd93db9f472af339b644bb70221ad8428328a",
+        "project_git_commit": "uncommitted"
+      },
+      "status": "complete",
+      "result_path": "/home/catid/drafter/artifacts/m0/e3ca17c13af2b34ea4c616e57ac98f72d427311e95b4a1961c87d29ee5befdbd.json"
+    },
+    "9ff029836d771e9d91bebbe57c3a0ac69754e9a7917b474e4127dad36bcc4bd1": {
+      "identity": {
+        "model_pair": [
+          "Qwen/Qwen3-8B",
+          "z-lab/Qwen3-8B-DFlash-b16"
+        ],
+        "prompt": "m0-001",
+        "condition": "pure_temperature_diagnostic",
+        "seed": 2027,
+        "temperature": 1.0,
+        "verification_rule": "ratio",
+        "proposal_mode": "adapter_disabled",
+        "checkpoint": [
+          "b968826d9c46dd6066d109eabc6255188de91218",
+          "9b41424b7109f9c5413454f481b09a82b85333f4"
+        ],
+        "adapter_version": 0,
+        "sampling_warp_config": {
+          "top_k": 0,
+          "top_p": 1.0,
+          "min_p": 0.0
+        },
+        "max_new_tokens": 128,
+        "enable_thinking": false,
+        "dflash_commit": "07ebd93db9f472af339b644bb70221ad8428328a",
+        "project_git_commit": "uncommitted"
+      },
+      "status": "complete",
+      "result_path": "/home/catid/drafter/artifacts/m0/9ff029836d771e9d91bebbe57c3a0ac69754e9a7917b474e4127dad36bcc4bd1.json"
+    },
+    "801e3fe603ab574e7d8ee861ffe0143d1d6a340a6cfd260e336f865448d275c4": {
+      "identity": {
+        "model_pair": [
+          "Qwen/Qwen3-8B",
+          "z-lab/Qwen3-8B-DFlash-b16"
+        ],
+        "prompt": "m0-002",
+        "condition": "greedy",
+        "seed": 2028,
+        "temperature": 0.0,
+        "verification_rule": "greedy",
+        "proposal_mode": "adapter_disabled",
+        "checkpoint": [
+          "b968826d9c46dd6066d109eabc6255188de91218",
+          "9b41424b7109f9c5413454f481b09a82b85333f4"
+        ],
+        "adapter_version": 0,
+        "sampling_warp_config": {
+          "top_k": 0,
+          "top_p": 1.0,
+          "min_p": 0.0
+        },
+        "max_new_tokens": 128,
+        "enable_thinking": false,
+        "dflash_commit": "07ebd93db9f472af339b644bb70221ad8428328a",
+        "project_git_commit": "uncommitted"
+      },
+      "status": "complete",
+      "result_path": "/home/catid/drafter/artifacts/m0/801e3fe603ab574e7d8ee861ffe0143d1d6a340a6cfd260e336f865448d275c4.json"
+    },
+    "ac0104f6f4aa511d483167ecdbf8ed77fbf9b367e83c0066451067a1b4a0fabb": {
+      "identity": {
+        "model_pair": [
+          "Qwen/Qwen3-8B",
+          "z-lab/Qwen3-8B-DFlash-b16"
+        ],
+        "prompt": "m0-002",
+        "condition": "model_card_nonthinking",
+        "seed": 2028,
+        "temperature": 0.7,
+        "verification_rule": "ratio",
+        "proposal_mode": "adapter_disabled",
+        "checkpoint": [
+          "b968826d9c46dd6066d109eabc6255188de91218",
+          "9b41424b7109f9c5413454f481b09a82b85333f4"
+        ],
+        "adapter_version": 0,
+        "sampling_warp_config": {
+          "top_k": 20,
+          "top_p": 0.8,
+          "min_p": 0.0
+        },
+        "max_new_tokens": 128,
+        "enable_thinking": false,
+        "dflash_commit": "07ebd93db9f472af339b644bb70221ad8428328a",
+        "project_git_commit": "uncommitted"
+      },
+      "status": "complete",
+      "result_path": "/home/catid/drafter/artifacts/m0/ac0104f6f4aa511d483167ecdbf8ed77fbf9b367e83c0066451067a1b4a0fabb.json"
+    },
+    "f03b2d7af5d05c6a9c8f5baba8acab04d56eae327169d06287220e5fdb80474e": {
+      "identity": {
+        "model_pair": [
+          "Qwen/Qwen3-8B",
+          "z-lab/Qwen3-8B-DFlash-b16"
+        ],
+        "prompt": "m0-002",
+        "condition": "pure_temperature_diagnostic",
+        "seed": 2028,
+        "temperature": 1.0,
+        "verification_rule": "ratio",
+        "proposal_mode": "adapter_disabled",
+        "checkpoint": [
+          "b968826d9c46dd6066d109eabc6255188de91218",
+          "9b41424b7109f9c5413454f481b09a82b85333f4"
+        ],
+        "adapter_version": 0,
+        "sampling_warp_config": {
+          "top_k": 0,
+          "top_p": 1.0,
+          "min_p": 0.0
+        },
+        "max_new_tokens": 128,
+        "enable_thinking": false,
+        "dflash_commit": "07ebd93db9f472af339b644bb70221ad8428328a",
+        "project_git_commit": "uncommitted"
+      },
+      "status": "complete",
+      "result_path": "/home/catid/drafter/artifacts/m0/f03b2d7af5d05c6a9c8f5baba8acab04d56eae327169d06287220e5fdb80474e.json"
+    },
+    "dfdee55823808a1e79c93b925fbc959dacaf0fc07dd3a808dfa4d0d7293b3bbd": {
+      "identity": {
+        "model_pair": [
+          "Qwen/Qwen3-8B",
+          "z-lab/Qwen3-8B-DFlash-b16"
+        ],
+        "prompt": "m0-003",
+        "condition": "greedy",
+        "seed": 2029,
+        "temperature": 0.0,
+        "verification_rule": "greedy",
+        "proposal_mode": "adapter_disabled",
+        "checkpoint": [
+          "b968826d9c46dd6066d109eabc6255188de91218",
+          "9b41424b7109f9c5413454f481b09a82b85333f4"
+        ],
+        "adapter_version": 0,
+        "sampling_warp_config": {
+          "top_k": 0,
+          "top_p": 1.0,
+          "min_p": 0.0
+        },
+        "max_new_tokens": 128,
+        "enable_thinking": false,
+        "dflash_commit": "07ebd93db9f472af339b644bb70221ad8428328a",
+        "project_git_commit": "uncommitted"
+      },
+      "status": "complete",
+      "result_path": "/home/catid/drafter/artifacts/m0/dfdee55823808a1e79c93b925fbc959dacaf0fc07dd3a808dfa4d0d7293b3bbd.json"
+    },
+    "3c6911873056c3bc6cd85dd79f09e9d85e9afb503f13d1c4a145525dc58ccd85": {
+      "identity": {
+        "model_pair": [
+          "Qwen/Qwen3-8B",
+          "z-lab/Qwen3-8B-DFlash-b16"
+        ],
+        "prompt": "m0-003",
+        "condition": "model_card_nonthinking",
+        "seed": 2029,
+        "temperature": 0.7,
+        "verification_rule": "ratio",
+        "proposal_mode": "adapter_disabled",
+        "checkpoint": [
+          "b968826d9c46dd6066d109eabc6255188de91218",
+          "9b41424b7109f9c5413454f481b09a82b85333f4"
+        ],
+        "adapter_version": 0,
+        "sampling_warp_config": {
+          "top_k": 20,
+          "top_p": 0.8,
+          "min_p": 0.0
+        },
+        "max_new_tokens": 128,
+        "enable_thinking": false,
+        "dflash_commit": "07ebd93db9f472af339b644bb70221ad8428328a",
+        "project_git_commit": "uncommitted"
+      },
+      "status": "complete",
+      "result_path": "/home/catid/drafter/artifacts/m0/3c6911873056c3bc6cd85dd79f09e9d85e9afb503f13d1c4a145525dc58ccd85.json"
+    },
+    "98140830fba8c92aef87a48f04234de2d02a7ae23f7d7c310ce88c02a4d8564b": {
+      "identity": {
+        "model_pair": [
+          "Qwen/Qwen3-8B",
+          "z-lab/Qwen3-8B-DFlash-b16"
+        ],
+        "prompt": "m0-003",
+        "condition": "pure_temperature_diagnostic",
+        "seed": 2029,
+        "temperature": 1.0,
+        "verification_rule": "ratio",
+        "proposal_mode": "adapter_disabled",
+        "checkpoint": [
+          "b968826d9c46dd6066d109eabc6255188de91218",
+          "9b41424b7109f9c5413454f481b09a82b85333f4"
+        ],
+        "adapter_version": 0,
+        "sampling_warp_config": {
+          "top_k": 0,
+          "top_p": 1.0,
+          "min_p": 0.0
+        },
+        "max_new_tokens": 128,
+        "enable_thinking": false,
+        "dflash_commit": "07ebd93db9f472af339b644bb70221ad8428328a",
+        "project_git_commit": "uncommitted"
+      },
+      "status": "complete",
+      "result_path": "/home/catid/drafter/artifacts/m0/98140830fba8c92aef87a48f04234de2d02a7ae23f7d7c310ce88c02a4d8564b.json"
+    },
+    "3b7b34fb1a84917bfafdda81f0397cea32b939d8e00d9b32b5481a1719fe1ad6": {
+      "identity": {
+        "model_pair": [
+          "Qwen/Qwen3-8B",
+          "z-lab/Qwen3-8B-DFlash-b16"
+        ],
+        "prompt": "m0-004",
+        "condition": "greedy",
+        "seed": 2030,
+        "temperature": 0.0,
+        "verification_rule": "greedy",
+        "proposal_mode": "adapter_disabled",
+        "checkpoint": [
+          "b968826d9c46dd6066d109eabc6255188de91218",
+          "9b41424b7109f9c5413454f481b09a82b85333f4"
+        ],
+        "adapter_version": 0,
+        "sampling_warp_config": {
+          "top_k": 0,
+          "top_p": 1.0,
+          "min_p": 0.0
+        },
+        "max_new_tokens": 128,
+        "enable_thinking": false,
+        "dflash_commit": "07ebd93db9f472af339b644bb70221ad8428328a",
+        "project_git_commit": "uncommitted"
+      },
+      "status": "complete",
+      "result_path": "/home/catid/drafter/artifacts/m0/3b7b34fb1a84917bfafdda81f0397cea32b939d8e00d9b32b5481a1719fe1ad6.json"
+    },
+    "106ea7d01c3ba3ee5787b855804dcfd36a14243dfe4bb802b4bf0984c6311ec5": {
+      "identity": {
+        "model_pair": [
+          "Qwen/Qwen3-8B",
+          "z-lab/Qwen3-8B-DFlash-b16"
+        ],
+        "prompt": "m0-004",
+        "condition": "model_card_nonthinking",
+        "seed": 2030,
+        "temperature": 0.7,
+        "verification_rule": "ratio",
+        "proposal_mode": "adapter_disabled",
+        "checkpoint": [
+          "b968826d9c46dd6066d109eabc6255188de91218",
+          "9b41424b7109f9c5413454f481b09a82b85333f4"
+        ],
+        "adapter_version": 0,
+        "sampling_warp_config": {
+          "top_k": 20,
+          "top_p": 0.8,
+          "min_p": 0.0
+        },
+        "max_new_tokens": 128,
+        "enable_thinking": false,
+        "dflash_commit": "07ebd93db9f472af339b644bb70221ad8428328a",
+        "project_git_commit": "uncommitted"
+      },
+      "status": "complete",
+      "result_path": "/home/catid/drafter/artifacts/m0/106ea7d01c3ba3ee5787b855804dcfd36a14243dfe4bb802b4bf0984c6311ec5.json"
+    },
+    "6872bdfa08644acc95ed5cd1ccd40d5467015e8cb14fb4c25c25282c6fe38d37": {
+      "identity": {
+        "model_pair": [
+          "Qwen/Qwen3-8B",
+          "z-lab/Qwen3-8B-DFlash-b16"
+        ],
+        "prompt": "m0-004",
+        "condition": "pure_temperature_diagnostic",
+        "seed": 2030,
+        "temperature": 1.0,
+        "verification_rule": "ratio",
+        "proposal_mode": "adapter_disabled",
+        "checkpoint": [
+          "b968826d9c46dd6066d109eabc6255188de91218",
+          "9b41424b7109f9c5413454f481b09a82b85333f4"
+        ],
+        "adapter_version": 0,
+        "sampling_warp_config": {
+          "top_k": 0,
+          "top_p": 1.0,
+          "min_p": 0.0
+        },
+        "max_new_tokens": 128,
+        "enable_thinking": false,
+        "dflash_commit": "07ebd93db9f472af339b644bb70221ad8428328a",
+        "project_git_commit": "uncommitted"
+      },
+      "status": "complete",
+      "result_path": "/home/catid/drafter/artifacts/m0/6872bdfa08644acc95ed5cd1ccd40d5467015e8cb14fb4c25c25282c6fe38d37.json"
+    },
+    "b0023687a58e4ea1e7039c46d273e93f66e33ed321b24de67aa55677d480f339": {
+      "identity": {
+        "model_pair": [
+          "Qwen/Qwen3-8B",
+          "z-lab/Qwen3-8B-DFlash-b16"
+        ],
+        "prompt": "m0-005",
+        "condition": "greedy",
+        "seed": 2031,
+        "temperature": 0.0,
+        "verification_rule": "greedy",
+        "proposal_mode": "adapter_disabled",
+        "checkpoint": [
+          "b968826d9c46dd6066d109eabc6255188de91218",
+          "9b41424b7109f9c5413454f481b09a82b85333f4"
+        ],
+        "adapter_version": 0,
+        "sampling_warp_config": {
+          "top_k": 0,
+          "top_p": 1.0,
+          "min_p": 0.0
+        },
+        "max_new_tokens": 128,
+        "enable_thinking": false,
+        "dflash_commit": "07ebd93db9f472af339b644bb70221ad8428328a",
+        "project_git_commit": "uncommitted"
+      },
+      "status": "complete",
+      "result_path": "/home/catid/drafter/artifacts/m0/b0023687a58e4ea1e7039c46d273e93f66e33ed321b24de67aa55677d480f339.json"
+    },
+    "854c64115ecdd46d89f6b1ab606a838ac6468307ba067817b0d1bbb38d6c9f6b": {
+      "identity": {
+        "model_pair": [
+          "Qwen/Qwen3-8B",
+          "z-lab/Qwen3-8B-DFlash-b16"
+        ],
+        "prompt": "m0-005",
+        "condition": "model_card_nonthinking",
+        "seed": 2031,
+        "temperature": 0.7,
+        "verification_rule": "ratio",
+        "proposal_mode": "adapter_disabled",
+        "checkpoint": [
+          "b968826d9c46dd6066d109eabc6255188de91218",
+          "9b41424b7109f9c5413454f481b09a82b85333f4"
+        ],
+        "adapter_version": 0,
+        "sampling_warp_config": {
+          "top_k": 20,
+          "top_p": 0.8,
+          "min_p": 0.0
+        },
+        "max_new_tokens": 128,
+        "enable_thinking": false,
+        "dflash_commit": "07ebd93db9f472af339b644bb70221ad8428328a",
+        "project_git_commit": "uncommitted"
+      },
+      "status": "complete",
+      "result_path": "/home/catid/drafter/artifacts/m0/854c64115ecdd46d89f6b1ab606a838ac6468307ba067817b0d1bbb38d6c9f6b.json"
+    },
+    "18766a4103a7ebb145df3a31b823655c337c72c106d9f519746989b2fe6054fd": {
+      "identity": {
+        "model_pair": [
+          "Qwen/Qwen3-8B",
+          "z-lab/Qwen3-8B-DFlash-b16"
+        ],
+        "prompt": "m0-005",
+        "condition": "pure_temperature_diagnostic",
+        "seed": 2031,
+        "temperature": 1.0,
+        "verification_rule": "ratio",
+        "proposal_mode": "adapter_disabled",
+        "checkpoint": [
+          "b968826d9c46dd6066d109eabc6255188de91218",
+          "9b41424b7109f9c5413454f481b09a82b85333f4"
+        ],
+        "adapter_version": 0,
+        "sampling_warp_config": {
+          "top_k": 0,
+          "top_p": 1.0,
+          "min_p": 0.0
+        },
+        "max_new_tokens": 128,
+        "enable_thinking": false,
+        "dflash_commit": "07ebd93db9f472af339b644bb70221ad8428328a",
+        "project_git_commit": "uncommitted"
+      },
+      "status": "complete",
+      "result_path": "/home/catid/drafter/artifacts/m0/18766a4103a7ebb145df3a31b823655c337c72c106d9f519746989b2fe6054fd.json"
+    },
+    "3bdea3d9e515634f4bd3bcd0e545efc3fa9c86e31a38c104bfd6d4827a4c34e4": {
+      "identity": {
+        "model_pair": [
+          "Qwen/Qwen3-8B",
+          "z-lab/Qwen3-8B-DFlash-b16"
+        ],
+        "prompt": "m0-006",
+        "condition": "greedy",
+        "seed": 2032,
+        "temperature": 0.0,
+        "verification_rule": "greedy",
+        "proposal_mode": "adapter_disabled",
+        "checkpoint": [
+          "b968826d9c46dd6066d109eabc6255188de91218",
+          "9b41424b7109f9c5413454f481b09a82b85333f4"
+        ],
+        "adapter_version": 0,
+        "sampling_warp_config": {
+          "top_k": 0,
+          "top_p": 1.0,
+          "min_p": 0.0
+        },
+        "max_new_tokens": 128,
+        "enable_thinking": false,
+        "dflash_commit": "07ebd93db9f472af339b644bb70221ad8428328a",
+        "project_git_commit": "uncommitted"
+      },
+      "status": "complete",
+      "result_path": "/home/catid/drafter/artifacts/m0/3bdea3d9e515634f4bd3bcd0e545efc3fa9c86e31a38c104bfd6d4827a4c34e4.json"
+    },
+    "6df1cf5a9c9d624e32bb81fa7f783ed7e36c5299595ba3cba80613183cdd30cf": {
+      "identity": {
+        "model_pair": [
+          "Qwen/Qwen3-8B",
+          "z-lab/Qwen3-8B-DFlash-b16"
+        ],
+        "prompt": "m0-006",
+        "condition": "model_card_nonthinking",
+        "seed": 2032,
+        "temperature": 0.7,
+        "verification_rule": "ratio",
+        "proposal_mode": "adapter_disabled",
+        "checkpoint": [
+          "b968826d9c46dd6066d109eabc6255188de91218",
+          "9b41424b7109f9c5413454f481b09a82b85333f4"
+        ],
+        "adapter_version": 0,
+        "sampling_warp_config": {
+          "top_k": 20,
+          "top_p": 0.8,
+          "min_p": 0.0
+        },
+        "max_new_tokens": 128,
+        "enable_thinking": false,
+        "dflash_commit": "07ebd93db9f472af339b644bb70221ad8428328a",
+        "project_git_commit": "uncommitted"
+      },
+      "status": "complete",
+      "result_path": "/home/catid/drafter/artifacts/m0/6df1cf5a9c9d624e32bb81fa7f783ed7e36c5299595ba3cba80613183cdd30cf.json"
+    },
+    "614dee9134d2c85f1a70b2998538374db77e0bf5073b18f14c3d15b3bfe0b8bf": {
+      "identity": {
+        "model_pair": [
+          "Qwen/Qwen3-8B",
+          "z-lab/Qwen3-8B-DFlash-b16"
+        ],
+        "prompt": "m0-006",
+        "condition": "pure_temperature_diagnostic",
+        "seed": 2032,
+        "temperature": 1.0,
+        "verification_rule": "ratio",
+        "proposal_mode": "adapter_disabled",
+        "checkpoint": [
+          "b968826d9c46dd6066d109eabc6255188de91218",
+          "9b41424b7109f9c5413454f481b09a82b85333f4"
+        ],
+        "adapter_version": 0,
+        "sampling_warp_config": {
+          "top_k": 0,
+          "top_p": 1.0,
+          "min_p": 0.0
+        },
+        "max_new_tokens": 128,
+        "enable_thinking": false,
+        "dflash_commit": "07ebd93db9f472af339b644bb70221ad8428328a",
+        "project_git_commit": "uncommitted"
+      },
+      "status": "complete",
+      "result_path": "/home/catid/drafter/artifacts/m0/614dee9134d2c85f1a70b2998538374db77e0bf5073b18f14c3d15b3bfe0b8bf.json"
+    },
+    "3f13031e94b75a492800a2a4b656e7fa84bd44f1314c5b3ad49a554d3239f0e7": {
+      "identity": {
+        "model_pair": [
+          "Qwen/Qwen3-8B",
+          "z-lab/Qwen3-8B-DFlash-b16"
+        ],
+        "prompt": "m0-007",
+        "condition": "greedy",
+        "seed": 2033,
+        "temperature": 0.0,
+        "verification_rule": "greedy",
+        "proposal_mode": "adapter_disabled",
+        "checkpoint": [
+          "b968826d9c46dd6066d109eabc6255188de91218",
+          "9b41424b7109f9c5413454f481b09a82b85333f4"
+        ],
+        "adapter_version": 0,
+        "sampling_warp_config": {
+          "top_k": 0,
+          "top_p": 1.0,
+          "min_p": 0.0
+        },
+        "max_new_tokens": 128,
+        "enable_thinking": false,
+        "dflash_commit": "07ebd93db9f472af339b644bb70221ad8428328a",
+        "project_git_commit": "uncommitted"
+      },
+      "status": "complete",
+      "result_path": "/home/catid/drafter/artifacts/m0/3f13031e94b75a492800a2a4b656e7fa84bd44f1314c5b3ad49a554d3239f0e7.json"
+    },
+    "c0d8c2ba3ea786ba51907f58348c225492f3e51c368309136c5428c0430105b4": {
+      "identity": {
+        "model_pair": [
+          "Qwen/Qwen3-8B",
+          "z-lab/Qwen3-8B-DFlash-b16"
+        ],
+        "prompt": "m0-007",
+        "condition": "model_card_nonthinking",
+        "seed": 2033,
+        "temperature": 0.7,
+        "verification_rule": "ratio",
+        "proposal_mode": "adapter_disabled",
+        "checkpoint": [
+          "b968826d9c46dd6066d109eabc6255188de91218",
+          "9b41424b7109f9c5413454f481b09a82b85333f4"
+        ],
+        "adapter_version": 0,
+        "sampling_warp_config": {
+          "top_k": 20,
+          "top_p": 0.8,
+          "min_p": 0.0
+        },
+        "max_new_tokens": 128,
+        "enable_thinking": false,
+        "dflash_commit": "07ebd93db9f472af339b644bb70221ad8428328a",
+        "project_git_commit": "uncommitted"
+      },
+      "status": "complete",
+      "result_path": "/home/catid/drafter/artifacts/m0/c0d8c2ba3ea786ba51907f58348c225492f3e51c368309136c5428c0430105b4.json"
+    },
+    "610794ad655772eeed7bf409d7ac30bd7c76b902befa1511c2b8204b3eee62f2": {
+      "identity": {
+        "model_pair": [
+          "Qwen/Qwen3-8B",
+          "z-lab/Qwen3-8B-DFlash-b16"
+        ],
+        "prompt": "m0-007",
+        "condition": "pure_temperature_diagnostic",
+        "seed": 2033,
+        "temperature": 1.0,
+        "verification_rule": "ratio",
+        "proposal_mode": "adapter_disabled",
+        "checkpoint": [
+          "b968826d9c46dd6066d109eabc6255188de91218",
+          "9b41424b7109f9c5413454f481b09a82b85333f4"
+        ],
+        "adapter_version": 0,
+        "sampling_warp_config": {
+          "top_k": 0,
+          "top_p": 1.0,
+          "min_p": 0.0
+        },
+        "max_new_tokens": 128,
+        "enable_thinking": false,
+        "dflash_commit": "07ebd93db9f472af339b644bb70221ad8428328a",
+        "project_git_commit": "uncommitted"
+      },
+      "status": "complete",
+      "result_path": "/home/catid/drafter/artifacts/m0/610794ad655772eeed7bf409d7ac30bd7c76b902befa1511c2b8204b3eee62f2.json"
+    },
+    "9561c0aae6a2c771a0a9ad9628960bbd256420c58cbfe146510db7383bc954a9": {
+      "identity": {
+        "model_pair": [
+          "Qwen/Qwen3-8B",
+          "z-lab/Qwen3-8B-DFlash-b16"
+        ],
+        "prompt": "m0-008",
+        "condition": "greedy",
+        "seed": 2034,
+        "temperature": 0.0,
+        "verification_rule": "greedy",
+        "proposal_mode": "adapter_disabled",
+        "checkpoint": [
+          "b968826d9c46dd6066d109eabc6255188de91218",
+          "9b41424b7109f9c5413454f481b09a82b85333f4"
+        ],
+        "adapter_version": 0,
+        "sampling_warp_config": {
+          "top_k": 0,
+          "top_p": 1.0,
+          "min_p": 0.0
+        },
+        "max_new_tokens": 128,
+        "enable_thinking": false,
+        "dflash_commit": "07ebd93db9f472af339b644bb70221ad8428328a",
+        "project_git_commit": "uncommitted"
+      },
+      "status": "complete",
+      "result_path": "/home/catid/drafter/artifacts/m0/9561c0aae6a2c771a0a9ad9628960bbd256420c58cbfe146510db7383bc954a9.json"
+    },
+    "6f5e01d600e3e531ed2b9d696f040c2b557e561710056109b9a54a230d2d7fb6": {
+      "identity": {
+        "model_pair": [
+          "Qwen/Qwen3-8B",
+          "z-lab/Qwen3-8B-DFlash-b16"
+        ],
+        "prompt": "m0-008",
+        "condition": "model_card_nonthinking",
+        "seed": 2034,
+        "temperature": 0.7,
+        "verification_rule": "ratio",
+        "proposal_mode": "adapter_disabled",
+        "checkpoint": [
+          "b968826d9c46dd6066d109eabc6255188de91218",
+          "9b41424b7109f9c5413454f481b09a82b85333f4"
+        ],
+        "adapter_version": 0,
+        "sampling_warp_config": {
+          "top_k": 20,
+          "top_p": 0.8,
+          "min_p": 0.0
+        },
+        "max_new_tokens": 128,
+        "enable_thinking": false,
+        "dflash_commit": "07ebd93db9f472af339b644bb70221ad8428328a",
+        "project_git_commit": "uncommitted"
+      },
+      "status": "complete",
+      "result_path": "/home/catid/drafter/artifacts/m0/6f5e01d600e3e531ed2b9d696f040c2b557e561710056109b9a54a230d2d7fb6.json"
+    },
+    "39b4e098f1b08c3aa0659109612254f58142d1f15cd0c00cb5eda5c2e11f7154": {
+      "identity": {
+        "model_pair": [
+          "Qwen/Qwen3-8B",
+          "z-lab/Qwen3-8B-DFlash-b16"
+        ],
+        "prompt": "m0-008",
+        "condition": "pure_temperature_diagnostic",
+        "seed": 2034,
+        "temperature": 1.0,
+        "verification_rule": "ratio",
+        "proposal_mode": "adapter_disabled",
+        "checkpoint": [
+          "b968826d9c46dd6066d109eabc6255188de91218",
+          "9b41424b7109f9c5413454f481b09a82b85333f4"
+        ],
+        "adapter_version": 0,
+        "sampling_warp_config": {
+          "top_k": 0,
+          "top_p": 1.0,
+          "min_p": 0.0
+        },
+        "max_new_tokens": 128,
+        "enable_thinking": false,
+        "dflash_commit": "07ebd93db9f472af339b644bb70221ad8428328a",
+        "project_git_commit": "uncommitted"
+      },
+      "status": "complete",
+      "result_path": "/home/catid/drafter/artifacts/m0/39b4e098f1b08c3aa0659109612254f58142d1f15cd0c00cb5eda5c2e11f7154.json"
+    },
+    "02bf2124e1534b4404c4c42bb474186164066238d636758f8d3b55ec70894a7c": {
+      "identity": {
+        "model_pair": [
+          "Qwen/Qwen3-8B",
+          "z-lab/Qwen3-8B-DFlash-b16"
+        ],
+        "prompt": "m0-009",
+        "condition": "greedy",
+        "seed": 2035,
+        "temperature": 0.0,
+        "verification_rule": "greedy",
+        "proposal_mode": "adapter_disabled",
+        "checkpoint": [
+          "b968826d9c46dd6066d109eabc6255188de91218",
+          "9b41424b7109f9c5413454f481b09a82b85333f4"
+        ],
+        "adapter_version": 0,
+        "sampling_warp_config": {
+          "top_k": 0,
+          "top_p": 1.0,
+          "min_p": 0.0
+        },
+        "max_new_tokens": 128,
+        "enable_thinking": false,
+        "dflash_commit": "07ebd93db9f472af339b644bb70221ad8428328a",
+        "project_git_commit": "uncommitted"
+      },
+      "status": "complete",
+      "result_path": "/home/catid/drafter/artifacts/m0/02bf2124e1534b4404c4c42bb474186164066238d636758f8d3b55ec70894a7c.json"
+    },
+    "ef09483eafa7ebb27a657b125a99e124a9b110fc0d4ceb5c12bfbad98983433b": {
+      "identity": {
+        "model_pair": [
+          "Qwen/Qwen3-8B",
+          "z-lab/Qwen3-8B-DFlash-b16"
+        ],
+        "prompt": "m0-009",
+        "condition": "model_card_nonthinking",
+        "seed": 2035,
+        "temperature": 0.7,
+        "verification_rule": "ratio",
+        "proposal_mode": "adapter_disabled",
+        "checkpoint": [
+          "b968826d9c46dd6066d109eabc6255188de91218",
+          "9b41424b7109f9c5413454f481b09a82b85333f4"
+        ],
+        "adapter_version": 0,
+        "sampling_warp_config": {
+          "top_k": 20,
+          "top_p": 0.8,
+          "min_p": 0.0
+        },
+        "max_new_tokens": 128,
+        "enable_thinking": false,
+        "dflash_commit": "07ebd93db9f472af339b644bb70221ad8428328a",
+        "project_git_commit": "uncommitted"
+      },
+      "status": "complete",
+      "result_path": "/home/catid/drafter/artifacts/m0/ef09483eafa7ebb27a657b125a99e124a9b110fc0d4ceb5c12bfbad98983433b.json"
+    },
+    "f2121a5847cba1f3b555d9b581f0af344f6ed62f338d4e2ecd6be36206eb6d69": {
+      "identity": {
+        "model_pair": [
+          "Qwen/Qwen3-8B",
+          "z-lab/Qwen3-8B-DFlash-b16"
+        ],
+        "prompt": "m0-009",
+        "condition": "pure_temperature_diagnostic",
+        "seed": 2035,
+        "temperature": 1.0,
+        "verification_rule": "ratio",
+        "proposal_mode": "adapter_disabled",
+        "checkpoint": [
+          "b968826d9c46dd6066d109eabc6255188de91218",
+          "9b41424b7109f9c5413454f481b09a82b85333f4"
+        ],
+        "adapter_version": 0,
+        "sampling_warp_config": {
+          "top_k": 0,
+          "top_p": 1.0,
+          "min_p": 0.0
+        },
+        "max_new_tokens": 128,
+        "enable_thinking": false,
+        "dflash_commit": "07ebd93db9f472af339b644bb70221ad8428328a",
+        "project_git_commit": "uncommitted"
+      },
+      "status": "complete",
+      "result_path": "/home/catid/drafter/artifacts/m0/f2121a5847cba1f3b555d9b581f0af344f6ed62f338d4e2ecd6be36206eb6d69.json"
+    },
+    "8a2e4be303b62ceecff24b13c13e802f569d21bb1c4956c72ce1a08f763754ef": {
+      "identity": {
+        "model_pair": [
+          "Qwen/Qwen3-8B",
+          "z-lab/Qwen3-8B-DFlash-b16"
+        ],
+        "prompt": "m0-010",
+        "condition": "greedy",
+        "seed": 2036,
+        "temperature": 0.0,
+        "verification_rule": "greedy",
+        "proposal_mode": "adapter_disabled",
+        "checkpoint": [
+          "b968826d9c46dd6066d109eabc6255188de91218",
+          "9b41424b7109f9c5413454f481b09a82b85333f4"
+        ],
+        "adapter_version": 0,
+        "sampling_warp_config": {
+          "top_k": 0,
+          "top_p": 1.0,
+          "min_p": 0.0
+        },
+        "max_new_tokens": 128,
+        "enable_thinking": false,
+        "dflash_commit": "07ebd93db9f472af339b644bb70221ad8428328a",
+        "project_git_commit": "uncommitted"
+      },
+      "status": "complete",
+      "result_path": "/home/catid/drafter/artifacts/m0/8a2e4be303b62ceecff24b13c13e802f569d21bb1c4956c72ce1a08f763754ef.json"
+    },
+    "20dee5b0f318b921aa575c17f7dd9b8f38c3f542c5d28bdcb2fa5478f7fdf928": {
+      "identity": {
+        "model_pair": [
+          "Qwen/Qwen3-8B",
+          "z-lab/Qwen3-8B-DFlash-b16"
+        ],
+        "prompt": "m0-010",
+        "condition": "model_card_nonthinking",
+        "seed": 2036,
+        "temperature": 0.7,
+        "verification_rule": "ratio",
+        "proposal_mode": "adapter_disabled",
+        "checkpoint": [
+          "b968826d9c46dd6066d109eabc6255188de91218",
+          "9b41424b7109f9c5413454f481b09a82b85333f4"
+        ],
+        "adapter_version": 0,
+        "sampling_warp_config": {
+          "top_k": 20,
+          "top_p": 0.8,
+          "min_p": 0.0
+        },
+        "max_new_tokens": 128,
+        "enable_thinking": false,
+        "dflash_commit": "07ebd93db9f472af339b644bb70221ad8428328a",
+        "project_git_commit": "uncommitted"
+      },
+      "status": "complete",
+      "result_path": "/home/catid/drafter/artifacts/m0/20dee5b0f318b921aa575c17f7dd9b8f38c3f542c5d28bdcb2fa5478f7fdf928.json"
+    },
+    "119a5b7647450a8e6cd006db81754b5da22e6ee8a3b2ba524ec80ce7dac4b606": {
+      "identity": {
+        "model_pair": [
+          "Qwen/Qwen3-8B",
+          "z-lab/Qwen3-8B-DFlash-b16"
+        ],
+        "prompt": "m0-010",
+        "condition": "pure_temperature_diagnostic",
+        "seed": 2036,
+        "temperature": 1.0,
+        "verification_rule": "ratio",
+        "proposal_mode": "adapter_disabled",
+        "checkpoint": [
+          "b968826d9c46dd6066d109eabc6255188de91218",
+          "9b41424b7109f9c5413454f481b09a82b85333f4"
+        ],
+        "adapter_version": 0,
+        "sampling_warp_config": {
+          "top_k": 0,
+          "top_p": 1.0,
+          "min_p": 0.0
+        },
+        "max_new_tokens": 128,
+        "enable_thinking": false,
+        "dflash_commit": "07ebd93db9f472af339b644bb70221ad8428328a",
+        "project_git_commit": "uncommitted"
+      },
+      "status": "complete",
+      "result_path": "/home/catid/drafter/artifacts/m0/119a5b7647450a8e6cd006db81754b5da22e6ee8a3b2ba524ec80ce7dac4b606.json"
+    },
+    "7dd43b39a1d45f22692310eb2a1eed586d8ba249091d7342b9f77149915261b3": {
+      "identity": {
+        "model_pair": [
+          "Qwen/Qwen3-8B",
+          "z-lab/Qwen3-8B-DFlash-b16"
+        ],
+        "prompt": "m0-011",
+        "condition": "greedy",
+        "seed": 2037,
+        "temperature": 0.0,
+        "verification_rule": "greedy",
+        "proposal_mode": "adapter_disabled",
+        "checkpoint": [
+          "b968826d9c46dd6066d109eabc6255188de91218",
+          "9b41424b7109f9c5413454f481b09a82b85333f4"
+        ],
+        "adapter_version": 0,
+        "sampling_warp_config": {
+          "top_k": 0,
+          "top_p": 1.0,
+          "min_p": 0.0
+        },
+        "max_new_tokens": 128,
+        "enable_thinking": false,
+        "dflash_commit": "07ebd93db9f472af339b644bb70221ad8428328a",
+        "project_git_commit": "uncommitted"
+      },
+      "status": "complete",
+      "result_path": "/home/catid/drafter/artifacts/m0/7dd43b39a1d45f22692310eb2a1eed586d8ba249091d7342b9f77149915261b3.json"
+    },
+    "0679a21457b6cd12a02d9f97cb21c0d7f0e43afa9f04c7961ae7b168940feb7e": {
+      "identity": {
+        "model_pair": [
+          "Qwen/Qwen3-8B",
+          "z-lab/Qwen3-8B-DFlash-b16"
+        ],
+        "prompt": "m0-011",
+        "condition": "model_card_nonthinking",
+        "seed": 2037,
+        "temperature": 0.7,
+        "verification_rule": "ratio",
+        "proposal_mode": "adapter_disabled",
+        "checkpoint": [
+          "b968826d9c46dd6066d109eabc6255188de91218",
+          "9b41424b7109f9c5413454f481b09a82b85333f4"
+        ],
+        "adapter_version": 0,
+        "sampling_warp_config": {
+          "top_k": 20,
+          "top_p": 0.8,
+          "min_p": 0.0
+        },
+        "max_new_tokens": 128,
+        "enable_thinking": false,
+        "dflash_commit": "07ebd93db9f472af339b644bb70221ad8428328a",
+        "project_git_commit": "uncommitted"
+      },
+      "status": "complete",
+      "result_path": "/home/catid/drafter/artifacts/m0/0679a21457b6cd12a02d9f97cb21c0d7f0e43afa9f04c7961ae7b168940feb7e.json"
+    },
+    "e85f563050620c993aabb7d9e9f5831eeaeb79ffdd2821704d0a8cb618a4f523": {
+      "identity": {
+        "model_pair": [
+          "Qwen/Qwen3-8B",
+          "z-lab/Qwen3-8B-DFlash-b16"
+        ],
+        "prompt": "m0-011",
+        "condition": "pure_temperature_diagnostic",
+        "seed": 2037,
+        "temperature": 1.0,
+        "verification_rule": "ratio",
+        "proposal_mode": "adapter_disabled",
+        "checkpoint": [
+          "b968826d9c46dd6066d109eabc6255188de91218",
+          "9b41424b7109f9c5413454f481b09a82b85333f4"
+        ],
+        "adapter_version": 0,
+        "sampling_warp_config": {
+          "top_k": 0,
+          "top_p": 1.0,
+          "min_p": 0.0
+        },
+        "max_new_tokens": 128,
+        "enable_thinking": false,
+        "dflash_commit": "07ebd93db9f472af339b644bb70221ad8428328a",
+        "project_git_commit": "uncommitted"
+      },
+      "status": "complete",
+      "result_path": "/home/catid/drafter/artifacts/m0/e85f563050620c993aabb7d9e9f5831eeaeb79ffdd2821704d0a8cb618a4f523.json"
+    },
+    "fc76f508800d874cd79497198c4dc27223c76e4d22c168db3f088d8b487cb031": {
+      "identity": {
+        "model_pair": [
+          "Qwen/Qwen3-8B",
+          "z-lab/Qwen3-8B-DFlash-b16"
+        ],
+        "prompt": "m0-012",
+        "condition": "greedy",
+        "seed": 2038,
+        "temperature": 0.0,
+        "verification_rule": "greedy",
+        "proposal_mode": "adapter_disabled",
+        "checkpoint": [
+          "b968826d9c46dd6066d109eabc6255188de91218",
+          "9b41424b7109f9c5413454f481b09a82b85333f4"
+        ],
+        "adapter_version": 0,
+        "sampling_warp_config": {
+          "top_k": 0,
+          "top_p": 1.0,
+          "min_p": 0.0
+        },
+        "max_new_tokens": 128,
+        "enable_thinking": false,
+        "dflash_commit": "07ebd93db9f472af339b644bb70221ad8428328a",
+        "project_git_commit": "uncommitted"
+      },
+      "status": "complete",
+      "result_path": "/home/catid/drafter/artifacts/m0/fc76f508800d874cd79497198c4dc27223c76e4d22c168db3f088d8b487cb031.json"
+    },
+    "c01f15e59871ed17b0e239c334be4191415fae3cae4b3aa75bdce7160ad81e36": {
+      "identity": {
+        "model_pair": [
+          "Qwen/Qwen3-8B",
+          "z-lab/Qwen3-8B-DFlash-b16"
+        ],
+        "prompt": "m0-012",
+        "condition": "model_card_nonthinking",
+        "seed": 2038,
+        "temperature": 0.7,
+        "verification_rule": "ratio",
+        "proposal_mode": "adapter_disabled",
+        "checkpoint": [
+          "b968826d9c46dd6066d109eabc6255188de91218",
+          "9b41424b7109f9c5413454f481b09a82b85333f4"
+        ],
+        "adapter_version": 0,
+        "sampling_warp_config": {
+          "top_k": 20,
+          "top_p": 0.8,
+          "min_p": 0.0
+        },
+        "max_new_tokens": 128,
+        "enable_thinking": false,
+        "dflash_commit": "07ebd93db9f472af339b644bb70221ad8428328a",
+        "project_git_commit": "uncommitted"
+      },
+      "status": "complete",
+      "result_path": "/home/catid/drafter/artifacts/m0/c01f15e59871ed17b0e239c334be4191415fae3cae4b3aa75bdce7160ad81e36.json"
+    },
+    "295c551422e34f87a3ae0f58d9570b39012f276efe406c198d16480cfbec6916": {
+      "identity": {
+        "model_pair": [
+          "Qwen/Qwen3-8B",
+          "z-lab/Qwen3-8B-DFlash-b16"
+        ],
+        "prompt": "m0-012",
+        "condition": "pure_temperature_diagnostic",
+        "seed": 2038,
+        "temperature": 1.0,
+        "verification_rule": "ratio",
+        "proposal_mode": "adapter_disabled",
+        "checkpoint": [
+          "b968826d9c46dd6066d109eabc6255188de91218",
+          "9b41424b7109f9c5413454f481b09a82b85333f4"
+        ],
+        "adapter_version": 0,
+        "sampling_warp_config": {
+          "top_k": 0,
+          "top_p": 1.0,
+          "min_p": 0.0
+        },
+        "max_new_tokens": 128,
+        "enable_thinking": false,
+        "dflash_commit": "07ebd93db9f472af339b644bb70221ad8428328a",
+        "project_git_commit": "uncommitted"
+      },
+      "status": "complete",
+      "result_path": "/home/catid/drafter/artifacts/m0/295c551422e34f87a3ae0f58d9570b39012f276efe406c198d16480cfbec6916.json"
+    },
+    "ac147449244375ae7d1c7537b28121fdb3b09c17c5ebe41c09c03d39a0e730d4": {
+      "identity": {
+        "model_pair": [
+          "Qwen/Qwen3-8B",
+          "z-lab/Qwen3-8B-DFlash-b16"
+        ],
+        "prompt": "m0-013",
+        "condition": "greedy",
+        "seed": 2039,
+        "temperature": 0.0,
+        "verification_rule": "greedy",
+        "proposal_mode": "adapter_disabled",
+        "checkpoint": [
+          "b968826d9c46dd6066d109eabc6255188de91218",
+          "9b41424b7109f9c5413454f481b09a82b85333f4"
+        ],
+        "adapter_version": 0,
+        "sampling_warp_config": {
+          "top_k": 0,
+          "top_p": 1.0,
+          "min_p": 0.0
+        },
+        "max_new_tokens": 128,
+        "enable_thinking": false,
+        "dflash_commit": "07ebd93db9f472af339b644bb70221ad8428328a",
+        "project_git_commit": "uncommitted"
+      },
+      "status": "complete",
+      "result_path": "/home/catid/drafter/artifacts/m0/ac147449244375ae7d1c7537b28121fdb3b09c17c5ebe41c09c03d39a0e730d4.json"
+    },
+    "bc5d548e3cce6fffe824c68904f24013c86e80241e1bd0b1a3810e0960d908cb": {
+      "identity": {
+        "model_pair": [
+          "Qwen/Qwen3-8B",
+          "z-lab/Qwen3-8B-DFlash-b16"
+        ],
+        "prompt": "m0-013",
+        "condition": "model_card_nonthinking",
+        "seed": 2039,
+        "temperature": 0.7,
+        "verification_rule": "ratio",
+        "proposal_mode": "adapter_disabled",
+        "checkpoint": [
+          "b968826d9c46dd6066d109eabc6255188de91218",
+          "9b41424b7109f9c5413454f481b09a82b85333f4"
+        ],
+        "adapter_version": 0,
+        "sampling_warp_config": {
+          "top_k": 20,
+          "top_p": 0.8,
+          "min_p": 0.0
+        },
+        "max_new_tokens": 128,
+        "enable_thinking": false,
+        "dflash_commit": "07ebd93db9f472af339b644bb70221ad8428328a",
+        "project_git_commit": "uncommitted"
+      },
+      "status": "complete",
+      "result_path": "/home/catid/drafter/artifacts/m0/bc5d548e3cce6fffe824c68904f24013c86e80241e1bd0b1a3810e0960d908cb.json"
+    },
+    "364add30a1229d445a1647c55f3b0694c759b59a71ba3045ac2f3e595bc458bf": {
+      "identity": {
+        "model_pair": [
+          "Qwen/Qwen3-8B",
+          "z-lab/Qwen3-8B-DFlash-b16"
+        ],
+        "prompt": "m0-013",
+        "condition": "pure_temperature_diagnostic",
+        "seed": 2039,
+        "temperature": 1.0,
+        "verification_rule": "ratio",
+        "proposal_mode": "adapter_disabled",
+        "checkpoint": [
+          "b968826d9c46dd6066d109eabc6255188de91218",
+          "9b41424b7109f9c5413454f481b09a82b85333f4"
+        ],
+        "adapter_version": 0,
+        "sampling_warp_config": {
+          "top_k": 0,
+          "top_p": 1.0,
+          "min_p": 0.0
+        },
+        "max_new_tokens": 128,
+        "enable_thinking": false,
+        "dflash_commit": "07ebd93db9f472af339b644bb70221ad8428328a",
+        "project_git_commit": "uncommitted"
+      },
+      "status": "complete",
+      "result_path": "/home/catid/drafter/artifacts/m0/364add30a1229d445a1647c55f3b0694c759b59a71ba3045ac2f3e595bc458bf.json"
+    },
+    "910404c1972cf638dfbce10d189475c16d629e2e823bdc2bf7a742399c2e5bfb": {
+      "identity": {
+        "model_pair": [
+          "Qwen/Qwen3-8B",
+          "z-lab/Qwen3-8B-DFlash-b16"
+        ],
+        "prompt": "m0-014",
+        "condition": "greedy",
+        "seed": 2040,
+        "temperature": 0.0,
+        "verification_rule": "greedy",
+        "proposal_mode": "adapter_disabled",
+        "checkpoint": [
+          "b968826d9c46dd6066d109eabc6255188de91218",
+          "9b41424b7109f9c5413454f481b09a82b85333f4"
+        ],
+        "adapter_version": 0,
+        "sampling_warp_config": {
+          "top_k": 0,
+          "top_p": 1.0,
+          "min_p": 0.0
+        },
+        "max_new_tokens": 128,
+        "enable_thinking": false,
+        "dflash_commit": "07ebd93db9f472af339b644bb70221ad8428328a",
+        "project_git_commit": "uncommitted"
+      },
+      "status": "complete",
+      "result_path": "/home/catid/drafter/artifacts/m0/910404c1972cf638dfbce10d189475c16d629e2e823bdc2bf7a742399c2e5bfb.json"
+    },
+    "6dd8128161f8fb700499bb5a0eeb7004bcdc8c1f8bc2259d876e319f451d2e69": {
+      "identity": {
+        "model_pair": [
+          "Qwen/Qwen3-8B",
+          "z-lab/Qwen3-8B-DFlash-b16"
+        ],
+        "prompt": "m0-014",
+        "condition": "model_card_nonthinking",
+        "seed": 2040,
+        "temperature": 0.7,
+        "verification_rule": "ratio",
+        "proposal_mode": "adapter_disabled",
+        "checkpoint": [
+          "b968826d9c46dd6066d109eabc6255188de91218",
+          "9b41424b7109f9c5413454f481b09a82b85333f4"
+        ],
+        "adapter_version": 0,
+        "sampling_warp_config": {
+          "top_k": 20,
+          "top_p": 0.8,
+          "min_p": 0.0
+        },
+        "max_new_tokens": 128,
+        "enable_thinking": false,
+        "dflash_commit": "07ebd93db9f472af339b644bb70221ad8428328a",
+        "project_git_commit": "uncommitted"
+      },
+      "status": "complete",
+      "result_path": "/home/catid/drafter/artifacts/m0/6dd8128161f8fb700499bb5a0eeb7004bcdc8c1f8bc2259d876e319f451d2e69.json"
+    },
+    "e02294e472080d86e8741488eecdd826a9c25682b51dc75572c64f11f7a93d7c": {
+      "identity": {
+        "model_pair": [
+          "Qwen/Qwen3-8B",
+          "z-lab/Qwen3-8B-DFlash-b16"
+        ],
+        "prompt": "m0-014",
+        "condition": "pure_temperature_diagnostic",
+        "seed": 2040,
+        "temperature": 1.0,
+        "verification_rule": "ratio",
+        "proposal_mode": "adapter_disabled",
+        "checkpoint": [
+          "b968826d9c46dd6066d109eabc6255188de91218",
+          "9b41424b7109f9c5413454f481b09a82b85333f4"
+        ],
+        "adapter_version": 0,
+        "sampling_warp_config": {
+          "top_k": 0,
+          "top_p": 1.0,
+          "min_p": 0.0
+        },
+        "max_new_tokens": 128,
+        "enable_thinking": false,
+        "dflash_commit": "07ebd93db9f472af339b644bb70221ad8428328a",
+        "project_git_commit": "uncommitted"
+      },
+      "status": "complete",
+      "result_path": "/home/catid/drafter/artifacts/m0/e02294e472080d86e8741488eecdd826a9c25682b51dc75572c64f11f7a93d7c.json"
+    },
+    "c743287576fdfd77d944a7d3502fc56bbccf264d642e5958032ed309c94bd107": {
+      "identity": {
+        "model_pair": [
+          "Qwen/Qwen3-8B",
+          "z-lab/Qwen3-8B-DFlash-b16"
+        ],
+        "prompt": "m0-015",
+        "condition": "greedy",
+        "seed": 2041,
+        "temperature": 0.0,
+        "verification_rule": "greedy",
+        "proposal_mode": "adapter_disabled",
+        "checkpoint": [
+          "b968826d9c46dd6066d109eabc6255188de91218",
+          "9b41424b7109f9c5413454f481b09a82b85333f4"
+        ],
+        "adapter_version": 0,
+        "sampling_warp_config": {
+          "top_k": 0,
+          "top_p": 1.0,
+          "min_p": 0.0
+        },
+        "max_new_tokens": 128,
+        "enable_thinking": false,
+        "dflash_commit": "07ebd93db9f472af339b644bb70221ad8428328a",
+        "project_git_commit": "uncommitted"
+      },
+      "status": "complete",
+      "result_path": "/home/catid/drafter/artifacts/m0/c743287576fdfd77d944a7d3502fc56bbccf264d642e5958032ed309c94bd107.json"
+    },
+    "e2116bbc05ed9b5f653559b8611f2b42e5f1a480745157322502ae5f084f0b49": {
+      "identity": {
+        "model_pair": [
+          "Qwen/Qwen3-8B",
+          "z-lab/Qwen3-8B-DFlash-b16"
+        ],
+        "prompt": "m0-015",
+        "condition": "model_card_nonthinking",
+        "seed": 2041,
+        "temperature": 0.7,
+        "verification_rule": "ratio",
+        "proposal_mode": "adapter_disabled",
+        "checkpoint": [
+          "b968826d9c46dd6066d109eabc6255188de91218",
+          "9b41424b7109f9c5413454f481b09a82b85333f4"
+        ],
+        "adapter_version": 0,
+        "sampling_warp_config": {
+          "top_k": 20,
+          "top_p": 0.8,
+          "min_p": 0.0
+        },
+        "max_new_tokens": 128,
+        "enable_thinking": false,
+        "dflash_commit": "07ebd93db9f472af339b644bb70221ad8428328a",
+        "project_git_commit": "uncommitted"
+      },
+      "status": "complete",
+      "result_path": "/home/catid/drafter/artifacts/m0/e2116bbc05ed9b5f653559b8611f2b42e5f1a480745157322502ae5f084f0b49.json"
+    },
+    "c6b4696d31cfe1b1a1f82bc6754182beb3d359a8527b82cad86ca50da03ef724": {
+      "identity": {
+        "model_pair": [
+          "Qwen/Qwen3-8B",
+          "z-lab/Qwen3-8B-DFlash-b16"
+        ],
+        "prompt": "m0-015",
+        "condition": "pure_temperature_diagnostic",
+        "seed": 2041,
+        "temperature": 1.0,
+        "verification_rule": "ratio",
+        "proposal_mode": "adapter_disabled",
+        "checkpoint": [
+          "b968826d9c46dd6066d109eabc6255188de91218",
+          "9b41424b7109f9c5413454f481b09a82b85333f4"
+        ],
+        "adapter_version": 0,
+        "sampling_warp_config": {
+          "top_k": 0,
+          "top_p": 1.0,
+          "min_p": 0.0
+        },
+        "max_new_tokens": 128,
+        "enable_thinking": false,
+        "dflash_commit": "07ebd93db9f472af339b644bb70221ad8428328a",
+        "project_git_commit": "uncommitted"
+      },
+      "status": "complete",
+      "result_path": "/home/catid/drafter/artifacts/m0/c6b4696d31cfe1b1a1f82bc6754182beb3d359a8527b82cad86ca50da03ef724.json"
+    },
+    "f1e97cc9f201d1fa61c8954708a3838408e8adfc050f303d9219b5d9feb59c58": {
+      "identity": {
+        "model_pair": [
+          "Qwen/Qwen3-8B",
+          "z-lab/Qwen3-8B-DFlash-b16"
+        ],
+        "prompt": "m0-016",
+        "condition": "greedy",
+        "seed": 2042,
+        "temperature": 0.0,
+        "verification_rule": "greedy",
+        "proposal_mode": "adapter_disabled",
+        "checkpoint": [
+          "b968826d9c46dd6066d109eabc6255188de91218",
+          "9b41424b7109f9c5413454f481b09a82b85333f4"
+        ],
+        "adapter_version": 0,
+        "sampling_warp_config": {
+          "top_k": 0,
+          "top_p": 1.0,
+          "min_p": 0.0
+        },
+        "max_new_tokens": 128,
+        "enable_thinking": false,
+        "dflash_commit": "07ebd93db9f472af339b644bb70221ad8428328a",
+        "project_git_commit": "uncommitted"
+      },
+      "status": "complete",
+      "result_path": "/home/catid/drafter/artifacts/m0/f1e97cc9f201d1fa61c8954708a3838408e8adfc050f303d9219b5d9feb59c58.json"
+    },
+    "0af9a6f2ec0d3e4f880671ba554a10fdd3af1b0e268f8e4db94884ebc0966481": {
+      "identity": {
+        "model_pair": [
+          "Qwen/Qwen3-8B",
+          "z-lab/Qwen3-8B-DFlash-b16"
+        ],
+        "prompt": "m0-016",
+        "condition": "model_card_nonthinking",
+        "seed": 2042,
+        "temperature": 0.7,
+        "verification_rule": "ratio",
+        "proposal_mode": "adapter_disabled",
+        "checkpoint": [
+          "b968826d9c46dd6066d109eabc6255188de91218",
+          "9b41424b7109f9c5413454f481b09a82b85333f4"
+        ],
+        "adapter_version": 0,
+        "sampling_warp_config": {
+          "top_k": 20,
+          "top_p": 0.8,
+          "min_p": 0.0
+        },
+        "max_new_tokens": 128,
+        "enable_thinking": false,
+        "dflash_commit": "07ebd93db9f472af339b644bb70221ad8428328a",
+        "project_git_commit": "uncommitted"
+      },
+      "status": "complete",
+      "result_path": "/home/catid/drafter/artifacts/m0/0af9a6f2ec0d3e4f880671ba554a10fdd3af1b0e268f8e4db94884ebc0966481.json"
+    },
+    "6a332c824c9ff4f0504d489f34beabb03a7b546cb7074b0e761e172e345e1c86": {
+      "identity": {
+        "model_pair": [
+          "Qwen/Qwen3-8B",
+          "z-lab/Qwen3-8B-DFlash-b16"
+        ],
+        "prompt": "m0-016",
+        "condition": "pure_temperature_diagnostic",
+        "seed": 2042,
+        "temperature": 1.0,
+        "verification_rule": "ratio",
+        "proposal_mode": "adapter_disabled",
+        "checkpoint": [
+          "b968826d9c46dd6066d109eabc6255188de91218",
+          "9b41424b7109f9c5413454f481b09a82b85333f4"
+        ],
+        "adapter_version": 0,
+        "sampling_warp_config": {
+          "top_k": 0,
+          "top_p": 1.0,
+          "min_p": 0.0
+        },
+        "max_new_tokens": 128,
+        "enable_thinking": false,
+        "dflash_commit": "07ebd93db9f472af339b644bb70221ad8428328a",
+        "project_git_commit": "uncommitted"
+      },
+      "status": "complete",
+      "result_path": "/home/catid/drafter/artifacts/m0/6a332c824c9ff4f0504d489f34beabb03a7b546cb7074b0e761e172e345e1c86.json"
+    },
+    "4dd5c8d1003b8c7c8a3e0a8ec16655ef8bad1417911cb41d301f6a0c37cf667f": {
+      "identity": {
+        "model_pair": [
+          "Qwen/Qwen3-8B",
+          "z-lab/Qwen3-8B-DFlash-b16"
+        ],
+        "prompt": "m0-017",
+        "condition": "greedy",
+        "seed": 2043,
+        "temperature": 0.0,
+        "verification_rule": "greedy",
+        "proposal_mode": "adapter_disabled",
+        "checkpoint": [
+          "b968826d9c46dd6066d109eabc6255188de91218",
+          "9b41424b7109f9c5413454f481b09a82b85333f4"
+        ],
+        "adapter_version": 0,
+        "sampling_warp_config": {
+          "top_k": 0,
+          "top_p": 1.0,
+          "min_p": 0.0
+        },
+        "max_new_tokens": 128,
+        "enable_thinking": false,
+        "dflash_commit": "07ebd93db9f472af339b644bb70221ad8428328a",
+        "project_git_commit": "uncommitted"
+      },
+      "status": "complete",
+      "result_path": "/home/catid/drafter/artifacts/m0/4dd5c8d1003b8c7c8a3e0a8ec16655ef8bad1417911cb41d301f6a0c37cf667f.json"
+    },
+    "611b593d227d180cdf9fe7b2878dea65265023b741e8a9a1120515f749b3b451": {
+      "identity": {
+        "model_pair": [
+          "Qwen/Qwen3-8B",
+          "z-lab/Qwen3-8B-DFlash-b16"
+        ],
+        "prompt": "m0-017",
+        "condition": "model_card_nonthinking",
+        "seed": 2043,
+        "temperature": 0.7,
+        "verification_rule": "ratio",
+        "proposal_mode": "adapter_disabled",
+        "checkpoint": [
+          "b968826d9c46dd6066d109eabc6255188de91218",
+          "9b41424b7109f9c5413454f481b09a82b85333f4"
+        ],
+        "adapter_version": 0,
+        "sampling_warp_config": {
+          "top_k": 20,
+          "top_p": 0.8,
+          "min_p": 0.0
+        },
+        "max_new_tokens": 128,
+        "enable_thinking": false,
+        "dflash_commit": "07ebd93db9f472af339b644bb70221ad8428328a",
+        "project_git_commit": "uncommitted"
+      },
+      "status": "complete",
+      "result_path": "/home/catid/drafter/artifacts/m0/611b593d227d180cdf9fe7b2878dea65265023b741e8a9a1120515f749b3b451.json"
+    },
+    "49e29e1a1868e1bf593c1c58b528c49f16c62e5a08b925f0678445af424af8b3": {
+      "identity": {
+        "model_pair": [
+          "Qwen/Qwen3-8B",
+          "z-lab/Qwen3-8B-DFlash-b16"
+        ],
+        "prompt": "m0-017",
+        "condition": "pure_temperature_diagnostic",
+        "seed": 2043,
+        "temperature": 1.0,
+        "verification_rule": "ratio",
+        "proposal_mode": "adapter_disabled",
+        "checkpoint": [
+          "b968826d9c46dd6066d109eabc6255188de91218",
+          "9b41424b7109f9c5413454f481b09a82b85333f4"
+        ],
+        "adapter_version": 0,
+        "sampling_warp_config": {
+          "top_k": 0,
+          "top_p": 1.0,
+          "min_p": 0.0
+        },
+        "max_new_tokens": 128,
+        "enable_thinking": false,
+        "dflash_commit": "07ebd93db9f472af339b644bb70221ad8428328a",
+        "project_git_commit": "uncommitted"
+      },
+      "status": "complete",
+      "result_path": "/home/catid/drafter/artifacts/m0/49e29e1a1868e1bf593c1c58b528c49f16c62e5a08b925f0678445af424af8b3.json"
+    },
+    "97bafad72b2ee43bcdda6de85dad6ceb4cad7c1d019b8a90ae0774c98e7baa39": {
+      "identity": {
+        "model_pair": [
+          "Qwen/Qwen3-8B",
+          "z-lab/Qwen3-8B-DFlash-b16"
+        ],
+        "prompt": "m0-018",
+        "condition": "greedy",
+        "seed": 2044,
+        "temperature": 0.0,
+        "verification_rule": "greedy",
+        "proposal_mode": "adapter_disabled",
+        "checkpoint": [
+          "b968826d9c46dd6066d109eabc6255188de91218",
+          "9b41424b7109f9c5413454f481b09a82b85333f4"
+        ],
+        "adapter_version": 0,
+        "sampling_warp_config": {
+          "top_k": 0,
+          "top_p": 1.0,
+          "min_p": 0.0
+        },
+        "max_new_tokens": 128,
+        "enable_thinking": false,
+        "dflash_commit": "07ebd93db9f472af339b644bb70221ad8428328a",
+        "project_git_commit": "uncommitted"
+      },
+      "status": "complete",
+      "result_path": "/home/catid/drafter/artifacts/m0/97bafad72b2ee43bcdda6de85dad6ceb4cad7c1d019b8a90ae0774c98e7baa39.json"
+    },
+    "7e33fef9c97b41fe31f6805399f7e9e6c2f78e82c7e30d30ab4140748bf3b41c": {
+      "identity": {
+        "model_pair": [
+          "Qwen/Qwen3-8B",
+          "z-lab/Qwen3-8B-DFlash-b16"
+        ],
+        "prompt": "m0-018",
+        "condition": "model_card_nonthinking",
+        "seed": 2044,
+        "temperature": 0.7,
+        "verification_rule": "ratio",
+        "proposal_mode": "adapter_disabled",
+        "checkpoint": [
+          "b968826d9c46dd6066d109eabc6255188de91218",
+          "9b41424b7109f9c5413454f481b09a82b85333f4"
+        ],
+        "adapter_version": 0,
+        "sampling_warp_config": {
+          "top_k": 20,
+          "top_p": 0.8,
+          "min_p": 0.0
+        },
+        "max_new_tokens": 128,
+        "enable_thinking": false,
+        "dflash_commit": "07ebd93db9f472af339b644bb70221ad8428328a",
+        "project_git_commit": "uncommitted"
+      },
+      "status": "complete",
+      "result_path": "/home/catid/drafter/artifacts/m0/7e33fef9c97b41fe31f6805399f7e9e6c2f78e82c7e30d30ab4140748bf3b41c.json"
+    },
+    "6d1f78450e446218560dbdfa39dd50394ac4f1f07d367f83cef1e513e1da4460": {
+      "identity": {
+        "model_pair": [
+          "Qwen/Qwen3-8B",
+          "z-lab/Qwen3-8B-DFlash-b16"
+        ],
+        "prompt": "m0-018",
+        "condition": "pure_temperature_diagnostic",
+        "seed": 2044,
+        "temperature": 1.0,
+        "verification_rule": "ratio",
+        "proposal_mode": "adapter_disabled",
+        "checkpoint": [
+          "b968826d9c46dd6066d109eabc6255188de91218",
+          "9b41424b7109f9c5413454f481b09a82b85333f4"
+        ],
+        "adapter_version": 0,
+        "sampling_warp_config": {
+          "top_k": 0,
+          "top_p": 1.0,
+          "min_p": 0.0
+        },
+        "max_new_tokens": 128,
+        "enable_thinking": false,
+        "dflash_commit": "07ebd93db9f472af339b644bb70221ad8428328a",
+        "project_git_commit": "uncommitted"
+      },
+      "status": "complete",
+      "result_path": "/home/catid/drafter/artifacts/m0/6d1f78450e446218560dbdfa39dd50394ac4f1f07d367f83cef1e513e1da4460.json"
+    },
+    "c723e9f76a482c39f9ddbf651a097512b3ce5cc41b42e9ddc48423e925cdda04": {
+      "identity": {
+        "model_pair": [
+          "Qwen/Qwen3-8B",
+          "z-lab/Qwen3-8B-DFlash-b16"
+        ],
+        "prompt": "m0-019",
+        "condition": "greedy",
+        "seed": 2045,
+        "temperature": 0.0,
+        "verification_rule": "greedy",
+        "proposal_mode": "adapter_disabled",
+        "checkpoint": [
+          "b968826d9c46dd6066d109eabc6255188de91218",
+          "9b41424b7109f9c5413454f481b09a82b85333f4"
+        ],
+        "adapter_version": 0,
+        "sampling_warp_config": {
+          "top_k": 0,
+          "top_p": 1.0,
+          "min_p": 0.0
+        },
+        "max_new_tokens": 128,
+        "enable_thinking": false,
+        "dflash_commit": "07ebd93db9f472af339b644bb70221ad8428328a",
+        "project_git_commit": "uncommitted"
+      },
+      "status": "complete",
+      "result_path": "/home/catid/drafter/artifacts/m0/c723e9f76a482c39f9ddbf651a097512b3ce5cc41b42e9ddc48423e925cdda04.json"
+    },
+    "0c7bb54961b5a1a6ccf41a0fab3cf493709ba647111a6cafb07c9bc1dfa32ba5": {
+      "identity": {
+        "model_pair": [
+          "Qwen/Qwen3-8B",
+          "z-lab/Qwen3-8B-DFlash-b16"
+        ],
+        "prompt": "m0-019",
+        "condition": "model_card_nonthinking",
+        "seed": 2045,
+        "temperature": 0.7,
+        "verification_rule": "ratio",
+        "proposal_mode": "adapter_disabled",
+        "checkpoint": [
+          "b968826d9c46dd6066d109eabc6255188de91218",
+          "9b41424b7109f9c5413454f481b09a82b85333f4"
+        ],
+        "adapter_version": 0,
+        "sampling_warp_config": {
+          "top_k": 20,
+          "top_p": 0.8,
+          "min_p": 0.0
+        },
+        "max_new_tokens": 128,
+        "enable_thinking": false,
+        "dflash_commit": "07ebd93db9f472af339b644bb70221ad8428328a",
+        "project_git_commit": "uncommitted"
+      },
+      "status": "complete",
+      "result_path": "/home/catid/drafter/artifacts/m0/0c7bb54961b5a1a6ccf41a0fab3cf493709ba647111a6cafb07c9bc1dfa32ba5.json"
+    },
+    "197cbe96ff305bde6060219093de5ece28ec89d020836d6fa3f457c120a2bf8a": {
+      "identity": {
+        "model_pair": [
+          "Qwen/Qwen3-8B",
+          "z-lab/Qwen3-8B-DFlash-b16"
+        ],
+        "prompt": "m0-019",
+        "condition": "pure_temperature_diagnostic",
+        "seed": 2045,
+        "temperature": 1.0,
+        "verification_rule": "ratio",
+        "proposal_mode": "adapter_disabled",
+        "checkpoint": [
+          "b968826d9c46dd6066d109eabc6255188de91218",
+          "9b41424b7109f9c5413454f481b09a82b85333f4"
+        ],
+        "adapter_version": 0,
+        "sampling_warp_config": {
+          "top_k": 0,
+          "top_p": 1.0,
+          "min_p": 0.0
+        },
+        "max_new_tokens": 128,
+        "enable_thinking": false,
+        "dflash_commit": "07ebd93db9f472af339b644bb70221ad8428328a",
+        "project_git_commit": "uncommitted"
+      },
+      "status": "complete",
+      "result_path": "/home/catid/drafter/artifacts/m0/197cbe96ff305bde6060219093de5ece28ec89d020836d6fa3f457c120a2bf8a.json"
+    }
+  }
+}
