@@ -1,0 +1,861 @@
+{
+  "scale": "smoke",
+  "label": "synthetic",
+  "stage": "m4",
+  "arm": "online_bigram",
+  "prompt_id": "synthetic-test-long_thinking-0",
+  "split": "test",
+  "condition": "long_thinking",
+  "seed": 2026,
+  "sampling_name": "thinking_recommended",
+  "temperature": 0.6,
+  "sampling_warp_config": {
+    "top_k": 20,
+    "top_p": 0.95,
+    "min_p": 0.0
+  },
+  "settings": {
+    "lambda_tr": 0.05,
+    "alpha": 0.5,
+    "k_ret": null
+  },
+  "effective_beta": 1.0,
+  "verification_rule": "ratio",
+  "model_pair": [
+    "builtin_toy_target",
+    "builtin_parallel_drafter"
+  ],
+  "model_revisions": [
+    "synthetic-v1",
+    "synthetic-v1"
+  ],
+  "checkpoint_hashes": {
+    "dense": "551a7a5907538169bf91ad2fb07c74d2c0549f6477fe7412fc7e505d47c59dce",
+    "dense_sparse": "3064fd63be5221bcae96a291b6247c50e6faee648ce6ad5562199675b2be6b54",
+    "projection": "synthetic-calibration-seed-2026",
+    "implementation": "433c458c52eb06733128018873d2650ba310417c58c5996440e7f3aff2689761"
+  },
+  "offline_fit_provenance": "four built-in synthetic calibration-train prefixes",
+  "generated_tokens": 32,
+  "elapsed_seconds": 0.00534750591032207,
+  "generation_loop_elapsed_seconds": 0.0053040210623294115,
+  "tokens_per_second": 5984.098107910778,
+  "latency_scope": "request adapter initialization + tokenizer + generation; excludes reporting/serialization",
+  "mean_accepted_length": 2.5555555555555554,
+  "median_accepted_length": 3,
+  "target_forwards_per_generated_token": 0.28125,
+  "phase_ms": {},
+  "blocks": [
+    {
+      "round_idx": 1,
+      "absolute_output_offset": 0,
+      "input_context_length": 4,
+      "verified_prefix_tail": [
+        1,
+        2,
+        3,
+        3
+      ],
+      "physical_to_logical": {
+        "anchor_physical_index": 0,
+        "logical_to_physical": [
+          1,
+          2,
+          3,
+          4
+        ]
+      },
+      "draft_tokens": [
+        7,
+        7,
+        7,
+        7
+      ],
+      "draft_lm_head": {
+        "artifact_id": "builtin-toy-linear-head",
+        "revision": "synthetic-v1",
+        "dtype": "torch.float32",
+        "bias": true,
+        "tied_weights": false,
+        "hook": "post _normalized, pre draft_lm_head",
+        "weight_shape": [
+          8,
+          12
+        ]
+      },
+      "accepted_length": 1,
+      "first_rejection_index": 1,
+      "replacement_token": 1,
+      "bonus_token": null,
+      "decisions": [
+        true,
+        false
+      ],
+      "proposal_token_probs": [
+        0.7654455900192261,
+        0.8468037247657776,
+        0.8994895815849304,
+        0.9262912273406982
+      ],
+      "target_token_probs": [
+        0.7654456496238708,
+        0.051933806389570236,
+        0.0,
+        0.0
+      ],
+      "adapter_version": 0,
+      "proposal_mode": "plain_dflash",
+      "verification_rule": "ratio",
+      "collection_temperature": 0.6,
+      "loss_temperature": 1.0,
+      "sampling_warp_config": {
+        "top_k": 20,
+        "top_p": 0.95,
+        "min_p": 0.0
+      },
+      "off_policy_teacher_positions": [
+        2,
+        3
+      ],
+      "committed_tokens": [
+        7,
+        1
+      ],
+      "next_adapter_version": 0
+    },
+    {
+      "round_idx": 2,
+      "absolute_output_offset": 2,
+      "input_context_length": 6,
+      "verified_prefix_tail": [
+        3,
+        3,
+        7,
+        1
+      ],
+      "physical_to_logical": {
+        "anchor_physical_index": 0,
+        "logical_to_physical": [
+          1,
+          2,
+          3,
+          4
+        ]
+      },
+      "draft_tokens": [
+        1,
+        0,
+        1,
+        1
+      ],
+      "draft_lm_head": {
+        "artifact_id": "builtin-toy-linear-head",
+        "revision": "synthetic-v1",
+        "dtype": "torch.float32",
+        "bias": true,
+        "tied_weights": false,
+        "hook": "post _normalized, pre draft_lm_head",
+        "weight_shape": [
+          8,
+          12
+        ]
+      },
+      "accepted_length": 4,
+      "first_rejection_index": 4,
+      "replacement_token": null,
+      "bonus_token": 1,
+      "decisions": [
+        true,
+        true,
+        true,
+        true
+      ],
+      "proposal_token_probs": [
+        0.7180169820785522,
+        0.12775211036205292,
+        0.7957010269165039,
+        0.7810031771659851
+      ],
+      "target_token_probs": [
+        0.7180171012878418,
+        0.2520054280757904,
+        0.8807001709938049,
+        0.7944101691246033
+      ],
+      "adapter_version": 0,
+      "proposal_mode": "plain_dflash",
+      "verification_rule": "ratio",
+      "collection_temperature": 0.6,
+      "loss_temperature": 1.0,
+      "sampling_warp_config": {
+        "top_k": 20,
+        "top_p": 0.95,
+        "min_p": 0.0
+      },
+      "off_policy_teacher_positions": [],
+      "committed_tokens": [
+        1,
+        0,
+        1,
+        1,
+        1
+      ],
+      "next_adapter_version": 0
+    },
+    {
+      "round_idx": 3,
+      "absolute_output_offset": 7,
+      "input_context_length": 11,
+      "verified_prefix_tail": [
+        0,
+        1,
+        1,
+        1
+      ],
+      "physical_to_logical": {
+        "anchor_physical_index": 0,
+        "logical_to_physical": [
+          1,
+          2,
+          3,
+          4
+        ]
+      },
+      "draft_tokens": [
+        1,
+        1,
+        1,
+        1
+      ],
+      "draft_lm_head": {
+        "artifact_id": "builtin-toy-linear-head",
+        "revision": "synthetic-v1",
+        "dtype": "torch.float32",
+        "bias": true,
+        "tied_weights": false,
+        "hook": "post _normalized, pre draft_lm_head",
+        "weight_shape": [
+          8,
+          12
+        ]
+      },
+      "accepted_length": 1,
+      "first_rejection_index": 1,
+      "replacement_token": 5,
+      "bonus_token": null,
+      "decisions": [
+        true,
+        false
+      ],
+      "proposal_token_probs": [
+        0.568006694316864,
+        0.6055625677108765,
+        0.6313209533691406,
+        0.6391705274581909
+      ],
+      "target_token_probs": [
+        0.5414360761642456,
+        0.5491179823875427,
+        0.5465913414955139,
+        0.5553188323974609
+      ],
+      "adapter_version": 0,
+      "proposal_mode": "plain_dflash",
+      "verification_rule": "ratio",
+      "collection_temperature": 0.6,
+      "loss_temperature": 1.0,
+      "sampling_warp_config": {
+        "top_k": 20,
+        "top_p": 0.95,
+        "min_p": 0.0
+      },
+      "off_policy_teacher_positions": [
+        2,
+        3
+      ],
+      "committed_tokens": [
+        1,
+        5
+      ],
+      "next_adapter_version": 0
+    },
+    {
+      "round_idx": 4,
+      "absolute_output_offset": 9,
+      "input_context_length": 13,
+      "verified_prefix_tail": [
+        1,
+        1,
+        1,
+        5
+      ],
+      "physical_to_logical": {
+        "anchor_physical_index": 0,
+        "logical_to_physical": [
+          1,
+          2,
+          3,
+          4
+        ]
+      },
+      "draft_tokens": [
+        6,
+        5,
+        4,
+        0
+      ],
+      "draft_lm_head": {
+        "artifact_id": "builtin-toy-linear-head",
+        "revision": "synthetic-v1",
+        "dtype": "torch.float32",
+        "bias": true,
+        "tied_weights": false,
+        "hook": "post _normalized, pre draft_lm_head",
+        "weight_shape": [
+          8,
+          12
+        ]
+      },
+      "accepted_length": 3,
+      "first_rejection_index": 3,
+      "replacement_token": 7,
+      "bonus_token": null,
+      "decisions": [
+        true,
+        true,
+        true,
+        false
+      ],
+      "proposal_token_probs": [
+        0.11471182852983475,
+        0.029227247461676598,
+        0.30111539363861084,
+        0.7147626280784607
+      ],
+      "target_token_probs": [
+        0.11471180617809296,
+        0.13614735007286072,
+        0.38719743490219116,
+        0.0204857736825943
+      ],
+      "adapter_version": 0,
+      "proposal_mode": "plain_dflash",
+      "verification_rule": "ratio",
+      "collection_temperature": 0.6,
+      "loss_temperature": 1.0,
+      "sampling_warp_config": {
+        "top_k": 20,
+        "top_p": 0.95,
+        "min_p": 0.0
+      },
+      "off_policy_teacher_positions": [],
+      "committed_tokens": [
+        6,
+        5,
+        4,
+        7
+      ],
+      "next_adapter_version": 0
+    },
+    {
+      "round_idx": 5,
+      "absolute_output_offset": 13,
+      "input_context_length": 17,
+      "verified_prefix_tail": [
+        6,
+        5,
+        4,
+        7
+      ],
+      "physical_to_logical": {
+        "anchor_physical_index": 0,
+        "logical_to_physical": [
+          1,
+          2,
+          3,
+          4
+        ]
+      },
+      "draft_tokens": [
+        1,
+        1,
+        1,
+        1
+      ],
+      "draft_lm_head": {
+        "artifact_id": "builtin-toy-linear-head",
+        "revision": "synthetic-v1",
+        "dtype": "torch.float32",
+        "bias": true,
+        "tied_weights": false,
+        "hook": "post _normalized, pre draft_lm_head",
+        "weight_shape": [
+          8,
+          12
+        ]
+      },
+      "accepted_length": 4,
+      "first_rejection_index": 4,
+      "replacement_token": null,
+      "bonus_token": 5,
+      "decisions": [
+        true,
+        true,
+        true,
+        true
+      ],
+      "proposal_token_probs": [
+        0.6678850054740906,
+        0.7890780568122864,
+        0.8364752531051636,
+        0.8595978021621704
+      ],
+      "target_token_probs": [
+        0.6472753286361694,
+        0.697980523109436,
+        0.5100222826004028,
+        0.48671528697013855
+      ],
+      "adapter_version": 0,
+      "proposal_mode": "plain_dflash",
+      "verification_rule": "ratio",
+      "collection_temperature": 0.6,
+      "loss_temperature": 1.0,
+      "sampling_warp_config": {
+        "top_k": 20,
+        "top_p": 0.95,
+        "min_p": 0.0
+      },
+      "off_policy_teacher_positions": [],
+      "committed_tokens": [
+        1,
+        1,
+        1,
+        1,
+        5
+      ],
+      "next_adapter_version": 0
+    },
+    {
+      "round_idx": 6,
+      "absolute_output_offset": 18,
+      "input_context_length": 22,
+      "verified_prefix_tail": [
+        1,
+        1,
+        1,
+        5
+      ],
+      "physical_to_logical": {
+        "anchor_physical_index": 0,
+        "logical_to_physical": [
+          1,
+          2,
+          3,
+          4
+        ]
+      },
+      "draft_tokens": [
+        5,
+        6,
+        0,
+        0
+      ],
+      "draft_lm_head": {
+        "artifact_id": "builtin-toy-linear-head",
+        "revision": "synthetic-v1",
+        "dtype": "torch.float32",
+        "bias": true,
+        "tied_weights": false,
+        "hook": "post _normalized, pre draft_lm_head",
+        "weight_shape": [
+          8,
+          12
+        ]
+      },
+      "accepted_length": 3,
+      "first_rejection_index": 3,
+      "replacement_token": 1,
+      "bonus_token": null,
+      "decisions": [
+        true,
+        true,
+        true,
+        false
+      ],
+      "proposal_token_probs": [
+        0.062193114310503006,
+        0.07429081201553345,
+        0.7175740003585815,
+        0.7904097437858582
+      ],
+      "target_token_probs": [
+        0.06485846638679504,
+        0.31093505024909973,
+        0.461688756942749,
+        0.10171133279800415
+      ],
+      "adapter_version": 0,
+      "proposal_mode": "plain_dflash",
+      "verification_rule": "ratio",
+      "collection_temperature": 0.6,
+      "loss_temperature": 1.0,
+      "sampling_warp_config": {
+        "top_k": 20,
+        "top_p": 0.95,
+        "min_p": 0.0
+      },
+      "off_policy_teacher_positions": [],
+      "committed_tokens": [
+        5,
+        6,
+        0,
+        1
+      ],
+      "next_adapter_version": 0
+    },
+    {
+      "round_idx": 7,
+      "absolute_output_offset": 22,
+      "input_context_length": 26,
+      "verified_prefix_tail": [
+        5,
+        6,
+        0,
+        1
+      ],
+      "physical_to_logical": {
+        "anchor_physical_index": 0,
+        "logical_to_physical": [
+          1,
+          2,
+          3,
+          4
+        ]
+      },
+      "draft_tokens": [
+        1,
+        0,
+        1,
+        1
+      ],
+      "draft_lm_head": {
+        "artifact_id": "builtin-toy-linear-head",
+        "revision": "synthetic-v1",
+        "dtype": "torch.float32",
+        "bias": true,
+        "tied_weights": false,
+        "hook": "post _normalized, pre draft_lm_head",
+        "weight_shape": [
+          8,
+          12
+        ]
+      },
+      "accepted_length": 3,
+      "first_rejection_index": 3,
+      "replacement_token": 5,
+      "bonus_token": null,
+      "decisions": [
+        true,
+        true,
+        true,
+        false
+      ],
+      "proposal_token_probs": [
+        0.7511683106422424,
+        0.16137820482254028,
+        0.8103218674659729,
+        0.8108693957328796
+      ],
+      "target_token_probs": [
+        0.7087635397911072,
+        0.2937720715999603,
+        0.8604334592819214,
+        0.7509047985076904
+      ],
+      "adapter_version": 0,
+      "proposal_mode": "plain_dflash",
+      "verification_rule": "ratio",
+      "collection_temperature": 0.6,
+      "loss_temperature": 1.0,
+      "sampling_warp_config": {
+        "top_k": 20,
+        "top_p": 0.95,
+        "min_p": 0.0
+      },
+      "off_policy_teacher_positions": [],
+      "committed_tokens": [
+        1,
+        0,
+        1,
+        5
+      ],
+      "next_adapter_version": 0
+    },
+    {
+      "round_idx": 8,
+      "absolute_output_offset": 26,
+      "input_context_length": 30,
+      "verified_prefix_tail": [
+        1,
+        0,
+        1,
+        5
+      ],
+      "physical_to_logical": {
+        "anchor_physical_index": 0,
+        "logical_to_physical": [
+          1,
+          2,
+          3,
+          4
+        ]
+      },
+      "draft_tokens": [
+        5,
+        0,
+        0,
+        4
+      ],
+      "draft_lm_head": {
+        "artifact_id": "builtin-toy-linear-head",
+        "revision": "synthetic-v1",
+        "dtype": "torch.float32",
+        "bias": true,
+        "tied_weights": false,
+        "hook": "post _normalized, pre draft_lm_head",
+        "weight_shape": [
+          8,
+          12
+        ]
+      },
+      "accepted_length": 2,
+      "first_rejection_index": 2,
+      "replacement_token": 7,
+      "bonus_token": null,
+      "decisions": [
+        true,
+        true,
+        false
+      ],
+      "proposal_token_probs": [
+        0.06225518882274628,
+        0.6124063730239868,
+        0.7151303291320801,
+        0.22364383935928345
+      ],
+      "target_token_probs": [
+        0.05938171595335007,
+        0.2559298276901245,
+        0.060348957777023315,
+        0.030041245743632317
+      ],
+      "adapter_version": 0,
+      "proposal_mode": "plain_dflash",
+      "verification_rule": "ratio",
+      "collection_temperature": 0.6,
+      "loss_temperature": 1.0,
+      "sampling_warp_config": {
+        "top_k": 20,
+        "top_p": 0.95,
+        "min_p": 0.0
+      },
+      "off_policy_teacher_positions": [
+        3
+      ],
+      "committed_tokens": [
+        5,
+        0,
+        7
+      ],
+      "next_adapter_version": 0
+    },
+    {
+      "round_idx": 9,
+      "absolute_output_offset": 29,
+      "input_context_length": 33,
+      "verified_prefix_tail": [
+        5,
+        5,
+        0,
+        7
+      ],
+      "physical_to_logical": {
+        "anchor_physical_index": 0,
+        "logical_to_physical": [
+          1,
+          2,
+          3
+        ]
+      },
+      "draft_tokens": [
+        1,
+        1,
+        1
+      ],
+      "draft_lm_head": {
+        "artifact_id": "builtin-toy-linear-head",
+        "revision": "synthetic-v1",
+        "dtype": "torch.float32",
+        "bias": true,
+        "tied_weights": false,
+        "hook": "post _normalized, pre draft_lm_head",
+        "weight_shape": [
+          8,
+          12
+        ]
+      },
+      "accepted_length": 2,
+      "first_rejection_index": 2,
+      "replacement_token": 0,
+      "bonus_token": null,
+      "decisions": [
+        true,
+        true,
+        false
+      ],
+      "proposal_token_probs": [
+        0.7798871397972107,
+        0.8870832920074463,
+        0.9453839063644409
+      ],
+      "target_token_probs": [
+        0.7560029625892639,
+        0.6512188911437988,
+        0.5085706114768982
+      ],
+      "adapter_version": 0,
+      "proposal_mode": "plain_dflash",
+      "verification_rule": "ratio",
+      "collection_temperature": 0.6,
+      "loss_temperature": 1.0,
+      "sampling_warp_config": {
+        "top_k": 20,
+        "top_p": 0.95,
+        "min_p": 0.0
+      },
+      "off_policy_teacher_positions": [],
+      "committed_tokens": [
+        1,
+        1,
+        0
+      ],
+      "next_adapter_version": 0
+    }
+  ],
+  "generation": {
+    "realized_length": 32,
+    "repeated_ngram_fraction": {
+      "4": 0.13793103448275867,
+      "8": 0.0,
+      "16": 0.0
+    },
+    "dominant_ngram_token_coverage": {
+      "4": 0.25,
+      "8": 0.25,
+      "16": 0.5
+    },
+    "longest_periodic_run_tokens": 4,
+    "repetition_dominated": false,
+    "repetition_rule": "length>=256 and (period<=64 repeated run >=max(256,50% length) or repeated8>=80% and dominant16 coverage>=50%)",
+    "output_bins_reached": [
+      "0-1K"
+    ],
+    "eos_reached": false,
+    "capped": true,
+    "complete": true
+  },
+  "output_tokens": [
+    7,
+    1,
+    1,
+    0,
+    1,
+    1,
+    1,
+    1,
+    5,
+    6,
+    5,
+    4,
+    7,
+    1,
+    1,
+    1,
+    1,
+    5,
+    5,
+    6,
+    0,
+    1,
+    1,
+    0,
+    1,
+    5,
+    5,
+    0,
+    7,
+    1,
+    1,
+    0
+  ],
+  "online": null,
+  "estimated_online_state_bandwidth_GBps": null,
+  "online_bandwidth_definition": "algorithmic state bytes divided by measured full online_update phase duration, including live-full backprop and snapshots; not hardware HBM bandwidth",
+  "bigram": {
+    "counted_transitions": 32,
+    "exact_ledger_pairs": 14,
+    "retained_prior_pairs": 14,
+    "ledger_retained_for_exact_counts": true,
+    "k_ret": null
+  },
+  "online_invariants": null,
+  "parameter_norms": {},
+  "peak_allocated_bytes": null,
+  "peak_reserved_bytes": null,
+  "phase_profile": false,
+  "identity": {
+    "model_pair": [
+      "builtin_toy_target",
+      "builtin_parallel_drafter"
+    ],
+    "prompt": "synthetic-test-long_thinking-0",
+    "prompt_payload_hash": "df019d45f1d1ad8988b416f325fb7226bf4bbe6983eb54e95f5de00f6e8f6a1a",
+    "condition": "long_thinking",
+    "seed": 2026,
+    "temperature": 0.6,
+    "verification_rule": "ratio",
+    "proposal_mode": "online_bigram",
+    "checkpoint": {
+      "dense": "551a7a5907538169bf91ad2fb07c74d2c0549f6477fe7412fc7e505d47c59dce",
+      "dense_sparse": "3064fd63be5221bcae96a291b6247c50e6faee648ce6ad5562199675b2be6b54",
+      "projection": "synthetic-calibration-seed-2026",
+      "implementation": "433c458c52eb06733128018873d2650ba310417c58c5996440e7f3aff2689761"
+    },
+    "adapter_version": 0,
+    "model_revisions": [
+      "synthetic-v1",
+      "synthetic-v1"
+    ],
+    "stage": "m4",
+    "mode": "timing",
+    "sampling_warp_config": {
+      "top_k": 20,
+      "top_p": 0.95,
+      "min_p": 0.0
+    },
+    "setting": {
+      "lambda_tr": 0.05,
+      "alpha": 0.5,
+      "k_ret": null
+    },
+    "frozen_settings_hash": "b5a177206d46601928fdebd95ba0c530058782f24bff2c72de8e3333a6c2ba8a",
+    "generation_cap": 32,
+    "timing_session": "592a9e46658a4be587d1fe5af57ec938",
+    "repeat": "0:epoch=0c8054b08c064799850b6c7ae01d8e38"
+  },
+  "timing_session": "592a9e46658a4be587d1fe5af57ec938",
+  "repeat": "0:epoch=0c8054b08c064799850b6c7ae01d8e38",
+  "timing_isolated": true,
+  "rank": 0
+}

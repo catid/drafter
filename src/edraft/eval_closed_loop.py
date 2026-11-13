@@ -638,6 +638,174 @@ def timing(runner, prompt_manifest, settings):
     return report
 
 
+FEATURE_FIELDS = {'coordinate_mean_norm', 'variance_ratio_to_standard_calibration',
+                  'l2_norm_quantiles', 'outlier_slot_rate', 'outlier_coordinate_rate',
+                  'outlier_threshold_abs_coordinate', 'calibration_reference'}
+
+
+def _feature_key(condition, temperature, warper):
+    return condition, float(temperature), json.dumps(warper, sort_keys=True)
+
+
+def _required_feature_keys(prompts):
+    return {_feature_key(prompt['condition'], temperature, asdict(warper))
+            for prompt in prompts for _, temperature, warper in sampling_conditions(prompt['condition'])}
+
+
+def extract_feature_context_groups(diagnostic, prompts):
+    """Keep pre-adapter M1 features separate, including documented empty bins."""
+    from .diagnose import OUTPUT_LABELS
+    required = _required_feature_keys(prompts)
+    selected, found = [], set()
+    for group in diagnostic.get('groups', []):
+        key = _feature_key(group['condition'], group['collection_temperature'], group['sampling_warp_config'])
+        if key not in required or group.get('split') != 'test' or group.get('axis') != 'output_offset' or group.get('data_policy') != 'on_policy':
+            continue
+        if group.get('inclusion') not in ('primary', 'repetition_excluded') or group.get('bin') not in OUTPUT_LABELS:
+            raise ValueError('M1b feature group has unknown inclusion or output bin')
+        features = group.get('features', {})
+        if not FEATURE_FIELDS <= features.keys() or group.get('logical_slots', 0) <= 0:
+            raise ValueError('M1b feature group lacks required statistics or observed slots')
+        numeric = [features[name] for name in FEATURE_FIELDS - {'l2_norm_quantiles', 'calibration_reference'}]
+        quantiles = features['l2_norm_quantiles']
+        if not isinstance(quantiles, dict) or not {'p0', 'p25', 'p50', 'p75', 'p95', 'p99', 'p100'} <= quantiles.keys():
+            raise ValueError('M1b feature norm quantiles are incomplete')
+        if any(not math.isfinite(float(value)) for value in numeric + list(quantiles.values())):
+            raise ValueError('M1b feature statistics contain nonfinite values')
+        if not all(0 <= features[name] <= 1 for name in ('outlier_slot_rate', 'outlier_coordinate_rate')):
+            raise ValueError('M1b feature outlier rate is invalid')
+        found.add(key)
+        selected.append({name: group[name] for name in ('condition', 'collection_temperature', 'sampling_warp_config',
+                         'split', 'axis', 'bin', 'data_policy', 'inclusion', 'logical_slots', 'features')})
+    if missing := required - found:
+        raise ValueError(f'M1b feature statistics missing for required condition/temperature/warper: {sorted(missing)}')
+    coverage = []
+    for condition, temperature, warp in sorted(required):
+        groups = [group for group in selected if _feature_key(group['condition'], group['collection_temperature'], group['sampling_warp_config']) == (condition, temperature, warp)]
+        observed = {group['bin'] for group in groups}
+        primary = {group['bin'] for group in groups if group['inclusion'] == 'primary'}
+        coverage.append({'condition': condition, 'collection_temperature': temperature, 'sampling_warp_config': json.loads(warp),
+                         'observed_bins': [label for label in OUTPUT_LABELS if label in observed],
+                         'empty_bins': [label for label in OUTPUT_LABELS if label not in observed],
+                         'primary_empty_bins': [label for label in OUTPUT_LABELS if label not in primary],
+                         'logical_slots': sum(group['logical_slots'] for group in groups),
+                         'feature_group_count': len(groups)})
+    return selected, coverage
+
+
+def audited_m4_feature_context(args, prompt_manifest, settings, prompts):
+    """Bind the M1b report to its accepted sources and the evaluation calibration.
+
+    M1b verified complete shard bytes; this linkage validates the report, accepted
+    source-set identities/checksums, audit, and current frozen calibration files.
+    It does not substitute compact statistics from updated M4 arms.
+    """
+    path = Path(getattr(args, 'feature_diagnostic', None) or args.output / f'diagnostic_{args.scale}.json')
+    diagnostic = json.loads(path.read_text())
+    if diagnostic.get('status') != 'measured' or diagnostic.get('scale') != args.scale or diagnostic.get('label') != args.scale:
+        raise ValueError('M4 requires a measured M1b diagnostic at the evaluation scale')
+    provenance = diagnostic.get('audit_provenance')
+    if not provenance:
+        raise ValueError('M1b diagnostic has no accepted-audit provenance')
+    audit_path = Path(provenance['audit_path'])
+    if file_sha256(audit_path) != provenance['audit_sha256']:
+        raise ValueError('M1 audit changed after the M1b diagnostic')
+    audit = json.loads(audit_path.read_text())
+    if audit.get('status') != 'passed' or audit.get('scale') != args.scale:
+        raise ValueError('M1 audit is not passed at the evaluation scale')
+    sources = audit['source_shards']
+    if fingerprint(sources) != provenance['source_set_sha256']:
+        raise ValueError('M1b source identity set differs from the accepted audit')
+    def source_map(rows):
+        result = {str(Path(row['path']).resolve()): row['sha256'] for row in rows}
+        if len(result) != len(rows):
+            raise ValueError('duplicate M1b source path')
+        return result
+    if source_map(diagnostic['source_shards']) != source_map(sources):
+        raise ValueError('M1b diagnostic source checksums differ from the accepted audit')
+    calibration = audit['calibration']
+    calibration_path = audit_path.parent / 'calibration.json'
+    if fingerprint(json.loads(calibration_path.read_text())) != fingerprint(calibration):
+        raise ValueError('calibration record changed after the M1 audit')
+    if calibration['identity']['model_pair'] != settings['model_pair'] or calibration['identity']['checkpoint'] != settings['model_revisions']:
+        raise ValueError('M1 feature model identities differ from M4 evaluation')
+    artifact_hashes = calibration['artifact_sha256']
+    if provenance['frozen_artifact_sha256'] != artifact_hashes or artifact_hashes['h_proj.pt'] != settings['checkpoint_hashes']['projection']:
+        raise ValueError('M1 feature projection hashes differ from M4 calibration')
+    for name, digest in artifact_hashes.items():
+        if file_sha256(audit_path.parent / name) != digest:
+            raise ValueError(f'frozen feature calibration artifact changed: {name}')
+    manifest_path = Path(calibration['resolved_config']['prompt_manifest'])
+    manifest_hash = file_sha256(manifest_path)
+    if manifest_hash != calibration['identity']['prompt_manifest_sha256'] or manifest_hash != provenance['prompt_manifest_sha256']:
+        raise ValueError('M1 feature prompt manifest checksum changed')
+    if fingerprint(json.loads(manifest_path.read_text())) != fingerprint(prompt_manifest) or fingerprint(prompt_manifest) != settings['prompt_manifest_hash']:
+        raise ValueError('M1 feature prompts differ from frozen M4 evaluation prompts')
+    observed = {(generation['prompt_id'], *_feature_key(generation['condition'], generation['temperature'], generation['sampling_warp_config']))
+                for generation in audit['generations'] if generation['split'] == 'test' and generation.get('complete', False)}
+    expected = {(prompt['prompt_id'], *_feature_key(prompt['condition'], temperature, asdict(warp)))
+                for prompt in prompts for _, temperature, warp in sampling_conditions(prompt['condition'])}
+    if expected - observed:
+        raise ValueError('audited M1 features do not cover the required M4 test prompt/condition identities')
+    groups, coverage = extract_feature_context_groups(diagnostic, prompts)
+    return {'status': 'complete', 'label': args.scale, 'source': 'plain DFlash M1b before offline fit and online adaptation',
+            'interpretation': 'Feature covariate shift is context from the plain-DFlash M1 trace distribution, not measurements of updated M4 arms.',
+            'diagnostic_path': str(path.resolve()), 'diagnostic_sha256': file_sha256(path),
+            'audit_path': str(audit_path.resolve()), 'audit_sha256': provenance['audit_sha256'],
+            'calibration_path': str(calibration_path.resolve()), 'calibration_sha256': file_sha256(calibration_path),
+            'calibration_identity': calibration['identity'], 'frozen_artifact_sha256': artifact_hashes,
+            'prompt_manifest_sha256': manifest_hash, 'source_set_sha256': provenance['source_set_sha256'],
+            'source_shard_count': len(sources), 'matched_test_prompt_conditions': len(expected),
+            'feature_group_count': len(groups), 'groups': groups, 'condition_bin_coverage': coverage}
+
+
+def synthetic_m4_feature_context(args, prompt_manifest, settings, prompts):
+    """Recompute plain-toy context separately from the measured adapter arms."""
+    from .diagnose import DiagnosticAccumulator, live_block_diagnostics
+    from .dflash_loop import generate_toy
+    if torch.device(args.device).type != 'cpu':
+        raise ValueError('synthetic feature context must remain CPU-only')
+    runner = EvaluationRunner(args)
+    if runner.checkpoint_hashes != settings['checkpoint_hashes']:
+        raise ValueError('synthetic feature calibration does not match frozen evaluation state')
+    accumulator = DiagnosticAccumulator(seed=args.seed)
+    for prompt_index, prompt in enumerate(prompts):
+        prefix = [1, 2, 3, int(hashlib.sha256(prompt['prompt_id'].encode()).hexdigest()[:4], 16) % 8]
+        for name, temperature, warp in sampling_conditions(prompt['condition']):
+            records = []
+            def callback(record):
+                record['diagnostics'] = live_block_diagnostics(record, seed=args.seed + 10000 * prompt_index + record['round_idx'])
+                record.update({'prompt_id': prompt['prompt_id'], 'seed': args.seed, 'condition': prompt['condition'], 'split': 'test'})
+                records.append(record)
+            result = generate_toy(runner.target, runner.drafter, prefix, args.smoke_tokens,
+                temperature=temperature, warper=warp, generator=torch.Generator().manual_seed(args.seed),
+                projection=runner.projection, on_block=callback)
+            generation = generation_diagnostics(result.output_tokens)
+            for record in records:
+                accumulator.add_block(record, repetition_dominated=generation['repetition_dominated'])
+    diagnostic = accumulator.report()
+    groups, coverage = extract_feature_context_groups(diagnostic, prompts)
+    digest = hashlib.sha256()
+    for tensor in (runner.projection.matrix, runner.projection.mean, runner.projection.std):
+        digest.update(tensor.contiguous().view(torch.uint8).numpy().tobytes())
+    return {'status': 'complete', 'label': 'synthetic', 'source': 'plain-toy feature context recomputed separately on smoke test prompts',
+            'interpretation': 'Synthetic reporting exercise; not evidence of Qwen feature shift and not features from updated adapter arms.',
+            'checkpoint_hashes': runner.checkpoint_hashes, 'prompt_manifest_hash': fingerprint(prompt_manifest),
+            'calibration_projection_tensor_sha256': digest.hexdigest(), 'calibration_metadata': runner.projection.metadata,
+            'feature_group_count': len(groups), 'groups': groups, 'condition_bin_coverage': coverage}
+
+
+def m4_feature_context(args, prompt_manifest, settings, prompts):
+    try:
+        context = synthetic_m4_feature_context(args, prompt_manifest, settings, prompts) if args.scale == 'smoke' else audited_m4_feature_context(args, prompt_manifest, settings, prompts)
+        artifact = args.output / 'm4' / 'feature_context.json'
+        atomic_json(artifact, context)
+        return dict(context, artifact_path=str(artifact.resolve()), artifact_sha256=file_sha256(artifact))
+    except (OSError, ValueError, KeyError, TypeError, RuntimeError) as error:
+        return {'status': 'incomplete', 'reason': str(error),
+                'source': 'required plain-DFlash M1b feature context', 'groups': [], 'feature_group_count': 0}
+
+
 def aggregate(args, prompt_manifest, settings):
     from types import SimpleNamespace
     runner = SimpleNamespace(args=args, tiny=args.scale == 'smoke', checkpoint_hashes=settings['checkpoint_hashes'],
@@ -664,10 +832,14 @@ def aggregate(args, prompt_manifest, settings):
     timing_path = args.output / args.stage / 'timing.json'
     timed = json.loads(timing_path.read_text()) if timing_path.exists() else None
     timing_valid = timed is not None and timed.get('status') == 'complete' and timed.get('full_reference_prompt_coverage', False) and timed.get('frozen_settings_hash') == frozen_hash
-    status = 'complete' if not missing and timing_valid else 'incomplete'
+    feature_context = m4_feature_context(args, prompt_manifest, settings, prompts) if args.stage == 'm4' else None
+    feature_context_valid = feature_context is None or feature_context['status'] == 'complete'
+    status = 'complete' if not missing and timing_valid and feature_context_valid else 'incomplete'
     report = {'scale': args.scale, 'label': 'synthetic' if args.scale == 'smoke' else args.scale,
               'stage': args.stage, 'status': status, 'expected_requests': len(jobs), 'completed_requests': len(rows),
               'missing_requests': missing, 'settings': settings, 'groups': summarize_rows(rows),
+              'feature_context_complete': feature_context_valid if args.stage == 'm4' else None,
+              'feature_context': feature_context,
               'isolated_timing_complete': timing_valid, 'timing_report': str(timing_path) if timing_valid else None,
               'external_baselines_not_run': ['full tree-based Token Recycling', 'Test-Time Speculation', 'SharpDraft'],
               'baseline_naming': 'online_bigram is the normalized committed-transition baseline, not full Token Recycling',
@@ -694,6 +866,7 @@ def main(argv=None):
     parser.add_argument('--dense_checkpoint', type=Path, default=ROOT / 'artifacts/m2/dense.pt')
     parser.add_argument('--sparse_checkpoint', type=Path, default=ROOT / 'artifacts/m2/dense_sparse.pt')
     parser.add_argument('--projection', type=Path, default=ROOT / 'artifacts/h_proj.pt')
+    parser.add_argument('--feature_diagnostic', type=Path, help='M4 plain-DFlash M1b report; default artifacts/diagnostic_<scale>.json')
     parser.add_argument('--max_new_tokens', type=int, default=2048)
     parser.add_argument('--long_max_new_tokens', type=int, default=24576)
     parser.add_argument('--smoke_tokens', type=int, default=32)

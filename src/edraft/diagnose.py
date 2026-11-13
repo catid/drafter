@@ -193,6 +193,10 @@ class DiagnosticAccumulator:
         condition = block['condition']
         include_primary = not (condition.startswith('long_') and repetition_dominated)
         arm = (condition, float(block['collection_temperature']), json.dumps(block['sampling_warp_config'], sort_keys=True), block['split'])
+        # Every bin/policy intersection is a contiguous range of logical slots.
+        # Build those ranges once instead of dispatching tiny tensor operations
+        # for every slot on each of the three reporting axes.
+        members = defaultdict(list)
         for i in range(K):
             offset = block['absolute_output_offset'] + i
             context = block['input_context_length'] + i
@@ -200,35 +204,57 @@ class DiagnosticAccumulator:
             for axis, bin_name in [('all', 'all'), ('output_offset', OUTPUT_LABELS[bisect.bisect_right(OUTPUT_EDGES, offset)]),
                                    ('input_context_length', _context_label(context, self.context_edges))]:
                 key = (*arm, axis, bin_name, policy, 'primary' if include_primary else 'repetition_excluded')
-                group = self.groups.setdefault(key, {'rows': defaultdict(lambda: defaultdict(lambda: [0., 0])), 'n': 0, 'h_sum': torch.zeros(h.shape[-1], dtype=torch.float64),
+                members[key].append(i)
+        norms = h.norm(dim=-1).tolist()
+        outlier_counts = (h.abs() > self.outlier_threshold).sum(-1).tolist()
+        h_squared = h.square()
+        metric_values = [(metric, [None if value is None else float(value) for value in diag[metric]])
+                         for metric in ('target_rank', 'sampled_target_rank', 'sampled_target_rank_unwarped',
+                                        'overlap_sampling', 'overlap_unwarped', 'cross_entropy_unwarped',
+                                        'sampling_cross_entropy', 'sampling_cross_entropy_infinite',
+                                        'target_mass_on_zero_proposal')]
+        metric_values.extend((f'{metric}_at_{m}', [float(value) for value in values])
+                             for m, stats in diag['top_m'].items() for metric, values in stats.items())
+        prompt_seed = (block['prompt_id'], block['seed'])
+        moments = {}
+        for key, indices in members.items():
+            start, stop = indices[0], indices[-1] + 1
+            group = self.groups.get(key)
+            if group is None:
+                group = {'rows': defaultdict(lambda: defaultdict(lambda: [0., 0])), 'n': 0, 'h_sum': torch.zeros(h.shape[-1], dtype=torch.float64),
                     'h_sq_sum': torch.zeros(h.shape[-1], dtype=torch.float64), 'h_norms': [], 'outlier_slots': 0, 'outlier_coordinates': 0,
-                    'accepted_length': [], 'first_rejection': [], 'acceptance_by_block_position': defaultdict(list)})
-                group['n'] += 1
-                group['h_sum'] += h[i]
-                group['h_sq_sum'] += h[i].square()
-                group['h_norms'].append(float(h[i].norm()))
-                outliers = h[i].abs() > self.outlier_threshold
-                group['outlier_slots'] += bool(outliers.any())
-                group['outlier_coordinates'] += int(outliers.sum())
-                for metric in ('target_rank', 'sampled_target_rank', 'sampled_target_rank_unwarped', 'overlap_sampling',
-                               'overlap_unwarped', 'cross_entropy_unwarped', 'sampling_cross_entropy',
-                               'sampling_cross_entropy_infinite', 'target_mass_on_zero_proposal'):
-                    value = diag[metric][i]
-                    if value is not None:
-                        accumulator = group['rows'][metric][(block['prompt_id'], block['seed'])]
-                        accumulator[0] += float(value)
-                        accumulator[1] += 1
-                for m, stats in diag['top_m'].items():
-                    for metric, values in stats.items():
-                        accumulator = group['rows'][f'{metric}_at_{m}'][(block['prompt_id'], block['seed'])]
-                        accumulator[0] += float(values[i])
-                        accumulator[1] += 1
+                    'accepted_length': [], 'first_rejection': [], 'acceptance_by_block_position': defaultdict(list)}
+                self.groups[key] = group
+            if (start, stop) not in moments:
+                moments[start, stop] = (h[start:stop].sum(0), h_squared[start:stop].sum(0))
+            h_sum, h_sq_sum = moments[start, stop]
+            group['n'] += stop - start
+            group['h_sum'] += h_sum
+            group['h_sq_sum'] += h_sq_sum
+            group['h_norms'].extend(norms[start:stop])
+            group['outlier_slots'] += sum(count > 0 for count in outlier_counts[start:stop])
+            group['outlier_coordinates'] += sum(outlier_counts[start:stop])
+            for metric, values in metric_values:
+                selected = values[start:stop]
+                if any(value is not None for value in selected):
+                    accumulator = group['rows'][metric][prompt_seed]
+                    total, count = accumulator
+                    # Keep scalar addition order for exact per-prompt metrics
+                    # and unchanged prompt-bootstrap inputs. Only feature
+                    # moment reductions are batched, in float64.
+                    for value in selected:
+                        if value is not None:
+                            total += value
+                            count += 1
+                    accumulator[:] = total, count
+            for i in indices:
                 group['acceptance_by_block_position'][str(i)].append(float(i < first))
-                # Record a round once in every bin it actually starts in.
-                if i == 0:
-                    group['accepted_length'].append(float(block['accepted_length']))
-                if i == first and diag['first_rejection'] is not None:
-                    group['first_rejection'].append(diag['first_rejection'])
+            # Record a round once in every bin it actually starts in, and its
+            # first rejection only in the bins containing that logical slot.
+            if start == 0:
+                group['accepted_length'].append(float(block['accepted_length']))
+            if start <= first < stop and diag['first_rejection'] is not None:
+                group['first_rejection'].append(diag['first_rejection'])
 
     def report(self):
         results = []

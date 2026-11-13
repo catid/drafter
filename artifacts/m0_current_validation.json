@@ -1,0 +1,1575 @@
+{
+  "scale": "reference",
+  "status": "passed",
+  "validated_project_git_commit": "4782265e6d7dd937dc85f63a5597a82c43695d87",
+  "run_provenance": {
+    "scale": "reference",
+    "seed": 2026,
+    "config": {
+      "config": null,
+      "scale": "reference",
+      "allow_download": false,
+      "allow_large_run": false,
+      "seed": 2026,
+      "device": "cuda:0",
+      "target": "Qwen/Qwen3-8B",
+      "drafter": "z-lab/Qwen3-8B-DFlash-b16",
+      "output": "/home/catid/drafter/artifacts",
+      "num_prompts": 20,
+      "max_new_tokens": 128
+    },
+    "project_git_commit": "4782265e6d7dd937dc85f63a5597a82c43695d87",
+    "git_dirty": true,
+    "source_tree_sha256": "aeaee33f271248ead4478499af9676de45faa79a9977368a8810072f0a170772",
+    "source_files_sha256": {
+      "src/edraft/__init__.py": "23a9df4a3e6afe2c976090479dccaaaed2f9224c606b557ef8d73b001b6123b5",
+      "src/edraft/adapter.py": "b8960babc3f3b126a11e1f990ef144b2a9be6331a181bdbeea3da2f4c0c5b9d5",
+      "src/edraft/backend.py": "7f9b59880136f5de0ff63ce6b13e8351d81f3f2b15eaeac0a8a365f6a7a5ee78",
+      "src/edraft/bench_adapter.py": "8107e239feaabd8fc59537c398647cc7cd73bd0d188798cb74ab61e7cdc6d79a",
+      "src/edraft/bench_grouped.py": "b2db348dd76a18e9920f10063f63fa0138fa1900c8a1b7f0852e41917317cc61",
+      "src/edraft/collect.py": "e8c1d984c9a259f33769e0c87057b7773b89cacc24def3521d6c55ea4bf2df62",
+      "src/edraft/dflash_loop.py": "06001ce2fd529475e1c31e3aa2bfae69d203e70d72ab2a09b41ad794d8fa60d2",
+      "src/edraft/diagnose.py": "f8d6e56990caf37417de7257c4026f362d105f51705ab1d17d4c638a5b722083",
+      "src/edraft/download.py": "013d796de195dd38858e5cdaee597443c1228835a07e6cc2cfd47847ef127977",
+      "src/edraft/eval_closed_loop.py": "11d6d93332935dd16c9a65c747fa299f9100cec73cfdcfeea77530a7784f3e44",
+      "src/edraft/features.py": "adfbfa21ab6622f730df33513142c65a7d3c5adc6079ddb7f444d6471e5a6bff",
+      "src/edraft/investigate_m0.py": "ead0c8e6abff9932455d34186652e3ca787b7da6d01e36242ee36d6a8095bbb8",
+      "src/edraft/launch.py": "9daaa032d00cc18a615c76184369028195f4b85c484e952536043b74d5f69233",
+      "src/edraft/m0.py": "b8020800a835c1e48d53f5065373ecce37b11104c4b1111bca651b69d462c172",
+      "src/edraft/online.py": "590414ac0d2656a08eda32013e0088bb52ac8fcfcc5bc0f594b081a598086a15",
+      "src/edraft/prompts.py": "0cc4a358cf50a5c77ab0e5afa3653f82fce5d326466d138b9ee23d6369172a5e",
+      "src/edraft/runtime.py": "4fe588bcf4d2e8300af87c6a517e3c68041b3b8045b4faf48d16dacf7b680d95",
+      "src/edraft/sampler.py": "78f42af34ae1c1fe181273331c121d0fa7f17f8b62d5c9616c47de517892e38f",
+      "src/edraft/smoke.py": "7e60e413a116bda670753c066d21daff51729ba35b7f57e76b2a33063eb263bf",
+      "src/edraft/sparse.py": "66beee3396ade7a6104729086a6a68c0180b5dd2e89909448cf3430344747864",
+      "src/edraft/sparse_stats.py": "62c8a36b8c707a38a8944a2882134893eed9f0ab8d50fd7ab737eeeef358c92c",
+      "src/edraft/toy.py": "5b7c325ede7455d219ba9fd93eb086daf656695608eece0129269fca1ee9494e",
+      "src/edraft/traces.py": "cf7aec2d2d3ebdaeb0896a2da86193f87ee07e51a7a0eba1016f31da705b83d8",
+      "src/edraft/train.py": "a859ba54cf2410c659b45ceb97c08364353a1cce1949d35bb70339342bf9526e",
+      "src/edraft/verify.py": "0f664b84a4dbe963432386b5d8732aff112271ef341422eda254da08f39f3fea"
+    },
+    "started_at_unix": 1794610838.218024,
+    "rank": 0,
+    "pid": 2634106,
+    "visible_devices": "unset (all visible)"
+  },
+  "m0_summary": "/home/catid/drafter/artifacts/m0.json",
+  "m0_summary_sha256": "417fc9a717229308e096876f7566e1e6a81dd1bfd371a372cd771505ff5b329e",
+  "num_distinct_prompts": 20,
+  "current_comparisons": 60,
+  "all_current_upstream_local_equal": true,
+  "token_arrays_and_verification_records_unchanged": false,
+  "changed_rows": [],
+  "current_core_matches_recorded_run_sources": {
+    "backend.py": true,
+    "dflash_loop.py": true,
+    "sampler.py": true,
+    "verify.py": true,
+    "m0.py": true
+  },
+  "comparisons": {
+    "upstream_local": {
+      "mismatched_tokens": 0,
+      "compared_tokens": 7128,
+      "token_mismatch_rate": 0.0,
+      "sequence_mismatch_rate": 0.0
+    },
+    "upstream_target": {
+      "mismatched_tokens": 607,
+      "compared_tokens": 2388,
+      "token_mismatch_rate": 0.25418760469011725,
+      "sequence_mismatch_rate": 0.4
+    },
+    "local_target": {
+      "mismatched_tokens": 607,
+      "compared_tokens": 2388,
+      "token_mismatch_rate": 0.25418760469011725,
+      "sequence_mismatch_rate": 0.4
+    }
+  },
+  "cache_rollback": [
+    {
+      "cache_length": 24,
+      "expected_length": 24,
+      "accepted_length": 0,
+      "max_abs_logit_error": 0.25,
+      "argmax_equal": true,
+      "rolled_argmax": 13,
+      "fresh_argmax": 13
+    },
+    {
+      "cache_length": 25,
+      "expected_length": 25,
+      "accepted_length": 1,
+      "max_abs_logit_error": 0.1875,
+      "argmax_equal": true,
+      "rolled_argmax": 12884,
+      "fresh_argmax": 12884
+    },
+    {
+      "cache_length": 27,
+      "expected_length": 27,
+      "accepted_length": 3,
+      "max_abs_logit_error": 0.149169921875,
+      "argmax_equal": true,
+      "rolled_argmax": 6303,
+      "fresh_argmax": 6303
+    }
+  ],
+  "target_only_first_mismatches": [
+    {
+      "prompt_id": "m0-001",
+      "first_mismatch": 82
+    },
+    {
+      "prompt_id": "m0-003",
+      "first_mismatch": 32
+    },
+    {
+      "prompt_id": "m0-004",
+      "first_mismatch": 3
+    },
+    {
+      "prompt_id": "m0-005",
+      "first_mismatch": 10
+    },
+    {
+      "prompt_id": "m0-006",
+      "first_mismatch": 34
+    },
+    {
+      "prompt_id": "m0-009",
+      "first_mismatch": 113
+    },
+    {
+      "prompt_id": "m0-013",
+      "first_mismatch": 16
+    },
+    {
+      "prompt_id": "m0-017",
+      "first_mismatch": 4
+    }
+  ],
+  "existing_numerical_investigation": {
+    "path": "/home/catid/drafter/artifacts/m0_numerics.json",
+    "sha256": "1c47bd19d2251ad8113299bcf67888dc1761890ec72d15073cf221ec395107b4",
+    "status": "passed",
+    "same_eight_first_divergences": true,
+    "validity": "Current outputs, draft canvases, verification decisions, rollback lengths, and mismatch offsets match the investigated earlier records exactly; target model/checkpoint and sampling masks unchanged."
+  },
+  "rows": [
+    {
+      "prompt_id": "m0-000",
+      "condition": "greedy",
+      "current_row": "/home/catid/drafter/artifacts/m0/789fc4227124d5e6abbfd9d8c48dd91f221e91b2bfb0473c6db7eeef97e5ae6d.json",
+      "current_sha256": "b32234e190ed700cb72d41cc5ff29891e9846d9815903b92360f0cfe6486c72e",
+      "previous_row": "/home/catid/drafter/artifacts/m0/dbc7542cce2075b5d219843329b415e723d24af83c1ade8085ae3c331ca83d06.json",
+      "previous_sha256": "126a424a9d49079427758cd812740da6536123eb415bdbbe47303dabb14d2525",
+      "token_arrays_equal": {
+        "local_tokens": true,
+        "upstream_tokens": true,
+        "target_tokens": true
+      },
+      "verification_records_equal": true,
+      "comparisons_equal": true,
+      "upstream_local_equal": true,
+      "verification_behavior_equal": true,
+      "shared_probability_prefixes_equal": true,
+      "probability_logging_lengths_valid": true,
+      "blocks_with_probability_logging_expansion": 0
+    },
+    {
+      "prompt_id": "m0-000",
+      "condition": "model_card_nonthinking",
+      "current_row": "/home/catid/drafter/artifacts/m0/0f5e547809d21a2a3c8c8785b642ba3dfd4f9208c26f0534616fdf9694950ac0.json",
+      "current_sha256": "dbcc3f4ce088a51d2f40c9a61ca111840a1f25f901b73b7ecf336a9e4943d59a",
+      "previous_row": "/home/catid/drafter/artifacts/m0/3c158efd1acc8fa625b0e544cd879cbd05e0dd339d88c95787edd2691055adeb.json",
+      "previous_sha256": "9e425e5fd07cedeb1e32197179cfdc783079339f69b8f74dbc555b60f6c2c1a6",
+      "token_arrays_equal": {
+        "local_tokens": true,
+        "upstream_tokens": true,
+        "target_tokens": true
+      },
+      "verification_records_equal": false,
+      "comparisons_equal": true,
+      "upstream_local_equal": true,
+      "verification_behavior_equal": true,
+      "shared_probability_prefixes_equal": true,
+      "probability_logging_lengths_valid": true,
+      "blocks_with_probability_logging_expansion": 27
+    },
+    {
+      "prompt_id": "m0-000",
+      "condition": "pure_temperature_diagnostic",
+      "current_row": "/home/catid/drafter/artifacts/m0/be8f2f573dcb13dc13fc02d186b7acc5553cee41b67509e9627c6b813f06e2bb.json",
+      "current_sha256": "855ff877a2ff7142ddf880a98ea410d5cfa3c95debc74242c3eb35e44651b246",
+      "previous_row": "/home/catid/drafter/artifacts/m0/1c2cdea7e9b3d07723f3b97e250b262f4611ac99e432a4ec1e4e40e616198e72.json",
+      "previous_sha256": "bad0a3a4bb4fab2a52c73bf7fd221dd94c6aab7be3480b2fcaafc1843e62e55e",
+      "token_arrays_equal": {
+        "local_tokens": true,
+        "upstream_tokens": true,
+        "target_tokens": true
+      },
+      "verification_records_equal": false,
+      "comparisons_equal": true,
+      "upstream_local_equal": true,
+      "verification_behavior_equal": true,
+      "shared_probability_prefixes_equal": true,
+      "probability_logging_lengths_valid": true,
+      "blocks_with_probability_logging_expansion": 44
+    },
+    {
+      "prompt_id": "m0-001",
+      "condition": "greedy",
+      "current_row": "/home/catid/drafter/artifacts/m0/bbbf23df2b8b6031cb9a8b64be7e734991205f65785dcc02a0fd82abf9ba4486.json",
+      "current_sha256": "4695530d442421cf6e09a8431c97f9b3a3e27924a76252922a6e81e9cf12f4f7",
+      "previous_row": "/home/catid/drafter/artifacts/m0/6d5a57ad2048948977f82384b5c0d7e496011a203c8cd1cb8991c983c0743581.json",
+      "previous_sha256": "84404bae6b226a54e971cd0d13a0e2982a3de2df42df530e0232aafa996a6bda",
+      "token_arrays_equal": {
+        "local_tokens": true,
+        "upstream_tokens": true,
+        "target_tokens": true
+      },
+      "verification_records_equal": true,
+      "comparisons_equal": true,
+      "upstream_local_equal": true,
+      "verification_behavior_equal": true,
+      "shared_probability_prefixes_equal": true,
+      "probability_logging_lengths_valid": true,
+      "blocks_with_probability_logging_expansion": 0
+    },
+    {
+      "prompt_id": "m0-001",
+      "condition": "model_card_nonthinking",
+      "current_row": "/home/catid/drafter/artifacts/m0/a7437bcfb62ef15d1eb693b321e534877469561a78d808dbcad7dca4d1d5dc7b.json",
+      "current_sha256": "5a0d5e4907992d832e8562a306023102ce44bf352737cc5a48bac6d347809fd6",
+      "previous_row": "/home/catid/drafter/artifacts/m0/e3ca17c13af2b34ea4c616e57ac98f72d427311e95b4a1961c87d29ee5befdbd.json",
+      "previous_sha256": "003a3e0482df731a0fc373f2ad96c11dcb0a0482d0a08f9039022ee9cf5cb145",
+      "token_arrays_equal": {
+        "local_tokens": true,
+        "upstream_tokens": true,
+        "target_tokens": true
+      },
+      "verification_records_equal": false,
+      "comparisons_equal": true,
+      "upstream_local_equal": true,
+      "verification_behavior_equal": true,
+      "shared_probability_prefixes_equal": true,
+      "probability_logging_lengths_valid": true,
+      "blocks_with_probability_logging_expansion": 13
+    },
+    {
+      "prompt_id": "m0-001",
+      "condition": "pure_temperature_diagnostic",
+      "current_row": "/home/catid/drafter/artifacts/m0/f2e069486aeb92f44376d6fee647c88664e6afae78cd475f699983178860c009.json",
+      "current_sha256": "9185aaf6f8e26cf993fdfd478e55bf27a9d1857920d67e0a36e2ba2f877a4188",
+      "previous_row": "/home/catid/drafter/artifacts/m0/9ff029836d771e9d91bebbe57c3a0ac69754e9a7917b474e4127dad36bcc4bd1.json",
+      "previous_sha256": "f2c1124c74f99ebd1b2cd256f4974731057b339ec4acf63d5840229159635749",
+      "token_arrays_equal": {
+        "local_tokens": true,
+        "upstream_tokens": true,
+        "target_tokens": true
+      },
+      "verification_records_equal": false,
+      "comparisons_equal": true,
+      "upstream_local_equal": true,
+      "verification_behavior_equal": true,
+      "shared_probability_prefixes_equal": true,
+      "probability_logging_lengths_valid": true,
+      "blocks_with_probability_logging_expansion": 23
+    },
+    {
+      "prompt_id": "m0-002",
+      "condition": "greedy",
+      "current_row": "/home/catid/drafter/artifacts/m0/f17d8cc6056080a14984c9ce932cc9c5bcb4e330d4fb4f0d63f541c336f7975c.json",
+      "current_sha256": "45ae5c8f70d761a03bd6130fa61d932d3fe0e5c27c56e20995b84e9c931f4e2e",
+      "previous_row": "/home/catid/drafter/artifacts/m0/801e3fe603ab574e7d8ee861ffe0143d1d6a340a6cfd260e336f865448d275c4.json",
+      "previous_sha256": "ec0b17fc98605f4c16fa5cb685d109533e7867a202d61b5f966fcd876bd1320d",
+      "token_arrays_equal": {
+        "local_tokens": true,
+        "upstream_tokens": true,
+        "target_tokens": true
+      },
+      "verification_records_equal": true,
+      "comparisons_equal": true,
+      "upstream_local_equal": true,
+      "verification_behavior_equal": true,
+      "shared_probability_prefixes_equal": true,
+      "probability_logging_lengths_valid": true,
+      "blocks_with_probability_logging_expansion": 0
+    },
+    {
+      "prompt_id": "m0-002",
+      "condition": "model_card_nonthinking",
+      "current_row": "/home/catid/drafter/artifacts/m0/67e021d4832ce3da91b35616ae2e555e5f374ba4c3a83d8cba234053f973d2fe.json",
+      "current_sha256": "161b8f0705dc67719be4d28b3205d5116e1cda616d69b40b851068bf1c1892ca",
+      "previous_row": "/home/catid/drafter/artifacts/m0/ac0104f6f4aa511d483167ecdbf8ed77fbf9b367e83c0066451067a1b4a0fabb.json",
+      "previous_sha256": "b2a5140c741b592ed9aa026844313d690b2d0b4d7d08c094a1006a925cda5d6f",
+      "token_arrays_equal": {
+        "local_tokens": true,
+        "upstream_tokens": true,
+        "target_tokens": true
+      },
+      "verification_records_equal": false,
+      "comparisons_equal": true,
+      "upstream_local_equal": true,
+      "verification_behavior_equal": true,
+      "shared_probability_prefixes_equal": true,
+      "probability_logging_lengths_valid": true,
+      "blocks_with_probability_logging_expansion": 15
+    },
+    {
+      "prompt_id": "m0-002",
+      "condition": "pure_temperature_diagnostic",
+      "current_row": "/home/catid/drafter/artifacts/m0/b2e7f4811dcbd9647a2abd0802edd7ccb080fce72d3ee4b3ba91b817af93b4b4.json",
+      "current_sha256": "934776f5126ea4b0d1c95818e2e210c4b706f28f6f14fa9d4516835d7edf69dd",
+      "previous_row": "/home/catid/drafter/artifacts/m0/f03b2d7af5d05c6a9c8f5baba8acab04d56eae327169d06287220e5fdb80474e.json",
+      "previous_sha256": "77268349f62595952ec4d19ac2380bb04dbeb2970bd2e191f0303bbbe9eea73d",
+      "token_arrays_equal": {
+        "local_tokens": true,
+        "upstream_tokens": true,
+        "target_tokens": true
+      },
+      "verification_records_equal": false,
+      "comparisons_equal": true,
+      "upstream_local_equal": true,
+      "verification_behavior_equal": true,
+      "shared_probability_prefixes_equal": true,
+      "probability_logging_lengths_valid": true,
+      "blocks_with_probability_logging_expansion": 16
+    },
+    {
+      "prompt_id": "m0-003",
+      "condition": "greedy",
+      "current_row": "/home/catid/drafter/artifacts/m0/6071fb87b2c0c05119386bb819c58b59b133a89c576692470a1e298005fc92d9.json",
+      "current_sha256": "d29f770b67711d33a90421d81dd61057ae843f492b38f702273a2117df8857ab",
+      "previous_row": "/home/catid/drafter/artifacts/m0/dfdee55823808a1e79c93b925fbc959dacaf0fc07dd3a808dfa4d0d7293b3bbd.json",
+      "previous_sha256": "d563c7b3ee626afc53a05c7e125c21a56daa1888c6e61ac2a02f13724d228a08",
+      "token_arrays_equal": {
+        "local_tokens": true,
+        "upstream_tokens": true,
+        "target_tokens": true
+      },
+      "verification_records_equal": true,
+      "comparisons_equal": true,
+      "upstream_local_equal": true,
+      "verification_behavior_equal": true,
+      "shared_probability_prefixes_equal": true,
+      "probability_logging_lengths_valid": true,
+      "blocks_with_probability_logging_expansion": 0
+    },
+    {
+      "prompt_id": "m0-003",
+      "condition": "model_card_nonthinking",
+      "current_row": "/home/catid/drafter/artifacts/m0/c219dfdf9d7d7ced8e68316755c1907928286f23c34e1638ebe53d5d48631595.json",
+      "current_sha256": "94485de82b2ee142619c3ff10f6f5bc70bee1db3182833ad7f17fe28d7432e08",
+      "previous_row": "/home/catid/drafter/artifacts/m0/3c6911873056c3bc6cd85dd79f09e9d85e9afb503f13d1c4a145525dc58ccd85.json",
+      "previous_sha256": "eea50f57f97c73ce706949d94de1c0943b663c4fcd75255796c02eaf23bda62c",
+      "token_arrays_equal": {
+        "local_tokens": true,
+        "upstream_tokens": true,
+        "target_tokens": true
+      },
+      "verification_records_equal": false,
+      "comparisons_equal": true,
+      "upstream_local_equal": true,
+      "verification_behavior_equal": true,
+      "shared_probability_prefixes_equal": true,
+      "probability_logging_lengths_valid": true,
+      "blocks_with_probability_logging_expansion": 43
+    },
+    {
+      "prompt_id": "m0-003",
+      "condition": "pure_temperature_diagnostic",
+      "current_row": "/home/catid/drafter/artifacts/m0/c0be2da1dfa53d557ad557a0b4d939d561b9734b6026eb8feb9631d95a823fa1.json",
+      "current_sha256": "73fb32cad792e8f76dd18a88f458f49addd564188dc3112c045db5f2922803fb",
+      "previous_row": "/home/catid/drafter/artifacts/m0/98140830fba8c92aef87a48f04234de2d02a7ae23f7d7c310ce88c02a4d8564b.json",
+      "previous_sha256": "065ab5674783bb2e47b07146977240e5e549a22b21857ab58a383d5a733c6598",
+      "token_arrays_equal": {
+        "local_tokens": true,
+        "upstream_tokens": true,
+        "target_tokens": true
+      },
+      "verification_records_equal": false,
+      "comparisons_equal": true,
+      "upstream_local_equal": true,
+      "verification_behavior_equal": true,
+      "shared_probability_prefixes_equal": true,
+      "probability_logging_lengths_valid": true,
+      "blocks_with_probability_logging_expansion": 53
+    },
+    {
+      "prompt_id": "m0-004",
+      "condition": "greedy",
+      "current_row": "/home/catid/drafter/artifacts/m0/f09262ba5925adaf11846be418c68b4cf62c2d4e468b313ca3a655236e451e7c.json",
+      "current_sha256": "edaaa63296af19200ca84f61bc7c3ef9e2d2a7b40134cdc7af3a6e5fd1d98105",
+      "previous_row": "/home/catid/drafter/artifacts/m0/3b7b34fb1a84917bfafdda81f0397cea32b939d8e00d9b32b5481a1719fe1ad6.json",
+      "previous_sha256": "80210c91bba283228e99e204592c2451a899215869bbcb32a90a854ec1d018ac",
+      "token_arrays_equal": {
+        "local_tokens": true,
+        "upstream_tokens": true,
+        "target_tokens": true
+      },
+      "verification_records_equal": true,
+      "comparisons_equal": true,
+      "upstream_local_equal": true,
+      "verification_behavior_equal": true,
+      "shared_probability_prefixes_equal": true,
+      "probability_logging_lengths_valid": true,
+      "blocks_with_probability_logging_expansion": 0
+    },
+    {
+      "prompt_id": "m0-004",
+      "condition": "model_card_nonthinking",
+      "current_row": "/home/catid/drafter/artifacts/m0/1006d7ea8761eaa5b812939c72646475a8fe001a22a5578f468965f2ac6cbb83.json",
+      "current_sha256": "3a8a7db6afef2376a27c89e8cc953d4561bb21d9499724a52619c0260c38359d",
+      "previous_row": "/home/catid/drafter/artifacts/m0/106ea7d01c3ba3ee5787b855804dcfd36a14243dfe4bb802b4bf0984c6311ec5.json",
+      "previous_sha256": "02b77fbf1236ba3c7c4c9ad726963abfb1a5703ca5b3993d18bac8e14446f1ec",
+      "token_arrays_equal": {
+        "local_tokens": true,
+        "upstream_tokens": true,
+        "target_tokens": true
+      },
+      "verification_records_equal": false,
+      "comparisons_equal": true,
+      "upstream_local_equal": true,
+      "verification_behavior_equal": true,
+      "shared_probability_prefixes_equal": true,
+      "probability_logging_lengths_valid": true,
+      "blocks_with_probability_logging_expansion": 41
+    },
+    {
+      "prompt_id": "m0-004",
+      "condition": "pure_temperature_diagnostic",
+      "current_row": "/home/catid/drafter/artifacts/m0/23fb48430c802210a869680f63a10cf2ce065bc03efe374f6e4e344376169c95.json",
+      "current_sha256": "00bb9c906c3ca2f25767c0860a6dec349e7f1f0fa9cb6d8bf41ac8abe20a2a32",
+      "previous_row": "/home/catid/drafter/artifacts/m0/6872bdfa08644acc95ed5cd1ccd40d5467015e8cb14fb4c25c25282c6fe38d37.json",
+      "previous_sha256": "7ed4d2ed37dfcc88709f6b7bb77f4c6b9d8a23fa069a76f6a017951064225889",
+      "token_arrays_equal": {
+        "local_tokens": true,
+        "upstream_tokens": true,
+        "target_tokens": true
+      },
+      "verification_records_equal": false,
+      "comparisons_equal": true,
+      "upstream_local_equal": true,
+      "verification_behavior_equal": true,
+      "shared_probability_prefixes_equal": true,
+      "probability_logging_lengths_valid": true,
+      "blocks_with_probability_logging_expansion": 41
+    },
+    {
+      "prompt_id": "m0-005",
+      "condition": "greedy",
+      "current_row": "/home/catid/drafter/artifacts/m0/4246b76018ed5b08c6e3e0d980b7640698b9a6ad3a4feaa7da30fb155e01a210.json",
+      "current_sha256": "2b3191ac5e14084547a606b278e97664b270cb0061c1e55f060618cf3a457ade",
+      "previous_row": "/home/catid/drafter/artifacts/m0/b0023687a58e4ea1e7039c46d273e93f66e33ed321b24de67aa55677d480f339.json",
+      "previous_sha256": "3eb443ad6d1782fb1777e70e2e83218bb7ef7ec7ac42a07ba5cdaec0e4344c34",
+      "token_arrays_equal": {
+        "local_tokens": true,
+        "upstream_tokens": true,
+        "target_tokens": true
+      },
+      "verification_records_equal": true,
+      "comparisons_equal": true,
+      "upstream_local_equal": true,
+      "verification_behavior_equal": true,
+      "shared_probability_prefixes_equal": true,
+      "probability_logging_lengths_valid": true,
+      "blocks_with_probability_logging_expansion": 0
+    },
+    {
+      "prompt_id": "m0-005",
+      "condition": "model_card_nonthinking",
+      "current_row": "/home/catid/drafter/artifacts/m0/750bbf6d3f874578dc7c7d426fca64c2d151d5539e73c2d72697a9464e5a92ba.json",
+      "current_sha256": "e0e55a4465cfede1738b2db26efd0413e14ec9407e2003f9aad04d5804e76c51",
+      "previous_row": "/home/catid/drafter/artifacts/m0/854c64115ecdd46d89f6b1ab606a838ac6468307ba067817b0d1bbb38d6c9f6b.json",
+      "previous_sha256": "12a6bc75edc9b7265fc5ec75bd449aed4c57f802d609951e7915850ef9cfb6ce",
+      "token_arrays_equal": {
+        "local_tokens": true,
+        "upstream_tokens": true,
+        "target_tokens": true
+      },
+      "verification_records_equal": false,
+      "comparisons_equal": true,
+      "upstream_local_equal": true,
+      "verification_behavior_equal": true,
+      "shared_probability_prefixes_equal": true,
+      "probability_logging_lengths_valid": true,
+      "blocks_with_probability_logging_expansion": 55
+    },
+    {
+      "prompt_id": "m0-005",
+      "condition": "pure_temperature_diagnostic",
+      "current_row": "/home/catid/drafter/artifacts/m0/172cc757701ac415e06b44b82b7844b7082abaaa8f1e4dae9b4624c962605a65.json",
+      "current_sha256": "094b890e7776522dc0aafe493522cf355c5e3dcdaac22947ac0f6f3ed9dae974",
+      "previous_row": "/home/catid/drafter/artifacts/m0/18766a4103a7ebb145df3a31b823655c337c72c106d9f519746989b2fe6054fd.json",
+      "previous_sha256": "e78f2a8b289f6a6c9f5d8d91a1c027be5cd5326e968305c19b73afee2685dc61",
+      "token_arrays_equal": {
+        "local_tokens": true,
+        "upstream_tokens": true,
+        "target_tokens": true
+      },
+      "verification_records_equal": false,
+      "comparisons_equal": true,
+      "upstream_local_equal": true,
+      "verification_behavior_equal": true,
+      "shared_probability_prefixes_equal": true,
+      "probability_logging_lengths_valid": true,
+      "blocks_with_probability_logging_expansion": 67
+    },
+    {
+      "prompt_id": "m0-006",
+      "condition": "greedy",
+      "current_row": "/home/catid/drafter/artifacts/m0/69438e8fe0f9a12fa7d6e9a23a1609bce5cc948e93346bedf8bfdfea23f17d29.json",
+      "current_sha256": "4d896190812f5474de015924e06d8e1b8d5b30f9da2bfd63438d605946ac4d34",
+      "previous_row": "/home/catid/drafter/artifacts/m0/3bdea3d9e515634f4bd3bcd0e545efc3fa9c86e31a38c104bfd6d4827a4c34e4.json",
+      "previous_sha256": "b9f58c98da8ccd107fbeb77d1a41fd80875300cdc9186497bfc94042ec9c6d52",
+      "token_arrays_equal": {
+        "local_tokens": true,
+        "upstream_tokens": true,
+        "target_tokens": true
+      },
+      "verification_records_equal": true,
+      "comparisons_equal": true,
+      "upstream_local_equal": true,
+      "verification_behavior_equal": true,
+      "shared_probability_prefixes_equal": true,
+      "probability_logging_lengths_valid": true,
+      "blocks_with_probability_logging_expansion": 0
+    },
+    {
+      "prompt_id": "m0-006",
+      "condition": "model_card_nonthinking",
+      "current_row": "/home/catid/drafter/artifacts/m0/f7251d1ffe5ec95caaabb895a98f858d534a6a21ff53648ff22eaa37c6f343a1.json",
+      "current_sha256": "224c24a022fbb0ccc065d468635d53bf704ca967c7b01da35d062d21304e7d39",
+      "previous_row": "/home/catid/drafter/artifacts/m0/6df1cf5a9c9d624e32bb81fa7f783ed7e36c5299595ba3cba80613183cdd30cf.json",
+      "previous_sha256": "bb75d883a33313b807c3892afbd4a8443a632bc4ee61adbda4349a19079ade6e",
+      "token_arrays_equal": {
+        "local_tokens": true,
+        "upstream_tokens": true,
+        "target_tokens": true
+      },
+      "verification_records_equal": false,
+      "comparisons_equal": true,
+      "upstream_local_equal": true,
+      "verification_behavior_equal": true,
+      "shared_probability_prefixes_equal": true,
+      "probability_logging_lengths_valid": true,
+      "blocks_with_probability_logging_expansion": 55
+    },
+    {
+      "prompt_id": "m0-006",
+      "condition": "pure_temperature_diagnostic",
+      "current_row": "/home/catid/drafter/artifacts/m0/702220596ee4485f271fcf4f808e23ea063e487bde3799f03e23fcbba4ef2a83.json",
+      "current_sha256": "906c6a0e659fc7225b7691b30fd535deee624e8bcf588fd4415f42fd436d7b13",
+      "previous_row": "/home/catid/drafter/artifacts/m0/614dee9134d2c85f1a70b2998538374db77e0bf5073b18f14c3d15b3bfe0b8bf.json",
+      "previous_sha256": "16f6b2044d07c4c6b312cbd04472fc218b693c679b142dbfadade78127b9f6f8",
+      "token_arrays_equal": {
+        "local_tokens": true,
+        "upstream_tokens": true,
+        "target_tokens": true
+      },
+      "verification_records_equal": false,
+      "comparisons_equal": true,
+      "upstream_local_equal": true,
+      "verification_behavior_equal": true,
+      "shared_probability_prefixes_equal": true,
+      "probability_logging_lengths_valid": true,
+      "blocks_with_probability_logging_expansion": 58
+    },
+    {
+      "prompt_id": "m0-007",
+      "condition": "greedy",
+      "current_row": "/home/catid/drafter/artifacts/m0/63fbbc04e269c2828e5d30fba5d248fecf6c8716b9467ddf9acdba71f3cc9399.json",
+      "current_sha256": "59137b4be792247767c50a2213de85755b34666e519edf2b54bd6a88bbe2cbed",
+      "previous_row": "/home/catid/drafter/artifacts/m0/3f13031e94b75a492800a2a4b656e7fa84bd44f1314c5b3ad49a554d3239f0e7.json",
+      "previous_sha256": "894103aa7b4e19bca9d58723012819c0dd4788535b8e0d4d9692de9854d4b179",
+      "token_arrays_equal": {
+        "local_tokens": true,
+        "upstream_tokens": true,
+        "target_tokens": true
+      },
+      "verification_records_equal": true,
+      "comparisons_equal": true,
+      "upstream_local_equal": true,
+      "verification_behavior_equal": true,
+      "shared_probability_prefixes_equal": true,
+      "probability_logging_lengths_valid": true,
+      "blocks_with_probability_logging_expansion": 0
+    },
+    {
+      "prompt_id": "m0-007",
+      "condition": "model_card_nonthinking",
+      "current_row": "/home/catid/drafter/artifacts/m0/d983fc31d19e9165e747c18b5f1959da31cbfb75ae0b832b939888f1957783b7.json",
+      "current_sha256": "0257e1314c269df6b4c8b2e87419516d12320462072a7dc20279f1eb4c9e3487",
+      "previous_row": "/home/catid/drafter/artifacts/m0/c0d8c2ba3ea786ba51907f58348c225492f3e51c368309136c5428c0430105b4.json",
+      "previous_sha256": "9251b8d3e2e9b1103f5005b928114426bedd205279d243afe718ea0f8fd6496a",
+      "token_arrays_equal": {
+        "local_tokens": true,
+        "upstream_tokens": true,
+        "target_tokens": true
+      },
+      "verification_records_equal": false,
+      "comparisons_equal": true,
+      "upstream_local_equal": true,
+      "verification_behavior_equal": true,
+      "shared_probability_prefixes_equal": true,
+      "probability_logging_lengths_valid": true,
+      "blocks_with_probability_logging_expansion": 42
+    },
+    {
+      "prompt_id": "m0-007",
+      "condition": "pure_temperature_diagnostic",
+      "current_row": "/home/catid/drafter/artifacts/m0/d26eae71be7a92193760392a2d014d1f5a4f6196aba655c5e2e89aad02e73ada.json",
+      "current_sha256": "0e9ab4d3d3b3e12a099c7d788c6ff89dc868da6198138ff97cb246897ff076a0",
+      "previous_row": "/home/catid/drafter/artifacts/m0/610794ad655772eeed7bf409d7ac30bd7c76b902befa1511c2b8204b3eee62f2.json",
+      "previous_sha256": "abb0eefd287556d8757c805fd0c80094242097ceabba785e88bb5cead0356d33",
+      "token_arrays_equal": {
+        "local_tokens": true,
+        "upstream_tokens": true,
+        "target_tokens": true
+      },
+      "verification_records_equal": false,
+      "comparisons_equal": true,
+      "upstream_local_equal": true,
+      "verification_behavior_equal": true,
+      "shared_probability_prefixes_equal": true,
+      "probability_logging_lengths_valid": true,
+      "blocks_with_probability_logging_expansion": 53
+    },
+    {
+      "prompt_id": "m0-008",
+      "condition": "greedy",
+      "current_row": "/home/catid/drafter/artifacts/m0/e844a0b52562e7efbe64f94996ec093b69bf61435465d9405b4e477726801f20.json",
+      "current_sha256": "ca107d026f169b792cbb964dc29d20227b4bd705174a313ea8e8cc4c2a10dcf0",
+      "previous_row": "/home/catid/drafter/artifacts/m0/9561c0aae6a2c771a0a9ad9628960bbd256420c58cbfe146510db7383bc954a9.json",
+      "previous_sha256": "14e2fe3be8a2332941965bef85d02d2db75e5c0255e9a0fbbc566182aa437375",
+      "token_arrays_equal": {
+        "local_tokens": true,
+        "upstream_tokens": true,
+        "target_tokens": true
+      },
+      "verification_records_equal": true,
+      "comparisons_equal": true,
+      "upstream_local_equal": true,
+      "verification_behavior_equal": true,
+      "shared_probability_prefixes_equal": true,
+      "probability_logging_lengths_valid": true,
+      "blocks_with_probability_logging_expansion": 0
+    },
+    {
+      "prompt_id": "m0-008",
+      "condition": "model_card_nonthinking",
+      "current_row": "/home/catid/drafter/artifacts/m0/850f91d7465a49fe6d9701d91f5d5af8f15bc0eacc91032b608faf43093f69d6.json",
+      "current_sha256": "5f0459b26fd2aeceaf091cdbdfba86951aa595699cc2e8d33ecebb60d48d4bee",
+      "previous_row": "/home/catid/drafter/artifacts/m0/6f5e01d600e3e531ed2b9d696f040c2b557e561710056109b9a54a230d2d7fb6.json",
+      "previous_sha256": "624b2a3db5e40bb56e47f72879a1e0ac937ba9f2e07b04f74c515c1e195e5d3f",
+      "token_arrays_equal": {
+        "local_tokens": true,
+        "upstream_tokens": true,
+        "target_tokens": true
+      },
+      "verification_records_equal": false,
+      "comparisons_equal": true,
+      "upstream_local_equal": true,
+      "verification_behavior_equal": true,
+      "shared_probability_prefixes_equal": true,
+      "probability_logging_lengths_valid": true,
+      "blocks_with_probability_logging_expansion": 7
+    },
+    {
+      "prompt_id": "m0-008",
+      "condition": "pure_temperature_diagnostic",
+      "current_row": "/home/catid/drafter/artifacts/m0/6f958c0499d0d5a75c117377d4ee418a7342a3dbd0d42c99860bcd7df6ac9860.json",
+      "current_sha256": "174a5062b4187eafdb7505dc6f55de127a7ea3721b9337b7f2e1847fb1bef353",
+      "previous_row": "/home/catid/drafter/artifacts/m0/39b4e098f1b08c3aa0659109612254f58142d1f15cd0c00cb5eda5c2e11f7154.json",
+      "previous_sha256": "49caacdc90b649c5a2eaea2e8cf88fbedc61777fb1fb696c4d92b59494278f04",
+      "token_arrays_equal": {
+        "local_tokens": true,
+        "upstream_tokens": true,
+        "target_tokens": true
+      },
+      "verification_records_equal": false,
+      "comparisons_equal": true,
+      "upstream_local_equal": true,
+      "verification_behavior_equal": true,
+      "shared_probability_prefixes_equal": true,
+      "probability_logging_lengths_valid": true,
+      "blocks_with_probability_logging_expansion": 8
+    },
+    {
+      "prompt_id": "m0-009",
+      "condition": "greedy",
+      "current_row": "/home/catid/drafter/artifacts/m0/1a8af95f0ca5adf5cde52d12e66674ca461dc72869d51f83fbc02e2550c88524.json",
+      "current_sha256": "7b76217f9c27ffed87a30127b22eacb7061a409aabf05cb0c8b2121797b0dadf",
+      "previous_row": "/home/catid/drafter/artifacts/m0/02bf2124e1534b4404c4c42bb474186164066238d636758f8d3b55ec70894a7c.json",
+      "previous_sha256": "b359eecc8b6179a499fc6184683cf875948415a389ca8168db5f8591bbea8c56",
+      "token_arrays_equal": {
+        "local_tokens": true,
+        "upstream_tokens": true,
+        "target_tokens": true
+      },
+      "verification_records_equal": true,
+      "comparisons_equal": true,
+      "upstream_local_equal": true,
+      "verification_behavior_equal": true,
+      "shared_probability_prefixes_equal": true,
+      "probability_logging_lengths_valid": true,
+      "blocks_with_probability_logging_expansion": 0
+    },
+    {
+      "prompt_id": "m0-009",
+      "condition": "model_card_nonthinking",
+      "current_row": "/home/catid/drafter/artifacts/m0/57f7c09a07a3ab94f0f2d2d861ba14c30bd3734e6b61b979a5b272e18298303f.json",
+      "current_sha256": "19290c03bd9d992f4f8da44a8722ab1e675c834fbc8123d4b4a827fff403fc52",
+      "previous_row": "/home/catid/drafter/artifacts/m0/ef09483eafa7ebb27a657b125a99e124a9b110fc0d4ceb5c12bfbad98983433b.json",
+      "previous_sha256": "dc11ba2df26d621b73dc1fde6b428f3da6eeee52c638a5c5d3a478294f6772b8",
+      "token_arrays_equal": {
+        "local_tokens": true,
+        "upstream_tokens": true,
+        "target_tokens": true
+      },
+      "verification_records_equal": false,
+      "comparisons_equal": true,
+      "upstream_local_equal": true,
+      "verification_behavior_equal": true,
+      "shared_probability_prefixes_equal": true,
+      "probability_logging_lengths_valid": true,
+      "blocks_with_probability_logging_expansion": 57
+    },
+    {
+      "prompt_id": "m0-009",
+      "condition": "pure_temperature_diagnostic",
+      "current_row": "/home/catid/drafter/artifacts/m0/d721e0f4a3a77bc64407716049960e28d35799c2c6bdd5c695f6c8be0be41908.json",
+      "current_sha256": "bc11186c94a0a60327980add146d25544694ffe027803074ab7b4341863da88b",
+      "previous_row": "/home/catid/drafter/artifacts/m0/f2121a5847cba1f3b555d9b581f0af344f6ed62f338d4e2ecd6be36206eb6d69.json",
+      "previous_sha256": "4d304cdff72d0989d0d03e29756f9e23d9b02b13f16f079df83d172c9a29c77a",
+      "token_arrays_equal": {
+        "local_tokens": true,
+        "upstream_tokens": true,
+        "target_tokens": true
+      },
+      "verification_records_equal": false,
+      "comparisons_equal": true,
+      "upstream_local_equal": true,
+      "verification_behavior_equal": true,
+      "shared_probability_prefixes_equal": true,
+      "probability_logging_lengths_valid": true,
+      "blocks_with_probability_logging_expansion": 61
+    },
+    {
+      "prompt_id": "m0-010",
+      "condition": "greedy",
+      "current_row": "/home/catid/drafter/artifacts/m0/59e95688ffae8f63f843e0f0e6add96dd3facd1f5e06d8cb6bbfe193a1f6824e.json",
+      "current_sha256": "a7b65f0b888d1d16b3d55ffaebdef7c5e541e8448ab6b769bf397542a758f053",
+      "previous_row": "/home/catid/drafter/artifacts/m0/8a2e4be303b62ceecff24b13c13e802f569d21bb1c4956c72ce1a08f763754ef.json",
+      "previous_sha256": "a5de2012211f094c28c47e6b564127402b05e74a881a958a3234544c84e1fd60",
+      "token_arrays_equal": {
+        "local_tokens": true,
+        "upstream_tokens": true,
+        "target_tokens": true
+      },
+      "verification_records_equal": true,
+      "comparisons_equal": true,
+      "upstream_local_equal": true,
+      "verification_behavior_equal": true,
+      "shared_probability_prefixes_equal": true,
+      "probability_logging_lengths_valid": true,
+      "blocks_with_probability_logging_expansion": 0
+    },
+    {
+      "prompt_id": "m0-010",
+      "condition": "model_card_nonthinking",
+      "current_row": "/home/catid/drafter/artifacts/m0/82fdaa554a1a99b17934497afc82f30387c60b036e6106b1b209e18339c2f8fe.json",
+      "current_sha256": "b4c315ac30c203ff3d2ef6ef14ad16c339cb50a5fb4da817c90aa3424eec9ad8",
+      "previous_row": "/home/catid/drafter/artifacts/m0/20dee5b0f318b921aa575c17f7dd9b8f38c3f542c5d28bdcb2fa5478f7fdf928.json",
+      "previous_sha256": "f8ab72887700d5c154edabce6fd174a0e3eeba481191620cf9efbd1588b27a49",
+      "token_arrays_equal": {
+        "local_tokens": true,
+        "upstream_tokens": true,
+        "target_tokens": true
+      },
+      "verification_records_equal": false,
+      "comparisons_equal": true,
+      "upstream_local_equal": true,
+      "verification_behavior_equal": true,
+      "shared_probability_prefixes_equal": true,
+      "probability_logging_lengths_valid": true,
+      "blocks_with_probability_logging_expansion": 21
+    },
+    {
+      "prompt_id": "m0-010",
+      "condition": "pure_temperature_diagnostic",
+      "current_row": "/home/catid/drafter/artifacts/m0/3bcf5252ee73f5bbcf7a6ecd6ecf1c7490a652fa7924ce9add14801186886c03.json",
+      "current_sha256": "4c63ab44ca3a08459cb7fc7bba24d86757c070699588328b7b99be001d788535",
+      "previous_row": "/home/catid/drafter/artifacts/m0/119a5b7647450a8e6cd006db81754b5da22e6ee8a3b2ba524ec80ce7dac4b606.json",
+      "previous_sha256": "d804e2931b270bc32d2fbb223ebbc9b497fb2ff4e9296cadd0cad68dfcbf9c76",
+      "token_arrays_equal": {
+        "local_tokens": true,
+        "upstream_tokens": true,
+        "target_tokens": true
+      },
+      "verification_records_equal": false,
+      "comparisons_equal": true,
+      "upstream_local_equal": true,
+      "verification_behavior_equal": true,
+      "shared_probability_prefixes_equal": true,
+      "probability_logging_lengths_valid": true,
+      "blocks_with_probability_logging_expansion": 27
+    },
+    {
+      "prompt_id": "m0-011",
+      "condition": "greedy",
+      "current_row": "/home/catid/drafter/artifacts/m0/bb78bfdf1ecdeda91b4e352087e527b8a8962fc3a19bda879fbafb01d6888e5c.json",
+      "current_sha256": "7f66099a2731d734e3db5fa7067fe8f1cd74f900cef7b2ea1f7b36a2fd970e3d",
+      "previous_row": "/home/catid/drafter/artifacts/m0/7dd43b39a1d45f22692310eb2a1eed586d8ba249091d7342b9f77149915261b3.json",
+      "previous_sha256": "aa7ac92d89eee82e32f87de7d887b3218a31dcdb40acde0bfc9f17aabcfe89f9",
+      "token_arrays_equal": {
+        "local_tokens": true,
+        "upstream_tokens": true,
+        "target_tokens": true
+      },
+      "verification_records_equal": true,
+      "comparisons_equal": true,
+      "upstream_local_equal": true,
+      "verification_behavior_equal": true,
+      "shared_probability_prefixes_equal": true,
+      "probability_logging_lengths_valid": true,
+      "blocks_with_probability_logging_expansion": 0
+    },
+    {
+      "prompt_id": "m0-011",
+      "condition": "model_card_nonthinking",
+      "current_row": "/home/catid/drafter/artifacts/m0/de61c477c389c5b03037cd38e0ba7c144de37fd28bbbfe055b2174203ce516b6.json",
+      "current_sha256": "7eb8cb80cd5f429961290d32f0dc256ee340b662d76ede116539fc3cab681bd0",
+      "previous_row": "/home/catid/drafter/artifacts/m0/0679a21457b6cd12a02d9f97cb21c0d7f0e43afa9f04c7961ae7b168940feb7e.json",
+      "previous_sha256": "5205834ddb4d46100577b321f55cec4c014ab7a8ae4d452cd253d5fbd3fcbd86",
+      "token_arrays_equal": {
+        "local_tokens": true,
+        "upstream_tokens": true,
+        "target_tokens": true
+      },
+      "verification_records_equal": false,
+      "comparisons_equal": true,
+      "upstream_local_equal": true,
+      "verification_behavior_equal": true,
+      "shared_probability_prefixes_equal": true,
+      "probability_logging_lengths_valid": true,
+      "blocks_with_probability_logging_expansion": 35
+    },
+    {
+      "prompt_id": "m0-011",
+      "condition": "pure_temperature_diagnostic",
+      "current_row": "/home/catid/drafter/artifacts/m0/0fb162f3df706c3e43a61027e608097410852098bda5638f72d45991e55b5407.json",
+      "current_sha256": "14b47a0a1d6454a50d7d28eabb09ee4b110f4a53c7762c89d7a43e468ba4915b",
+      "previous_row": "/home/catid/drafter/artifacts/m0/e85f563050620c993aabb7d9e9f5831eeaeb79ffdd2821704d0a8cb618a4f523.json",
+      "previous_sha256": "2e172d36a4af4d91bb3b44d791d452a7fa331507dbb1b3a4364cf3e20c8230f2",
+      "token_arrays_equal": {
+        "local_tokens": true,
+        "upstream_tokens": true,
+        "target_tokens": true
+      },
+      "verification_records_equal": false,
+      "comparisons_equal": true,
+      "upstream_local_equal": true,
+      "verification_behavior_equal": true,
+      "shared_probability_prefixes_equal": true,
+      "probability_logging_lengths_valid": true,
+      "blocks_with_probability_logging_expansion": 42
+    },
+    {
+      "prompt_id": "m0-012",
+      "condition": "greedy",
+      "current_row": "/home/catid/drafter/artifacts/m0/76f002b608597f4ec066c932ef16b0fb5a1dd342ae557a0b8c67aa0d059bd18f.json",
+      "current_sha256": "da6aa8877b92ea608a090a1f2966c3ac357d9c93d92d9be29ee4834537f78a65",
+      "previous_row": "/home/catid/drafter/artifacts/m0/fc76f508800d874cd79497198c4dc27223c76e4d22c168db3f088d8b487cb031.json",
+      "previous_sha256": "859336c21671e520b599059a284f9643f103507b070cc17064d8a5c72cd31259",
+      "token_arrays_equal": {
+        "local_tokens": true,
+        "upstream_tokens": true,
+        "target_tokens": true
+      },
+      "verification_records_equal": true,
+      "comparisons_equal": true,
+      "upstream_local_equal": true,
+      "verification_behavior_equal": true,
+      "shared_probability_prefixes_equal": true,
+      "probability_logging_lengths_valid": true,
+      "blocks_with_probability_logging_expansion": 0
+    },
+    {
+      "prompt_id": "m0-012",
+      "condition": "model_card_nonthinking",
+      "current_row": "/home/catid/drafter/artifacts/m0/51f383323a30acdfdde5a629ec812df8861bc3242d03630bbd418aa388cab82a.json",
+      "current_sha256": "3ba4e28976563a87d023e5e73d8a03e43f910a9328d561a892a340cb4b01722d",
+      "previous_row": "/home/catid/drafter/artifacts/m0/c01f15e59871ed17b0e239c334be4191415fae3cae4b3aa75bdce7160ad81e36.json",
+      "previous_sha256": "1f86b60d3b96c10f5a64bf1dc62de1892b1e6a10706d3da3cee0e6823598a8da",
+      "token_arrays_equal": {
+        "local_tokens": true,
+        "upstream_tokens": true,
+        "target_tokens": true
+      },
+      "verification_records_equal": false,
+      "comparisons_equal": true,
+      "upstream_local_equal": true,
+      "verification_behavior_equal": true,
+      "shared_probability_prefixes_equal": true,
+      "probability_logging_lengths_valid": true,
+      "blocks_with_probability_logging_expansion": 45
+    },
+    {
+      "prompt_id": "m0-012",
+      "condition": "pure_temperature_diagnostic",
+      "current_row": "/home/catid/drafter/artifacts/m0/0a67cc1a3a3ec2cb2fbd02df245266307911a7cecd3eb8cdf67c075918c7ffee.json",
+      "current_sha256": "ed14908592be05916f1efb857e18586d90edaa5c9420e483572b329cb20ec9af",
+      "previous_row": "/home/catid/drafter/artifacts/m0/295c551422e34f87a3ae0f58d9570b39012f276efe406c198d16480cfbec6916.json",
+      "previous_sha256": "1e441d720c716b722db05a8a578fcdbbc189537d6c9fc6b1f239d60d26020995",
+      "token_arrays_equal": {
+        "local_tokens": true,
+        "upstream_tokens": true,
+        "target_tokens": true
+      },
+      "verification_records_equal": false,
+      "comparisons_equal": true,
+      "upstream_local_equal": true,
+      "verification_behavior_equal": true,
+      "shared_probability_prefixes_equal": true,
+      "probability_logging_lengths_valid": true,
+      "blocks_with_probability_logging_expansion": 50
+    },
+    {
+      "prompt_id": "m0-013",
+      "condition": "greedy",
+      "current_row": "/home/catid/drafter/artifacts/m0/893a63a8dd9f306c595da5abfb6e4f00df00af4fac3dea878eb39f5ecc4199d8.json",
+      "current_sha256": "6d19c34087405987a7bf93fa6588b9a09afa03c91214e3273ce7fe05def8e292",
+      "previous_row": "/home/catid/drafter/artifacts/m0/ac147449244375ae7d1c7537b28121fdb3b09c17c5ebe41c09c03d39a0e730d4.json",
+      "previous_sha256": "98e6357beb705fd37e4d2be80e5e50793868c5476fe4cb800f1842c04494e532",
+      "token_arrays_equal": {
+        "local_tokens": true,
+        "upstream_tokens": true,
+        "target_tokens": true
+      },
+      "verification_records_equal": true,
+      "comparisons_equal": true,
+      "upstream_local_equal": true,
+      "verification_behavior_equal": true,
+      "shared_probability_prefixes_equal": true,
+      "probability_logging_lengths_valid": true,
+      "blocks_with_probability_logging_expansion": 0
+    },
+    {
+      "prompt_id": "m0-013",
+      "condition": "model_card_nonthinking",
+      "current_row": "/home/catid/drafter/artifacts/m0/c8866a147bbce298fb9c21b2b06295ec5908affdbd65dece8038b62a6edf6ad1.json",
+      "current_sha256": "529cfb969b226e4ad3593820f9674ad58b2f5b9534874428bd0994fc9fa42d03",
+      "previous_row": "/home/catid/drafter/artifacts/m0/bc5d548e3cce6fffe824c68904f24013c86e80241e1bd0b1a3810e0960d908cb.json",
+      "previous_sha256": "eaea94f14f2eb7f63d4e4e41b7727966d0ee4c1bf74bd3f54103034ab3793c9a",
+      "token_arrays_equal": {
+        "local_tokens": true,
+        "upstream_tokens": true,
+        "target_tokens": true
+      },
+      "verification_records_equal": false,
+      "comparisons_equal": true,
+      "upstream_local_equal": true,
+      "verification_behavior_equal": true,
+      "shared_probability_prefixes_equal": true,
+      "probability_logging_lengths_valid": true,
+      "blocks_with_probability_logging_expansion": 21
+    },
+    {
+      "prompt_id": "m0-013",
+      "condition": "pure_temperature_diagnostic",
+      "current_row": "/home/catid/drafter/artifacts/m0/7c9d7ed3fee6327b657013a2cc091525d45ee6eb580478acf0666192893fbb2f.json",
+      "current_sha256": "e8f3d12e6d00f40f011668ecdb1e55b31e60bf6aca09d1ea23049f5af287be70",
+      "previous_row": "/home/catid/drafter/artifacts/m0/364add30a1229d445a1647c55f3b0694c759b59a71ba3045ac2f3e595bc458bf.json",
+      "previous_sha256": "fc954e784882e417766fe20b31ebebd99458a88cff7b10c8261ad646623fe00e",
+      "token_arrays_equal": {
+        "local_tokens": true,
+        "upstream_tokens": true,
+        "target_tokens": true
+      },
+      "verification_records_equal": false,
+      "comparisons_equal": true,
+      "upstream_local_equal": true,
+      "verification_behavior_equal": true,
+      "shared_probability_prefixes_equal": true,
+      "probability_logging_lengths_valid": true,
+      "blocks_with_probability_logging_expansion": 31
+    },
+    {
+      "prompt_id": "m0-014",
+      "condition": "greedy",
+      "current_row": "/home/catid/drafter/artifacts/m0/763623c09045b7574001ebb0876f3d52face3f4335d270081dc09f7666894f17.json",
+      "current_sha256": "4ae52778678d0d42f6b3be3d1728cd89758ff5a7f37677cad613112549470f0f",
+      "previous_row": "/home/catid/drafter/artifacts/m0/910404c1972cf638dfbce10d189475c16d629e2e823bdc2bf7a742399c2e5bfb.json",
+      "previous_sha256": "a3a57b3fd2c133bb7ccd5f161c86929ec857d33669c0236fe1559d105a1be7a4",
+      "token_arrays_equal": {
+        "local_tokens": true,
+        "upstream_tokens": true,
+        "target_tokens": true
+      },
+      "verification_records_equal": true,
+      "comparisons_equal": true,
+      "upstream_local_equal": true,
+      "verification_behavior_equal": true,
+      "shared_probability_prefixes_equal": true,
+      "probability_logging_lengths_valid": true,
+      "blocks_with_probability_logging_expansion": 0
+    },
+    {
+      "prompt_id": "m0-014",
+      "condition": "model_card_nonthinking",
+      "current_row": "/home/catid/drafter/artifacts/m0/779b0edb2257b0d08d7f72b84f69ab7f346789ab3da667c179327a30e875d819.json",
+      "current_sha256": "fff81a8347a3fb54ec66ce1bffd0cc52e3e64b758213de4ecf741133d5d87637",
+      "previous_row": "/home/catid/drafter/artifacts/m0/6dd8128161f8fb700499bb5a0eeb7004bcdc8c1f8bc2259d876e319f451d2e69.json",
+      "previous_sha256": "d8944bcfd96b367b95f6bfce2ab1cf14c0e760759930010b0c02b08cbef395ca",
+      "token_arrays_equal": {
+        "local_tokens": true,
+        "upstream_tokens": true,
+        "target_tokens": true
+      },
+      "verification_records_equal": false,
+      "comparisons_equal": true,
+      "upstream_local_equal": true,
+      "verification_behavior_equal": true,
+      "shared_probability_prefixes_equal": true,
+      "probability_logging_lengths_valid": true,
+      "blocks_with_probability_logging_expansion": 48
+    },
+    {
+      "prompt_id": "m0-014",
+      "condition": "pure_temperature_diagnostic",
+      "current_row": "/home/catid/drafter/artifacts/m0/e4eee836ddfdda0bd6f959615b0b30e44470f121a01b5607b9a4822c81adc91a.json",
+      "current_sha256": "a6d51cd1337d3c2ddfde8b2073c0c3c0cde871354e66998deeaa7a1a86846366",
+      "previous_row": "/home/catid/drafter/artifacts/m0/e02294e472080d86e8741488eecdd826a9c25682b51dc75572c64f11f7a93d7c.json",
+      "previous_sha256": "361f058e9eb98661361b3fdb9e97da7d8933c608cc0392f1b000af0610d0b0af",
+      "token_arrays_equal": {
+        "local_tokens": true,
+        "upstream_tokens": true,
+        "target_tokens": true
+      },
+      "verification_records_equal": false,
+      "comparisons_equal": true,
+      "upstream_local_equal": true,
+      "verification_behavior_equal": true,
+      "shared_probability_prefixes_equal": true,
+      "probability_logging_lengths_valid": true,
+      "blocks_with_probability_logging_expansion": 53
+    },
+    {
+      "prompt_id": "m0-015",
+      "condition": "greedy",
+      "current_row": "/home/catid/drafter/artifacts/m0/d3845b28cb97cd1e2fdb5a9c554999af699609f9dd2d0c1681dfd8016526faa7.json",
+      "current_sha256": "74d828a046a0b9ec1736364580d26547b5979107f8df20daba058f0f39ed4bde",
+      "previous_row": "/home/catid/drafter/artifacts/m0/c743287576fdfd77d944a7d3502fc56bbccf264d642e5958032ed309c94bd107.json",
+      "previous_sha256": "f055c2a500d8165d14519820adb9f419271f610cac3e8d05934758bf10e293c0",
+      "token_arrays_equal": {
+        "local_tokens": true,
+        "upstream_tokens": true,
+        "target_tokens": true
+      },
+      "verification_records_equal": true,
+      "comparisons_equal": true,
+      "upstream_local_equal": true,
+      "verification_behavior_equal": true,
+      "shared_probability_prefixes_equal": true,
+      "probability_logging_lengths_valid": true,
+      "blocks_with_probability_logging_expansion": 0
+    },
+    {
+      "prompt_id": "m0-015",
+      "condition": "model_card_nonthinking",
+      "current_row": "/home/catid/drafter/artifacts/m0/d4f8528cf4aa9dc956cfc43604789812ed657abca780a3cfd5ea9e8d2eabd186.json",
+      "current_sha256": "c7abc5087445be9af3667370c87e2df08abf47b04db3d2c1d75ea5711f27b0f5",
+      "previous_row": "/home/catid/drafter/artifacts/m0/e2116bbc05ed9b5f653559b8611f2b42e5f1a480745157322502ae5f084f0b49.json",
+      "previous_sha256": "76a3496e40bf0e676801ecd32c101a4168c189f1e2273e3354fd21b64378a13e",
+      "token_arrays_equal": {
+        "local_tokens": true,
+        "upstream_tokens": true,
+        "target_tokens": true
+      },
+      "verification_records_equal": false,
+      "comparisons_equal": true,
+      "upstream_local_equal": true,
+      "verification_behavior_equal": true,
+      "shared_probability_prefixes_equal": true,
+      "probability_logging_lengths_valid": true,
+      "blocks_with_probability_logging_expansion": 26
+    },
+    {
+      "prompt_id": "m0-015",
+      "condition": "pure_temperature_diagnostic",
+      "current_row": "/home/catid/drafter/artifacts/m0/ce6d888ca86c5714fce95ec177f54b6e922c55f2ac3d8a37a3ac6182f98fd2b0.json",
+      "current_sha256": "989ef33e095cbf662563600e66094873be3776b1ae170c66d64bf95956ed8469",
+      "previous_row": "/home/catid/drafter/artifacts/m0/c6b4696d31cfe1b1a1f82bc6754182beb3d359a8527b82cad86ca50da03ef724.json",
+      "previous_sha256": "3c6e87e7ff5d51452c9189aa1385fde942f31df72b85c9cbe8b1b22b267266fb",
+      "token_arrays_equal": {
+        "local_tokens": true,
+        "upstream_tokens": true,
+        "target_tokens": true
+      },
+      "verification_records_equal": false,
+      "comparisons_equal": true,
+      "upstream_local_equal": true,
+      "verification_behavior_equal": true,
+      "shared_probability_prefixes_equal": true,
+      "probability_logging_lengths_valid": true,
+      "blocks_with_probability_logging_expansion": 44
+    },
+    {
+      "prompt_id": "m0-016",
+      "condition": "greedy",
+      "current_row": "/home/catid/drafter/artifacts/m0/448a6ac39d4af0709ff6bf97a888622987ffb342acda9cecb2ae8bbace0b71c5.json",
+      "current_sha256": "19e2d53d4b3e617b71676554d3a1e58c294214a29f73bef8c3de08f75221d56e",
+      "previous_row": "/home/catid/drafter/artifacts/m0/f1e97cc9f201d1fa61c8954708a3838408e8adfc050f303d9219b5d9feb59c58.json",
+      "previous_sha256": "b42132cab11050798218df32fbfada4acaa761599d7e92f1c679ddfcc28cd229",
+      "token_arrays_equal": {
+        "local_tokens": true,
+        "upstream_tokens": true,
+        "target_tokens": true
+      },
+      "verification_records_equal": true,
+      "comparisons_equal": true,
+      "upstream_local_equal": true,
+      "verification_behavior_equal": true,
+      "shared_probability_prefixes_equal": true,
+      "probability_logging_lengths_valid": true,
+      "blocks_with_probability_logging_expansion": 0
+    },
+    {
+      "prompt_id": "m0-016",
+      "condition": "model_card_nonthinking",
+      "current_row": "/home/catid/drafter/artifacts/m0/a319534c991a67614d315d3dee2b02a0afe7f2d0978459715de2c395d7aa3dd5.json",
+      "current_sha256": "108defd8023d181e56fd86204bb0053e0b27eff617992fd7a4a0a2576b388ea8",
+      "previous_row": "/home/catid/drafter/artifacts/m0/0af9a6f2ec0d3e4f880671ba554a10fdd3af1b0e268f8e4db94884ebc0966481.json",
+      "previous_sha256": "723363360e5dbf887d70c6659e0b809a423c7d071f254e12eeacecb1a27ad091",
+      "token_arrays_equal": {
+        "local_tokens": true,
+        "upstream_tokens": true,
+        "target_tokens": true
+      },
+      "verification_records_equal": false,
+      "comparisons_equal": true,
+      "upstream_local_equal": true,
+      "verification_behavior_equal": true,
+      "shared_probability_prefixes_equal": true,
+      "probability_logging_lengths_valid": true,
+      "blocks_with_probability_logging_expansion": 18
+    },
+    {
+      "prompt_id": "m0-016",
+      "condition": "pure_temperature_diagnostic",
+      "current_row": "/home/catid/drafter/artifacts/m0/a06b9c7e41caab1c707d0f8d2eb233bf439b006512f6fbcd777f188de39bd1da.json",
+      "current_sha256": "69321e6eeb4863961a2c352264104bd7fccd616266cb225dd8cc824dbac77e30",
+      "previous_row": "/home/catid/drafter/artifacts/m0/6a332c824c9ff4f0504d489f34beabb03a7b546cb7074b0e761e172e345e1c86.json",
+      "previous_sha256": "290987bd44a345fe9a3295d52f6159a1b20c2315a7700413a4ffbb3502ab3da6",
+      "token_arrays_equal": {
+        "local_tokens": true,
+        "upstream_tokens": true,
+        "target_tokens": true
+      },
+      "verification_records_equal": false,
+      "comparisons_equal": true,
+      "upstream_local_equal": true,
+      "verification_behavior_equal": true,
+      "shared_probability_prefixes_equal": true,
+      "probability_logging_lengths_valid": true,
+      "blocks_with_probability_logging_expansion": 16
+    },
+    {
+      "prompt_id": "m0-017",
+      "condition": "greedy",
+      "current_row": "/home/catid/drafter/artifacts/m0/10c8d0ac25d68682a95a01ba9c086ec00a9639ae9241ef284b22070ec57d08d9.json",
+      "current_sha256": "a1cc1f71d108566e5795960960852be50853b3a309039477b0cfcb428ec263f8",
+      "previous_row": "/home/catid/drafter/artifacts/m0/4dd5c8d1003b8c7c8a3e0a8ec16655ef8bad1417911cb41d301f6a0c37cf667f.json",
+      "previous_sha256": "1e84ffe29d146c6ccd777266b7025e6fd0cb5821477030e91f5be2017e4e4e0f",
+      "token_arrays_equal": {
+        "local_tokens": true,
+        "upstream_tokens": true,
+        "target_tokens": true
+      },
+      "verification_records_equal": true,
+      "comparisons_equal": true,
+      "upstream_local_equal": true,
+      "verification_behavior_equal": true,
+      "shared_probability_prefixes_equal": true,
+      "probability_logging_lengths_valid": true,
+      "blocks_with_probability_logging_expansion": 0
+    },
+    {
+      "prompt_id": "m0-017",
+      "condition": "model_card_nonthinking",
+      "current_row": "/home/catid/drafter/artifacts/m0/e1da10cdb729e0f0103b5edff8a3d3e90773df42bf4a9d35c45415654932f322.json",
+      "current_sha256": "4b615fc0632753dc734ad1ee3c435d7b0d2aa14146804010f0f5e634273c605c",
+      "previous_row": "/home/catid/drafter/artifacts/m0/611b593d227d180cdf9fe7b2878dea65265023b741e8a9a1120515f749b3b451.json",
+      "previous_sha256": "710d58dbc91c019ed7e86782c78795aaa4e35e0f1e8513b6c695db16daf7c36c",
+      "token_arrays_equal": {
+        "local_tokens": true,
+        "upstream_tokens": true,
+        "target_tokens": true
+      },
+      "verification_records_equal": false,
+      "comparisons_equal": true,
+      "upstream_local_equal": true,
+      "verification_behavior_equal": true,
+      "shared_probability_prefixes_equal": true,
+      "probability_logging_lengths_valid": true,
+      "blocks_with_probability_logging_expansion": 39
+    },
+    {
+      "prompt_id": "m0-017",
+      "condition": "pure_temperature_diagnostic",
+      "current_row": "/home/catid/drafter/artifacts/m0/825383e57860b0c1fe1a26d0fabb73e060b1d9d502fb7571e946584436ea9482.json",
+      "current_sha256": "da119d18f42c0a2194360b9bb3a433444c9e47dd9499a3afb1263a6775da4abe",
+      "previous_row": "/home/catid/drafter/artifacts/m0/49e29e1a1868e1bf593c1c58b528c49f16c62e5a08b925f0678445af424af8b3.json",
+      "previous_sha256": "1b8f24961cbc7a19307daaa4e4fbebba9abcf7ed449027325b84e388c774638a",
+      "token_arrays_equal": {
+        "local_tokens": true,
+        "upstream_tokens": true,
+        "target_tokens": true
+      },
+      "verification_records_equal": false,
+      "comparisons_equal": true,
+      "upstream_local_equal": true,
+      "verification_behavior_equal": true,
+      "shared_probability_prefixes_equal": true,
+      "probability_logging_lengths_valid": true,
+      "blocks_with_probability_logging_expansion": 52
+    },
+    {
+      "prompt_id": "m0-018",
+      "condition": "greedy",
+      "current_row": "/home/catid/drafter/artifacts/m0/48252abe504ca27e3e804398a84062e6b78c98e89d953e8e4bdcbe822be56c83.json",
+      "current_sha256": "5eaccce21adc36421127311aaf029ed8054491ea4b4993d706582d5a790e399a",
+      "previous_row": "/home/catid/drafter/artifacts/m0/97bafad72b2ee43bcdda6de85dad6ceb4cad7c1d019b8a90ae0774c98e7baa39.json",
+      "previous_sha256": "ca2f3d4fa5df1c59fc42457952ead54391ef50384b355c5af3dcfaddaa384c9d",
+      "token_arrays_equal": {
+        "local_tokens": true,
+        "upstream_tokens": true,
+        "target_tokens": true
+      },
+      "verification_records_equal": true,
+      "comparisons_equal": true,
+      "upstream_local_equal": true,
+      "verification_behavior_equal": true,
+      "shared_probability_prefixes_equal": true,
+      "probability_logging_lengths_valid": true,
+      "blocks_with_probability_logging_expansion": 0
+    },
+    {
+      "prompt_id": "m0-018",
+      "condition": "model_card_nonthinking",
+      "current_row": "/home/catid/drafter/artifacts/m0/d936df264a33c4ede573bb4e3cd9b1cf6421553ab2078b584cd2a6dd6dec4f25.json",
+      "current_sha256": "81ead2c84ef6e052da6874071b62eabe23f7735ed48183fed3efda049d99100c",
+      "previous_row": "/home/catid/drafter/artifacts/m0/7e33fef9c97b41fe31f6805399f7e9e6c2f78e82c7e30d30ab4140748bf3b41c.json",
+      "previous_sha256": "a562cb0117a22449411fb00363de72455b143eead35c91256a02980a7f45c157",
+      "token_arrays_equal": {
+        "local_tokens": true,
+        "upstream_tokens": true,
+        "target_tokens": true
+      },
+      "verification_records_equal": false,
+      "comparisons_equal": true,
+      "upstream_local_equal": true,
+      "verification_behavior_equal": true,
+      "shared_probability_prefixes_equal": true,
+      "probability_logging_lengths_valid": true,
+      "blocks_with_probability_logging_expansion": 48
+    },
+    {
+      "prompt_id": "m0-018",
+      "condition": "pure_temperature_diagnostic",
+      "current_row": "/home/catid/drafter/artifacts/m0/7e28c951d1527c51072e450eeb5107b09572a94c3c2f45479219dccb7fe8deb9.json",
+      "current_sha256": "76cc374606ccd97bc888f2db358756cf4ae25c60fd87827b50437acb6dab4752",
+      "previous_row": "/home/catid/drafter/artifacts/m0/6d1f78450e446218560dbdfa39dd50394ac4f1f07d367f83cef1e513e1da4460.json",
+      "previous_sha256": "a404572997c5cfae5bf5ff73fd0a3b9c5ed896b403fd28e713e1689edd22744b",
+      "token_arrays_equal": {
+        "local_tokens": true,
+        "upstream_tokens": true,
+        "target_tokens": true
+      },
+      "verification_records_equal": false,
+      "comparisons_equal": true,
+      "upstream_local_equal": true,
+      "verification_behavior_equal": true,
+      "shared_probability_prefixes_equal": true,
+      "probability_logging_lengths_valid": true,
+      "blocks_with_probability_logging_expansion": 53
+    },
+    {
+      "prompt_id": "m0-019",
+      "condition": "greedy",
+      "current_row": "/home/catid/drafter/artifacts/m0/5edadaa081fa9159eeaa9ac0aed43da8953065f9899877029bfd8516c5368585.json",
+      "current_sha256": "707be3ebfd5206411d803114c99049718f25f1ca2ba3946e918efa5477ae5b1d",
+      "previous_row": "/home/catid/drafter/artifacts/m0/c723e9f76a482c39f9ddbf651a097512b3ce5cc41b42e9ddc48423e925cdda04.json",
+      "previous_sha256": "14842f16444022ae782b035f7b5f7fbe2968d7046eafdac94028b1c9ccbbcddd",
+      "token_arrays_equal": {
+        "local_tokens": true,
+        "upstream_tokens": true,
+        "target_tokens": true
+      },
+      "verification_records_equal": true,
+      "comparisons_equal": true,
+      "upstream_local_equal": true,
+      "verification_behavior_equal": true,
+      "shared_probability_prefixes_equal": true,
+      "probability_logging_lengths_valid": true,
+      "blocks_with_probability_logging_expansion": 0
+    },
+    {
+      "prompt_id": "m0-019",
+      "condition": "model_card_nonthinking",
+      "current_row": "/home/catid/drafter/artifacts/m0/213c3149393e5c8138788d84923ddcb170a0e69aa642a24517bbd2644713fb44.json",
+      "current_sha256": "889f6ce9e2dec15c35f661860f8592331fe43d4faefacd6322db57d7f559e675",
+      "previous_row": "/home/catid/drafter/artifacts/m0/0c7bb54961b5a1a6ccf41a0fab3cf493709ba647111a6cafb07c9bc1dfa32ba5.json",
+      "previous_sha256": "933359fe3c1bc3d9be0e275cc7aec4ec67b84cc1b797da8634b0b88367385a00",
+      "token_arrays_equal": {
+        "local_tokens": true,
+        "upstream_tokens": true,
+        "target_tokens": true
+      },
+      "verification_records_equal": false,
+      "comparisons_equal": true,
+      "upstream_local_equal": true,
+      "verification_behavior_equal": true,
+      "shared_probability_prefixes_equal": true,
+      "probability_logging_lengths_valid": true,
+      "blocks_with_probability_logging_expansion": 45
+    },
+    {
+      "prompt_id": "m0-019",
+      "condition": "pure_temperature_diagnostic",
+      "current_row": "/home/catid/drafter/artifacts/m0/e317494201bd55baf65590be86dba3c873e33edefa5aafafdd9f1d2f49b6eb7a.json",
+      "current_sha256": "87fc2620e91f936905114df7fb8e2a3e0ea35f71a7e2fd7d7857a89bd1083f70",
+      "previous_row": "/home/catid/drafter/artifacts/m0/197cbe96ff305bde6060219093de5ece28ec89d020836d6fa3f457c120a2bf8a.json",
+      "previous_sha256": "7a579ffb6ae7a3d3427f3f4295f46d1e0178d222a0e472bba798f50db9130cd1",
+      "token_arrays_equal": {
+        "local_tokens": true,
+        "upstream_tokens": true,
+        "target_tokens": true
+      },
+      "verification_records_equal": false,
+      "comparisons_equal": true,
+      "upstream_local_equal": true,
+      "verification_behavior_equal": true,
+      "shared_probability_prefixes_equal": true,
+      "probability_logging_lengths_valid": true,
+      "blocks_with_probability_logging_expansion": 63
+    }
+  ],
+  "token_arrays_unchanged": true,
+  "verification_behavior_unchanged": true,
+  "shared_probability_prefixes_equal": true,
+  "probability_logging_lengths_valid": true,
+  "logging_schema_change": "Probability records now cover all K realized canvas slots, previously only through first rejection. All previously recorded probabilities match exactly; greedy records are unchanged.",
+  "comparison_policy": "Exact output arrays and exact block dictionaries excluding the two probability arrays; exact probability-array prefixes through each prior record, and current stochastic probability-array length equal to K. Full raw-record equality is reported separately and is not a behavioral gate.",
+  "compared_blocks": 2369,
+  "stochastic_blocks": 1605,
+  "blocks_with_probability_logging_expansion": 1556,
+  "previous_recorded_probability_values": 9402,
+  "current_recorded_probability_values": 45840,
+  "logging_only_changed_rows": [
+    {
+      "prompt_id": "m0-000",
+      "condition": "model_card_nonthinking",
+      "blocks": 27
+    },
+    {
+      "prompt_id": "m0-000",
+      "condition": "pure_temperature_diagnostic",
+      "blocks": 44
+    },
+    {
+      "prompt_id": "m0-001",
+      "condition": "model_card_nonthinking",
+      "blocks": 13
+    },
+    {
+      "prompt_id": "m0-001",
+      "condition": "pure_temperature_diagnostic",
+      "blocks": 23
+    },
+    {
+      "prompt_id": "m0-002",
+      "condition": "model_card_nonthinking",
+      "blocks": 15
+    },
+    {
+      "prompt_id": "m0-002",
+      "condition": "pure_temperature_diagnostic",
+      "blocks": 16
+    },
+    {
+      "prompt_id": "m0-003",
+      "condition": "model_card_nonthinking",
+      "blocks": 43
+    },
+    {
+      "prompt_id": "m0-003",
+      "condition": "pure_temperature_diagnostic",
+      "blocks": 53
+    },
+    {
+      "prompt_id": "m0-004",
+      "condition": "model_card_nonthinking",
+      "blocks": 41
+    },
+    {
+      "prompt_id": "m0-004",
+      "condition": "pure_temperature_diagnostic",
+      "blocks": 41
+    },
+    {
+      "prompt_id": "m0-005",
+      "condition": "model_card_nonthinking",
+      "blocks": 55
+    },
+    {
+      "prompt_id": "m0-005",
+      "condition": "pure_temperature_diagnostic",
+      "blocks": 67
+    },
+    {
+      "prompt_id": "m0-006",
+      "condition": "model_card_nonthinking",
+      "blocks": 55
+    },
+    {
+      "prompt_id": "m0-006",
+      "condition": "pure_temperature_diagnostic",
+      "blocks": 58
+    },
+    {
+      "prompt_id": "m0-007",
+      "condition": "model_card_nonthinking",
+      "blocks": 42
+    },
+    {
+      "prompt_id": "m0-007",
+      "condition": "pure_temperature_diagnostic",
+      "blocks": 53
+    },
+    {
+      "prompt_id": "m0-008",
+      "condition": "model_card_nonthinking",
+      "blocks": 7
+    },
+    {
+      "prompt_id": "m0-008",
+      "condition": "pure_temperature_diagnostic",
+      "blocks": 8
+    },
+    {
+      "prompt_id": "m0-009",
+      "condition": "model_card_nonthinking",
+      "blocks": 57
+    },
+    {
+      "prompt_id": "m0-009",
+      "condition": "pure_temperature_diagnostic",
+      "blocks": 61
+    },
+    {
+      "prompt_id": "m0-010",
+      "condition": "model_card_nonthinking",
+      "blocks": 21
+    },
+    {
+      "prompt_id": "m0-010",
+      "condition": "pure_temperature_diagnostic",
+      "blocks": 27
+    },
+    {
+      "prompt_id": "m0-011",
+      "condition": "model_card_nonthinking",
+      "blocks": 35
+    },
+    {
+      "prompt_id": "m0-011",
+      "condition": "pure_temperature_diagnostic",
+      "blocks": 42
+    },
+    {
+      "prompt_id": "m0-012",
+      "condition": "model_card_nonthinking",
+      "blocks": 45
+    },
+    {
+      "prompt_id": "m0-012",
+      "condition": "pure_temperature_diagnostic",
+      "blocks": 50
+    },
+    {
+      "prompt_id": "m0-013",
+      "condition": "model_card_nonthinking",
+      "blocks": 21
+    },
+    {
+      "prompt_id": "m0-013",
+      "condition": "pure_temperature_diagnostic",
+      "blocks": 31
+    },
+    {
+      "prompt_id": "m0-014",
+      "condition": "model_card_nonthinking",
+      "blocks": 48
+    },
+    {
+      "prompt_id": "m0-014",
+      "condition": "pure_temperature_diagnostic",
+      "blocks": 53
+    },
+    {
+      "prompt_id": "m0-015",
+      "condition": "model_card_nonthinking",
+      "blocks": 26
+    },
+    {
+      "prompt_id": "m0-015",
+      "condition": "pure_temperature_diagnostic",
+      "blocks": 44
+    },
+    {
+      "prompt_id": "m0-016",
+      "condition": "model_card_nonthinking",
+      "blocks": 18
+    },
+    {
+      "prompt_id": "m0-016",
+      "condition": "pure_temperature_diagnostic",
+      "blocks": 16
+    },
+    {
+      "prompt_id": "m0-017",
+      "condition": "model_card_nonthinking",
+      "blocks": 39
+    },
+    {
+      "prompt_id": "m0-017",
+      "condition": "pure_temperature_diagnostic",
+      "blocks": 52
+    },
+    {
+      "prompt_id": "m0-018",
+      "condition": "model_card_nonthinking",
+      "blocks": 48
+    },
+    {
+      "prompt_id": "m0-018",
+      "condition": "pure_temperature_diagnostic",
+      "blocks": 53
+    },
+    {
+      "prompt_id": "m0-019",
+      "condition": "model_card_nonthinking",
+      "blocks": 45
+    },
+    {
+      "prompt_id": "m0-019",
+      "condition": "pure_temperature_diagnostic",
+      "blocks": 63
+    }
+  ]
+}

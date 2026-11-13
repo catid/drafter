@@ -59,6 +59,48 @@
       },
       "status": "complete",
       "result_path": "/home/catid/drafter/artifacts/adapter_benchmark_reference_473f8db17317.json"
+    },
+    "2e911d076727320728d163763e248b1cd69011b92afdfea1221bbe264f8025a5": {
+      "identity": {
+        "model_pair": [
+          "Qwen/Qwen3-8B",
+          "z-lab/Qwen3-8B-DFlash-b16"
+        ],
+        "prompt": "random_tensor_microbenchmark",
+        "condition": "synthetic",
+        "seed": 2026,
+        "temperature": 1.0,
+        "verification_rule": "not_applicable",
+        "proposal_mode": "all_measured_modes",
+        "checkpoint": {
+          "configuration": "129edd8021e550501fe823b898d3228c4f47f026ff361425a42b47d4541cb7c6",
+          "source_sha256": "aff049e0f2f71741652b285b63325f37f5720a2ffba01fcbab1899a4ddbd5e49"
+        },
+        "adapter_version": 0
+      },
+      "status": "complete",
+      "result_path": "/home/catid/drafter/artifacts/adapter_benchmark_smoke_2e911d076727.json"
+    },
+    "023b4722f4955ff8d44210cfb1ef01cde81791eefa7da2c8989257bd1e66faa0": {
+      "identity": {
+        "model_pair": [
+          "Qwen/Qwen3-8B",
+          "z-lab/Qwen3-8B-DFlash-b16"
+        ],
+        "prompt": "random_tensor_microbenchmark",
+        "condition": "synthetic",
+        "seed": 2026,
+        "temperature": 1.0,
+        "verification_rule": "not_applicable",
+        "proposal_mode": "all_measured_modes",
+        "checkpoint": {
+          "configuration": "8cc7422ebecd78e9f6f330af3e7b494e71db9f9db8c65102b1133204cfbb9229",
+          "source_sha256": "aff049e0f2f71741652b285b63325f37f5720a2ffba01fcbab1899a4ddbd5e49"
+        },
+        "adapter_version": 0
+      },
+      "status": "complete",
+      "result_path": "/home/catid/drafter/artifacts/adapter_benchmark_reference_023b4722f495.json"
     }
   }
 }

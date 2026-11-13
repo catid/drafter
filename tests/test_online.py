@@ -96,3 +96,23 @@ def test_online_first_slot_with_missing_history_has_zero_pair_gradient():
     assert state.dA.count_nonzero() == 0
     assert state.db.norm() > 0
     assert state.u == 1 and state.dS.u == 1
+
+
+def test_reported_sparse_norm_uses_lazy_effective_values_without_mutation():
+    adapter = DenseAdapter(torch.eye(3), p=2, D=1)
+    state = OnlineState(adapter, enable_sparse=True, sparse_capacity=17)
+    state.dS.step(torch.tensor([4]), torch.tensor([-2.]), lr=.5, lambda_l1=.2)
+    state.dS.step(torch.empty(0, dtype=torch.long), torch.empty(0), lr=.5, lambda_l1=.2)
+    state.u = state.version = state.last_round = state.dS.u
+    state._snapshot = state._make_snapshot()
+    before = (state.dS.values.clone(), state.dS.last_u.clone(), state.dS.active.clone(), list(state.dS.cum_thresh))
+    frozen = state.snapshot()
+    metrics = state.metrics()
+    assert metrics['dS_norm'] == pytest.approx(.8, abs=1e-6)
+    assert float(state.dS.values.norm()) == pytest.approx(.9, abs=1e-6)
+    assert torch.equal(state.dS.values, before[0])
+    assert torch.equal(state.dS.last_u, before[1])
+    assert torch.equal(state.dS.active, before[2])
+    assert state.dS.cum_thresh == before[3]
+    assert state.snapshot() is frozen
+    assert OnlineState(adapter).metrics()['dS_norm'] == 0.

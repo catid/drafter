@@ -1,0 +1,351 @@
+{
+  "scale": "smoke",
+  "label": "synthetic",
+  "status": "passed",
+  "started_at_utc": "2026-11-13T23:14:50.321863+00:00",
+  "source_files_sha256_before": {
+    "src/edraft/__init__.py": "23a9df4a3e6afe2c976090479dccaaaed2f9224c606b557ef8d73b001b6123b5",
+    "src/edraft/adapter.py": "b8960babc3f3b126a11e1f990ef144b2a9be6331a181bdbeea3da2f4c0c5b9d5",
+    "src/edraft/backend.py": "7f9b59880136f5de0ff63ce6b13e8351d81f3f2b15eaeac0a8a365f6a7a5ee78",
+    "src/edraft/bench_adapter.py": "8107e239feaabd8fc59537c398647cc7cd73bd0d188798cb74ab61e7cdc6d79a",
+    "src/edraft/bench_grouped.py": "b2db348dd76a18e9920f10063f63fa0138fa1900c8a1b7f0852e41917317cc61",
+    "src/edraft/collect.py": "e8c1d984c9a259f33769e0c87057b7773b89cacc24def3521d6c55ea4bf2df62",
+    "src/edraft/dflash_loop.py": "06001ce2fd529475e1c31e3aa2bfae69d203e70d72ab2a09b41ad794d8fa60d2",
+    "src/edraft/diagnose.py": "4f3eb560b823cad5965fe2c2bf789e9f55ecb4a0e5ff0ce9c9e2e2a410ef0749",
+    "src/edraft/download.py": "013d796de195dd38858e5cdaee597443c1228835a07e6cc2cfd47847ef127977",
+    "src/edraft/eval_closed_loop.py": "dbef2371b86ec7050560cd98f1cb27e7240aaf3510518116299fe1fcd2f383f4",
+    "src/edraft/features.py": "adfbfa21ab6622f730df33513142c65a7d3c5adc6079ddb7f444d6471e5a6bff",
+    "src/edraft/investigate_m0.py": "ead0c8e6abff9932455d34186652e3ca787b7da6d01e36242ee36d6a8095bbb8",
+    "src/edraft/launch.py": "9daaa032d00cc18a615c76184369028195f4b85c484e952536043b74d5f69233",
+    "src/edraft/m0.py": "b8020800a835c1e48d53f5065373ecce37b11104c4b1111bca651b69d462c172",
+    "src/edraft/online.py": "ba781eb2f0a5c06b29e9101001724c1045b6bdc845b13400e5305fc603fe8b22",
+    "src/edraft/prompts.py": "0cc4a358cf50a5c77ab0e5afa3653f82fce5d326466d138b9ee23d6369172a5e",
+    "src/edraft/runtime.py": "53da76eed8fea489bc77cd3eef75852bb9acf247cf2a0731d75e5176c14b5bea",
+    "src/edraft/sampler.py": "78f42af34ae1c1fe181273331c121d0fa7f17f8b62d5c9616c47de517892e38f",
+    "src/edraft/smoke.py": "7e60e413a116bda670753c066d21daff51729ba35b7f57e76b2a33063eb263bf",
+    "src/edraft/sparse.py": "66beee3396ade7a6104729086a6a68c0180b5dd2e89909448cf3430344747864",
+    "src/edraft/sparse_stats.py": "62c8a36b8c707a38a8944a2882134893eed9f0ab8d50fd7ab737eeeef358c92c",
+    "src/edraft/toy.py": "5b7c325ede7455d219ba9fd93eb086daf656695608eece0129269fca1ee9494e",
+    "src/edraft/traces.py": "cf7aec2d2d3ebdaeb0896a2da86193f87ee07e51a7a0eba1016f31da705b83d8",
+    "src/edraft/train.py": "a859ba54cf2410c659b45ceb97c08364353a1cce1949d35bb70339342bf9526e",
+    "src/edraft/verify.py": "0f664b84a4dbe963432386b5d8732aff112271ef341422eda254da08f39f3fea",
+    "tests/conftest.py": "b562ac70cfda02abaa0f26db69d1b84c8378413631b5ffe19499dc746120f6a8",
+    "tests/test_adapter.py": "be1daf6f84a8c2043db7c8253e376c5034b8af4617a1f6654571f71b24e9ad15",
+    "tests/test_backend.py": "795516553aee37e6fdaeb127a4e7145ab93989da1b5c46a7e14a224d5579b34c",
+    "tests/test_collect.py": "a74f73b62988afbb0cb7c4bd13cd05c5f2522e06e7ec8938db91135a580df7e6",
+    "tests/test_diagnose.py": "b5582e4c18b0fe46ccbd409afb683a88aa626dea9e28f84cd107b268d934b66e",
+    "tests/test_diagnose_vectorized.py": "c6d22326786a5f772b941b8451e126150768b21774611fc51a2f4a89d1e29ba2",
+    "tests/test_eval_closed_loop.py": "8d237be418032b8e1b4aaf7daf64292dae3cf4804f26cfaa8ca24cac9968cb58",
+    "tests/test_grouped_vectorized.py": "35595eb3ceab495d78f756d88a2541e4c3f293f6a1e6d3a9d3d198d3e505dfa5",
+    "tests/test_lookahead_positive.py": "88ad13c05ba6ddc98a844098c541a1d8a37e6722b4c88b0fcd839fb3b9aee686",
+    "tests/test_m4_feature_context.py": "bfb8aaa67260cc6dea38bf971709516ea692fa63657f0d0ee70faab8a31d7151",
+    "tests/test_online.py": "6a03f927ff180f0da1602e101207c1f28079f3f7c09b2dea4556534b9b786063",
+    "tests/test_runtime.py": "27f625cb7213d1fd537f49bd2cd0846ff088d6b7375bc656094a0feea67070e3",
+    "tests/test_sampler_verify.py": "8bdafa584dbbaf33bf6982038e2d4b7ff10ab38e9fcbc46b75876996ffd2acd4",
+    "tests/test_sparse.py": "4643edd45ab64dbf130cbf29e6ae07327d7a2c7abd2e1cda8fcae28cb2f1db56",
+    "tests/test_toy.py": "872d015d667c1bdcde372a04b983a29c965062a19b7021b9ad06ed0c8b23293f",
+    "tests/test_traces.py": "259d5222bff39f337384f2fd625f63399c61d3f355ee4fb36e19a611d435d2a2",
+    "tests/test_train.py": "6b307f0c359aef2e69fa5303fbf82e0d6f35c482b479e8d62d629851ad20de75"
+  },
+  "commands": [
+    {
+      "name": "pytest",
+      "argv": [
+        "/home/catid/drafter/.venv/bin/python",
+        "-m",
+        "pytest",
+        "-q",
+        "--junitxml",
+        "/home/catid/drafter/artifacts/final_smoke_pipeline/pytest.xml"
+      ],
+      "returncode": 0,
+      "elapsed_seconds": 20.970329267904162,
+      "log": "artifacts/final_smoke_pipeline/pytest.log"
+    },
+    {
+      "name": "m3",
+      "argv": [
+        "/home/catid/drafter/.venv/bin/python",
+        "-m",
+        "edraft.eval_closed_loop",
+        "--scale",
+        "smoke",
+        "--stage",
+        "m3",
+        "--mode",
+        "all",
+        "--output",
+        "/home/catid/drafter/artifacts/final_smoke_pipeline"
+      ],
+      "returncode": 0,
+      "elapsed_seconds": 5.732584048062563,
+      "log": "artifacts/final_smoke_pipeline/m3.log"
+    },
+    {
+      "name": "m4",
+      "argv": [
+        "/home/catid/drafter/.venv/bin/python",
+        "-m",
+        "edraft.eval_closed_loop",
+        "--scale",
+        "smoke",
+        "--stage",
+        "m4",
+        "--mode",
+        "all",
+        "--output",
+        "/home/catid/drafter/artifacts/final_smoke_pipeline"
+      ],
+      "returncode": 0,
+      "elapsed_seconds": 11.802993318997324,
+      "log": "artifacts/final_smoke_pipeline/m4.log"
+    }
+  ],
+  "source_files_sha256_after": {
+    "src/edraft/__init__.py": "23a9df4a3e6afe2c976090479dccaaaed2f9224c606b557ef8d73b001b6123b5",
+    "src/edraft/adapter.py": "b8960babc3f3b126a11e1f990ef144b2a9be6331a181bdbeea3da2f4c0c5b9d5",
+    "src/edraft/backend.py": "7f9b59880136f5de0ff63ce6b13e8351d81f3f2b15eaeac0a8a365f6a7a5ee78",
+    "src/edraft/bench_adapter.py": "8107e239feaabd8fc59537c398647cc7cd73bd0d188798cb74ab61e7cdc6d79a",
+    "src/edraft/bench_grouped.py": "b2db348dd76a18e9920f10063f63fa0138fa1900c8a1b7f0852e41917317cc61",
+    "src/edraft/collect.py": "e8c1d984c9a259f33769e0c87057b7773b89cacc24def3521d6c55ea4bf2df62",
+    "src/edraft/dflash_loop.py": "06001ce2fd529475e1c31e3aa2bfae69d203e70d72ab2a09b41ad794d8fa60d2",
+    "src/edraft/diagnose.py": "4f3eb560b823cad5965fe2c2bf789e9f55ecb4a0e5ff0ce9c9e2e2a410ef0749",
+    "src/edraft/download.py": "013d796de195dd38858e5cdaee597443c1228835a07e6cc2cfd47847ef127977",
+    "src/edraft/eval_closed_loop.py": "dbef2371b86ec7050560cd98f1cb27e7240aaf3510518116299fe1fcd2f383f4",
+    "src/edraft/features.py": "adfbfa21ab6622f730df33513142c65a7d3c5adc6079ddb7f444d6471e5a6bff",
+    "src/edraft/investigate_m0.py": "ead0c8e6abff9932455d34186652e3ca787b7da6d01e36242ee36d6a8095bbb8",
+    "src/edraft/launch.py": "9daaa032d00cc18a615c76184369028195f4b85c484e952536043b74d5f69233",
+    "src/edraft/m0.py": "b8020800a835c1e48d53f5065373ecce37b11104c4b1111bca651b69d462c172",
+    "src/edraft/online.py": "ba781eb2f0a5c06b29e9101001724c1045b6bdc845b13400e5305fc603fe8b22",
+    "src/edraft/prompts.py": "0cc4a358cf50a5c77ab0e5afa3653f82fce5d326466d138b9ee23d6369172a5e",
+    "src/edraft/runtime.py": "53da76eed8fea489bc77cd3eef75852bb9acf247cf2a0731d75e5176c14b5bea",
+    "src/edraft/sampler.py": "78f42af34ae1c1fe181273331c121d0fa7f17f8b62d5c9616c47de517892e38f",
+    "src/edraft/smoke.py": "7e60e413a116bda670753c066d21daff51729ba35b7f57e76b2a33063eb263bf",
+    "src/edraft/sparse.py": "66beee3396ade7a6104729086a6a68c0180b5dd2e89909448cf3430344747864",
+    "src/edraft/sparse_stats.py": "62c8a36b8c707a38a8944a2882134893eed9f0ab8d50fd7ab737eeeef358c92c",
+    "src/edraft/toy.py": "5b7c325ede7455d219ba9fd93eb086daf656695608eece0129269fca1ee9494e",
+    "src/edraft/traces.py": "cf7aec2d2d3ebdaeb0896a2da86193f87ee07e51a7a0eba1016f31da705b83d8",
+    "src/edraft/train.py": "a859ba54cf2410c659b45ceb97c08364353a1cce1949d35bb70339342bf9526e",
+    "src/edraft/verify.py": "0f664b84a4dbe963432386b5d8732aff112271ef341422eda254da08f39f3fea",
+    "tests/conftest.py": "b562ac70cfda02abaa0f26db69d1b84c8378413631b5ffe19499dc746120f6a8",
+    "tests/test_adapter.py": "be1daf6f84a8c2043db7c8253e376c5034b8af4617a1f6654571f71b24e9ad15",
+    "tests/test_backend.py": "795516553aee37e6fdaeb127a4e7145ab93989da1b5c46a7e14a224d5579b34c",
+    "tests/test_collect.py": "a74f73b62988afbb0cb7c4bd13cd05c5f2522e06e7ec8938db91135a580df7e6",
+    "tests/test_diagnose.py": "b5582e4c18b0fe46ccbd409afb683a88aa626dea9e28f84cd107b268d934b66e",
+    "tests/test_diagnose_vectorized.py": "c6d22326786a5f772b941b8451e126150768b21774611fc51a2f4a89d1e29ba2",
+    "tests/test_eval_closed_loop.py": "8d237be418032b8e1b4aaf7daf64292dae3cf4804f26cfaa8ca24cac9968cb58",
+    "tests/test_grouped_vectorized.py": "35595eb3ceab495d78f756d88a2541e4c3f293f6a1e6d3a9d3d198d3e505dfa5",
+    "tests/test_lookahead_positive.py": "88ad13c05ba6ddc98a844098c541a1d8a37e6722b4c88b0fcd839fb3b9aee686",
+    "tests/test_m4_feature_context.py": "bfb8aaa67260cc6dea38bf971709516ea692fa63657f0d0ee70faab8a31d7151",
+    "tests/test_online.py": "6a03f927ff180f0da1602e101207c1f28079f3f7c09b2dea4556534b9b786063",
+    "tests/test_runtime.py": "27f625cb7213d1fd537f49bd2cd0846ff088d6b7375bc656094a0feea67070e3",
+    "tests/test_sampler_verify.py": "8bdafa584dbbaf33bf6982038e2d4b7ff10ab38e9fcbc46b75876996ffd2acd4",
+    "tests/test_sparse.py": "4643edd45ab64dbf130cbf29e6ae07327d7a2c7abd2e1cda8fcae28cb2f1db56",
+    "tests/test_toy.py": "872d015d667c1bdcde372a04b983a29c965062a19b7021b9ad06ed0c8b23293f",
+    "tests/test_traces.py": "259d5222bff39f337384f2fd625f63399c61d3f355ee4fb36e19a611d435d2a2",
+    "tests/test_train.py": "6b307f0c359aef2e69fa5303fbf82e0d6f35c482b479e8d62d629851ad20de75"
+  },
+  "source_unchanged": true,
+  "finished_at_utc": "2026-11-13T23:15:28.854770+00:00",
+  "pytest": {
+    "tests": 180,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0
+  },
+  "m4_feature_context": {
+    "status": "complete",
+    "label": "synthetic",
+    "source": "plain-toy feature context recomputed separately on smoke test prompts",
+    "feature_group_count": 4,
+    "condition_bin_coverage": [
+      {
+        "condition": "long_thinking",
+        "collection_temperature": 0.6,
+        "sampling_warp_config": {
+          "min_p": 0.0,
+          "top_k": 20,
+          "top_p": 0.95
+        },
+        "observed_bins": [
+          "0-1K"
+        ],
+        "empty_bins": [
+          "1K-4K",
+          "4K-8K",
+          "8K-16K",
+          "16K+"
+        ],
+        "primary_empty_bins": [
+          "1K-4K",
+          "4K-8K",
+          "8K-16K",
+          "16K+"
+        ],
+        "logical_slots": 60,
+        "feature_group_count": 1
+      },
+      {
+        "condition": "standard_nonthinking",
+        "collection_temperature": 0.0,
+        "sampling_warp_config": {
+          "min_p": 0.0,
+          "top_k": 0,
+          "top_p": 1.0
+        },
+        "observed_bins": [
+          "0-1K"
+        ],
+        "empty_bins": [
+          "1K-4K",
+          "4K-8K",
+          "8K-16K",
+          "16K+"
+        ],
+        "primary_empty_bins": [
+          "1K-4K",
+          "4K-8K",
+          "8K-16K",
+          "16K+"
+        ],
+        "logical_slots": 53,
+        "feature_group_count": 1
+      },
+      {
+        "condition": "standard_nonthinking",
+        "collection_temperature": 0.7,
+        "sampling_warp_config": {
+          "min_p": 0.0,
+          "top_k": 20,
+          "top_p": 0.8
+        },
+        "observed_bins": [
+          "0-1K"
+        ],
+        "empty_bins": [
+          "1K-4K",
+          "4K-8K",
+          "8K-16K",
+          "16K+"
+        ],
+        "primary_empty_bins": [
+          "1K-4K",
+          "4K-8K",
+          "8K-16K",
+          "16K+"
+        ],
+        "logical_slots": 61,
+        "feature_group_count": 1
+      },
+      {
+        "condition": "standard_nonthinking",
+        "collection_temperature": 1.0,
+        "sampling_warp_config": {
+          "min_p": 0.0,
+          "top_k": 0,
+          "top_p": 1.0
+        },
+        "observed_bins": [
+          "0-1K"
+        ],
+        "empty_bins": [
+          "1K-4K",
+          "4K-8K",
+          "8K-16K",
+          "16K+"
+        ],
+        "primary_empty_bins": [
+          "1K-4K",
+          "4K-8K",
+          "8K-16K",
+          "16K+"
+        ],
+        "logical_slots": 59,
+        "feature_group_count": 1
+      }
+    ]
+  },
+  "cross_stage_comparisons": [
+    {
+      "m3_arm": "plain_dflash",
+      "m4_arm": "plain_dflash",
+      "matching_settings_or_greedy_requests": 8,
+      "identical_output_and_accepted_length": true,
+      "stochastic_requests_with_different_dev_selected_settings": 0
+    },
+    {
+      "m3_arm": "online_bigram",
+      "m4_arm": "online_bigram",
+      "matching_settings_or_greedy_requests": 2,
+      "identical_output_and_accepted_length": true,
+      "stochastic_requests_with_different_dev_selected_settings": 6
+    },
+    {
+      "m3_arm": "dense_sparse",
+      "m4_arm": "offline_static",
+      "matching_settings_or_greedy_requests": 2,
+      "identical_output_and_accepted_length": true,
+      "stochastic_requests_with_different_dev_selected_settings": 6
+    }
+  ],
+  "stage_reports": {
+    "m3": {
+      "status": "complete",
+      "requests": 32,
+      "timed_requests": 96,
+      "phase_profile_groups": 16,
+      "online_requests_with_finite_dS_norm_and_valid_versions": 0,
+      "settings": {
+        "plain_dflash": {},
+        "online_bigram": {
+          "lambda_tr": 0.2,
+          "alpha": 1.0,
+          "k_ret": null
+        },
+        "dense": {
+          "beta": 0.5
+        },
+        "dense_sparse": {
+          "beta": 0.5
+        }
+      }
+    },
+    "m4": {
+      "status": "complete",
+      "requests": 40,
+      "timed_requests": 120,
+      "phase_profile_groups": 20,
+      "online_requests_with_finite_dS_norm_and_valid_versions": 16,
+      "settings": {
+        "plain_dflash": {},
+        "online_bigram": {
+          "lambda_tr": 0.05,
+          "alpha": 0.5,
+          "k_ret": null
+        },
+        "offline_static": {
+          "beta": 1.0
+        },
+        "offline_online_stride1": {
+          "beta": 1.0,
+          "lr": 0.001,
+          "update_stride": 1,
+          "lambda_l2": 0.1,
+          "lambda_l1_b": 1e-06,
+          "lambda_l1_s": 1e-05,
+          "weighting_mode": "exponential"
+        },
+        "online_dbS": {
+          "beta": 1.0,
+          "lr": 0.0001,
+          "update_stride": 1,
+          "lambda_l2": 0.01,
+          "lambda_l1_b": 1e-06,
+          "lambda_l1_s": 1e-05,
+          "weighting_mode": "exponential"
+        }
+      }
+    }
+  },
+  "interpretation": "Independent CPU synthetic implementation validation only; no real-model quality or throughput claim."
+}

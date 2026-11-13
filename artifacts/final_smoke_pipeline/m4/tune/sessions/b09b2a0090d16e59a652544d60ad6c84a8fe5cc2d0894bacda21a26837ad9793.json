@@ -1,0 +1,173 @@
+{
+  "logical_session": "bc0dd0cdb7ea42528686a32e7dd1cf1b",
+  "configuration": {
+    "configuration": {
+      "prompt_manifest_hash": "496873fa2eabc179ac17b1621fe87aa80bea6a3ee30b6c72d7c43721bc727610",
+      "dev_ids": [
+        "synthetic-dev-standard_nonthinking-0",
+        "synthetic-dev-standard_nonthinking-1",
+        "synthetic-dev-long_thinking-0",
+        "synthetic-dev-long_thinking-1"
+      ],
+      "candidates": {
+        "plain_dflash": [
+          {}
+        ],
+        "online_bigram": [
+          {
+            "lambda_tr": 0.05,
+            "alpha": 0.5,
+            "k_ret": null
+          },
+          {
+            "lambda_tr": 0.2,
+            "alpha": 1.0,
+            "k_ret": null
+          }
+        ],
+        "offline_static": [
+          {
+            "beta": 0.5
+          },
+          {
+            "beta": 1.0
+          }
+        ],
+        "offline_online_stride1": [
+          {
+            "beta": 1.0,
+            "lr": 0.0001,
+            "update_stride": 1,
+            "lambda_l2": 0.01,
+            "lambda_l1_b": 1e-06,
+            "lambda_l1_s": 1e-05,
+            "weighting_mode": "exponential"
+          },
+          {
+            "beta": 1.0,
+            "lr": 0.001,
+            "update_stride": 1,
+            "lambda_l2": 0.1,
+            "lambda_l1_b": 1e-06,
+            "lambda_l1_s": 1e-05,
+            "weighting_mode": "exponential"
+          }
+        ],
+        "online_dbS": [
+          {
+            "beta": 1.0,
+            "lr": 0.0001,
+            "update_stride": 1,
+            "lambda_l2": 0.01,
+            "lambda_l1_b": 1e-06,
+            "lambda_l1_s": 1e-05,
+            "weighting_mode": "exponential"
+          },
+          {
+            "beta": 1.0,
+            "lr": 0.001,
+            "update_stride": 1,
+            "lambda_l2": 0.1,
+            "lambda_l1_b": 1e-06,
+            "lambda_l1_s": 1e-05,
+            "weighting_mode": "exponential"
+          }
+        ]
+      }
+    },
+    "checkpoint_hashes": {
+      "dense": "551a7a5907538169bf91ad2fb07c74d2c0549f6477fe7412fc7e505d47c59dce",
+      "dense_sparse": "3064fd63be5221bcae96a291b6247c50e6faee648ce6ad5562199675b2be6b54",
+      "projection": "synthetic-calibration-seed-2026",
+      "implementation": "433c458c52eb06733128018873d2650ba310417c58c5996440e7f3aff2689761"
+    },
+    "model_pair": [
+      "builtin_toy_target",
+      "builtin_parallel_drafter"
+    ],
+    "model_revisions": [
+      "synthetic-v1",
+      "synthetic-v1"
+    ],
+    "generation_caps": {
+      "standard": 2048,
+      "long": 24576,
+      "smoke": 32
+    },
+    "stage": "m4",
+    "scale": "smoke",
+    "device": "cpu",
+    "visible_devices": "",
+    "seed": 2026
+  },
+  "created_at_unix": 1794611719.2802038,
+  "epochs": [
+    {
+      "epoch": "27167811aefd447cb49f1ec84f933155",
+      "started_at_unix": 1794611719.2802079,
+      "device": "cpu"
+    }
+  ],
+  "bundles": {
+    "f89b9e91205fac6fefd212c93b5e828b95d15ec5a92251c6aaed371ca09ff1a8": {
+      "status": "complete",
+      "epoch": "27167811aefd447cb49f1ec84f933155",
+      "result_paths": [
+        "/home/catid/drafter/artifacts/final_smoke_pipeline/m4/tune/rank0/51342f6f585e1b14db4faeb78e172aaff5d1576a8d031cc8e2f45c6ab88c35f1.json",
+        "/home/catid/drafter/artifacts/final_smoke_pipeline/m4/tune/rank0/96480a9994db412160e394ecf872d47cb4857ef42c217ac68376bbdd5325c872.json",
+        "/home/catid/drafter/artifacts/final_smoke_pipeline/m4/tune/rank0/1b0b1f3f4d7c61d9716cce81b771e059b732680ff574310148df5d2eca814e59.json",
+        "/home/catid/drafter/artifacts/final_smoke_pipeline/m4/tune/rank0/7b63d6b51c1232f1cd3795c28600e1a5d88c6b2637eb33bc96c1cd928f93200b.json",
+        "/home/catid/drafter/artifacts/final_smoke_pipeline/m4/tune/rank0/e5e3b7e95cee2ad34ee77c2bc5e1e034baf40873f501e9a37a708145c7915135.json",
+        "/home/catid/drafter/artifacts/final_smoke_pipeline/m4/tune/rank0/a824ebb721bb8f69ed91765c716147b50672f2c33e273835b7f4baa916cee916.json",
+        "/home/catid/drafter/artifacts/final_smoke_pipeline/m4/tune/rank0/4129aa8fd4f510bfd68cfab6a0db7701d09c4f542beb213f02122a26d719754b.json",
+        "/home/catid/drafter/artifacts/final_smoke_pipeline/m4/tune/rank0/8dba3b60ed67089fa47dd914e2272a9f27aef655a7bcd082d4c3d83b4fd0263b.json",
+        "/home/catid/drafter/artifacts/final_smoke_pipeline/m4/tune/rank0/21d2f65ce7722935ffe2519fe6cf722d046b6edfe0b8caa80a91e86f191ddae8.json"
+      ]
+    },
+    "e86f0250fd3cef9ce764b6d42368010320763b8dbbda0cb0d46afb4287464ffd": {
+      "status": "complete",
+      "epoch": "27167811aefd447cb49f1ec84f933155",
+      "result_paths": [
+        "/home/catid/drafter/artifacts/final_smoke_pipeline/m4/tune/rank0/1187bc7e78484f30094cb7a410791be76eb6f0035a7ab677cc79526e10d79288.json",
+        "/home/catid/drafter/artifacts/final_smoke_pipeline/m4/tune/rank0/afbc76bf161f0607ea234a63ce8f3525ae725db591ff3e923e9a5db79a905ed7.json",
+        "/home/catid/drafter/artifacts/final_smoke_pipeline/m4/tune/rank0/38edfe8d982828ad912ad85518bc3a5868cd58435d4433a99df6150969b7eafd.json",
+        "/home/catid/drafter/artifacts/final_smoke_pipeline/m4/tune/rank0/552419de507543ffc8d3de6144ee8437da4a4d4b07866e3e44bcc56e9f2f2420.json",
+        "/home/catid/drafter/artifacts/final_smoke_pipeline/m4/tune/rank0/b6ac4945dbf88778c50add6f64cbe28e56e8f884d721c9dbc7a9de673404bbb7.json",
+        "/home/catid/drafter/artifacts/final_smoke_pipeline/m4/tune/rank0/0b746236ca05a57d1352b8dabf2b6c63b709f72971181ae33e7cd1ce5f49aac1.json",
+        "/home/catid/drafter/artifacts/final_smoke_pipeline/m4/tune/rank0/f1130d9987a764e9e66b9e85e3e832734e3e1107c64fd547825c9a12547e8b66.json",
+        "/home/catid/drafter/artifacts/final_smoke_pipeline/m4/tune/rank0/cb0a94ec3e59b45658afdc5aa90e1112a9b5db41d8122dce1f4946010d2c2f9f.json",
+        "/home/catid/drafter/artifacts/final_smoke_pipeline/m4/tune/rank0/766e2bfd19a1521e56bd80f0eee8d525c95f9029ac95fee7c39a5bc22799e061.json"
+      ]
+    },
+    "724c2dbe8ead5d181ace5c76771d0ae81dd0a4b81f2fd9eec4d19660281c0574": {
+      "status": "complete",
+      "epoch": "27167811aefd447cb49f1ec84f933155",
+      "result_paths": [
+        "/home/catid/drafter/artifacts/final_smoke_pipeline/m4/tune/rank0/8883f2d51ff723bd823a5cf2839e6dbefe852a148fdf6ae70a7a3dbd8848d015.json",
+        "/home/catid/drafter/artifacts/final_smoke_pipeline/m4/tune/rank0/6d7ffa469e19ff2a9c358c286a17d61f1779e5d7fb641d945eb3d3158e6094b5.json",
+        "/home/catid/drafter/artifacts/final_smoke_pipeline/m4/tune/rank0/110c52965c26ec4ea3599b6f0571f00cba9087c09564248435d8f80b316f2518.json",
+        "/home/catid/drafter/artifacts/final_smoke_pipeline/m4/tune/rank0/760f778984e8deb601cfc6c5dd01895c9809be4a21e89ff292c08987a441a50c.json",
+        "/home/catid/drafter/artifacts/final_smoke_pipeline/m4/tune/rank0/443ec6427af0059bc248d89f275781376591989ae42f8826d7e282f77f05a777.json",
+        "/home/catid/drafter/artifacts/final_smoke_pipeline/m4/tune/rank0/c7d977bc0ab97079f2a81f998123e8f2ceb8f4214083bde01dc712223e1d0163.json",
+        "/home/catid/drafter/artifacts/final_smoke_pipeline/m4/tune/rank0/2b1051112abd679f786d3f8285839638fdc55ddbb8f4d6c7808d8adef694df98.json",
+        "/home/catid/drafter/artifacts/final_smoke_pipeline/m4/tune/rank0/7eb015defc5b4abb771428ad97ab83c32ba7f98280713c5cfbbe8354edb22a81.json",
+        "/home/catid/drafter/artifacts/final_smoke_pipeline/m4/tune/rank0/036d9ac0b2b3c9d912d1bbc6178291f1656942b871be7589583ee32a55776951.json"
+      ]
+    },
+    "957a9e28ca82b764f2829b0590f748ff4cfb6f71d0325fd18dbe11ec95e26670": {
+      "status": "complete",
+      "epoch": "27167811aefd447cb49f1ec84f933155",
+      "result_paths": [
+        "/home/catid/drafter/artifacts/final_smoke_pipeline/m4/tune/rank0/7ec0e7af375a3bf9aa0b12d96e85db758689c85418166fc3c0d448e4890ce85a.json",
+        "/home/catid/drafter/artifacts/final_smoke_pipeline/m4/tune/rank0/f7a2041643d403869e2f3bee1f86677a0f58e63a67f8c12ba1fb7795a1045522.json",
+        "/home/catid/drafter/artifacts/final_smoke_pipeline/m4/tune/rank0/77ff31914914e7db5a59e480322ed6d45eca3bba416755cf4ea37ef3e90e53fb.json",
+        "/home/catid/drafter/artifacts/final_smoke_pipeline/m4/tune/rank0/49dab30951e473f71f9e2b59b24a12038bf50d94b5e13c2b60a0fe910d8b25f6.json",
+        "/home/catid/drafter/artifacts/final_smoke_pipeline/m4/tune/rank0/bc804dd52a63bd8dbb94fa04dff90d44869ea4c1ba32c76097f00846b460b5b5.json",
+        "/home/catid/drafter/artifacts/final_smoke_pipeline/m4/tune/rank0/1a58f43b8d10311ec4d69067c1311cf12058ec20e93559bfd6e5ff87958d3a8b.json",
+        "/home/catid/drafter/artifacts/final_smoke_pipeline/m4/tune/rank0/6e8aa514c0743a06e5251eaf3c9d31f3eaf4e19ac77c35015ef507c08b8af88d.json",
+        "/home/catid/drafter/artifacts/final_smoke_pipeline/m4/tune/rank0/a6d640c69a04c1c4d304a3b9f7a3e2405e930112413ab3518592375726132766.json",
+        "/home/catid/drafter/artifacts/final_smoke_pipeline/m4/tune/rank0/08ad4b9f0ac346260bf8f76ebf74f2e32b9e4d04544584895349aa798684c9ef.json"
+      ]
+    }
+  }
+}

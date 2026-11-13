@@ -212,10 +212,15 @@ class OnlineState:
         return True
 
     def metrics(self):
+        # Evaluate current lazy shrinkage without materializing it into storage.
+        effective_dS = self.dS.read(self.dS.active) if self.dS is not None else None
         return {'adapter_version': self.version, 'u': self.u, 'last_round': self.last_round,
                 'loss_mode': 'live_full', 'T_train': 1., 'beta_train': 1.,
                 'dW_norm': float(self.dW.norm()), 'dA_norm': float(self.dA.norm()),
-                'db_norm': float(self.db.norm()), 'db_exact_zero_fraction': float((self.db == 0).float().mean()),
+                'db_norm': float(self.db.norm()),
+                'dS_norm': float(effective_dS.norm()) if effective_dS is not None else 0.,
+                'dS_norm_definition': 'L2 norm of effective lazy-shrunk request delta at current optimizer u; zero unrepresented buckets; pure read',
+                'db_exact_zero_fraction': float((self.db == 0).float().mean()),
                 'active_buckets': len(self.dS.active) if self.dS is not None else 0,
                 'active_buckets_min_over_updates': self.active_bucket_min,
                 'active_buckets_max_over_updates': self.active_bucket_max,

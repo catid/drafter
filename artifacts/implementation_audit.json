@@ -1,0 +1,2538 @@
+{
+  "schema_version": 1,
+  "audit_type": "implementation_compliance",
+  "audited_at_utc": "2026-11-13T23:16:32.726184+00:00",
+  "scale": "reference",
+  "status": "implementation_verified_reference_pending",
+  "specification": {
+    "path": "prompt.md",
+    "sha256": "94bfb4ada4e4954084379a7f0e6194d73a8b85bd128f4fdeadcac63fff3fa295"
+  },
+  "scope": "Read-only source/test/artifact review of mandatory M0\u2013M4 implementation. This does not mark pending reference experiments complete and does not certify performance or quality gains.",
+  "project_git_commit": "afe3f16b11e3dfb081313a8ecd74288f54ba10e5",
+  "source_files_sha256": {
+    "src/edraft/__init__.py": "23a9df4a3e6afe2c976090479dccaaaed2f9224c606b557ef8d73b001b6123b5",
+    "src/edraft/adapter.py": "b8960babc3f3b126a11e1f990ef144b2a9be6331a181bdbeea3da2f4c0c5b9d5",
+    "src/edraft/backend.py": "7f9b59880136f5de0ff63ce6b13e8351d81f3f2b15eaeac0a8a365f6a7a5ee78",
+    "src/edraft/bench_adapter.py": "8107e239feaabd8fc59537c398647cc7cd73bd0d188798cb74ab61e7cdc6d79a",
+    "src/edraft/bench_grouped.py": "b2db348dd76a18e9920f10063f63fa0138fa1900c8a1b7f0852e41917317cc61",
+    "src/edraft/collect.py": "e8c1d984c9a259f33769e0c87057b7773b89cacc24def3521d6c55ea4bf2df62",
+    "src/edraft/dflash_loop.py": "06001ce2fd529475e1c31e3aa2bfae69d203e70d72ab2a09b41ad794d8fa60d2",
+    "src/edraft/diagnose.py": "4f3eb560b823cad5965fe2c2bf789e9f55ecb4a0e5ff0ce9c9e2e2a410ef0749",
+    "src/edraft/download.py": "013d796de195dd38858e5cdaee597443c1228835a07e6cc2cfd47847ef127977",
+    "src/edraft/eval_closed_loop.py": "dbef2371b86ec7050560cd98f1cb27e7240aaf3510518116299fe1fcd2f383f4",
+    "src/edraft/features.py": "adfbfa21ab6622f730df33513142c65a7d3c5adc6079ddb7f444d6471e5a6bff",
+    "src/edraft/investigate_m0.py": "ead0c8e6abff9932455d34186652e3ca787b7da6d01e36242ee36d6a8095bbb8",
+    "src/edraft/launch.py": "9daaa032d00cc18a615c76184369028195f4b85c484e952536043b74d5f69233",
+    "src/edraft/m0.py": "b8020800a835c1e48d53f5065373ecce37b11104c4b1111bca651b69d462c172",
+    "src/edraft/online.py": "ba781eb2f0a5c06b29e9101001724c1045b6bdc845b13400e5305fc603fe8b22",
+    "src/edraft/prompts.py": "0cc4a358cf50a5c77ab0e5afa3653f82fce5d326466d138b9ee23d6369172a5e",
+    "src/edraft/runtime.py": "53da76eed8fea489bc77cd3eef75852bb9acf247cf2a0731d75e5176c14b5bea",
+    "src/edraft/sampler.py": "78f42af34ae1c1fe181273331c121d0fa7f17f8b62d5c9616c47de517892e38f",
+    "src/edraft/smoke.py": "7e60e413a116bda670753c066d21daff51729ba35b7f57e76b2a33063eb263bf",
+    "src/edraft/sparse.py": "66beee3396ade7a6104729086a6a68c0180b5dd2e89909448cf3430344747864",
+    "src/edraft/sparse_stats.py": "62c8a36b8c707a38a8944a2882134893eed9f0ab8d50fd7ab737eeeef358c92c",
+    "src/edraft/toy.py": "5b7c325ede7455d219ba9fd93eb086daf656695608eece0129269fca1ee9494e",
+    "src/edraft/traces.py": "cf7aec2d2d3ebdaeb0896a2da86193f87ee07e51a7a0eba1016f31da705b83d8",
+    "src/edraft/train.py": "a859ba54cf2410c659b45ceb97c08364353a1cce1949d35bb70339342bf9526e",
+    "src/edraft/verify.py": "0f664b84a4dbe963432386b5d8732aff112271ef341422eda254da08f39f3fea",
+    "tests/conftest.py": "b562ac70cfda02abaa0f26db69d1b84c8378413631b5ffe19499dc746120f6a8",
+    "tests/test_adapter.py": "be1daf6f84a8c2043db7c8253e376c5034b8af4617a1f6654571f71b24e9ad15",
+    "tests/test_backend.py": "795516553aee37e6fdaeb127a4e7145ab93989da1b5c46a7e14a224d5579b34c",
+    "tests/test_collect.py": "a74f73b62988afbb0cb7c4bd13cd05c5f2522e06e7ec8938db91135a580df7e6",
+    "tests/test_diagnose.py": "b5582e4c18b0fe46ccbd409afb683a88aa626dea9e28f84cd107b268d934b66e",
+    "tests/test_diagnose_vectorized.py": "c6d22326786a5f772b941b8451e126150768b21774611fc51a2f4a89d1e29ba2",
+    "tests/test_eval_closed_loop.py": "8d237be418032b8e1b4aaf7daf64292dae3cf4804f26cfaa8ca24cac9968cb58",
+    "tests/test_grouped_vectorized.py": "35595eb3ceab495d78f756d88a2541e4c3f293f6a1e6d3a9d3d198d3e505dfa5",
+    "tests/test_lookahead_positive.py": "88ad13c05ba6ddc98a844098c541a1d8a37e6722b4c88b0fcd839fb3b9aee686",
+    "tests/test_m4_feature_context.py": "bfb8aaa67260cc6dea38bf971709516ea692fa63657f0d0ee70faab8a31d7151",
+    "tests/test_online.py": "6a03f927ff180f0da1602e101207c1f28079f3f7c09b2dea4556534b9b786063",
+    "tests/test_runtime.py": "27f625cb7213d1fd537f49bd2cd0846ff088d6b7375bc656094a0feea67070e3",
+    "tests/test_sampler_verify.py": "8bdafa584dbbaf33bf6982038e2d4b7ff10ab38e9fcbc46b75876996ffd2acd4",
+    "tests/test_sparse.py": "4643edd45ab64dbf130cbf29e6ae07327d7a2c7abd2e1cda8fcae28cb2f1db56",
+    "tests/test_toy.py": "872d015d667c1bdcde372a04b983a29c965062a19b7021b9ad06ed0c8b23293f",
+    "tests/test_traces.py": "259d5222bff39f337384f2fd625f63399c61d3f355ee4fb36e19a611d435d2a2",
+    "tests/test_train.py": "6b307f0c359aef2e69fa5303fbf82e0d6f35c482b479e8d62d629851ad20de75"
+  },
+  "source_tree_sha256": "50dfd40e6ea3823927121d64776df84d141aa7fe867425db302e8f75aac6fb5b",
+  "verification_basis": {
+    "full_suite": "Independent CPU pytest passed180 tests,0 failures/errors/skips in18.54s; commands/source hashes captured in artifacts/final_smoke_pipeline/validation.json.",
+    "direct_work": "Inspected requirement equations, entrypoints, test definitions, source paths and artifacts; validated referenced paths/symbols. Full smoke M3/M4 entrypoints completed after both code owners declared ready.",
+    "core_modified_by_auditor": false,
+    "gpu_work_by_auditor": false,
+    "test_only_additions_by_auditor": [
+      "tests/test_lookahead_positive.py"
+    ],
+    "documentation_changed_by_auditor": [
+      "README.md",
+      "reports/SUMMARY.md"
+    ],
+    "integration_validation": "artifacts/final_smoke_pipeline/validation.json",
+    "isolation": {
+      "CUDA_VISIBLE_DEVICES": "",
+      "HF_HUB_OFFLINE": "1",
+      "HF_DATASETS_OFFLINE": "1",
+      "TRANSFORMERS_OFFLINE": "1",
+      "OMP_NUM_THREADS": "1",
+      "output_directory": "artifacts/final_smoke_pipeline"
+    },
+    "source_unchanged_during_validation": true
+  },
+  "status_meanings": {
+    "implemented_verified": "Implementation and cited test/source evidence exist; reference completion is separate.",
+    "partial": "Concrete implementation, direct-test coverage, or reporting work remains.",
+    "reference_execution_pending": "Implementation exists, but required reference evidence has not completed.",
+    "optional_not_run": "Optional M5 scope without execution claim.",
+    "implementation_verified_reference_pending": "Mandatory implementation and independent CPU integration checks passed; pending reference experiments do not inherit acceptance from smoke."
+  },
+  "authoritative_milestone_snapshot": {
+    "scale": "reference",
+    "M0": {
+      "status": "passed",
+      "evidence": [
+        "artifacts/smoke.json",
+        "artifacts/m0.json",
+        "artifacts/m0_numerics.json",
+        "artifacts/dflash_inspection.md"
+      ]
+    },
+    "M1-pre": {
+      "status": "passed",
+      "evidence": [
+        "artifacts/calibration.json",
+        "artifacts/h_proj.pt",
+        "artifacts/token_features.pt"
+      ],
+      "calibration_prompts": 64,
+      "hidden_vectors": 22377
+    },
+    "M1a": {
+      "status": "running",
+      "launcher_pid": 2555687,
+      "physical_gpus": [
+        2,
+        3,
+        4,
+        6
+      ],
+      "world_size": 4,
+      "manifest": "artifacts/collection-processes.json",
+      "primary_train_tokens": 501510,
+      "primary_train_tokens_by_temperature": {
+        "0.0": 250790,
+        "0.7": 250720
+      },
+      "standard_primary_eval_generations": 256,
+      "pure_temperature_diagnostic_generations": 192,
+      "long_generations_required": 44,
+      "current_partition": "long_thinking",
+      "progress_recorded_utc": "2026-11-13T23:15:23.810822+00:00"
+    },
+    "M1b": {
+      "status": "not_run",
+      "next_gate": "M1a audit passed and final CPU integration validation complete"
+    },
+    "M2": {
+      "status": "not_run",
+      "synthetic_smoke": "artifacts/m2_smoke.json; not reference evidence"
+    },
+    "M3": {
+      "status": "not_run"
+    },
+    "M4": {
+      "status": "not_run"
+    },
+    "M5": {
+      "status": "not_run",
+      "optional": true
+    }
+  },
+  "artifact_sha256_at_audit": {
+    "artifacts/milestones.json": "c57c37217fc31109c5fdc45339701ffe302c62f01ad886bf662adecf4f85b3eb",
+    "artifacts/m0.json": "417fc9a717229308e096876f7566e1e6a81dd1bfd371a372cd771505ff5b329e",
+    "artifacts/m0_numerics.json": "1c47bd19d2251ad8113299bcf67888dc1761890ec72d15073cf221ec395107b4",
+    "artifacts/calibration.json": "1fd5e35b6a68e7d54b36dbcc3b83d66a79f032a76e17dd8c51466ee5737721c7",
+    "artifacts/smoke.json": "f4ee5bd631146aa8ea038faa7695d112ffd8d849496fef88f414fa59103b0f93",
+    "artifacts/m2_smoke.json": "a7373119cd9033f341fe7c7790a5ffa0b55b1cd797f5666784ace12c16d2df84",
+    "artifacts/eval_smoke/m3/summary.json": "d121f48f12d1c69a51357f068f499e378e707474733595e8403f05d9526739a4",
+    "artifacts/eval_smoke/m4/summary.json": "99ec58ab68f55efad3eaa4f138c69ae06b0732d13409affeaa07d962e66afa8e",
+    "README.md": "a682f3bed914569a8d78c7b3df23097778ee3cea897c164584f0800ad398bc6e",
+    "reports/SUMMARY.md": "dadad86416a6b772033d9bd0eb4d83b2a9eb316f4fa9c050553f01753f1174ca",
+    "artifacts/environment.json": "e95d2296761195e999fe92d9d66d42f95959beba2ea136f36c5b75bb72dfa8a4",
+    "artifacts/m0_current_validation.json": "62d990799dd2917cb6c51c8a9a6df8f78b99ad84e29d322cc2266e3b928c7e91",
+    "artifacts/final_smoke_pipeline/validation.json": "79b93eb70ab305996b8a29e6988818835413c523f43bd5afa510490dd9e92155",
+    "artifacts/final_smoke_pipeline/pytest.xml": "b42cef6731a8b75cfbd1d1e4f89653580419e152c88906195966c7f0a56548a3",
+    "artifacts/final_smoke_pipeline/m3/summary.json": "d3f4883fa0f879d779a16e3646e4f1c2e26926000ff603237abedcf5213dfe5d",
+    "artifacts/final_smoke_pipeline/m3/timing.json": "87912b38f965735f9ae8217b4f0c476cd63a589fc76cd908fff171b2507dfa43",
+    "artifacts/final_smoke_pipeline/m4/summary.json": "bfd5bbc014a3ed2b045009dd3a5421acf289a65f0d50d76e6081c0255a62ad24",
+    "artifacts/final_smoke_pipeline/m4/timing.json": "0484b51f73c756361e4ace6a6dd567ce9b2faf99568bbf89832767634a70cfc6",
+    "artifacts/final_smoke_pipeline/m4/feature_context.json": "f0fb88e937e89e14dc75b8827fcdd8711d8f855c2a7d588330b744408f619b88",
+    "artifacts/diagnostic_aggregation_benchmark.json": "f95ca6071cdf6c1aa07d41fb680614e6aac540613ad45c0650ea33917b276c07"
+  },
+  "requirements": [
+    {
+      "id": "ops_environment",
+      "specification_sections": [
+        0,
+        13
+      ],
+      "requirement": "Pinned local uv environment, inventory, model/tokenizer revisions, seeds and source provenance",
+      "status": "implemented_verified",
+      "implementation_evidence": [
+        {
+          "path": "pyproject.toml"
+        },
+        {
+          "path": "uv.lock"
+        },
+        {
+          "path": "src/edraft/runtime.py",
+          "symbol": "environment",
+          "line": 115
+        },
+        {
+          "path": "src/edraft/runtime.py",
+          "symbol": "record_run",
+          "line": 104
+        }
+      ],
+      "required_tests": [],
+      "artifact_evidence": [
+        "NOTES.md",
+        "artifacts/environment.json",
+        "artifacts/dflash_inspection.md"
+      ],
+      "remaining_work": [],
+      "notes": "Environment inventory/download provenance present; top-level environment status has been corrected to recorded. No system-package edits performed by this audit."
+    },
+    {
+      "id": "ops_cli",
+      "specification_sections": [
+        0,
+        13
+      ],
+      "requirement": "Config plus overrides, smoke/reference/full, explicit large-run opt-in and CPU-only smoke",
+      "status": "implemented_verified",
+      "implementation_evidence": [
+        {
+          "path": "src/edraft/runtime.py",
+          "symbol": "common_parser",
+          "line": 67
+        },
+        {
+          "path": "src/edraft/runtime.py",
+          "symbol": "parse_config",
+          "line": 81
+        }
+      ],
+      "required_tests": [
+        "test_02"
+      ],
+      "artifact_evidence": [],
+      "remaining_work": [],
+      "notes": "All executable edraft module entrypoints use common_parser; library-only modules are not scripts."
+    },
+    {
+      "id": "ops_download",
+      "specification_sections": [
+        0,
+        1
+      ],
+      "requirement": "Cache-only reference unless explicit --allow_download; log URLs/revisions/checksums/disk usage",
+      "status": "implemented_verified",
+      "implementation_evidence": [
+        {
+          "path": "src/edraft/download.py",
+          "symbol": "fetch_model",
+          "line": 15
+        },
+        {
+          "path": "src/edraft/download.py",
+          "symbol": "fetch_dataset",
+          "line": 53
+        }
+      ],
+      "required_tests": [
+        "test_02"
+      ],
+      "artifact_evidence": [
+        "artifacts/environment.json"
+      ],
+      "remaining_work": []
+    },
+    {
+      "id": "ops_preflight",
+      "specification_sections": [
+        0
+      ],
+      "requirement": "Smoke throughput, rough runtime estimate, free-disk check before compute",
+      "status": "implemented_verified",
+      "implementation_evidence": [
+        {
+          "path": "src/edraft/runtime.py",
+          "symbol": "preflight",
+          "line": 180
+        },
+        {
+          "path": "src/edraft/smoke.py",
+          "symbol": "run_smoke",
+          "line": 12
+        }
+      ],
+      "required_tests": [
+        "test_02"
+      ],
+      "artifact_evidence": [
+        "artifacts/smoke.json",
+        "NOTES.md"
+      ],
+      "remaining_work": [],
+      "notes": "Estimate is explicitly labelled CPU synthetic extrapolation; it is not a real-model throughput prediction."
+    },
+    {
+      "id": "ops_resume",
+      "specification_sections": [
+        0,
+        13
+      ],
+      "requirement": "Atomic outputs, rank-local manifests and complete generation identities",
+      "status": "implemented_verified",
+      "implementation_evidence": [
+        {
+          "path": "src/edraft/runtime.py",
+          "symbol": "Manifest",
+          "line": 156
+        },
+        {
+          "path": "src/edraft/runtime.py",
+          "symbol": "atomic_json",
+          "line": 23
+        },
+        {
+          "path": "src/edraft/traces.py",
+          "symbol": "TraceShardWriter",
+          "line": 264
+        },
+        {
+          "path": "src/edraft/collect.py",
+          "symbol": "job_identity",
+          "line": 345
+        },
+        {
+          "path": "src/edraft/eval_closed_loop.py",
+          "symbol": "run_identity",
+          "line": 316
+        },
+        {
+          "path": "src/edraft/eval_closed_loop.py",
+          "symbol": "comparison_bundle",
+          "line": 365
+        },
+        {
+          "path": "src/edraft/train.py",
+          "symbol": "checkpoint_payload",
+          "line": 387
+        }
+      ],
+      "required_tests": [
+        "test_16"
+      ],
+      "artifact_evidence": [],
+      "remaining_work": [],
+      "notes": "Checksum-bound trace sources reject stale/duplicate identities; changing world_size can repeat work across rank manifests, but audit deduplicates it."
+    },
+    {
+      "id": "backend_pair",
+      "specification_sections": [
+        1
+      ],
+      "requirement": "Transformers supported configurable Qwen3/DFlash pair and pinned checkout dependency extra",
+      "status": "implemented_verified",
+      "implementation_evidence": [
+        {
+          "path": "src/edraft/backend.py",
+          "symbol": "ReferenceBackend",
+          "line": 40
+        },
+        {
+          "path": "src/edraft/runtime.py",
+          "symbol": "common_parser",
+          "line": 67
+        },
+        {
+          "path": "pyproject.toml"
+        }
+      ],
+      "required_tests": [],
+      "artifact_evidence": [
+        "artifacts/dflash_inspection.md",
+        "NOTES.md"
+      ],
+      "remaining_work": []
+    },
+    {
+      "id": "backend_conditions",
+      "specification_sections": [
+        1
+      ],
+      "requirement": "Inspect exact cards/configs; separate recommended nonthinking, greedy, pure-T1 and OOD long-thinking",
+      "status": "implemented_verified",
+      "implementation_evidence": [
+        {
+          "path": "src/edraft/collect.py",
+          "symbol": "planned_jobs",
+          "line": 312
+        },
+        {
+          "path": "src/edraft/eval_closed_loop.py",
+          "symbol": "sampling_conditions",
+          "line": 62
+        }
+      ],
+      "required_tests": [],
+      "artifact_evidence": [
+        "NOTES.md",
+        "artifacts/dflash_inspection.md",
+        "artifacts/environment.json"
+      ],
+      "remaining_work": [],
+      "notes": "Pinned 8B settings: nonthinking .7/top_k20/top_p.8/min_p0; thinking .6/top_k20/top_p.95. Explicit long_thinking OOD label and natural EOS/24576 cap. Optional 4B execution not run."
+    },
+    {
+      "id": "backend_loop",
+      "specification_sections": [
+        2
+      ],
+      "requirement": "Local non-vendored adapter hook loop, inspected hidden/head mapping, clean anchor, ratio rule, acceptance and cache rollback",
+      "status": "implemented_verified",
+      "implementation_evidence": [
+        {
+          "path": "src/edraft/backend.py",
+          "symbol": "ReferenceBackend",
+          "line": 40
+        },
+        {
+          "path": "src/edraft/dflash_loop.py",
+          "symbol": "generate_reference",
+          "line": 189
+        }
+      ],
+      "required_tests": [
+        "test_01",
+        "test_07",
+        "test_15",
+        "test_22",
+        "test_23"
+      ],
+      "artifact_evidence": [
+        "artifacts/dflash_inspection.md",
+        "artifacts/m0.json",
+        "artifacts/m0_numerics.json"
+      ],
+      "remaining_work": []
+    },
+    {
+      "id": "calibration_hidden",
+      "specification_sections": [
+        3,
+        "M1-pre"
+      ],
+      "requirement": "Train-only frozen hidden projection p256, streaming standardized moments and exact hook metadata",
+      "status": "implemented_verified",
+      "implementation_evidence": [
+        {
+          "path": "src/edraft/features.py",
+          "symbol": "fit_hidden_projection",
+          "line": 36
+        },
+        {
+          "path": "src/edraft/collect.py",
+          "symbol": "calibration",
+          "line": 226
+        },
+        {
+          "path": "src/edraft/collect.py",
+          "symbol": "load_calibration",
+          "line": 295
+        }
+      ],
+      "required_tests": [
+        "test_23"
+      ],
+      "artifact_evidence": [
+        "artifacts/calibration.json",
+        "artifacts/h_proj.pt"
+      ],
+      "remaining_work": [],
+      "notes": "Documented fixed seeded orthogonal projection option; 64 prompts and 22377 hidden vectors in reference calibration."
+    },
+    {
+      "id": "calibration_tokens",
+      "specification_sections": [
+        3,
+        "M1-pre"
+      ],
+      "requirement": "Reproducible randomized embedding PCA token features r64 with calibration-only statistics and configurable source",
+      "status": "implemented_verified",
+      "implementation_evidence": [
+        {
+          "path": "src/edraft/features.py",
+          "symbol": "fit_token_features",
+          "line": 73
+        },
+        {
+          "path": "src/edraft/collect.py",
+          "symbol": "calibration",
+          "line": 226
+        }
+      ],
+      "required_tests": [],
+      "artifact_evidence": [
+        "artifacts/token_features.pt",
+        "artifacts/calibration.json"
+      ],
+      "remaining_work": []
+    },
+    {
+      "id": "adapter_shapes",
+      "specification_sections": [
+        3,
+        4
+      ],
+      "requirement": "Zero-initialized W[r,p], A[D,r,r], b[V], D4; no offset0; exact verified-prefix boundary rule",
+      "status": "implemented_verified",
+      "implementation_evidence": [
+        {
+          "path": "src/edraft/adapter.py",
+          "symbol": "DenseAdapter",
+          "line": 129
+        },
+        {
+          "path": "src/edraft/adapter.py",
+          "symbol": "prev_token",
+          "line": 11
+        }
+      ],
+      "required_tests": [
+        "test_01",
+        "test_07",
+        "test_08"
+      ],
+      "artifact_evidence": [],
+      "remaining_work": []
+    },
+    {
+      "id": "causal_dense",
+      "specification_sections": [
+        5
+      ],
+      "requirement": "Full-vocabulary batched unary and sequential realized-token pair correction; dense_full correctness and dense_candidate ablation",
+      "status": "implemented_verified",
+      "implementation_evidence": [
+        {
+          "path": "src/edraft/adapter.py",
+          "symbol": "block_unary",
+          "line": 29
+        },
+        {
+          "path": "src/edraft/adapter.py",
+          "symbol": "slot_correction",
+          "line": 37
+        },
+        {
+          "path": "src/edraft/adapter.py",
+          "symbol": "ProposalSnapshot",
+          "line": 60
+        },
+        {
+          "path": "src/edraft/dflash_loop.py",
+          "symbol": "_sample_proposal",
+          "line": 86
+        }
+      ],
+      "required_tests": [
+        "test_01",
+        "test_05",
+        "test_07"
+      ],
+      "artifact_evidence": [
+        "artifacts/adapter_benchmark_reference.json"
+      ],
+      "remaining_work": []
+    },
+    {
+      "id": "causal_sparse",
+      "specification_sections": [
+        5
+      ],
+      "requirement": "Top256 sparse support after dense correction, sparse zero outside support, full vocabulary causal argmax",
+      "status": "implemented_verified",
+      "implementation_evidence": [
+        {
+          "path": "src/edraft/adapter.py",
+          "symbol": "slot_correction",
+          "line": 37
+        },
+        {
+          "path": "src/edraft/adapter.py",
+          "symbol": "top_candidates",
+          "line": 23
+        }
+      ],
+      "required_tests": [
+        "test_03",
+        "test_12"
+      ],
+      "artifact_evidence": [],
+      "remaining_work": []
+    },
+    {
+      "id": "sampling_warp",
+      "specification_sections": [
+        5,
+        8
+      ],
+      "requirement": "Common warper after correction and division, realized left-to-right token conditioning, FP32 or toy FP64",
+      "status": "implemented_verified",
+      "implementation_evidence": [
+        {
+          "path": "src/edraft/sampler.py",
+          "symbol": "apply_warper",
+          "line": 47
+        },
+        {
+          "path": "src/edraft/sampler.py",
+          "symbol": "probabilities",
+          "line": 70
+        },
+        {
+          "path": "src/edraft/sampler.py",
+          "symbol": "sample_token",
+          "line": 105
+        },
+        {
+          "path": "src/edraft/dflash_loop.py",
+          "symbol": "_sample_proposal",
+          "line": 86
+        }
+      ],
+      "required_tests": [
+        "test_03",
+        "test_11",
+        "test_12",
+        "test_13",
+        "test_14"
+      ],
+      "artifact_evidence": [],
+      "remaining_work": [],
+      "notes": "Pinned upstream truncation boundary and vectorized acceptance RNG consumption separately regression-tested."
+    },
+    {
+      "id": "sparse_hash",
+      "specification_sections": [
+        6
+      ],
+      "requirement": "Deterministic bucket and independent sign, capacity2^24 default, proximal L1 exact zeros",
+      "status": "implemented_verified",
+      "implementation_evidence": [
+        {
+          "path": "src/edraft/sparse.py",
+          "symbol": "hash_keys",
+          "line": 10
+        },
+        {
+          "path": "src/edraft/sparse.py",
+          "symbol": "SignedHash",
+          "line": 40
+        },
+        {
+          "path": "src/edraft/sparse.py",
+          "symbol": "proximal_l1",
+          "line": 26
+        }
+      ],
+      "required_tests": [
+        "test_17",
+        "test_18"
+      ],
+      "artifact_evidence": [],
+      "remaining_work": []
+    },
+    {
+      "id": "sparse_accounting",
+      "specification_sections": [
+        6
+      ],
+      "requirement": "Capacity, exact unique keys, load/collisions, frequency-weighted collisions, memory and exact sorted-lookup benchmark",
+      "status": "implemented_verified",
+      "implementation_evidence": [
+        {
+          "path": "src/edraft/sparse_stats.py",
+          "symbol": "SparseAccessRecorder",
+          "line": 28
+        },
+        {
+          "path": "src/edraft/sparse_stats.py",
+          "symbol": "lookup_benchmark",
+          "line": 126
+        },
+        {
+          "path": "src/edraft/train.py",
+          "symbol": "fit",
+          "line": 413
+        }
+      ],
+      "required_tests": [
+        "test_17"
+      ],
+      "artifact_evidence": [],
+      "remaining_work": [
+        "Produce measurements on reference M2 fit."
+      ],
+      "notes": "Every committed sparse optimizer-batch lookup is counted through checksummed Parquet and exact DuckDB merge with disk spill; exact table benchmark is a measured subset with its size explicit, not a separately trained exact-pair arm."
+    },
+    {
+      "id": "lookahead_standalone",
+      "specification_sections": [
+        7
+      ],
+      "requirement": "Standalone positive-T_relax beliefs, immutable C0 vs dynamic support/clamp, both domains, damped synchronous update",
+      "status": "implemented_verified",
+      "implementation_evidence": [
+        {
+          "path": "src/edraft/adapter.py",
+          "symbol": "LookaheadState",
+          "line": 235
+        },
+        {
+          "path": "src/edraft/adapter.py",
+          "symbol": "initialize_lookahead",
+          "line": 277
+        },
+        {
+          "path": "src/edraft/adapter.py",
+          "symbol": "damped_lookahead_step",
+          "line": 352
+        }
+      ],
+      "required_tests": [
+        "test_04",
+        "test_19"
+      ],
+      "artifact_evidence": [],
+      "remaining_work": [],
+      "notes": "Closed-loop off/static/rerelax evaluation remains optional M5; required standalone helper exists."
+    },
+    {
+      "id": "lookahead_messages",
+      "specification_sections": [
+        7
+      ],
+      "requirement": "Forward prefix and backward transposed fields, shared masked sparse energy, raw support mass and controlled descent",
+      "status": "implemented_verified",
+      "implementation_evidence": [
+        {
+          "path": "src/edraft/adapter.py",
+          "symbol": "lookahead_fields",
+          "line": 296
+        },
+        {
+          "path": "src/edraft/adapter.py",
+          "symbol": "lookahead_energy",
+          "line": 331
+        }
+      ],
+      "required_tests": [
+        "test_07",
+        "test_08",
+        "test_09",
+        "test_10",
+        "test_06"
+      ],
+      "artifact_evidence": [],
+      "remaining_work": []
+    },
+    {
+      "id": "lookahead_stochastic",
+      "specification_sections": [
+        7,
+        8
+      ],
+      "requirement": "Candidate-masked -inf full vocabulary tensor before warper and full target/residual support",
+      "status": "implemented_verified",
+      "implementation_evidence": [
+        {
+          "path": "src/edraft/adapter.py",
+          "symbol": "LookaheadState.sample_slot",
+          "line": 266
+        },
+        {
+          "path": "src/edraft/sampler.py",
+          "symbol": "mask_scores",
+          "line": 39
+        },
+        {
+          "path": "src/edraft/verify.py",
+          "symbol": "residual_distribution",
+          "line": 27
+        },
+        {
+          "path": "tests/test_lookahead_positive.py",
+          "symbol": "test_positive_lookahead_masks_before_warper_and_preserves_outside_residual",
+          "line": 15
+        }
+      ],
+      "required_tests": [
+        "test_12"
+      ],
+      "artifact_evidence": [],
+      "remaining_work": [],
+      "notes": "Direct actual-helper regression passed for both min_p0 and.3; target retains positive mass outside C0 and mandatory ratio verifier emits the forced outside-support rejection token."
+    },
+    {
+      "id": "verification",
+      "specification_sections": [
+        8
+      ],
+      "requirement": "Mandatory rejection ratio, first-rejection full residual, all-accepted bonus, deterministic greedy branch",
+      "status": "implemented_verified",
+      "implementation_evidence": [
+        {
+          "path": "src/edraft/verify.py",
+          "symbol": "verify_block",
+          "line": 38
+        },
+        {
+          "path": "src/edraft/verify.py",
+          "symbol": "residual_distribution",
+          "line": 27
+        }
+      ],
+      "required_tests": [
+        "test_03",
+        "test_11",
+        "test_12",
+        "test_13",
+        "test_14"
+      ],
+      "artifact_evidence": [],
+      "remaining_work": []
+    },
+    {
+      "id": "verification_records",
+      "specification_sections": [
+        8
+      ],
+      "requirement": "Immutable active adapter snapshot and full per-block versions/probabilities/decisions/rejection/bonus records",
+      "status": "implemented_verified",
+      "implementation_evidence": [
+        {
+          "path": "src/edraft/dflash_loop.py",
+          "symbol": "_record",
+          "line": 130
+        },
+        {
+          "path": "src/edraft/dflash_loop.py",
+          "symbol": "_finish_round",
+          "line": 167
+        },
+        {
+          "path": "src/edraft/verify.py",
+          "symbol": "VerificationResult",
+          "line": 15
+        }
+      ],
+      "required_tests": [
+        "test_19",
+        "test_20"
+      ],
+      "artifact_evidence": [
+        "artifacts/m0.json"
+      ],
+      "remaining_work": [],
+      "notes": "Current code logs proposal and target probabilities for all K slots; old logs stopped after first rejection. Completed M0 validation confirms output/decision parity while accounting explicitly for this logging extension."
+    },
+    {
+      "id": "training_unit",
+      "specification_sections": [
+        9
+      ],
+      "requirement": "Exact unwarped unit P_train/q_train independent of collection temperature/warpers; frozen IDs/models",
+      "status": "implemented_verified",
+      "implementation_evidence": [
+        {
+          "path": "src/edraft/adapter.py",
+          "symbol": "full_kl",
+          "line": 184
+        },
+        {
+          "path": "src/edraft/adapter.py",
+          "symbol": "DenseAdapter",
+          "line": 129
+        },
+        {
+          "path": "src/edraft/online.py",
+          "symbol": "OnlineState",
+          "line": 90
+        },
+        {
+          "path": "src/edraft/train.py",
+          "symbol": "batch_loss",
+          "line": 303
+        }
+      ],
+      "required_tests": [
+        "test_05",
+        "test_06",
+        "test_25"
+      ],
+      "artifact_evidence": [],
+      "remaining_work": []
+    },
+    {
+      "id": "training_grouped",
+      "specification_sections": [
+        9
+      ],
+      "requirement": "Compact target union+rest without renormalization, raw BF16 head reconstruction, exact corrected full partition and grouped-tail gap",
+      "status": "implemented_verified",
+      "implementation_evidence": [
+        {
+          "path": "src/edraft/traces.py",
+          "symbol": "compact_block",
+          "line": 58
+        },
+        {
+          "path": "src/edraft/features.py",
+          "symbol": "reconstruct_l_unit",
+          "line": 104
+        },
+        {
+          "path": "src/edraft/train.py",
+          "symbol": "reconstruct_batch",
+          "line": 246
+        },
+        {
+          "path": "src/edraft/adapter.py",
+          "symbol": "union_rest_grouped",
+          "line": 193
+        },
+        {
+          "path": "src/edraft/train.py",
+          "symbol": "evaluate",
+          "line": 312
+        }
+      ],
+      "required_tests": [
+        "test_05",
+        "test_16",
+        "test_23"
+      ],
+      "artifact_evidence": [],
+      "remaining_work": [],
+      "notes": "Full-vocabulary union uses exact zero rest, preventing a fictitious numerical tail; vectorized grouped objective has independent loop/gradient tests."
+    },
+    {
+      "id": "training_weighting",
+      "specification_sections": [
+        9
+      ],
+      "requirement": "Exponential gamma5 w0=1, rejection-relative and cutoff; post-rejection teacher-data label",
+      "status": "implemented_verified",
+      "implementation_evidence": [
+        {
+          "path": "src/edraft/adapter.py",
+          "symbol": "loss_weights",
+          "line": 169
+        },
+        {
+          "path": "src/edraft/train.py",
+          "symbol": "batch_targets",
+          "line": 293
+        },
+        {
+          "path": "src/edraft/online.py",
+          "symbol": "OnlineState",
+          "line": 90
+        },
+        {
+          "path": "src/edraft/diagnose.py",
+          "symbol": "live_block_diagnostics",
+          "line": 30
+        }
+      ],
+      "required_tests": [
+        "test_06",
+        "test_25"
+      ],
+      "artifact_evidence": [],
+      "remaining_work": []
+    },
+    {
+      "id": "training_optimizer",
+      "specification_sections": [
+        9
+      ],
+      "requirement": "FP32 master/autograd; offline AdamW W/A/b without default bias decay; sparse SGD then explicit proximal L1",
+      "status": "implemented_verified",
+      "implementation_evidence": [
+        {
+          "path": "src/edraft/train.py",
+          "symbol": "optimizer_for",
+          "line": 363
+        },
+        {
+          "path": "src/edraft/train.py",
+          "symbol": "fit",
+          "line": 413
+        },
+        {
+          "path": "src/edraft/adapter.py",
+          "symbol": "DenseAdapter",
+          "line": 129
+        }
+      ],
+      "required_tests": [
+        "test_05",
+        "test_06",
+        "test_18"
+      ],
+      "artifact_evidence": [
+        "artifacts/m2_smoke.json"
+      ],
+      "remaining_work": []
+    },
+    {
+      "id": "training_precision",
+      "specification_sections": [
+        9
+      ],
+      "requirement": "FP32 probabilities, logits, ratio/residual and optimizer, optional BF16 forward only measured against FP32",
+      "status": "implemented_verified",
+      "implementation_evidence": [
+        {
+          "path": "src/edraft/sampler.py",
+          "symbol": "probability_dtype",
+          "line": 34
+        },
+        {
+          "path": "src/edraft/verify.py",
+          "symbol": "verify_block",
+          "line": 38
+        },
+        {
+          "path": "src/edraft/train.py",
+          "symbol": "reconstruct_batch",
+          "line": 246
+        },
+        {
+          "path": "src/edraft/bench_adapter.py",
+          "symbol": "benchmark",
+          "line": 87
+        }
+      ],
+      "required_tests": [
+        "test_05",
+        "test_11",
+        "test_13",
+        "test_23"
+      ],
+      "artifact_evidence": [
+        "artifacts/adapter_benchmark_reference.json"
+      ],
+      "remaining_work": [],
+      "notes": "Production adapter correctness path uses FP32 E; BF16 GEMM is an explicitly measured microbenchmark ablation."
+    },
+    {
+      "id": "online_delta",
+      "specification_sections": [
+        9,
+        "M4"
+      ],
+      "requirement": "Frozen offline parameters, per-request zero dW/dA/db/dS, live-full SGD/proximal updates only between rounds",
+      "status": "implemented_verified",
+      "implementation_evidence": [
+        {
+          "path": "src/edraft/online.py",
+          "symbol": "OnlineState",
+          "line": 90
+        },
+        {
+          "path": "src/edraft/dflash_loop.py",
+          "symbol": "_finish_round",
+          "line": 167
+        }
+      ],
+      "required_tests": [
+        "test_19",
+        "test_20",
+        "test_21",
+        "test_25"
+      ],
+      "artifact_evidence": [],
+      "remaining_work": []
+    },
+    {
+      "id": "online_stride",
+      "specification_sections": [
+        9,
+        "M4"
+      ],
+      "requirement": "Stride1 and5 use only firing round, no skipped-round gradient/activation buffer, u/version increments only on update",
+      "status": "implemented_verified",
+      "implementation_evidence": [
+        {
+          "path": "src/edraft/online.py",
+          "symbol": "OnlineState",
+          "line": 90
+        },
+        {
+          "path": "src/edraft/eval_closed_loop.py",
+          "symbol": "EvaluationRunner.run",
+          "line": 222
+        }
+      ],
+      "required_tests": [
+        "test_20",
+        "test_21",
+        "test_25"
+      ],
+      "artifact_evidence": [],
+      "remaining_work": []
+    },
+    {
+      "id": "online_lazy_sparse",
+      "specification_sections": [
+        9,
+        "M4"
+      ],
+      "requirement": "GPU2^20 delta once/request, dirty dedup update, pure cumulative-threshold catchup reads, compact active snapshot",
+      "status": "implemented_verified",
+      "implementation_evidence": [
+        {
+          "path": "src/edraft/sparse.py",
+          "symbol": "LazySignedHash",
+          "line": 109
+        },
+        {
+          "path": "src/edraft/sparse.py",
+          "symbol": "LazyHashSnapshot",
+          "line": 76
+        },
+        {
+          "path": "src/edraft/online.py",
+          "symbol": "OnlineState",
+          "line": 90
+        }
+      ],
+      "required_tests": [
+        "test_18",
+        "test_19"
+      ],
+      "artifact_evidence": [],
+      "remaining_work": [],
+      "notes": "Allowed active-list compaction/snapshot strategy; values never clone the capacity-sized table per round."
+    },
+    {
+      "id": "online_dense_bias",
+      "specification_sections": [
+        9,
+        "M4"
+      ],
+      "requirement": "Dense GPU db, exact full gradient, proximal L2 and one fused L1 pass per update; no CPU dictionary",
+      "status": "implemented_verified",
+      "implementation_evidence": [
+        {
+          "path": "src/edraft/online.py",
+          "symbol": "OnlineState",
+          "line": 90
+        }
+      ],
+      "required_tests": [
+        "test_18",
+        "test_20",
+        "test_25"
+      ],
+      "artifact_evidence": [],
+      "remaining_work": []
+    },
+    {
+      "id": "online_metrics",
+      "specification_sections": [
+        9,
+        "M4"
+      ],
+      "requirement": "Active bucket/capacity/u, bandwidth estimates and parameter norms",
+      "status": "implemented_verified",
+      "implementation_evidence": [
+        {
+          "path": "src/edraft/online.py",
+          "symbol": "OnlineState.metrics",
+          "line": 68
+        },
+        {
+          "path": "src/edraft/eval_closed_loop.py",
+          "symbol": "summarize_rows",
+          "line": 474
+        },
+        {
+          "path": "tests/test_online.py",
+          "symbol": "test_reported_sparse_norm_uses_lazy_effective_values_without_mutation",
+          "line": 101
+        }
+      ],
+      "required_tests": [
+        "test_20",
+        "test_25"
+      ],
+      "artifact_evidence": [
+        "artifacts/final_smoke_pipeline/validation.json"
+      ],
+      "remaining_work": [],
+      "notes": "Effective lazy-shrunk dS L2 norm now reported by pure active-bucket read; regression verifies norm after deferred shrinkage without mutating values/timestamps/snapshot. Bandwidth remains explicitly algorithmic estimated bytes divided by full update time, not hardware HBM bandwidth."
+    },
+    {
+      "id": "bigram",
+      "specification_sections": [
+        9,
+        "M3",
+        "M4"
+      ],
+      "requirement": "Required normalized committed-transition exact bigram, positive alpha, evicted-mass smoothing, missing/empty/lambda0 bypass",
+      "status": "implemented_verified",
+      "implementation_evidence": [
+        {
+          "path": "src/edraft/online.py",
+          "symbol": "OnlineBigram",
+          "line": 14
+        },
+        {
+          "path": "src/edraft/dflash_loop.py",
+          "symbol": "_finish_round",
+          "line": 167
+        }
+      ],
+      "required_tests": [
+        "test_07",
+        "test_21",
+        "test_24"
+      ],
+      "artifact_evidence": [],
+      "remaining_work": [],
+      "notes": "Exact no-eviction is default; k_ret configurable. Published Token Recycling is not claimed."
+    },
+    {
+      "id": "m0_gate",
+      "specification_sections": [
+        "M0"
+      ],
+      "requirement": "20 prompts same-seed upstream/local at greedy and common ratio positive temperatures; target-only mismatch investigation",
+      "status": "implemented_verified",
+      "implementation_evidence": [
+        {
+          "path": "src/edraft/m0.py",
+          "symbol": "run_reference",
+          "line": 46
+        },
+        {
+          "path": "src/edraft/investigate_m0.py",
+          "symbol": "investigate_row",
+          "line": 63
+        }
+      ],
+      "required_tests": [
+        "test_15",
+        "test_22",
+        "test_23"
+      ],
+      "artifact_evidence": [
+        "artifacts/m0.json",
+        "artifacts/m0_numerics.json",
+        "artifacts/m0_current_validation.json"
+      ],
+      "remaining_work": [],
+      "notes": "60 comparisons/7128 token positions: zero upstream/local mismatch. Both paths differ from target-only greedy on 8/20 prompts and 607/2388 positions; all eight same-prefix divergences traced to BF16 ties/numerical margins with correct masks/cache."
+    },
+    {
+      "id": "m1_splits",
+      "specification_sections": [
+        "M1a"
+      ],
+      "requirement": "Disjoint train/dev/test by prompt ID, complete heldout dataset, separate primary and diagnostic/long budgets",
+      "status": "implemented_verified",
+      "implementation_evidence": [
+        {
+          "path": "src/edraft/prompts.py",
+          "symbol": "build_manifest",
+          "line": 35
+        },
+        {
+          "path": "src/edraft/collect.py",
+          "symbol": "planned_jobs",
+          "line": 312
+        },
+        {
+          "path": "src/edraft/collect.py",
+          "symbol": "audit",
+          "line": 478
+        },
+        {
+          "path": "src/edraft/train.py",
+          "symbol": "primary_eligible",
+          "line": 29
+        }
+      ],
+      "required_tests": [
+        "test_16"
+      ],
+      "artifact_evidence": [
+        "artifacts/prompts.json"
+      ],
+      "remaining_work": [],
+      "notes": "Full manifest code now selects128 standard test and32 long dev/96 long test. Reference uses64 standard test and12 long dev/32 long test."
+    },
+    {
+      "id": "m1_budget",
+      "specification_sections": [
+        "M1a"
+      ],
+      "requirement": "At least0.5M actual train output tokens across two primary temperatures plus separate standard/long heldout generations",
+      "status": "reference_execution_pending",
+      "implementation_evidence": [
+        {
+          "path": "src/edraft/collect.py",
+          "symbol": "collect",
+          "line": 358
+        },
+        {
+          "path": "src/edraft/collect.py",
+          "symbol": "audit",
+          "line": 478
+        }
+      ],
+      "required_tests": [],
+      "artifact_evidence": [
+        "artifacts/collection-processes.json",
+        "artifacts/milestones.json"
+      ],
+      "remaining_work": [
+        "Finish running four-rank collection and acceptance audit; do not credit pure-T1 or long tokens toward primary floor."
+      ],
+      "notes": "Quota code is implemented/tested; real completion is not yet evidence."
+    },
+    {
+      "id": "m1_schema",
+      "specification_sections": [
+        "M1a",
+        9
+      ],
+      "requirement": "Canonical block schema including union probabilities/rest, raw/projected hidden, head metadata, history mapping, inference settings and versions",
+      "status": "implemented_verified",
+      "implementation_evidence": [
+        {
+          "path": "src/edraft/traces.py",
+          "symbol": "compact_block",
+          "line": 58
+        },
+        {
+          "path": "src/edraft/traces.py",
+          "symbol": "validate_block",
+          "line": 133
+        },
+        {
+          "path": "src/edraft/traces.py",
+          "symbol": "write_shard",
+          "line": 220
+        },
+        {
+          "path": "src/edraft/traces.py",
+          "symbol": "read_shard",
+          "line": 250
+        },
+        {
+          "path": "src/edraft/collect.py",
+          "symbol": "collect",
+          "line": 358
+        }
+      ],
+      "required_tests": [
+        "test_16",
+        "test_23"
+      ],
+      "artifact_evidence": [],
+      "remaining_work": []
+    },
+    {
+      "id": "m1_reconstruction",
+      "specification_sections": [
+        "M1a"
+      ],
+      "requirement": "Heldout serialized raw-head reconstruction against live full vocabulary within explicit BF16/FP32 tolerances",
+      "status": "reference_execution_pending",
+      "implementation_evidence": [
+        {
+          "path": "src/edraft/traces.py",
+          "symbol": "reconstruction_diagnostic",
+          "line": 309
+        },
+        {
+          "path": "src/edraft/collect.py",
+          "symbol": "collect",
+          "line": 358
+        },
+        {
+          "path": "src/edraft/collect.py",
+          "symbol": "audit",
+          "line": 478
+        }
+      ],
+      "required_tests": [
+        "test_23"
+      ],
+      "artifact_evidence": [
+        "artifacts/m0_numerics.json"
+      ],
+      "remaining_work": [
+        "Complete heldout shard checks with final reference collection audit."
+      ],
+      "notes": "Real live-hook reconstruction and synthetic serialized checks already pass; final M1a audit remains pending."
+    },
+    {
+      "id": "m1_diagnostic",
+      "specification_sections": [
+        "M1b"
+      ],
+      "requirement": "Target/sampled rank, recall1/4/16/64/256, mass, rejection rank/recoverability, overlap, CE, acceptance and realized lengths",
+      "status": "reference_execution_pending",
+      "implementation_evidence": [
+        {
+          "path": "src/edraft/diagnose.py",
+          "symbol": "live_block_diagnostics",
+          "line": 30
+        },
+        {
+          "path": "src/edraft/diagnose.py",
+          "symbol": "DiagnosticAccumulator",
+          "line": 173
+        },
+        {
+          "path": "src/edraft/diagnose.py",
+          "symbol": "audited_trace_sources",
+          "line": 352
+        },
+        {
+          "path": "tests/test_diagnose_vectorized.py",
+          "symbol": "test_batched_accumulator_complete_report_matches_original_scalar",
+          "line": 116
+        }
+      ],
+      "required_tests": [],
+      "artifact_evidence": [
+        "artifacts/diagnostic_smoke.json"
+      ],
+      "remaining_work": [
+        "Aggregate completed authoritative reference traces."
+      ],
+      "notes": "Batched FP64 feature accumulation preserves full scalar-oracle report within numerical tolerance; per-prompt scalar metric addition order is unchanged."
+    },
+    {
+      "id": "m1_long_data",
+      "specification_sections": [
+        "M1b"
+      ],
+      "requirement": "Natural long templates, explicit conditions/warpers, repeated-ngram detection/exclusion, realized bins, no artificial filling",
+      "status": "reference_execution_pending",
+      "implementation_evidence": [
+        {
+          "path": "src/edraft/prompts.py",
+          "symbol": "build_manifest",
+          "line": 35
+        },
+        {
+          "path": "src/edraft/diagnose.py",
+          "symbol": "generation_diagnostics",
+          "line": 93
+        },
+        {
+          "path": "src/edraft/diagnose.py",
+          "symbol": "DiagnosticAccumulator",
+          "line": 173
+        },
+        {
+          "path": "src/edraft/eval_closed_loop.py",
+          "symbol": "summarize_rows",
+          "line": 474
+        }
+      ],
+      "required_tests": [],
+      "artifact_evidence": [],
+      "remaining_work": [
+        "Report actual realized long lengths and empty/sparse8K/16K bins once reference collection completes."
+      ]
+    },
+    {
+      "id": "m1_shift",
+      "specification_sections": [
+        "M1b",
+        "M4"
+      ],
+      "requirement": "Mean norm, variance/calibration ratio, L2 quantiles and outliers by condition/output/context shown alongside M4",
+      "status": "implemented_verified",
+      "implementation_evidence": [
+        {
+          "path": "src/edraft/diagnose.py",
+          "symbol": "DiagnosticAccumulator",
+          "line": 173
+        },
+        {
+          "path": "src/edraft/eval_closed_loop.py",
+          "symbol": "aggregate",
+          "line": 809
+        },
+        {
+          "path": "src/edraft/eval_closed_loop.py",
+          "symbol": "audited_m4_feature_context",
+          "line": 696
+        },
+        {
+          "path": "src/edraft/eval_closed_loop.py",
+          "symbol": "synthetic_m4_feature_context",
+          "line": 762
+        },
+        {
+          "path": "tests/test_m4_feature_context.py",
+          "symbol": "test_m4_links_matching_plain_feature_context_and_explicit_empty_bins",
+          "line": 61
+        },
+        {
+          "path": "tests/test_m4_feature_context.py",
+          "symbol": "test_m4_feature_context_rejects_missing_or_mismatched_evidence",
+          "line": 75
+        },
+        {
+          "path": "tests/test_m4_feature_context.py",
+          "symbol": "test_smoke_m4_recomputes_separate_plain_feature_context_and_requires_it",
+          "line": 103
+        }
+      ],
+      "required_tests": [],
+      "artifact_evidence": [
+        "artifacts/final_smoke_pipeline/m4/feature_context.json"
+      ],
+      "remaining_work": [
+        "Populate reference M4 feature context when M1b and M4 experiments complete."
+      ],
+      "notes": "M4 writes feature_context.json, links matching authoritative M1b plain-DFlash feature groups, verifies calibration/model/prompt/audit/source-set provenance and required condition coverage, and marks summary incomplete if missing or mismatched. Smoke recomputes separate matching plain-toy context."
+    },
+    {
+      "id": "m2_fit",
+      "specification_sections": [
+        "M2"
+      ],
+      "requirement": "Primary standard train only, dense W/A then bias+sparse, dev-only decisions, exact resume and frozen provenance",
+      "status": "reference_execution_pending",
+      "implementation_evidence": [
+        {
+          "path": "src/edraft/train.py",
+          "symbol": "primary_eligible",
+          "line": 29
+        },
+        {
+          "path": "src/edraft/train.py",
+          "symbol": "validate_reference_gate",
+          "line": 134
+        },
+        {
+          "path": "src/edraft/train.py",
+          "symbol": "fit",
+          "line": 413
+        },
+        {
+          "path": "src/edraft/train.py",
+          "symbol": "trace_index",
+          "line": 76
+        }
+      ],
+      "required_tests": [
+        "test_05",
+        "test_06",
+        "test_16"
+      ],
+      "artifact_evidence": [
+        "artifacts/m2_smoke.json"
+      ],
+      "remaining_work": [
+        "Execute reference fit only after accepted M1a/M1b."
+      ]
+    },
+    {
+      "id": "m2_reports",
+      "specification_sections": [
+        "M2"
+      ],
+      "requirement": "Train/dev/test KL, grouped/live gap, overlap/top1, norms, zeros and zero-weight baseline; stop extra tuning below1%",
+      "status": "reference_execution_pending",
+      "implementation_evidence": [
+        {
+          "path": "src/edraft/train.py",
+          "symbol": "evaluate",
+          "line": 312
+        },
+        {
+          "path": "src/edraft/train.py",
+          "symbol": "parameter_report",
+          "line": 374
+        },
+        {
+          "path": "src/edraft/train.py",
+          "symbol": "fit",
+          "line": 413
+        }
+      ],
+      "required_tests": [],
+      "artifact_evidence": [
+        "artifacts/m2_smoke.json"
+      ],
+      "remaining_work": [
+        "Generate reference M2 metrics."
+      ],
+      "notes": "Two mandatory fit stages still execute; <1% dev gain stops extra epochs/tuning and is reported. Compact-only overlap is honestly bounded; exact metrics use heldout live_full."
+    },
+    {
+      "id": "m3_arms",
+      "specification_sections": [
+        "M3"
+      ],
+      "requirement": "Plain, online bigram, dense, dense+sparse; matched prompt/seed/condition and ratio settings",
+      "status": "reference_execution_pending",
+      "implementation_evidence": [
+        {
+          "path": "src/edraft/eval_closed_loop.py",
+          "symbol": "arms_for",
+          "line": 54
+        },
+        {
+          "path": "src/edraft/eval_closed_loop.py",
+          "symbol": "evaluation_jobs",
+          "line": 98
+        },
+        {
+          "path": "src/edraft/eval_closed_loop.py",
+          "symbol": "EvaluationRunner",
+          "line": 151
+        }
+      ],
+      "required_tests": [
+        "test_21",
+        "test_24"
+      ],
+      "artifact_evidence": [
+        "artifacts/eval_smoke/m3/summary.json",
+        "artifacts/final_smoke_pipeline/m3/summary.json"
+      ],
+      "remaining_work": [
+        "Execute all1920 reference test requests plus required matched timing."
+      ]
+    },
+    {
+      "id": "eval_counts",
+      "specification_sections": [
+        "M3",
+        "M4"
+      ],
+      "requirement": "64 standard with3 stochastic seeds,32 long with1; full128 standard/64 long with3, greedy1 seed",
+      "status": "implemented_verified",
+      "implementation_evidence": [
+        {
+          "path": "src/edraft/eval_closed_loop.py",
+          "symbol": "select_prompts",
+          "line": 72
+        },
+        {
+          "path": "src/edraft/eval_closed_loop.py",
+          "symbol": "evaluation_jobs",
+          "line": 98
+        }
+      ],
+      "required_tests": [],
+      "artifact_evidence": [],
+      "remaining_work": [],
+      "notes": "Reference480 requests per arm:64 greedy+192 recommended+192 pureT1+32 long."
+    },
+    {
+      "id": "eval_tuning",
+      "specification_sections": [
+        "M3",
+        "M4"
+      ],
+      "requirement": "Development-only equal configuration/time budgets including>=12 long dev, freeze settings and bind models/checkpoints/prompt/caps",
+      "status": "implemented_verified",
+      "implementation_evidence": [
+        {
+          "path": "src/edraft/eval_closed_loop.py",
+          "symbol": "candidate_settings",
+          "line": 112
+        },
+        {
+          "path": "src/edraft/eval_closed_loop.py",
+          "symbol": "tune",
+          "line": 399
+        },
+        {
+          "path": "src/edraft/eval_closed_loop.py",
+          "symbol": "validate_frozen_settings",
+          "line": 126
+        }
+      ],
+      "required_tests": [
+        "test_21",
+        "test_24"
+      ],
+      "artifact_evidence": [],
+      "remaining_work": [],
+      "notes": "Two candidate configurations per tuned arm;8 standard dev+12 long dev at reference. Full requires explicit long_dev_prompts>=32."
+    },
+    {
+      "id": "eval_metrics",
+      "specification_sections": [
+        "M3",
+        "M4"
+      ],
+      "requirement": "Acceptance mean/median/position/output/context, target forwards, throughput and p50/p95 latency, memory, prompt-level CIs and separate seed variation",
+      "status": "reference_execution_pending",
+      "implementation_evidence": [
+        {
+          "path": "src/edraft/eval_closed_loop.py",
+          "symbol": "summarize_rows",
+          "line": 474
+        },
+        {
+          "path": "src/edraft/diagnose.py",
+          "symbol": "prompt_bootstrap",
+          "line": 141
+        },
+        {
+          "path": "src/edraft/eval_closed_loop.py",
+          "symbol": "prompt_quantile_ci",
+          "line": 456
+        }
+      ],
+      "required_tests": [],
+      "artifact_evidence": [],
+      "remaining_work": [
+        "Publish reference acceptance/output metrics after frozen evaluations."
+      ]
+    },
+    {
+      "id": "m4_arms",
+      "specification_sections": [
+        "M4"
+      ],
+      "requirement": "Plain/bigram/static/offline+online stride1/online dbS; full also stride5, zero-offline, rejection-relative and cutoff",
+      "status": "reference_execution_pending",
+      "implementation_evidence": [
+        {
+          "path": "src/edraft/eval_closed_loop.py",
+          "symbol": "arms_for",
+          "line": 54
+        },
+        {
+          "path": "src/edraft/eval_closed_loop.py",
+          "symbol": "EvaluationRunner",
+          "line": 151
+        }
+      ],
+      "required_tests": [
+        "test_20",
+        "test_21",
+        "test_25"
+      ],
+      "artifact_evidence": [
+        "artifacts/eval_smoke/m4/summary.json",
+        "artifacts/final_smoke_pipeline/m4/summary.json"
+      ],
+      "remaining_work": [
+        "Execute all2400 reference test requests plus required matched timing after complete M3."
+      ]
+    },
+    {
+      "id": "timing_isolation",
+      "specification_sections": [
+        11,
+        "M3",
+        "M4"
+      ],
+      "requirement": "Selected idle GPU, one process, warmup/repeats/sync/events, same-session baseline reruns, complete matched bundles and prompt coverage",
+      "status": "reference_execution_pending",
+      "implementation_evidence": [
+        {
+          "path": "src/edraft/bench_adapter.py",
+          "symbol": "assert_idle",
+          "line": 53
+        },
+        {
+          "path": "src/edraft/bench_adapter.py",
+          "symbol": "assert_no_external_gpu_processes",
+          "line": 69
+        },
+        {
+          "path": "src/edraft/eval_closed_loop.py",
+          "symbol": "timing",
+          "line": 554
+        },
+        {
+          "path": "src/edraft/eval_closed_loop.py",
+          "symbol": "comparison_bundle",
+          "line": 365
+        }
+      ],
+      "required_tests": [],
+      "artifact_evidence": [],
+      "remaining_work": [
+        "Run all required reference timing bundles on an idle physical GPU."
+      ],
+      "notes": "Partial bundles rerun every arm back-to-back; pilot-only prompt subsets cannot pass milestone. M3/M4 timing is never reused across stages."
+    },
+    {
+      "id": "timing_phases",
+      "specification_sections": [
+        5,
+        11
+      ],
+      "requirement": "Separate target features, DFlash, dense score, sparse lookup, sequential sampling, verify and online update; charge complete proposal/update",
+      "status": "implemented_verified",
+      "implementation_evidence": [
+        {
+          "path": "src/edraft/dflash_loop.py",
+          "symbol": "PhaseTimer",
+          "line": 43
+        },
+        {
+          "path": "src/edraft/dflash_loop.py",
+          "symbol": "generate_reference",
+          "line": 189
+        },
+        {
+          "path": "src/edraft/adapter.py",
+          "symbol": "slot_correction",
+          "line": 37
+        },
+        {
+          "path": "src/edraft/bench_adapter.py",
+          "symbol": "benchmark",
+          "line": 87
+        }
+      ],
+      "required_tests": [],
+      "artifact_evidence": [
+        "artifacts/adapter_benchmark_reference.json"
+      ],
+      "remaining_work": [],
+      "notes": "Full request timing includes request-state initialization, tokenization, snapshots and generation; separate event-profile pass avoids timing-profiler overhead bias."
+    },
+    {
+      "id": "timing_comparison",
+      "specification_sections": [
+        5,
+        11
+      ],
+      "requirement": "Batched vs sequential full-vocabulary vs candidate unary and complete proposal benchmark, including candidate construction and BF16 errors",
+      "status": "implemented_verified",
+      "implementation_evidence": [
+        {
+          "path": "src/edraft/bench_adapter.py",
+          "symbol": "benchmark",
+          "line": 87
+        }
+      ],
+      "required_tests": [],
+      "artifact_evidence": [
+        "artifacts/adapter_benchmark_reference.json"
+      ],
+      "remaining_work": [],
+      "notes": "Reference-shape random-tensor benchmarks are labelled synthetic and cannot establish end-to-end model speedup."
+    },
+    {
+      "id": "parallelism",
+      "specification_sections": [
+        11
+      ],
+      "requirement": "Process-per-GPU prompt sharding with rank-local manifests; CPU basic correctness; no custom CUDA/Triton",
+      "status": "implemented_verified",
+      "implementation_evidence": [
+        {
+          "path": "src/edraft/launch.py",
+          "symbol": "main",
+          "line": 29
+        },
+        {
+          "path": "src/edraft/collect.py",
+          "symbol": "planned_jobs",
+          "line": 312
+        },
+        {
+          "path": "src/edraft/eval_closed_loop.py",
+          "symbol": "evaluate",
+          "line": 536
+        }
+      ],
+      "required_tests": [
+        "test_02"
+      ],
+      "artifact_evidence": [
+        "artifacts/collection-processes.json"
+      ],
+      "remaining_work": []
+    },
+    {
+      "id": "documentation",
+      "specification_sections": [
+        13,
+        "M4"
+      ],
+      "requirement": "README equations/temperature/grouped reconstruction/lazy hash/history/snapshot/limitations and complete commands; SUMMARY final findings and unrun external baselines",
+      "status": "implemented_verified",
+      "implementation_evidence": [
+        {
+          "path": "README.md"
+        },
+        {
+          "path": "reports/SUMMARY.md"
+        },
+        {
+          "path": "NOTES.md"
+        }
+      ],
+      "required_tests": [],
+      "artifact_evidence": [],
+      "remaining_work": [],
+      "notes": "README now documents27 runnable module commands for smoke and ordered M0\u2013M4, gates, matched timing, resume and backend limits. SUMMARY accurately separates completed M0/M1-pre, running M1a and future reference results. Bash syntax, current CLI options/choices, local links and diff whitespace validated."
+    },
+    {
+      "id": "optional_m5",
+      "specification_sections": [
+        "M5"
+      ],
+      "requirement": "Closed-loop lookahead, pseudolikelihood, published baselines, exact-pair training comparison, server backend, adaptive K, compile/custom kernels",
+      "status": "optional_not_run",
+      "implementation_evidence": [
+        {
+          "path": "src/edraft/adapter.py",
+          "symbol": "LookaheadState",
+          "line": 235
+        }
+      ],
+      "required_tests": [],
+      "artifact_evidence": [],
+      "remaining_work": [],
+      "notes": "Required standalone helper and exact-table lookup benchmark exist. No M5 research claims are made."
+    }
+  ],
+  "required_tests": [
+    {
+      "id": "test_01",
+      "requirement": "Zero adapter parity",
+      "status": "implemented_verified",
+      "evidence": [
+        {
+          "path": "tests/test_adapter.py",
+          "symbol": "test_zero_correction_and_snapshot_ownership",
+          "line": 20
+        },
+        {
+          "path": "tests/test_backend.py",
+          "symbol": "test_real_loop_zero_adapter_exact",
+          "line": 80
+        }
+      ],
+      "remaining_work": []
+    },
+    {
+      "id": "test_02",
+      "requirement": "CPU synthetic smoke without downloads",
+      "status": "implemented_verified",
+      "evidence": [
+        {
+          "path": "tests/test_toy.py",
+          "symbol": "test_synthetic_constructors_deterministic_and_no_downloads",
+          "line": 82
+        },
+        {
+          "path": "tests/test_backend.py",
+          "symbol": "test_cpu_smoke_round_update_and_version_isolation",
+          "line": 93
+        },
+        {
+          "path": "tests/test_runtime.py",
+          "symbol": "test_config_cli_override_and_smoke_never_downloads",
+          "line": 9
+        }
+      ],
+      "remaining_work": []
+    },
+    {
+      "id": "test_03",
+      "requirement": "Greedy forbids sampling division, softmax and residual",
+      "status": "implemented_verified",
+      "evidence": [
+        {
+          "path": "tests/test_sampler_verify.py",
+          "symbol": "test_greedy_never_calls_sampling_softmax_or_residual",
+          "line": 27
+        }
+      ],
+      "remaining_work": []
+    },
+    {
+      "id": "test_04",
+      "requirement": "Lookahead greedy domain, positive relaxation and immutable C0",
+      "status": "implemented_verified",
+      "evidence": [
+        {
+          "path": "tests/test_adapter.py",
+          "symbol": "test_greedy_lookahead_positive_relax_immutable_candidates",
+          "line": 160
+        }
+      ],
+      "remaining_work": []
+    },
+    {
+      "id": "test_05",
+      "requirement": "Full unwarped analytic W/A gradients and training warper invariance",
+      "status": "implemented_verified",
+      "evidence": [
+        {
+          "path": "tests/test_adapter.py",
+          "symbol": "test_full_analytic_W_A_and_one_descent_step",
+          "line": 58
+        },
+        {
+          "path": "tests/test_adapter.py",
+          "symbol": "test_training_distributions_invariant_to_inference_warp",
+          "line": 86
+        },
+        {
+          "path": "tests/test_train.py",
+          "symbol": "test_training_never_calls_inference_warpers",
+          "line": 109
+        }
+      ],
+      "remaining_work": []
+    },
+    {
+      "id": "test_06",
+      "requirement": "Controlled one-step descent",
+      "status": "implemented_verified",
+      "evidence": [
+        {
+          "path": "tests/test_adapter.py",
+          "symbol": "test_full_analytic_W_A_and_one_descent_step",
+          "line": 58
+        },
+        {
+          "path": "tests/test_adapter.py",
+          "symbol": "test_controlled_shared_free_energy_small_step_descent_with_line_search",
+          "line": 233
+        }
+      ],
+      "remaining_work": []
+    },
+    {
+      "id": "test_07",
+      "requirement": "Causal, bigram and lookahead cross-boundary and missing history",
+      "status": "implemented_verified",
+      "evidence": [
+        {
+          "path": "tests/test_adapter.py",
+          "symbol": "test_history_never_wraps_and_no_offset_zero",
+          "line": 36
+        },
+        {
+          "path": "tests/test_adapter.py",
+          "symbol": "test_causal_prefix_and_A_offset",
+          "line": 46
+        },
+        {
+          "path": "tests/test_adapter.py",
+          "symbol": "test_lookahead_backward_transpose_and_boundaries",
+          "line": 144
+        },
+        {
+          "path": "tests/test_online.py",
+          "symbol": "test_bigram_missing_prefix_skips_first_transition",
+          "line": 84
+        },
+        {
+          "path": "tests/test_online.py",
+          "symbol": "test_online_first_slot_with_missing_history_has_zero_pair_gradient",
+          "line": 91
+        },
+        {
+          "path": "tests/test_backend.py",
+          "symbol": "test_bounded_history_preserves_long_prefix_tokens_and_real_context_lengths",
+          "line": 130
+        }
+      ],
+      "remaining_work": []
+    },
+    {
+      "id": "test_08",
+      "requirement": "No self-interaction or offset/wrap errors",
+      "status": "implemented_verified",
+      "evidence": [
+        {
+          "path": "tests/test_adapter.py",
+          "symbol": "test_history_never_wraps_and_no_offset_zero",
+          "line": 36
+        },
+        {
+          "path": "tests/test_adapter.py",
+          "symbol": "test_causal_prefix_and_A_offset",
+          "line": 46
+        },
+        {
+          "path": "tests/test_adapter.py",
+          "symbol": "test_lookahead_backward_transpose_and_boundaries",
+          "line": 144
+        }
+      ],
+      "remaining_work": []
+    },
+    {
+      "id": "test_09",
+      "requirement": "Backward bilinear transpose",
+      "status": "implemented_verified",
+      "evidence": [
+        {
+          "path": "tests/test_adapter.py",
+          "symbol": "test_lookahead_backward_transpose_and_boundaries",
+          "line": 144
+        }
+      ],
+      "remaining_work": []
+    },
+    {
+      "id": "test_10",
+      "requirement": "Masked shared sparse energy derivatives with raw support mass",
+      "status": "implemented_verified",
+      "evidence": [
+        {
+          "path": "tests/test_adapter.py",
+          "symbol": "test_lookahead_shared_energy_partial_derivatives",
+          "line": 121
+        }
+      ],
+      "remaining_work": []
+    },
+    {
+      "id": "test_11",
+      "requirement": "Small-vocabulary exhaustive ratio exactness",
+      "status": "implemented_verified",
+      "evidence": [
+        {
+          "path": "tests/test_sampler_verify.py",
+          "symbol": "test_exhaustive_per_prefix_ratio_identity",
+          "line": 123
+        },
+        {
+          "path": "tests/test_sampler_verify.py",
+          "symbol": "test_exhaustive_multiround_sequence_and_bonus_exactness",
+          "line": 148
+        }
+      ],
+      "remaining_work": []
+    },
+    {
+      "id": "test_12",
+      "requirement": "Out-of-support mass, corrected-score warpers, residual and bonus",
+      "status": "implemented_verified",
+      "evidence": [
+        {
+          "path": "tests/test_sampler_verify.py",
+          "symbol": "test_candidate_masking_and_lowest_vocabulary_tie",
+          "line": 49
+        },
+        {
+          "path": "tests/test_sampler_verify.py",
+          "symbol": "test_warper_applies_after_correction_and_matches_pinned_dflash_formula",
+          "line": 62
+        },
+        {
+          "path": "tests/test_sampler_verify.py",
+          "symbol": "test_min_p_and_dtype",
+          "line": 81
+        },
+        {
+          "path": "tests/test_sampler_verify.py",
+          "symbol": "test_forced_residual_outside_proposal_support_and_bonus",
+          "line": 91
+        },
+        {
+          "path": "tests/test_sampler_verify.py",
+          "symbol": "test_rejects_nonratio_rule_and_impossible_proposal",
+          "line": 110
+        },
+        {
+          "path": "tests/test_sampler_verify.py",
+          "symbol": "test_exhaustive_per_prefix_ratio_identity",
+          "line": 123
+        },
+        {
+          "path": "tests/test_lookahead_positive.py",
+          "symbol": "test_positive_lookahead_masks_before_warper_and_preserves_outside_residual",
+          "line": 15
+        }
+      ],
+      "remaining_work": [],
+      "direct_validation": "2 parametrized positive-temperature helper tests passed; top_k3/top_p.8 with min_p0/.3, masking before warper, immutable C0, residual outside support and exact mixture identity."
+    },
+    {
+      "id": "test_13",
+      "requirement": "Sample-size-derived Monte Carlo tolerance",
+      "status": "implemented_verified",
+      "evidence": [
+        {
+          "path": "tests/test_sampler_verify.py",
+          "symbol": "test_actual_verifier_sampling_sample_size_tolerance",
+          "line": 214
+        }
+      ],
+      "remaining_work": []
+    },
+    {
+      "id": "test_14",
+      "requirement": "Greedy target equality on toy",
+      "status": "implemented_verified",
+      "evidence": [
+        {
+          "path": "tests/test_toy.py",
+          "symbol": "test_greedy_speculative_output_equals_target_only",
+          "line": 69
+        }
+      ],
+      "remaining_work": []
+    },
+    {
+      "id": "test_15",
+      "requirement": "Real-model mismatch reporting",
+      "status": "implemented_verified",
+      "evidence": [
+        {
+          "path": "tests/test_backend.py",
+          "symbol": "test_installed_qwen_dflash_upstream_local_seeded_parity",
+          "line": 31
+        }
+      ],
+      "remaining_work": [],
+      "artifacts": [
+        "artifacts/m0.json",
+        "artifacts/m0_numerics.json"
+      ]
+    },
+    {
+      "id": "test_16",
+      "requirement": "Trace round-trip",
+      "status": "implemented_verified",
+      "evidence": [
+        {
+          "path": "tests/test_traces.py",
+          "symbol": "test_atomic_shard_roundtrip_safe_load_and_live_full_gap_data",
+          "line": 79
+        }
+      ],
+      "remaining_work": []
+    },
+    {
+      "id": "test_17",
+      "requirement": "Deterministic independent hash and sign",
+      "status": "implemented_verified",
+      "evidence": [
+        {
+          "path": "tests/test_sparse.py",
+          "symbol": "test_hash_deterministic_signed_and_collision_report",
+          "line": 6
+        }
+      ],
+      "remaining_work": []
+    },
+    {
+      "id": "test_18",
+      "requirement": "Exact-zero and immutable lazy L1, 15 updates, both strides/schedules",
+      "status": "implemented_verified",
+      "evidence": [
+        {
+          "path": "tests/test_sparse.py",
+          "symbol": "test_proximal_preserves_exact_zero",
+          "line": 17
+        },
+        {
+          "path": "tests/test_sparse.py",
+          "symbol": "test_lazy_matches_eager_15_updates_and_pure_reads",
+          "line": 24
+        }
+      ],
+      "remaining_work": []
+    },
+    {
+      "id": "test_19",
+      "requirement": "Immutable snapshots and frozen C0 during clamp",
+      "status": "implemented_verified",
+      "evidence": [
+        {
+          "path": "tests/test_adapter.py",
+          "symbol": "test_zero_correction_and_snapshot_ownership",
+          "line": 20
+        },
+        {
+          "path": "tests/test_adapter.py",
+          "symbol": "test_greedy_lookahead_positive_relax_immutable_candidates",
+          "line": 160
+        },
+        {
+          "path": "tests/test_sparse.py",
+          "symbol": "test_lazy_matches_eager_15_updates_and_pure_reads",
+          "line": 24
+        },
+        {
+          "path": "tests/test_sparse.py",
+          "symbol": "test_online_snapshot_never_clones_capacity_sized_values",
+          "line": 57
+        }
+      ],
+      "remaining_work": []
+    },
+    {
+      "id": "test_20",
+      "requirement": "Version changes only between rounds",
+      "status": "implemented_verified",
+      "evidence": [
+        {
+          "path": "tests/test_online.py",
+          "symbol": "test_online_single_round_stride_snapshot_and_request_isolation",
+          "line": 15
+        },
+        {
+          "path": "tests/test_backend.py",
+          "symbol": "test_cpu_smoke_round_update_and_version_isolation",
+          "line": 93
+        }
+      ],
+      "remaining_work": []
+    },
+    {
+      "id": "test_21",
+      "requirement": "Per-request state isolation",
+      "status": "implemented_verified",
+      "evidence": [
+        {
+          "path": "tests/test_online.py",
+          "symbol": "test_online_single_round_stride_snapshot_and_request_isolation",
+          "line": 15
+        },
+        {
+          "path": "tests/test_eval_closed_loop.py",
+          "symbol": "test_all_smoke_arms_run_exact_greedy_and_state_isolation",
+          "line": 56
+        }
+      ],
+      "remaining_work": []
+    },
+    {
+      "id": "test_22",
+      "requirement": "Target cache rollback",
+      "status": "implemented_verified",
+      "evidence": [
+        {
+          "path": "tests/test_backend.py",
+          "symbol": "test_actual_target_cache_partial_rollback",
+          "line": 49
+        },
+        {
+          "path": "tests/test_toy.py",
+          "symbol": "test_cache_partial_acceptance_rollback_preserves_target",
+          "line": 50
+        }
+      ],
+      "remaining_work": []
+    },
+    {
+      "id": "test_23",
+      "requirement": "BF16 raw-head reconstruction on synthetic and installed/real hooks",
+      "status": "implemented_verified",
+      "evidence": [
+        {
+          "path": "tests/test_backend.py",
+          "symbol": "test_head_hook_reconstructs_live_installed_classes",
+          "line": 56
+        },
+        {
+          "path": "tests/test_toy.py",
+          "symbol": "test_bf16_hidden_reconstruction_tolerance_from_rounding_bound",
+          "line": 26
+        },
+        {
+          "path": "tests/test_traces.py",
+          "symbol": "test_reconstruction_diagnostic_checks_full_vocabulary_and_reports_tolerances",
+          "line": 181
+        },
+        {
+          "path": "tests/test_traces.py",
+          "symbol": "test_reconstruction_includes_bias_and_output_multiplier",
+          "line": 198
+        }
+      ],
+      "remaining_work": [
+        "M1a held-out serialized-shard reconstruction audit completes with collection."
+      ],
+      "artifacts": [
+        "artifacts/m0_numerics.json",
+        "artifacts/calibration.json"
+      ]
+    },
+    {
+      "id": "test_24",
+      "requirement": "Normalized exact/evicted bigram, invalid alpha and empty/zero-strength parity",
+      "status": "implemented_verified",
+      "evidence": [
+        {
+          "path": "tests/test_online.py",
+          "symbol": "test_bigram_rejects_bad_alpha",
+          "line": 57
+        },
+        {
+          "path": "tests/test_online.py",
+          "symbol": "test_bigram_normalized_evicted_prior_and_empty_equivalence",
+          "line": 63
+        },
+        {
+          "path": "tests/test_online.py",
+          "symbol": "test_bigram_missing_prefix_skips_first_transition",
+          "line": 84
+        },
+        {
+          "path": "tests/test_backend.py",
+          "symbol": "test_zero_strength_bigram_bit_exact_and_initial_transition",
+          "line": 113
+        }
+      ],
+      "remaining_work": []
+    },
+    {
+      "id": "test_25",
+      "requirement": "Single-firing-round update and optimizer-counter stride semantics",
+      "status": "implemented_verified",
+      "evidence": [
+        {
+          "path": "tests/test_online.py",
+          "symbol": "test_online_single_round_stride_snapshot_and_request_isolation",
+          "line": 15
+        }
+      ],
+      "remaining_work": []
+    }
+  ],
+  "remaining_implementation_or_reporting_work": [],
+  "scheduled_reference_experiments": [
+    {
+      "milestone": "M1a",
+      "status": "running",
+      "action": "Finish actual>=0.5M primary train tokens and heldout standard/long quotas, then checksum/provenance/reconstruction audit."
+    },
+    {
+      "milestone": "M1b",
+      "status": "not_run",
+      "action": "Run authoritative-source diagnostic with condition/temperature/bin separation and explicit long-output sparsity."
+    },
+    {
+      "milestone": "M2",
+      "status": "not_run",
+      "action": "Fit both mandatory stages, produce losses, gap, norms, sparse accounting and checkpoints."
+    },
+    {
+      "milestone": "M3",
+      "status": "not_run",
+      "action": "Dev tune then frozen4-arm reference evaluation and full isolated timing."
+    },
+    {
+      "milestone": "M4",
+      "status": "not_run",
+      "action": "Dev tune then frozen5-arm reference evaluation and separate full isolated timing; include feature shift and norms."
+    }
+  ],
+  "nonblocking_limitations": [
+    "Changing collection world size can duplicate work across rank-local resume manifests; final audit deduplicates identities and does not let duplicates satisfy token floors.",
+    "Timing artifacts based on random tensors and synthetic smoke are not reference model quality/speed evidence.",
+    "Long outputs may not populate8K/16K bins; implementation reports empty/data-sparse bins without filling or drawing unsupported conclusions.",
+    "Documentation reflects the current incomplete reference experiment state. Final empirical tables and conclusions remain pending until M1b\u2013M4 complete."
+  ],
+  "claims_not_established": [
+    "Reference offline improvement",
+    "Reference online improvement",
+    "End-to-end throughput gain",
+    "Long-context adaptation benefit",
+    "Published external-baseline superiority"
+  ],
+  "m0_current_validation": {
+    "status": "passed",
+    "validated_project_git_commit": "4782265e6d7dd937dc85f63a5597a82c43695d87",
+    "num_distinct_prompts": 20,
+    "current_comparisons": 60,
+    "all_current_upstream_local_equal": true,
+    "current_core_matches_recorded_run_sources": {
+      "backend.py": true,
+      "dflash_loop.py": true,
+      "sampler.py": true,
+      "verify.py": true,
+      "m0.py": true
+    }
+  },
+  "implementation_status": "implemented_verified",
+  "integration_summary": {
+    "pytest": {
+      "tests": 180,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "stages": {
+      "m3": {
+        "status": "complete",
+        "requests": 32,
+        "timed_requests": 96,
+        "phase_profile_groups": 16,
+        "online_requests_with_finite_dS_norm_and_valid_versions": 0
+      },
+      "m4": {
+        "status": "complete",
+        "requests": 40,
+        "timed_requests": 120,
+        "phase_profile_groups": 20,
+        "online_requests_with_finite_dS_norm_and_valid_versions": 16
+      }
+    },
+    "cross_stage_comparisons": [
+      {
+        "m3_arm": "plain_dflash",
+        "m4_arm": "plain_dflash",
+        "matching_settings_or_greedy_requests": 8,
+        "identical_output_and_accepted_length": true,
+        "stochastic_requests_with_different_dev_selected_settings": 0
+      },
+      {
+        "m3_arm": "online_bigram",
+        "m4_arm": "online_bigram",
+        "matching_settings_or_greedy_requests": 2,
+        "identical_output_and_accepted_length": true,
+        "stochastic_requests_with_different_dev_selected_settings": 6
+      },
+      {
+        "m3_arm": "dense_sparse",
+        "m4_arm": "offline_static",
+        "matching_settings_or_greedy_requests": 2,
+        "identical_output_and_accepted_length": true,
+        "stochastic_requests_with_different_dev_selected_settings": 6
+      }
+    ],
+    "m4_feature_context_groups": 4
+  }
+}

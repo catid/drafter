@@ -1,0 +1,2540 @@
+{
+  "scale": "smoke",
+  "stage": "m3",
+  "status": "rank_complete",
+  "rank": 0,
+  "world_size": 1,
+  "rows": 32,
+  "frozen_settings_hash": "94a7cd8304d402885e82426c4d6956a0062d5bdd9cb6f87216ac5577c7d88d99",
+  "groups": [
+    {
+      "condition": "long_thinking",
+      "temperature": 0.6,
+      "sampling_warp_config": {
+        "min_p": 0.0,
+        "top_k": 20,
+        "top_p": 0.95
+      },
+      "arm": "dense",
+      "requests": 2,
+      "primary_requests": 2,
+      "repetition_excluded": 0,
+      "metrics": {
+        "mean_accepted_length": {
+          "n_prompts": 2,
+          "mean": 2.1045454545454545,
+          "ci95": [
+            1.9090909090909092,
+            2.3
+          ],
+          "seed_std_mean": 0.0,
+          "bootstrap_unit": "prompt_id",
+          "seed_aggregation": "arithmetic_mean_before_bootstrap"
+        },
+        "median_accepted_length": {
+          "n_prompts": 2,
+          "mean": 2.0,
+          "ci95": [
+            2.0,
+            2.0
+          ],
+          "seed_std_mean": 0.0,
+          "bootstrap_unit": "prompt_id",
+          "seed_aggregation": "arithmetic_mean_before_bootstrap"
+        },
+        "target_forwards_per_generated_token": {
+          "n_prompts": 2,
+          "mean": 0.328125,
+          "ci95": [
+            0.3125,
+            0.34375
+          ],
+          "seed_std_mean": 0.0,
+          "bootstrap_unit": "prompt_id",
+          "seed_aggregation": "arithmetic_mean_before_bootstrap"
+        }
+      },
+      "pooled_block_accepted_length_mean": 2.0952380952380953,
+      "pooled_block_accepted_length_median": 2,
+      "metric_aggregation": "metrics are prompt-weighted after seed aggregation; median_accepted_length aggregates request medians; pooled block statistics are separate",
+      "acceptance_by_block_position": {
+        "0": {
+          "n_prompts": 2,
+          "mean": 1.0,
+          "ci95": [
+            1.0,
+            1.0
+          ],
+          "seed_std_mean": 0.0,
+          "bootstrap_unit": "prompt_id",
+          "seed_aggregation": "arithmetic_mean_before_bootstrap"
+        },
+        "1": {
+          "n_prompts": 2,
+          "mean": 0.606060606060606,
+          "ci95": [
+            0.5454545454545454,
+            0.6666666666666666
+          ],
+          "seed_std_mean": 0.0,
+          "bootstrap_unit": "prompt_id",
+          "seed_aggregation": "arithmetic_mean_before_bootstrap"
+        },
+        "2": {
+          "n_prompts": 2,
+          "mean": 0.37222222222222223,
+          "ci95": [
+            0.3,
+            0.4444444444444444
+          ],
+          "seed_std_mean": 0.0,
+          "bootstrap_unit": "prompt_id",
+          "seed_aggregation": "arithmetic_mean_before_bootstrap"
+        },
+        "3": {
+          "n_prompts": 2,
+          "mean": 0.21666666666666667,
+          "ci95": [
+            0.1,
+            0.3333333333333333
+          ],
+          "seed_std_mean": 0.0,
+          "bootstrap_unit": "prompt_id",
+          "seed_aggregation": "arithmetic_mean_before_bootstrap"
+        }
+      },
+      "acceptance_bins": [
+        {
+          "axis": "input_context_length",
+          "bin": "0-1024",
+          "n_prompts": 2,
+          "mean": 0.5608108108108107,
+          "ci95": [
+            0.5,
+            0.6216216216216216
+          ],
+          "seed_std_mean": 0.0,
+          "bootstrap_unit": "prompt_id",
+          "seed_aggregation": "arithmetic_mean_before_bootstrap",
+          "accepted_length": {
+            "n_prompts": 2,
+            "mean": 2.1045454545454545,
+            "ci95": [
+              1.9090909090909092,
+              2.3
+            ],
+            "seed_std_mean": 0.0,
+            "bootstrap_unit": "prompt_id",
+            "seed_aggregation": "arithmetic_mean_before_bootstrap"
+          }
+        },
+        {
+          "axis": "output_offset",
+          "bin": "0-1K",
+          "n_prompts": 2,
+          "mean": 0.5608108108108107,
+          "ci95": [
+            0.5,
+            0.6216216216216216
+          ],
+          "seed_std_mean": 0.0,
+          "bootstrap_unit": "prompt_id",
+          "seed_aggregation": "arithmetic_mean_before_bootstrap",
+          "accepted_length": {
+            "n_prompts": 2,
+            "mean": 2.1045454545454545,
+            "ci95": [
+              1.9090909090909092,
+              2.3
+            ],
+            "seed_std_mean": 0.0,
+            "bootstrap_unit": "prompt_id",
+            "seed_aggregation": "arithmetic_mean_before_bootstrap"
+          }
+        }
+      ],
+      "request_latency_p50_seconds": 0.00760695047210902,
+      "request_latency_p95_seconds": 0.008325047499965876,
+      "request_latency_p50_prompt_bootstrap": null,
+      "request_latency_p95_prompt_bootstrap": null,
+      "phase_ms_median": {},
+      "realized_output_length_mean": 32,
+      "realized_generations_above_8K": 0,
+      "realized_generations_above_16K": 0,
+      "peak_allocated_bytes": 0,
+      "peak_reserved_bytes": 0,
+      "online_final_state": []
+    },
+    {
+      "condition": "long_thinking",
+      "temperature": 0.6,
+      "sampling_warp_config": {
+        "min_p": 0.0,
+        "top_k": 20,
+        "top_p": 0.95
+      },
+      "arm": "dense_sparse",
+      "requests": 2,
+      "primary_requests": 2,
+      "repetition_excluded": 0,
+      "metrics": {
+        "mean_accepted_length": {
+          "n_prompts": 2,
+          "mean": 2.1045454545454545,
+          "ci95": [
+            1.9090909090909092,
+            2.3
+          ],
+          "seed_std_mean": 0.0,
+          "bootstrap_unit": "prompt_id",
+          "seed_aggregation": "arithmetic_mean_before_bootstrap"
+        },
+        "median_accepted_length": {
+          "n_prompts": 2,
+          "mean": 2.0,
+          "ci95": [
+            2.0,
+            2.0
+          ],
+          "seed_std_mean": 0.0,
+          "bootstrap_unit": "prompt_id",
+          "seed_aggregation": "arithmetic_mean_before_bootstrap"
+        },
+        "target_forwards_per_generated_token": {
+          "n_prompts": 2,
+          "mean": 0.328125,
+          "ci95": [
+            0.3125,
+            0.34375
+          ],
+          "seed_std_mean": 0.0,
+          "bootstrap_unit": "prompt_id",
+          "seed_aggregation": "arithmetic_mean_before_bootstrap"
+        }
+      },
+      "pooled_block_accepted_length_mean": 2.0952380952380953,
+      "pooled_block_accepted_length_median": 2,
+      "metric_aggregation": "metrics are prompt-weighted after seed aggregation; median_accepted_length aggregates request medians; pooled block statistics are separate",
+      "acceptance_by_block_position": {
+        "0": {
+          "n_prompts": 2,
+          "mean": 1.0,
+          "ci95": [
+            1.0,
+            1.0
+          ],
+          "seed_std_mean": 0.0,
+          "bootstrap_unit": "prompt_id",
+          "seed_aggregation": "arithmetic_mean_before_bootstrap"
+        },
+        "1": {
+          "n_prompts": 2,
+          "mean": 0.606060606060606,
+          "ci95": [
+            0.5454545454545454,
+            0.6666666666666666
+          ],
+          "seed_std_mean": 0.0,
+          "bootstrap_unit": "prompt_id",
+          "seed_aggregation": "arithmetic_mean_before_bootstrap"
+        },
+        "2": {
+          "n_prompts": 2,
+          "mean": 0.37222222222222223,
+          "ci95": [
+            0.3,
+            0.4444444444444444
+          ],
+          "seed_std_mean": 0.0,
+          "bootstrap_unit": "prompt_id",
+          "seed_aggregation": "arithmetic_mean_before_bootstrap"
+        },
+        "3": {
+          "n_prompts": 2,
+          "mean": 0.21666666666666667,
+          "ci95": [
+            0.1,
+            0.3333333333333333
+          ],
+          "seed_std_mean": 0.0,
+          "bootstrap_unit": "prompt_id",
+          "seed_aggregation": "arithmetic_mean_before_bootstrap"
+        }
+      },
+      "acceptance_bins": [
+        {
+          "axis": "input_context_length",
+          "bin": "0-1024",
+          "n_prompts": 2,
+          "mean": 0.5608108108108107,
+          "ci95": [
+            0.5,
+            0.6216216216216216
+          ],
+          "seed_std_mean": 0.0,
+          "bootstrap_unit": "prompt_id",
+          "seed_aggregation": "arithmetic_mean_before_bootstrap",
+          "accepted_length": {
+            "n_prompts": 2,
+            "mean": 2.1045454545454545,
+            "ci95": [
+              1.9090909090909092,
+              2.3
+            ],
+            "seed_std_mean": 0.0,
+            "bootstrap_unit": "prompt_id",
+            "seed_aggregation": "arithmetic_mean_before_bootstrap"
+          }
+        },
+        {
+          "axis": "output_offset",
+          "bin": "0-1K",
+          "n_prompts": 2,
+          "mean": 0.5608108108108107,
+          "ci95": [
+            0.5,
+            0.6216216216216216
+          ],
+          "seed_std_mean": 0.0,
+          "bootstrap_unit": "prompt_id",
+          "seed_aggregation": "arithmetic_mean_before_bootstrap",
+          "accepted_length": {
+            "n_prompts": 2,
+            "mean": 2.1045454545454545,
+            "ci95": [
+              1.9090909090909092,
+              2.3
+            ],
+            "seed_std_mean": 0.0,
+            "bootstrap_unit": "prompt_id",
+            "seed_aggregation": "arithmetic_mean_before_bootstrap"
+          }
+        }
+      ],
+      "request_latency_p50_seconds": 0.011175542487762868,
+      "request_latency_p95_seconds": 0.011311738041695208,
+      "request_latency_p50_prompt_bootstrap": null,
+      "request_latency_p95_prompt_bootstrap": null,
+      "phase_ms_median": {},
+      "realized_output_length_mean": 32,
+      "realized_generations_above_8K": 0,
+      "realized_generations_above_16K": 0,
+      "peak_allocated_bytes": 0,
+      "peak_reserved_bytes": 0,
+      "online_final_state": []
+    },
+    {
+      "condition": "long_thinking",
+      "temperature": 0.6,
+      "sampling_warp_config": {
+        "min_p": 0.0,
+        "top_k": 20,
+        "top_p": 0.95
+      },
+      "arm": "online_bigram",
+      "requests": 2,
+      "primary_requests": 2,
+      "repetition_excluded": 0,
+      "metrics": {
+        "mean_accepted_length": {
+          "n_prompts": 2,
+          "mean": 2.5555555555555554,
+          "ci95": [
+            2.5555555555555554,
+            2.5555555555555554
+          ],
+          "seed_std_mean": 0.0,
+          "bootstrap_unit": "prompt_id",
+          "seed_aggregation": "arithmetic_mean_before_bootstrap"
+        },
+        "median_accepted_length": {
+          "n_prompts": 2,
+          "mean": 3.0,
+          "ci95": [
+            3.0,
+            3.0
+          ],
+          "seed_std_mean": 0.0,
+          "bootstrap_unit": "prompt_id",
+          "seed_aggregation": "arithmetic_mean_before_bootstrap"
+        },
+        "target_forwards_per_generated_token": {
+          "n_prompts": 2,
+          "mean": 0.28125,
+          "ci95": [
+            0.28125,
+            0.28125
+          ],
+          "seed_std_mean": 0.0,
+          "bootstrap_unit": "prompt_id",
+          "seed_aggregation": "arithmetic_mean_before_bootstrap"
+        }
+      },
+      "pooled_block_accepted_length_mean": 2.5555555555555554,
+      "pooled_block_accepted_length_median": 3.0,
+      "metric_aggregation": "metrics are prompt-weighted after seed aggregation; median_accepted_length aggregates request medians; pooled block statistics are separate",
+      "acceptance_by_block_position": {
+        "0": {
+          "n_prompts": 2,
+          "mean": 1.0,
+          "ci95": [
+            1.0,
+            1.0
+          ],
+          "seed_std_mean": 0.0,
+          "bootstrap_unit": "prompt_id",
+          "seed_aggregation": "arithmetic_mean_before_bootstrap"
+        },
+        "1": {
+          "n_prompts": 2,
+          "mean": 0.7777777777777778,
+          "ci95": [
+            0.7777777777777778,
+            0.7777777777777778
+          ],
+          "seed_std_mean": 0.0,
+          "bootstrap_unit": "prompt_id",
+          "seed_aggregation": "arithmetic_mean_before_bootstrap"
+        },
+        "2": {
+          "n_prompts": 2,
+          "mean": 0.5555555555555556,
+          "ci95": [
+            0.5555555555555556,
+            0.5555555555555556
+          ],
+          "seed_std_mean": 0.0,
+          "bootstrap_unit": "prompt_id",
+          "seed_aggregation": "arithmetic_mean_before_bootstrap"
+        },
+        "3": {
+          "n_prompts": 2,
+          "mean": 0.25,
+          "ci95": [
+            0.25,
+            0.25
+          ],
+          "seed_std_mean": 0.0,
+          "bootstrap_unit": "prompt_id",
+          "seed_aggregation": "arithmetic_mean_before_bootstrap"
+        }
+      },
+      "acceptance_bins": [
+        {
+          "axis": "input_context_length",
+          "bin": "0-1024",
+          "n_prompts": 2,
+          "mean": 0.6571428571428571,
+          "ci95": [
+            0.6571428571428571,
+            0.6571428571428571
+          ],
+          "seed_std_mean": 0.0,
+          "bootstrap_unit": "prompt_id",
+          "seed_aggregation": "arithmetic_mean_before_bootstrap",
+          "accepted_length": {
+            "n_prompts": 2,
+            "mean": 2.5555555555555554,
+            "ci95": [
+              2.5555555555555554,
+              2.5555555555555554
+            ],
+            "seed_std_mean": 0.0,
+            "bootstrap_unit": "prompt_id",
+            "seed_aggregation": "arithmetic_mean_before_bootstrap"
+          }
+        },
+        {
+          "axis": "output_offset",
+          "bin": "0-1K",
+          "n_prompts": 2,
+          "mean": 0.6571428571428571,
+          "ci95": [
+            0.6571428571428571,
+            0.6571428571428571
+          ],
+          "seed_std_mean": 0.0,
+          "bootstrap_unit": "prompt_id",
+          "seed_aggregation": "arithmetic_mean_before_bootstrap",
+          "accepted_length": {
+            "n_prompts": 2,
+            "mean": 2.5555555555555554,
+            "ci95": [
+              2.5555555555555554,
+              2.5555555555555554
+            ],
+            "seed_std_mean": 0.0,
+            "bootstrap_unit": "prompt_id",
+            "seed_aggregation": "arithmetic_mean_before_bootstrap"
+          }
+        }
+      ],
+      "request_latency_p50_seconds": 0.005472139921039343,
+      "request_latency_p95_seconds": 0.005569445225410164,
+      "request_latency_p50_prompt_bootstrap": null,
+      "request_latency_p95_prompt_bootstrap": null,
+      "phase_ms_median": {},
+      "realized_output_length_mean": 32,
+      "realized_generations_above_8K": 0,
+      "realized_generations_above_16K": 0,
+      "peak_allocated_bytes": 0,
+      "peak_reserved_bytes": 0,
+      "online_final_state": []
+    },
+    {
+      "condition": "long_thinking",
+      "temperature": 0.6,
+      "sampling_warp_config": {
+        "min_p": 0.0,
+        "top_k": 20,
+        "top_p": 0.95
+      },
+      "arm": "plain_dflash",
+      "requests": 2,
+      "primary_requests": 2,
+      "repetition_excluded": 0,
+      "metrics": {
+        "mean_accepted_length": {
+          "n_prompts": 2,
+          "mean": 2.3,
+          "ci95": [
+            2.3,
+            2.3
+          ],
+          "seed_std_mean": 0.0,
+          "bootstrap_unit": "prompt_id",
+          "seed_aggregation": "arithmetic_mean_before_bootstrap"
+        },
+        "median_accepted_length": {
+          "n_prompts": 2,
+          "mean": 2.5,
+          "ci95": [
+            2.5,
+            2.5
+          ],
+          "seed_std_mean": 0.0,
+          "bootstrap_unit": "prompt_id",
+          "seed_aggregation": "arithmetic_mean_before_bootstrap"
+        },
+        "target_forwards_per_generated_token": {
+          "n_prompts": 2,
+          "mean": 0.3125,
+          "ci95": [
+            0.3125,
+            0.3125
+          ],
+          "seed_std_mean": 0.0,
+          "bootstrap_unit": "prompt_id",
+          "seed_aggregation": "arithmetic_mean_before_bootstrap"
+        }
+      },
+      "pooled_block_accepted_length_mean": 2.3,
+      "pooled_block_accepted_length_median": 2.5,
+      "metric_aggregation": "metrics are prompt-weighted after seed aggregation; median_accepted_length aggregates request medians; pooled block statistics are separate",
+      "acceptance_by_block_position": {
+        "0": {
+          "n_prompts": 2,
+          "mean": 1.0,
+          "ci95": [
+            1.0,
+            1.0
+          ],
+          "seed_std_mean": 0.0,
+          "bootstrap_unit": "prompt_id",
+          "seed_aggregation": "arithmetic_mean_before_bootstrap"
+        },
+        "1": {
+          "n_prompts": 2,
+          "mean": 0.6,
+          "ci95": [
+            0.6,
+            0.6
+          ],
+          "seed_std_mean": 0.0,
+          "bootstrap_unit": "prompt_id",
+          "seed_aggregation": "arithmetic_mean_before_bootstrap"
+        },
+        "2": {
+          "n_prompts": 2,
+          "mean": 0.5,
+          "ci95": [
+            0.5,
+            0.5
+          ],
+          "seed_std_mean": 0.0,
+          "bootstrap_unit": "prompt_id",
+          "seed_aggregation": "arithmetic_mean_before_bootstrap"
+        },
+        "3": {
+          "n_prompts": 2,
+          "mean": 0.2222222222222222,
+          "ci95": [
+            0.2222222222222222,
+            0.2222222222222222
+          ],
+          "seed_std_mean": 0.0,
+          "bootstrap_unit": "prompt_id",
+          "seed_aggregation": "arithmetic_mean_before_bootstrap"
+        }
+      },
+      "acceptance_bins": [
+        {
+          "axis": "input_context_length",
+          "bin": "0-1024",
+          "n_prompts": 2,
+          "mean": 0.5897435897435898,
+          "ci95": [
+            0.5897435897435898,
+            0.5897435897435898
+          ],
+          "seed_std_mean": 0.0,
+          "bootstrap_unit": "prompt_id",
+          "seed_aggregation": "arithmetic_mean_before_bootstrap",
+          "accepted_length": {
+            "n_prompts": 2,
+            "mean": 2.3,
+            "ci95": [
+              2.3,
+              2.3
+            ],
+            "seed_std_mean": 0.0,
+            "bootstrap_unit": "prompt_id",
+            "seed_aggregation": "arithmetic_mean_before_bootstrap"
+          }
+        },
+        {
+          "axis": "output_offset",
+          "bin": "0-1K",
+          "n_prompts": 2,
+          "mean": 0.5897435897435898,
+          "ci95": [
+            0.5897435897435898,
+            0.5897435897435898
+          ],
+          "seed_std_mean": 0.0,
+          "bootstrap_unit": "prompt_id",
+          "seed_aggregation": "arithmetic_mean_before_bootstrap",
+          "accepted_length": {
+            "n_prompts": 2,
+            "mean": 2.3,
+            "ci95": [
+              2.3,
+              2.3
+            ],
+            "seed_std_mean": 0.0,
+            "bootstrap_unit": "prompt_id",
+            "seed_aggregation": "arithmetic_mean_before_bootstrap"
+          }
+        }
+      ],
+      "request_latency_p50_seconds": 0.004248872515745461,
+      "request_latency_p95_seconds": 0.004365763289388269,
+      "request_latency_p50_prompt_bootstrap": null,
+      "request_latency_p95_prompt_bootstrap": null,
+      "phase_ms_median": {},
+      "realized_output_length_mean": 32,
+      "realized_generations_above_8K": 0,
+      "realized_generations_above_16K": 0,
+      "peak_allocated_bytes": 0,
+      "peak_reserved_bytes": 0,
+      "online_final_state": []
+    },
+    {
+      "condition": "standard_nonthinking",
+      "temperature": 0.0,
+      "sampling_warp_config": {
+        "min_p": 0.0,
+        "top_k": 0,
+        "top_p": 1.0
+      },
+      "arm": "dense",
+      "requests": 2,
+      "primary_requests": 2,
+      "repetition_excluded": 0,
+      "metrics": {
+        "mean_accepted_length": {
+          "n_prompts": 2,
+          "mean": 3.419642857142857,
+          "ci95": [
+            3.125,
+            3.7142857142857144
+          ],
+          "seed_std_mean": 0.0,
+          "bootstrap_unit": "prompt_id",
+          "seed_aggregation": "arithmetic_mean_before_bootstrap"
+        },
+        "median_accepted_length": {
+          "n_prompts": 2,
+          "mean": 4.0,
+          "ci95": [
+            4.0,
+            4.0
+          ],
+          "seed_std_mean": 0.0,
+          "bootstrap_unit": "prompt_id",
+          "seed_aggregation": "arithmetic_mean_before_bootstrap"
+        },
+        "target_forwards_per_generated_token": {
+          "n_prompts": 2,
+          "mean": 0.234375,
+          "ci95": [
+            0.21875,
+            0.25
+          ],
+          "seed_std_mean": 0.0,
+          "bootstrap_unit": "prompt_id",
+          "seed_aggregation": "arithmetic_mean_before_bootstrap"
+        }
+      },
+      "pooled_block_accepted_length_mean": 3.4,
+      "pooled_block_accepted_length_median": 4,
+      "metric_aggregation": "metrics are prompt-weighted after seed aggregation; median_accepted_length aggregates request medians; pooled block statistics are separate",
+      "acceptance_by_block_position": {
+        "0": {
+          "n_prompts": 2,
+          "mean": 1.0,
+          "ci95": [
+            1.0,
+            1.0
+          ],
+          "seed_std_mean": 0.0,
+          "bootstrap_unit": "prompt_id",
+          "seed_aggregation": "arithmetic_mean_before_bootstrap"
+        },
+        "1": {
+          "n_prompts": 2,
+          "mean": 0.875,
+          "ci95": [
+            0.75,
+            1.0
+          ],
+          "seed_std_mean": 0.0,
+          "bootstrap_unit": "prompt_id",
+          "seed_aggregation": "arithmetic_mean_before_bootstrap"
+        },
+        "2": {
+          "n_prompts": 2,
+          "mean": 0.875,
+          "ci95": [
+            0.75,
+            1.0
+          ],
+          "seed_std_mean": 0.0,
+          "bootstrap_unit": "prompt_id",
+          "seed_aggregation": "arithmetic_mean_before_bootstrap"
+        },
+        "3": {
+          "n_prompts": 2,
+          "mean": 0.8571428571428572,
+          "ci95": [
+            0.7142857142857143,
+            1.0
+          ],
+          "seed_std_mean": 0.0,
+          "bootstrap_unit": "prompt_id",
+          "seed_aggregation": "arithmetic_mean_before_bootstrap"
+        }
+      },
+      "acceptance_bins": [
+        {
+          "axis": "input_context_length",
+          "bin": "0-1024",
+          "n_prompts": 2,
+          "mean": 0.9032258064516129,
+          "ci95": [
+            0.8064516129032258,
+            1.0
+          ],
+          "seed_std_mean": 0.0,
+          "bootstrap_unit": "prompt_id",
+          "seed_aggregation": "arithmetic_mean_before_bootstrap",
+          "accepted_length": {
+            "n_prompts": 2,
+            "mean": 3.419642857142857,
+            "ci95": [
+              3.125,
+              3.7142857142857144
+            ],
+            "seed_std_mean": 0.0,
+            "bootstrap_unit": "prompt_id",
+            "seed_aggregation": "arithmetic_mean_before_bootstrap"
+          }
+        },
+        {
+          "axis": "output_offset",
+          "bin": "0-1K",
+          "n_prompts": 2,
+          "mean": 0.9032258064516129,
+          "ci95": [
+            0.8064516129032258,
+            1.0
+          ],
+          "seed_std_mean": 0.0,
+          "bootstrap_unit": "prompt_id",
+          "seed_aggregation": "arithmetic_mean_before_bootstrap",
+          "accepted_length": {
+            "n_prompts": 2,
+            "mean": 3.419642857142857,
+            "ci95": [
+              3.125,
+              3.7142857142857144
+            ],
+            "seed_std_mean": 0.0,
+            "bootstrap_unit": "prompt_id",
+            "seed_aggregation": "arithmetic_mean_before_bootstrap"
+          }
+        }
+      ],
+      "request_latency_p50_seconds": 0.0032620964339002967,
+      "request_latency_p95_seconds": 0.003447152196895331,
+      "request_latency_p50_prompt_bootstrap": null,
+      "request_latency_p95_prompt_bootstrap": null,
+      "phase_ms_median": {},
+      "realized_output_length_mean": 32,
+      "realized_generations_above_8K": 0,
+      "realized_generations_above_16K": 0,
+      "peak_allocated_bytes": 0,
+      "peak_reserved_bytes": 0,
+      "online_final_state": []
+    },
+    {
+      "condition": "standard_nonthinking",
+      "temperature": 0.0,
+      "sampling_warp_config": {
+        "min_p": 0.0,
+        "top_k": 0,
+        "top_p": 1.0
+      },
+      "arm": "dense_sparse",
+      "requests": 2,
+      "primary_requests": 2,
+      "repetition_excluded": 0,
+      "metrics": {
+        "mean_accepted_length": {
+          "n_prompts": 2,
+          "mean": 3.419642857142857,
+          "ci95": [
+            3.125,
+            3.7142857142857144
+          ],
+          "seed_std_mean": 0.0,
+          "bootstrap_unit": "prompt_id",
+          "seed_aggregation": "arithmetic_mean_before_bootstrap"
+        },
+        "median_accepted_length": {
+          "n_prompts": 2,
+          "mean": 4.0,
+          "ci95": [
+            4.0,
+            4.0
+          ],
+          "seed_std_mean": 0.0,
+          "bootstrap_unit": "prompt_id",
+          "seed_aggregation": "arithmetic_mean_before_bootstrap"
+        },
+        "target_forwards_per_generated_token": {
+          "n_prompts": 2,
+          "mean": 0.234375,
+          "ci95": [
+            0.21875,
+            0.25
+          ],
+          "seed_std_mean": 0.0,
+          "bootstrap_unit": "prompt_id",
+          "seed_aggregation": "arithmetic_mean_before_bootstrap"
+        }
+      },
+      "pooled_block_accepted_length_mean": 3.4,
+      "pooled_block_accepted_length_median": 4,
+      "metric_aggregation": "metrics are prompt-weighted after seed aggregation; median_accepted_length aggregates request medians; pooled block statistics are separate",
+      "acceptance_by_block_position": {
+        "0": {
+          "n_prompts": 2,
+          "mean": 1.0,
+          "ci95": [
+            1.0,
+            1.0
+          ],
+          "seed_std_mean": 0.0,
+          "bootstrap_unit": "prompt_id",
+          "seed_aggregation": "arithmetic_mean_before_bootstrap"
+        },
+        "1": {
+          "n_prompts": 2,
+          "mean": 0.875,
+          "ci95": [
+            0.75,
+            1.0
+          ],
+          "seed_std_mean": 0.0,
+          "bootstrap_unit": "prompt_id",
+          "seed_aggregation": "arithmetic_mean_before_bootstrap"
+        },
+        "2": {
+          "n_prompts": 2,
+          "mean": 0.875,
+          "ci95": [
+            0.75,
+            1.0
+          ],
+          "seed_std_mean": 0.0,
+          "bootstrap_unit": "prompt_id",
+          "seed_aggregation": "arithmetic_mean_before_bootstrap"
+        },
+        "3": {
+          "n_prompts": 2,
+          "mean": 0.8571428571428572,
+          "ci95": [
+            0.7142857142857143,
+            1.0
+          ],
+          "seed_std_mean": 0.0,
+          "bootstrap_unit": "prompt_id",
+          "seed_aggregation": "arithmetic_mean_before_bootstrap"
+        }
+      },
+      "acceptance_bins": [
+        {
+          "axis": "input_context_length",
+          "bin": "0-1024",
+          "n_prompts": 2,
+          "mean": 0.9032258064516129,
+          "ci95": [
+            0.8064516129032258,
+            1.0
+          ],
+          "seed_std_mean": 0.0,
+          "bootstrap_unit": "prompt_id",
+          "seed_aggregation": "arithmetic_mean_before_bootstrap",
+          "accepted_length": {
+            "n_prompts": 2,
+            "mean": 3.419642857142857,
+            "ci95": [
+              3.125,
+              3.7142857142857144
+            ],
+            "seed_std_mean": 0.0,
+            "bootstrap_unit": "prompt_id",
+            "seed_aggregation": "arithmetic_mean_before_bootstrap"
+          }
+        },
+        {
+          "axis": "output_offset",
+          "bin": "0-1K",
+          "n_prompts": 2,
+          "mean": 0.9032258064516129,
+          "ci95": [
+            0.8064516129032258,
+            1.0
+          ],
+          "seed_std_mean": 0.0,
+          "bootstrap_unit": "prompt_id",
+          "seed_aggregation": "arithmetic_mean_before_bootstrap",
+          "accepted_length": {
+            "n_prompts": 2,
+            "mean": 3.419642857142857,
+            "ci95": [
+              3.125,
+              3.7142857142857144
+            ],
+            "seed_std_mean": 0.0,
+            "bootstrap_unit": "prompt_id",
+            "seed_aggregation": "arithmetic_mean_before_bootstrap"
+          }
+        }
+      ],
+      "request_latency_p50_seconds": 0.0053984863916412,
+      "request_latency_p95_seconds": 0.00576401186408475,
+      "request_latency_p50_prompt_bootstrap": null,
+      "request_latency_p95_prompt_bootstrap": null,
+      "phase_ms_median": {},
+      "realized_output_length_mean": 32,
+      "realized_generations_above_8K": 0,
+      "realized_generations_above_16K": 0,
+      "peak_allocated_bytes": 0,
+      "peak_reserved_bytes": 0,
+      "online_final_state": []
+    },
+    {
+      "condition": "standard_nonthinking",
+      "temperature": 0.0,
+      "sampling_warp_config": {
+        "min_p": 0.0,
+        "top_k": 0,
+        "top_p": 1.0
+      },
+      "arm": "online_bigram",
+      "requests": 2,
+      "primary_requests": 2,
+      "repetition_excluded": 0,
+      "metrics": {
+        "mean_accepted_length": {
+          "n_prompts": 2,
+          "mean": 3.419642857142857,
+          "ci95": [
+            3.125,
+            3.7142857142857144
+          ],
+          "seed_std_mean": 0.0,
+          "bootstrap_unit": "prompt_id",
+          "seed_aggregation": "arithmetic_mean_before_bootstrap"
+        },
+        "median_accepted_length": {
+          "n_prompts": 2,
+          "mean": 4.0,
+          "ci95": [
+            4.0,
+            4.0
+          ],
+          "seed_std_mean": 0.0,
+          "bootstrap_unit": "prompt_id",
+          "seed_aggregation": "arithmetic_mean_before_bootstrap"
+        },
+        "target_forwards_per_generated_token": {
+          "n_prompts": 2,
+          "mean": 0.234375,
+          "ci95": [
+            0.21875,
+            0.25
+          ],
+          "seed_std_mean": 0.0,
+          "bootstrap_unit": "prompt_id",
+          "seed_aggregation": "arithmetic_mean_before_bootstrap"
+        }
+      },
+      "pooled_block_accepted_length_mean": 3.4,
+      "pooled_block_accepted_length_median": 4,
+      "metric_aggregation": "metrics are prompt-weighted after seed aggregation; median_accepted_length aggregates request medians; pooled block statistics are separate",
+      "acceptance_by_block_position": {
+        "0": {
+          "n_prompts": 2,
+          "mean": 1.0,
+          "ci95": [
+            1.0,
+            1.0
+          ],
+          "seed_std_mean": 0.0,
+          "bootstrap_unit": "prompt_id",
+          "seed_aggregation": "arithmetic_mean_before_bootstrap"
+        },
+        "1": {
+          "n_prompts": 2,
+          "mean": 0.875,
+          "ci95": [
+            0.75,
+            1.0
+          ],
+          "seed_std_mean": 0.0,
+          "bootstrap_unit": "prompt_id",
+          "seed_aggregation": "arithmetic_mean_before_bootstrap"
+        },
+        "2": {
+          "n_prompts": 2,
+          "mean": 0.875,
+          "ci95": [
+            0.75,
+            1.0
+          ],
+          "seed_std_mean": 0.0,
+          "bootstrap_unit": "prompt_id",
+          "seed_aggregation": "arithmetic_mean_before_bootstrap"
+        },
+        "3": {
+          "n_prompts": 2,
+          "mean": 0.8571428571428572,
+          "ci95": [
+            0.7142857142857143,
+            1.0
+          ],
+          "seed_std_mean": 0.0,
+          "bootstrap_unit": "prompt_id",
+          "seed_aggregation": "arithmetic_mean_before_bootstrap"
+        }
+      },
+      "acceptance_bins": [
+        {
+          "axis": "input_context_length",
+          "bin": "0-1024",
+          "n_prompts": 2,
+          "mean": 0.9032258064516129,
+          "ci95": [
+            0.8064516129032258,
+            1.0
+          ],
+          "seed_std_mean": 0.0,
+          "bootstrap_unit": "prompt_id",
+          "seed_aggregation": "arithmetic_mean_before_bootstrap",
+          "accepted_length": {
+            "n_prompts": 2,
+            "mean": 3.419642857142857,
+            "ci95": [
+              3.125,
+              3.7142857142857144
+            ],
+            "seed_std_mean": 0.0,
+            "bootstrap_unit": "prompt_id",
+            "seed_aggregation": "arithmetic_mean_before_bootstrap"
+          }
+        },
+        {
+          "axis": "output_offset",
+          "bin": "0-1K",
+          "n_prompts": 2,
+          "mean": 0.9032258064516129,
+          "ci95": [
+            0.8064516129032258,
+            1.0
+          ],
+          "seed_std_mean": 0.0,
+          "bootstrap_unit": "prompt_id",
+          "seed_aggregation": "arithmetic_mean_before_bootstrap",
+          "accepted_length": {
+            "n_prompts": 2,
+            "mean": 3.419642857142857,
+            "ci95": [
+              3.125,
+              3.7142857142857144
+            ],
+            "seed_std_mean": 0.0,
+            "bootstrap_unit": "prompt_id",
+            "seed_aggregation": "arithmetic_mean_before_bootstrap"
+          }
+        }
+      ],
+      "request_latency_p50_seconds": 0.0025044989306479692,
+      "request_latency_p95_seconds": 0.0026022057281807065,
+      "request_latency_p50_prompt_bootstrap": null,
+      "request_latency_p95_prompt_bootstrap": null,
+      "phase_ms_median": {},
+      "realized_output_length_mean": 32,
+      "realized_generations_above_8K": 0,
+      "realized_generations_above_16K": 0,
+      "peak_allocated_bytes": 0,
+      "peak_reserved_bytes": 0,
+      "online_final_state": []
+    },
+    {
+      "condition": "standard_nonthinking",
+      "temperature": 0.0,
+      "sampling_warp_config": {
+        "min_p": 0.0,
+        "top_k": 0,
+        "top_p": 1.0
+      },
+      "arm": "plain_dflash",
+      "requests": 2,
+      "primary_requests": 2,
+      "repetition_excluded": 0,
+      "metrics": {
+        "mean_accepted_length": {
+          "n_prompts": 2,
+          "mean": 3.419642857142857,
+          "ci95": [
+            3.125,
+            3.7142857142857144
+          ],
+          "seed_std_mean": 0.0,
+          "bootstrap_unit": "prompt_id",
+          "seed_aggregation": "arithmetic_mean_before_bootstrap"
+        },
+        "median_accepted_length": {
+          "n_prompts": 2,
+          "mean": 4.0,
+          "ci95": [
+            4.0,
+            4.0
+          ],
+          "seed_std_mean": 0.0,
+          "bootstrap_unit": "prompt_id",
+          "seed_aggregation": "arithmetic_mean_before_bootstrap"
+        },
+        "target_forwards_per_generated_token": {
+          "n_prompts": 2,
+          "mean": 0.234375,
+          "ci95": [
+            0.21875,
+            0.25
+          ],
+          "seed_std_mean": 0.0,
+          "bootstrap_unit": "prompt_id",
+          "seed_aggregation": "arithmetic_mean_before_bootstrap"
+        }
+      },
+      "pooled_block_accepted_length_mean": 3.4,
+      "pooled_block_accepted_length_median": 4,
+      "metric_aggregation": "metrics are prompt-weighted after seed aggregation; median_accepted_length aggregates request medians; pooled block statistics are separate",
+      "acceptance_by_block_position": {
+        "0": {
+          "n_prompts": 2,
+          "mean": 1.0,
+          "ci95": [
+            1.0,
+            1.0
+          ],
+          "seed_std_mean": 0.0,
+          "bootstrap_unit": "prompt_id",
+          "seed_aggregation": "arithmetic_mean_before_bootstrap"
+        },
+        "1": {
+          "n_prompts": 2,
+          "mean": 0.875,
+          "ci95": [
+            0.75,
+            1.0
+          ],
+          "seed_std_mean": 0.0,
+          "bootstrap_unit": "prompt_id",
+          "seed_aggregation": "arithmetic_mean_before_bootstrap"
+        },
+        "2": {
+          "n_prompts": 2,
+          "mean": 0.875,
+          "ci95": [
+            0.75,
+            1.0
+          ],
+          "seed_std_mean": 0.0,
+          "bootstrap_unit": "prompt_id",
+          "seed_aggregation": "arithmetic_mean_before_bootstrap"
+        },
+        "3": {
+          "n_prompts": 2,
+          "mean": 0.8571428571428572,
+          "ci95": [
+            0.7142857142857143,
+            1.0
+          ],
+          "seed_std_mean": 0.0,
+          "bootstrap_unit": "prompt_id",
+          "seed_aggregation": "arithmetic_mean_before_bootstrap"
+        }
+      },
+      "acceptance_bins": [
+        {
+          "axis": "input_context_length",
+          "bin": "0-1024",
+          "n_prompts": 2,
+          "mean": 0.9032258064516129,
+          "ci95": [
+            0.8064516129032258,
+            1.0
+          ],
+          "seed_std_mean": 0.0,
+          "bootstrap_unit": "prompt_id",
+          "seed_aggregation": "arithmetic_mean_before_bootstrap",
+          "accepted_length": {
+            "n_prompts": 2,
+            "mean": 3.419642857142857,
+            "ci95": [
+              3.125,
+              3.7142857142857144
+            ],
+            "seed_std_mean": 0.0,
+            "bootstrap_unit": "prompt_id",
+            "seed_aggregation": "arithmetic_mean_before_bootstrap"
+          }
+        },
+        {
+          "axis": "output_offset",
+          "bin": "0-1K",
+          "n_prompts": 2,
+          "mean": 0.9032258064516129,
+          "ci95": [
+            0.8064516129032258,
+            1.0
+          ],
+          "seed_std_mean": 0.0,
+          "bootstrap_unit": "prompt_id",
+          "seed_aggregation": "arithmetic_mean_before_bootstrap",
+          "accepted_length": {
+            "n_prompts": 2,
+            "mean": 3.419642857142857,
+            "ci95": [
+              3.125,
+              3.7142857142857144
+            ],
+            "seed_std_mean": 0.0,
+            "bootstrap_unit": "prompt_id",
+            "seed_aggregation": "arithmetic_mean_before_bootstrap"
+          }
+        }
+      ],
+      "request_latency_p50_seconds": 0.001893380074761808,
+      "request_latency_p95_seconds": 0.001929570094216615,
+      "request_latency_p50_prompt_bootstrap": null,
+      "request_latency_p95_prompt_bootstrap": null,
+      "phase_ms_median": {},
+      "realized_output_length_mean": 32,
+      "realized_generations_above_8K": 0,
+      "realized_generations_above_16K": 0,
+      "peak_allocated_bytes": 0,
+      "peak_reserved_bytes": 0,
+      "online_final_state": []
+    },
+    {
+      "condition": "standard_nonthinking",
+      "temperature": 0.7,
+      "sampling_warp_config": {
+        "min_p": 0.0,
+        "top_k": 20,
+        "top_p": 0.8
+      },
+      "arm": "dense",
+      "requests": 2,
+      "primary_requests": 2,
+      "repetition_excluded": 0,
+      "metrics": {
+        "mean_accepted_length": {
+          "n_prompts": 2,
+          "mean": 2.25,
+          "ci95": [
+            2.2,
+            2.3
+          ],
+          "seed_std_mean": 0.0,
+          "bootstrap_unit": "prompt_id",
+          "seed_aggregation": "arithmetic_mean_before_bootstrap"
+        },
+        "median_accepted_length": {
+          "n_prompts": 2,
+          "mean": 2.0,
+          "ci95": [
+            2.0,
+            2.0
+          ],
+          "seed_std_mean": 0.0,
+          "bootstrap_unit": "prompt_id",
+          "seed_aggregation": "arithmetic_mean_before_bootstrap"
+        },
+        "target_forwards_per_generated_token": {
+          "n_prompts": 2,
+          "mean": 0.3125,
+          "ci95": [
+            0.3125,
+            0.3125
+          ],
+          "seed_std_mean": 0.0,
+          "bootstrap_unit": "prompt_id",
+          "seed_aggregation": "arithmetic_mean_before_bootstrap"
+        }
+      },
+      "pooled_block_accepted_length_mean": 2.25,
+      "pooled_block_accepted_length_median": 2.0,
+      "metric_aggregation": "metrics are prompt-weighted after seed aggregation; median_accepted_length aggregates request medians; pooled block statistics are separate",
+      "acceptance_by_block_position": {
+        "0": {
+          "n_prompts": 2,
+          "mean": 1.0,
+          "ci95": [
+            1.0,
+            1.0
+          ],
+          "seed_std_mean": 0.0,
+          "bootstrap_unit": "prompt_id",
+          "seed_aggregation": "arithmetic_mean_before_bootstrap"
+        },
+        "1": {
+          "n_prompts": 2,
+          "mean": 0.7,
+          "ci95": [
+            0.7,
+            0.7
+          ],
+          "seed_std_mean": 0.0,
+          "bootstrap_unit": "prompt_id",
+          "seed_aggregation": "arithmetic_mean_before_bootstrap"
+        },
+        "2": {
+          "n_prompts": 2,
+          "mean": 0.35,
+          "ci95": [
+            0.3,
+            0.4
+          ],
+          "seed_std_mean": 0.0,
+          "bootstrap_unit": "prompt_id",
+          "seed_aggregation": "arithmetic_mean_before_bootstrap"
+        },
+        "3": {
+          "n_prompts": 2,
+          "mean": 0.2222222222222222,
+          "ci95": [
+            0.2222222222222222,
+            0.2222222222222222
+          ],
+          "seed_std_mean": 0.0,
+          "bootstrap_unit": "prompt_id",
+          "seed_aggregation": "arithmetic_mean_before_bootstrap"
+        }
+      },
+      "acceptance_bins": [
+        {
+          "axis": "input_context_length",
+          "bin": "0-1024",
+          "n_prompts": 2,
+          "mean": 0.5769230769230769,
+          "ci95": [
+            0.5641025641025641,
+            0.5897435897435898
+          ],
+          "seed_std_mean": 0.0,
+          "bootstrap_unit": "prompt_id",
+          "seed_aggregation": "arithmetic_mean_before_bootstrap",
+          "accepted_length": {
+            "n_prompts": 2,
+            "mean": 2.25,
+            "ci95": [
+              2.2,
+              2.3
+            ],
+            "seed_std_mean": 0.0,
+            "bootstrap_unit": "prompt_id",
+            "seed_aggregation": "arithmetic_mean_before_bootstrap"
+          }
+        },
+        {
+          "axis": "output_offset",
+          "bin": "0-1K",
+          "n_prompts": 2,
+          "mean": 0.5769230769230769,
+          "ci95": [
+            0.5641025641025641,
+            0.5897435897435898
+          ],
+          "seed_std_mean": 0.0,
+          "bootstrap_unit": "prompt_id",
+          "seed_aggregation": "arithmetic_mean_before_bootstrap",
+          "accepted_length": {
+            "n_prompts": 2,
+            "mean": 2.25,
+            "ci95": [
+              2.2,
+              2.3
+            ],
+            "seed_std_mean": 0.0,
+            "bootstrap_unit": "prompt_id",
+            "seed_aggregation": "arithmetic_mean_before_bootstrap"
+          }
+        }
+      ],
+      "request_latency_p50_seconds": 0.0068649419117718935,
+      "request_latency_p95_seconds": 0.006931160413660109,
+      "request_latency_p50_prompt_bootstrap": null,
+      "request_latency_p95_prompt_bootstrap": null,
+      "phase_ms_median": {},
+      "realized_output_length_mean": 32,
+      "realized_generations_above_8K": 0,
+      "realized_generations_above_16K": 0,
+      "peak_allocated_bytes": 0,
+      "peak_reserved_bytes": 0,
+      "online_final_state": []
+    },
+    {
+      "condition": "standard_nonthinking",
+      "temperature": 0.7,
+      "sampling_warp_config": {
+        "min_p": 0.0,
+        "top_k": 20,
+        "top_p": 0.8
+      },
+      "arm": "dense_sparse",
+      "requests": 2,
+      "primary_requests": 2,
+      "repetition_excluded": 0,
+      "metrics": {
+        "mean_accepted_length": {
+          "n_prompts": 2,
+          "mean": 2.25,
+          "ci95": [
+            2.2,
+            2.3
+          ],
+          "seed_std_mean": 0.0,
+          "bootstrap_unit": "prompt_id",
+          "seed_aggregation": "arithmetic_mean_before_bootstrap"
+        },
+        "median_accepted_length": {
+          "n_prompts": 2,
+          "mean": 2.0,
+          "ci95": [
+            2.0,
+            2.0
+          ],
+          "seed_std_mean": 0.0,
+          "bootstrap_unit": "prompt_id",
+          "seed_aggregation": "arithmetic_mean_before_bootstrap"
+        },
+        "target_forwards_per_generated_token": {
+          "n_prompts": 2,
+          "mean": 0.3125,
+          "ci95": [
+            0.3125,
+            0.3125
+          ],
+          "seed_std_mean": 0.0,
+          "bootstrap_unit": "prompt_id",
+          "seed_aggregation": "arithmetic_mean_before_bootstrap"
+        }
+      },
+      "pooled_block_accepted_length_mean": 2.25,
+      "pooled_block_accepted_length_median": 2.0,
+      "metric_aggregation": "metrics are prompt-weighted after seed aggregation; median_accepted_length aggregates request medians; pooled block statistics are separate",
+      "acceptance_by_block_position": {
+        "0": {
+          "n_prompts": 2,
+          "mean": 1.0,
+          "ci95": [
+            1.0,
+            1.0
+          ],
+          "seed_std_mean": 0.0,
+          "bootstrap_unit": "prompt_id",
+          "seed_aggregation": "arithmetic_mean_before_bootstrap"
+        },
+        "1": {
+          "n_prompts": 2,
+          "mean": 0.7,
+          "ci95": [
+            0.7,
+            0.7
+          ],
+          "seed_std_mean": 0.0,
+          "bootstrap_unit": "prompt_id",
+          "seed_aggregation": "arithmetic_mean_before_bootstrap"
+        },
+        "2": {
+          "n_prompts": 2,
+          "mean": 0.35,
+          "ci95": [
+            0.3,
+            0.4
+          ],
+          "seed_std_mean": 0.0,
+          "bootstrap_unit": "prompt_id",
+          "seed_aggregation": "arithmetic_mean_before_bootstrap"
+        },
+        "3": {
+          "n_prompts": 2,
+          "mean": 0.2222222222222222,
+          "ci95": [
+            0.2222222222222222,
+            0.2222222222222222
+          ],
+          "seed_std_mean": 0.0,
+          "bootstrap_unit": "prompt_id",
+          "seed_aggregation": "arithmetic_mean_before_bootstrap"
+        }
+      },
+      "acceptance_bins": [
+        {
+          "axis": "input_context_length",
+          "bin": "0-1024",
+          "n_prompts": 2,
+          "mean": 0.5769230769230769,
+          "ci95": [
+            0.5641025641025641,
+            0.5897435897435898
+          ],
+          "seed_std_mean": 0.0,
+          "bootstrap_unit": "prompt_id",
+          "seed_aggregation": "arithmetic_mean_before_bootstrap",
+          "accepted_length": {
+            "n_prompts": 2,
+            "mean": 2.25,
+            "ci95": [
+              2.2,
+              2.3
+            ],
+            "seed_std_mean": 0.0,
+            "bootstrap_unit": "prompt_id",
+            "seed_aggregation": "arithmetic_mean_before_bootstrap"
+          }
+        },
+        {
+          "axis": "output_offset",
+          "bin": "0-1K",
+          "n_prompts": 2,
+          "mean": 0.5769230769230769,
+          "ci95": [
+            0.5641025641025641,
+            0.5897435897435898
+          ],
+          "seed_std_mean": 0.0,
+          "bootstrap_unit": "prompt_id",
+          "seed_aggregation": "arithmetic_mean_before_bootstrap",
+          "accepted_length": {
+            "n_prompts": 2,
+            "mean": 2.25,
+            "ci95": [
+              2.2,
+              2.3
+            ],
+            "seed_std_mean": 0.0,
+            "bootstrap_unit": "prompt_id",
+            "seed_aggregation": "arithmetic_mean_before_bootstrap"
+          }
+        }
+      ],
+      "request_latency_p50_seconds": 0.010391479008831084,
+      "request_latency_p95_seconds": 0.010459645779337733,
+      "request_latency_p50_prompt_bootstrap": null,
+      "request_latency_p95_prompt_bootstrap": null,
+      "phase_ms_median": {},
+      "realized_output_length_mean": 32,
+      "realized_generations_above_8K": 0,
+      "realized_generations_above_16K": 0,
+      "peak_allocated_bytes": 0,
+      "peak_reserved_bytes": 0,
+      "online_final_state": []
+    },
+    {
+      "condition": "standard_nonthinking",
+      "temperature": 0.7,
+      "sampling_warp_config": {
+        "min_p": 0.0,
+        "top_k": 20,
+        "top_p": 0.8
+      },
+      "arm": "online_bigram",
+      "requests": 2,
+      "primary_requests": 2,
+      "repetition_excluded": 0,
+      "metrics": {
+        "mean_accepted_length": {
+          "n_prompts": 2,
+          "mean": 2.287878787878788,
+          "ci95": [
+            1.9090909090909092,
+            2.6666666666666665
+          ],
+          "seed_std_mean": 0.0,
+          "bootstrap_unit": "prompt_id",
+          "seed_aggregation": "arithmetic_mean_before_bootstrap"
+        },
+        "median_accepted_length": {
+          "n_prompts": 2,
+          "mean": 2.5,
+          "ci95": [
+            2.0,
+            3.0
+          ],
+          "seed_std_mean": 0.0,
+          "bootstrap_unit": "prompt_id",
+          "seed_aggregation": "arithmetic_mean_before_bootstrap"
+        },
+        "target_forwards_per_generated_token": {
+          "n_prompts": 2,
+          "mean": 0.3125,
+          "ci95": [
+            0.28125,
+            0.34375
+          ],
+          "seed_std_mean": 0.0,
+          "bootstrap_unit": "prompt_id",
+          "seed_aggregation": "arithmetic_mean_before_bootstrap"
+        }
+      },
+      "pooled_block_accepted_length_mean": 2.25,
+      "pooled_block_accepted_length_median": 2.0,
+      "metric_aggregation": "metrics are prompt-weighted after seed aggregation; median_accepted_length aggregates request medians; pooled block statistics are separate",
+      "acceptance_by_block_position": {
+        "0": {
+          "n_prompts": 2,
+          "mean": 1.0,
+          "ci95": [
+            1.0,
+            1.0
+          ],
+          "seed_std_mean": 0.0,
+          "bootstrap_unit": "prompt_id",
+          "seed_aggregation": "arithmetic_mean_before_bootstrap"
+        },
+        "1": {
+          "n_prompts": 2,
+          "mean": 0.7171717171717171,
+          "ci95": [
+            0.5454545454545454,
+            0.8888888888888888
+          ],
+          "seed_std_mean": 0.0,
+          "bootstrap_unit": "prompt_id",
+          "seed_aggregation": "arithmetic_mean_before_bootstrap"
+        },
+        "2": {
+          "n_prompts": 2,
+          "mean": 0.44886363636363635,
+          "ci95": [
+            0.2727272727272727,
+            0.625
+          ],
+          "seed_std_mean": 0.0,
+          "bootstrap_unit": "prompt_id",
+          "seed_aggregation": "arithmetic_mean_before_bootstrap"
+        },
+        "3": {
+          "n_prompts": 2,
+          "mean": 0.17045454545454547,
+          "ci95": [
+            0.09090909090909091,
+            0.25
+          ],
+          "seed_std_mean": 0.0,
+          "bootstrap_unit": "prompt_id",
+          "seed_aggregation": "arithmetic_mean_before_bootstrap"
+        }
+      },
+      "acceptance_bins": [
+        {
+          "axis": "input_context_length",
+          "bin": "0-1024",
+          "n_prompts": 2,
+          "mean": 0.5915775401069518,
+          "ci95": [
+            0.4772727272727273,
+            0.7058823529411765
+          ],
+          "seed_std_mean": 0.0,
+          "bootstrap_unit": "prompt_id",
+          "seed_aggregation": "arithmetic_mean_before_bootstrap",
+          "accepted_length": {
+            "n_prompts": 2,
+            "mean": 2.287878787878788,
+            "ci95": [
+              1.9090909090909092,
+              2.6666666666666665
+            ],
+            "seed_std_mean": 0.0,
+            "bootstrap_unit": "prompt_id",
+            "seed_aggregation": "arithmetic_mean_before_bootstrap"
+          }
+        },
+        {
+          "axis": "output_offset",
+          "bin": "0-1K",
+          "n_prompts": 2,
+          "mean": 0.5915775401069518,
+          "ci95": [
+            0.4772727272727273,
+            0.7058823529411765
+          ],
+          "seed_std_mean": 0.0,
+          "bootstrap_unit": "prompt_id",
+          "seed_aggregation": "arithmetic_mean_before_bootstrap",
+          "accepted_length": {
+            "n_prompts": 2,
+            "mean": 2.287878787878788,
+            "ci95": [
+              1.9090909090909092,
+              2.6666666666666665
+            ],
+            "seed_std_mean": 0.0,
+            "bootstrap_unit": "prompt_id",
+            "seed_aggregation": "arithmetic_mean_before_bootstrap"
+          }
+        }
+      ],
+      "request_latency_p50_seconds": 0.006017133942805231,
+      "request_latency_p95_seconds": 0.006538458040449768,
+      "request_latency_p50_prompt_bootstrap": null,
+      "request_latency_p95_prompt_bootstrap": null,
+      "phase_ms_median": {},
+      "realized_output_length_mean": 32,
+      "realized_generations_above_8K": 0,
+      "realized_generations_above_16K": 0,
+      "peak_allocated_bytes": 0,
+      "peak_reserved_bytes": 0,
+      "online_final_state": []
+    },
+    {
+      "condition": "standard_nonthinking",
+      "temperature": 0.7,
+      "sampling_warp_config": {
+        "min_p": 0.0,
+        "top_k": 20,
+        "top_p": 0.8
+      },
+      "arm": "plain_dflash",
+      "requests": 2,
+      "primary_requests": 2,
+      "repetition_excluded": 0,
+      "metrics": {
+        "mean_accepted_length": {
+          "n_prompts": 2,
+          "mean": 2.111111111111111,
+          "ci95": [
+            1.6666666666666667,
+            2.5555555555555554
+          ],
+          "seed_std_mean": 0.0,
+          "bootstrap_unit": "prompt_id",
+          "seed_aggregation": "arithmetic_mean_before_bootstrap"
+        },
+        "median_accepted_length": {
+          "n_prompts": 2,
+          "mean": 2.0,
+          "ci95": [
+            1.0,
+            3.0
+          ],
+          "seed_std_mean": 0.0,
+          "bootstrap_unit": "prompt_id",
+          "seed_aggregation": "arithmetic_mean_before_bootstrap"
+        },
+        "target_forwards_per_generated_token": {
+          "n_prompts": 2,
+          "mean": 0.328125,
+          "ci95": [
+            0.28125,
+            0.375
+          ],
+          "seed_std_mean": 0.0,
+          "bootstrap_unit": "prompt_id",
+          "seed_aggregation": "arithmetic_mean_before_bootstrap"
+        }
+      },
+      "pooled_block_accepted_length_mean": 2.0476190476190474,
+      "pooled_block_accepted_length_median": 2,
+      "metric_aggregation": "metrics are prompt-weighted after seed aggregation; median_accepted_length aggregates request medians; pooled block statistics are separate",
+      "acceptance_by_block_position": {
+        "0": {
+          "n_prompts": 2,
+          "mean": 1.0,
+          "ci95": [
+            1.0,
+            1.0
+          ],
+          "seed_std_mean": 0.0,
+          "bootstrap_unit": "prompt_id",
+          "seed_aggregation": "arithmetic_mean_before_bootstrap"
+        },
+        "1": {
+          "n_prompts": 2,
+          "mean": 0.5972222222222222,
+          "ci95": [
+            0.4166666666666667,
+            0.7777777777777778
+          ],
+          "seed_std_mean": 0.0,
+          "bootstrap_unit": "prompt_id",
+          "seed_aggregation": "arithmetic_mean_before_bootstrap"
+        },
+        "2": {
+          "n_prompts": 2,
+          "mean": 0.36868686868686873,
+          "ci95": [
+            0.18181818181818182,
+            0.5555555555555556
+          ],
+          "seed_std_mean": 0.0,
+          "bootstrap_unit": "prompt_id",
+          "seed_aggregation": "arithmetic_mean_before_bootstrap"
+        },
+        "3": {
+          "n_prompts": 2,
+          "mean": 0.15656565656565657,
+          "ci95": [
+            0.09090909090909091,
+            0.2222222222222222
+          ],
+          "seed_std_mean": 0.0,
+          "bootstrap_unit": "prompt_id",
+          "seed_aggregation": "arithmetic_mean_before_bootstrap"
+        }
+      },
+      "acceptance_bins": [
+        {
+          "axis": "input_context_length",
+          "bin": "0-1024",
+          "n_prompts": 2,
+          "mean": 0.5368357487922705,
+          "ci95": [
+            0.43478260869565216,
+            0.6388888888888888
+          ],
+          "seed_std_mean": 0.0,
+          "bootstrap_unit": "prompt_id",
+          "seed_aggregation": "arithmetic_mean_before_bootstrap",
+          "accepted_length": {
+            "n_prompts": 2,
+            "mean": 2.111111111111111,
+            "ci95": [
+              1.6666666666666667,
+              2.5555555555555554
+            ],
+            "seed_std_mean": 0.0,
+            "bootstrap_unit": "prompt_id",
+            "seed_aggregation": "arithmetic_mean_before_bootstrap"
+          }
+        },
+        {
+          "axis": "output_offset",
+          "bin": "0-1K",
+          "n_prompts": 2,
+          "mean": 0.5368357487922705,
+          "ci95": [
+            0.43478260869565216,
+            0.6388888888888888
+          ],
+          "seed_std_mean": 0.0,
+          "bootstrap_unit": "prompt_id",
+          "seed_aggregation": "arithmetic_mean_before_bootstrap",
+          "accepted_length": {
+            "n_prompts": 2,
+            "mean": 2.111111111111111,
+            "ci95": [
+              1.6666666666666667,
+              2.5555555555555554
+            ],
+            "seed_std_mean": 0.0,
+            "bootstrap_unit": "prompt_id",
+            "seed_aggregation": "arithmetic_mean_before_bootstrap"
+          }
+        }
+      ],
+      "request_latency_p50_seconds": 0.004349546041339636,
+      "request_latency_p95_seconds": 0.004869809933006763,
+      "request_latency_p50_prompt_bootstrap": null,
+      "request_latency_p95_prompt_bootstrap": null,
+      "phase_ms_median": {},
+      "realized_output_length_mean": 32,
+      "realized_generations_above_8K": 0,
+      "realized_generations_above_16K": 0,
+      "peak_allocated_bytes": 0,
+      "peak_reserved_bytes": 0,
+      "online_final_state": []
+    },
+    {
+      "condition": "standard_nonthinking",
+      "temperature": 1.0,
+      "sampling_warp_config": {
+        "min_p": 0.0,
+        "top_k": 0,
+        "top_p": 1.0
+      },
+      "arm": "dense",
+      "requests": 2,
+      "primary_requests": 2,
+      "repetition_excluded": 0,
+      "metrics": {
+        "mean_accepted_length": {
+          "n_prompts": 2,
+          "mean": 2.7777777777777777,
+          "ci95": [
+            2.5555555555555554,
+            3.0
+          ],
+          "seed_std_mean": 0.0,
+          "bootstrap_unit": "prompt_id",
+          "seed_aggregation": "arithmetic_mean_before_bootstrap"
+        },
+        "median_accepted_length": {
+          "n_prompts": 2,
+          "mean": 3.0,
+          "ci95": [
+            3.0,
+            3.0
+          ],
+          "seed_std_mean": 0.0,
+          "bootstrap_unit": "prompt_id",
+          "seed_aggregation": "arithmetic_mean_before_bootstrap"
+        },
+        "target_forwards_per_generated_token": {
+          "n_prompts": 2,
+          "mean": 0.265625,
+          "ci95": [
+            0.25,
+            0.28125
+          ],
+          "seed_std_mean": 0.0,
+          "bootstrap_unit": "prompt_id",
+          "seed_aggregation": "arithmetic_mean_before_bootstrap"
+        }
+      },
+      "pooled_block_accepted_length_mean": 2.764705882352941,
+      "pooled_block_accepted_length_median": 3,
+      "metric_aggregation": "metrics are prompt-weighted after seed aggregation; median_accepted_length aggregates request medians; pooled block statistics are separate",
+      "acceptance_by_block_position": {
+        "0": {
+          "n_prompts": 2,
+          "mean": 1.0,
+          "ci95": [
+            1.0,
+            1.0
+          ],
+          "seed_std_mean": 0.0,
+          "bootstrap_unit": "prompt_id",
+          "seed_aggregation": "arithmetic_mean_before_bootstrap"
+        },
+        "1": {
+          "n_prompts": 2,
+          "mean": 0.8263888888888888,
+          "ci95": [
+            0.7777777777777778,
+            0.875
+          ],
+          "seed_std_mean": 0.0,
+          "bootstrap_unit": "prompt_id",
+          "seed_aggregation": "arithmetic_mean_before_bootstrap"
+        },
+        "2": {
+          "n_prompts": 2,
+          "mean": 0.6527777777777778,
+          "ci95": [
+            0.5555555555555556,
+            0.75
+          ],
+          "seed_std_mean": 0.0,
+          "bootstrap_unit": "prompt_id",
+          "seed_aggregation": "arithmetic_mean_before_bootstrap"
+        },
+        "3": {
+          "n_prompts": 2,
+          "mean": 0.3125,
+          "ci95": [
+            0.25,
+            0.375
+          ],
+          "seed_std_mean": 0.0,
+          "bootstrap_unit": "prompt_id",
+          "seed_aggregation": "arithmetic_mean_before_bootstrap"
+        }
+      },
+      "acceptance_bins": [
+        {
+          "axis": "input_context_length",
+          "bin": "0-1024",
+          "n_prompts": 2,
+          "mean": 0.7035714285714285,
+          "ci95": [
+            0.6571428571428571,
+            0.75
+          ],
+          "seed_std_mean": 0.0,
+          "bootstrap_unit": "prompt_id",
+          "seed_aggregation": "arithmetic_mean_before_bootstrap",
+          "accepted_length": {
+            "n_prompts": 2,
+            "mean": 2.7777777777777777,
+            "ci95": [
+              2.5555555555555554,
+              3.0
+            ],
+            "seed_std_mean": 0.0,
+            "bootstrap_unit": "prompt_id",
+            "seed_aggregation": "arithmetic_mean_before_bootstrap"
+          }
+        },
+        {
+          "axis": "output_offset",
+          "bin": "0-1K",
+          "n_prompts": 2,
+          "mean": 0.7035714285714285,
+          "ci95": [
+            0.6571428571428571,
+            0.75
+          ],
+          "seed_std_mean": 0.0,
+          "bootstrap_unit": "prompt_id",
+          "seed_aggregation": "arithmetic_mean_before_bootstrap",
+          "accepted_length": {
+            "n_prompts": 2,
+            "mean": 2.7777777777777777,
+            "ci95": [
+              2.5555555555555554,
+              3.0
+            ],
+            "seed_std_mean": 0.0,
+            "bootstrap_unit": "prompt_id",
+            "seed_aggregation": "arithmetic_mean_before_bootstrap"
+          }
+        }
+      ],
+      "request_latency_p50_seconds": 0.005062028532847762,
+      "request_latency_p95_seconds": 0.005381820560432971,
+      "request_latency_p50_prompt_bootstrap": null,
+      "request_latency_p95_prompt_bootstrap": null,
+      "phase_ms_median": {},
+      "realized_output_length_mean": 32,
+      "realized_generations_above_8K": 0,
+      "realized_generations_above_16K": 0,
+      "peak_allocated_bytes": 0,
+      "peak_reserved_bytes": 0,
+      "online_final_state": []
+    },
+    {
+      "condition": "standard_nonthinking",
+      "temperature": 1.0,
+      "sampling_warp_config": {
+        "min_p": 0.0,
+        "top_k": 0,
+        "top_p": 1.0
+      },
+      "arm": "dense_sparse",
+      "requests": 2,
+      "primary_requests": 2,
+      "repetition_excluded": 0,
+      "metrics": {
+        "mean_accepted_length": {
+          "n_prompts": 2,
+          "mean": 2.7777777777777777,
+          "ci95": [
+            2.5555555555555554,
+            3.0
+          ],
+          "seed_std_mean": 0.0,
+          "bootstrap_unit": "prompt_id",
+          "seed_aggregation": "arithmetic_mean_before_bootstrap"
+        },
+        "median_accepted_length": {
+          "n_prompts": 2,
+          "mean": 3.0,
+          "ci95": [
+            3.0,
+            3.0
+          ],
+          "seed_std_mean": 0.0,
+          "bootstrap_unit": "prompt_id",
+          "seed_aggregation": "arithmetic_mean_before_bootstrap"
+        },
+        "target_forwards_per_generated_token": {
+          "n_prompts": 2,
+          "mean": 0.265625,
+          "ci95": [
+            0.25,
+            0.28125
+          ],
+          "seed_std_mean": 0.0,
+          "bootstrap_unit": "prompt_id",
+          "seed_aggregation": "arithmetic_mean_before_bootstrap"
+        }
+      },
+      "pooled_block_accepted_length_mean": 2.764705882352941,
+      "pooled_block_accepted_length_median": 3,
+      "metric_aggregation": "metrics are prompt-weighted after seed aggregation; median_accepted_length aggregates request medians; pooled block statistics are separate",
+      "acceptance_by_block_position": {
+        "0": {
+          "n_prompts": 2,
+          "mean": 1.0,
+          "ci95": [
+            1.0,
+            1.0
+          ],
+          "seed_std_mean": 0.0,
+          "bootstrap_unit": "prompt_id",
+          "seed_aggregation": "arithmetic_mean_before_bootstrap"
+        },
+        "1": {
+          "n_prompts": 2,
+          "mean": 0.8263888888888888,
+          "ci95": [
+            0.7777777777777778,
+            0.875
+          ],
+          "seed_std_mean": 0.0,
+          "bootstrap_unit": "prompt_id",
+          "seed_aggregation": "arithmetic_mean_before_bootstrap"
+        },
+        "2": {
+          "n_prompts": 2,
+          "mean": 0.6527777777777778,
+          "ci95": [
+            0.5555555555555556,
+            0.75
+          ],
+          "seed_std_mean": 0.0,
+          "bootstrap_unit": "prompt_id",
+          "seed_aggregation": "arithmetic_mean_before_bootstrap"
+        },
+        "3": {
+          "n_prompts": 2,
+          "mean": 0.3125,
+          "ci95": [
+            0.25,
+            0.375
+          ],
+          "seed_std_mean": 0.0,
+          "bootstrap_unit": "prompt_id",
+          "seed_aggregation": "arithmetic_mean_before_bootstrap"
+        }
+      },
+      "acceptance_bins": [
+        {
+          "axis": "input_context_length",
+          "bin": "0-1024",
+          "n_prompts": 2,
+          "mean": 0.7035714285714285,
+          "ci95": [
+            0.6571428571428571,
+            0.75
+          ],
+          "seed_std_mean": 0.0,
+          "bootstrap_unit": "prompt_id",
+          "seed_aggregation": "arithmetic_mean_before_bootstrap",
+          "accepted_length": {
+            "n_prompts": 2,
+            "mean": 2.7777777777777777,
+            "ci95": [
+              2.5555555555555554,
+              3.0
+            ],
+            "seed_std_mean": 0.0,
+            "bootstrap_unit": "prompt_id",
+            "seed_aggregation": "arithmetic_mean_before_bootstrap"
+          }
+        },
+        {
+          "axis": "output_offset",
+          "bin": "0-1K",
+          "n_prompts": 2,
+          "mean": 0.7035714285714285,
+          "ci95": [
+            0.6571428571428571,
+            0.75
+          ],
+          "seed_std_mean": 0.0,
+          "bootstrap_unit": "prompt_id",
+          "seed_aggregation": "arithmetic_mean_before_bootstrap",
+          "accepted_length": {
+            "n_prompts": 2,
+            "mean": 2.7777777777777777,
+            "ci95": [
+              2.5555555555555554,
+              3.0
+            ],
+            "seed_std_mean": 0.0,
+            "bootstrap_unit": "prompt_id",
+            "seed_aggregation": "arithmetic_mean_before_bootstrap"
+          }
+        }
+      ],
+      "request_latency_p50_seconds": 0.008449981571175158,
+      "request_latency_p95_seconds": 0.009215520170982927,
+      "request_latency_p50_prompt_bootstrap": null,
+      "request_latency_p95_prompt_bootstrap": null,
+      "phase_ms_median": {},
+      "realized_output_length_mean": 32,
+      "realized_generations_above_8K": 0,
+      "realized_generations_above_16K": 0,
+      "peak_allocated_bytes": 0,
+      "peak_reserved_bytes": 0,
+      "online_final_state": []
+    },
+    {
+      "condition": "standard_nonthinking",
+      "temperature": 1.0,
+      "sampling_warp_config": {
+        "min_p": 0.0,
+        "top_k": 0,
+        "top_p": 1.0
+      },
+      "arm": "online_bigram",
+      "requests": 2,
+      "primary_requests": 2,
+      "repetition_excluded": 0,
+      "metrics": {
+        "mean_accepted_length": {
+          "n_prompts": 2,
+          "mean": 2.5555555555555554,
+          "ci95": [
+            2.5555555555555554,
+            2.5555555555555554
+          ],
+          "seed_std_mean": 0.0,
+          "bootstrap_unit": "prompt_id",
+          "seed_aggregation": "arithmetic_mean_before_bootstrap"
+        },
+        "median_accepted_length": {
+          "n_prompts": 2,
+          "mean": 2.5,
+          "ci95": [
+            2.0,
+            3.0
+          ],
+          "seed_std_mean": 0.0,
+          "bootstrap_unit": "prompt_id",
+          "seed_aggregation": "arithmetic_mean_before_bootstrap"
+        },
+        "target_forwards_per_generated_token": {
+          "n_prompts": 2,
+          "mean": 0.28125,
+          "ci95": [
+            0.28125,
+            0.28125
+          ],
+          "seed_std_mean": 0.0,
+          "bootstrap_unit": "prompt_id",
+          "seed_aggregation": "arithmetic_mean_before_bootstrap"
+        }
+      },
+      "pooled_block_accepted_length_mean": 2.5555555555555554,
+      "pooled_block_accepted_length_median": 2.5,
+      "metric_aggregation": "metrics are prompt-weighted after seed aggregation; median_accepted_length aggregates request medians; pooled block statistics are separate",
+      "acceptance_by_block_position": {
+        "0": {
+          "n_prompts": 2,
+          "mean": 1.0,
+          "ci95": [
+            1.0,
+            1.0
+          ],
+          "seed_std_mean": 0.0,
+          "bootstrap_unit": "prompt_id",
+          "seed_aggregation": "arithmetic_mean_before_bootstrap"
+        },
+        "1": {
+          "n_prompts": 2,
+          "mean": 0.7777777777777778,
+          "ci95": [
+            0.7777777777777778,
+            0.7777777777777778
+          ],
+          "seed_std_mean": 0.0,
+          "bootstrap_unit": "prompt_id",
+          "seed_aggregation": "arithmetic_mean_before_bootstrap"
+        },
+        "2": {
+          "n_prompts": 2,
+          "mean": 0.5,
+          "ci95": [
+            0.4444444444444444,
+            0.5555555555555556
+          ],
+          "seed_std_mean": 0.0,
+          "bootstrap_unit": "prompt_id",
+          "seed_aggregation": "arithmetic_mean_before_bootstrap"
+        },
+        "3": {
+          "n_prompts": 2,
+          "mean": 0.3125,
+          "ci95": [
+            0.25,
+            0.375
+          ],
+          "seed_std_mean": 0.0,
+          "bootstrap_unit": "prompt_id",
+          "seed_aggregation": "arithmetic_mean_before_bootstrap"
+        }
+      },
+      "acceptance_bins": [
+        {
+          "axis": "input_context_length",
+          "bin": "0-1024",
+          "n_prompts": 2,
+          "mean": 0.6571428571428571,
+          "ci95": [
+            0.6571428571428571,
+            0.6571428571428571
+          ],
+          "seed_std_mean": 0.0,
+          "bootstrap_unit": "prompt_id",
+          "seed_aggregation": "arithmetic_mean_before_bootstrap",
+          "accepted_length": {
+            "n_prompts": 2,
+            "mean": 2.5555555555555554,
+            "ci95": [
+              2.5555555555555554,
+              2.5555555555555554
+            ],
+            "seed_std_mean": 0.0,
+            "bootstrap_unit": "prompt_id",
+            "seed_aggregation": "arithmetic_mean_before_bootstrap"
+          }
+        },
+        {
+          "axis": "output_offset",
+          "bin": "0-1K",
+          "n_prompts": 2,
+          "mean": 0.6571428571428571,
+          "ci95": [
+            0.6571428571428571,
+            0.6571428571428571
+          ],
+          "seed_std_mean": 0.0,
+          "bootstrap_unit": "prompt_id",
+          "seed_aggregation": "arithmetic_mean_before_bootstrap",
+          "accepted_length": {
+            "n_prompts": 2,
+            "mean": 2.5555555555555554,
+            "ci95": [
+              2.5555555555555554,
+              2.5555555555555554
+            ],
+            "seed_std_mean": 0.0,
+            "bootstrap_unit": "prompt_id",
+            "seed_aggregation": "arithmetic_mean_before_bootstrap"
+          }
+        }
+      ],
+      "request_latency_p50_seconds": 0.004409428569488227,
+      "request_latency_p95_seconds": 0.004447162535507232,
+      "request_latency_p50_prompt_bootstrap": null,
+      "request_latency_p95_prompt_bootstrap": null,
+      "phase_ms_median": {},
+      "realized_output_length_mean": 32,
+      "realized_generations_above_8K": 0,
+      "realized_generations_above_16K": 0,
+      "peak_allocated_bytes": 0,
+      "peak_reserved_bytes": 0,
+      "online_final_state": []
+    },
+    {
+      "condition": "standard_nonthinking",
+      "temperature": 1.0,
+      "sampling_warp_config": {
+        "min_p": 0.0,
+        "top_k": 0,
+        "top_p": 1.0
+      },
+      "arm": "plain_dflash",
+      "requests": 2,
+      "primary_requests": 2,
+      "repetition_excluded": 0,
+      "metrics": {
+        "mean_accepted_length": {
+          "n_prompts": 2,
+          "mean": 2.5555555555555554,
+          "ci95": [
+            2.5555555555555554,
+            2.5555555555555554
+          ],
+          "seed_std_mean": 0.0,
+          "bootstrap_unit": "prompt_id",
+          "seed_aggregation": "arithmetic_mean_before_bootstrap"
+        },
+        "median_accepted_length": {
+          "n_prompts": 2,
+          "mean": 2.5,
+          "ci95": [
+            2.0,
+            3.0
+          ],
+          "seed_std_mean": 0.0,
+          "bootstrap_unit": "prompt_id",
+          "seed_aggregation": "arithmetic_mean_before_bootstrap"
+        },
+        "target_forwards_per_generated_token": {
+          "n_prompts": 2,
+          "mean": 0.28125,
+          "ci95": [
+            0.28125,
+            0.28125
+          ],
+          "seed_std_mean": 0.0,
+          "bootstrap_unit": "prompt_id",
+          "seed_aggregation": "arithmetic_mean_before_bootstrap"
+        }
+      },
+      "pooled_block_accepted_length_mean": 2.5555555555555554,
+      "pooled_block_accepted_length_median": 2.5,
+      "metric_aggregation": "metrics are prompt-weighted after seed aggregation; median_accepted_length aggregates request medians; pooled block statistics are separate",
+      "acceptance_by_block_position": {
+        "0": {
+          "n_prompts": 2,
+          "mean": 1.0,
+          "ci95": [
+            1.0,
+            1.0
+          ],
+          "seed_std_mean": 0.0,
+          "bootstrap_unit": "prompt_id",
+          "seed_aggregation": "arithmetic_mean_before_bootstrap"
+        },
+        "1": {
+          "n_prompts": 2,
+          "mean": 0.7777777777777778,
+          "ci95": [
+            0.7777777777777778,
+            0.7777777777777778
+          ],
+          "seed_std_mean": 0.0,
+          "bootstrap_unit": "prompt_id",
+          "seed_aggregation": "arithmetic_mean_before_bootstrap"
+        },
+        "2": {
+          "n_prompts": 2,
+          "mean": 0.5,
+          "ci95": [
+            0.4444444444444444,
+            0.5555555555555556
+          ],
+          "seed_std_mean": 0.0,
+          "bootstrap_unit": "prompt_id",
+          "seed_aggregation": "arithmetic_mean_before_bootstrap"
+        },
+        "3": {
+          "n_prompts": 2,
+          "mean": 0.3125,
+          "ci95": [
+            0.25,
+            0.375
+          ],
+          "seed_std_mean": 0.0,
+          "bootstrap_unit": "prompt_id",
+          "seed_aggregation": "arithmetic_mean_before_bootstrap"
+        }
+      },
+      "acceptance_bins": [
+        {
+          "axis": "input_context_length",
+          "bin": "0-1024",
+          "n_prompts": 2,
+          "mean": 0.6571428571428571,
+          "ci95": [
+            0.6571428571428571,
+            0.6571428571428571
+          ],
+          "seed_std_mean": 0.0,
+          "bootstrap_unit": "prompt_id",
+          "seed_aggregation": "arithmetic_mean_before_bootstrap",
+          "accepted_length": {
+            "n_prompts": 2,
+            "mean": 2.5555555555555554,
+            "ci95": [
+              2.5555555555555554,
+              2.5555555555555554
+            ],
+            "seed_std_mean": 0.0,
+            "bootstrap_unit": "prompt_id",
+            "seed_aggregation": "arithmetic_mean_before_bootstrap"
+          }
+        },
+        {
+          "axis": "output_offset",
+          "bin": "0-1K",
+          "n_prompts": 2,
+          "mean": 0.6571428571428571,
+          "ci95": [
+            0.6571428571428571,
+            0.6571428571428571
+          ],
+          "seed_std_mean": 0.0,
+          "bootstrap_unit": "prompt_id",
+          "seed_aggregation": "arithmetic_mean_before_bootstrap",
+          "accepted_length": {
+            "n_prompts": 2,
+            "mean": 2.5555555555555554,
+            "ci95": [
+              2.5555555555555554,
+              2.5555555555555554
+            ],
+            "seed_std_mean": 0.0,
+            "bootstrap_unit": "prompt_id",
+            "seed_aggregation": "arithmetic_mean_before_bootstrap"
+          }
+        }
+      ],
+      "request_latency_p50_seconds": 0.0037393055390566587,
+      "request_latency_p95_seconds": 0.004141936125233769,
+      "request_latency_p50_prompt_bootstrap": null,
+      "request_latency_p95_prompt_bootstrap": null,
+      "phase_ms_median": {},
+      "realized_output_length_mean": 32,
+      "realized_generations_above_8K": 0,
+      "realized_generations_above_16K": 0,
+      "peak_allocated_bytes": 0,
+      "peak_reserved_bytes": 0,
+      "online_final_state": []
+    }
+  ],
+  "timing_warning": "Sharded evaluation timing is observational only; isolated timing session determines speed conclusions."
+}

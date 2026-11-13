@@ -1,0 +1,403 @@
+{
+  "logical_session": "592a9e46658a4be587d1fe5af57ec938",
+  "configuration": {
+    "configuration": {
+      "frozen_settings_hash": "b5a177206d46601928fdebd95ba0c530058782f24bff2c72de8e3333a6c2ba8a",
+      "prompt_manifest_hash": "496873fa2eabc179ac17b1621fe87aa80bea6a3ee30b6c72d7c43721bc727610",
+      "selected_prompts": [
+        "synthetic-test-long_thinking-0",
+        "synthetic-test-long_thinking-1",
+        "synthetic-test-standard_nonthinking-0",
+        "synthetic-test-standard_nonthinking-1"
+      ],
+      "repeats": 3,
+      "warmups": 1
+    },
+    "checkpoint_hashes": {
+      "dense": "551a7a5907538169bf91ad2fb07c74d2c0549f6477fe7412fc7e505d47c59dce",
+      "dense_sparse": "3064fd63be5221bcae96a291b6247c50e6faee648ce6ad5562199675b2be6b54",
+      "projection": "synthetic-calibration-seed-2026",
+      "implementation": "433c458c52eb06733128018873d2650ba310417c58c5996440e7f3aff2689761"
+    },
+    "model_pair": [
+      "builtin_toy_target",
+      "builtin_parallel_drafter"
+    ],
+    "model_revisions": [
+      "synthetic-v1",
+      "synthetic-v1"
+    ],
+    "generation_caps": {
+      "standard": 2048,
+      "long": 24576,
+      "smoke": 32
+    },
+    "stage": "m4",
+    "scale": "smoke",
+    "device": "cpu",
+    "visible_devices": "",
+    "seed": 2026
+  },
+  "created_at_unix": 1794611722.875227,
+  "epochs": [
+    {
+      "epoch": "0c8054b08c064799850b6c7ae01d8e38",
+      "started_at_unix": 1794611722.8752306,
+      "device": "cpu"
+    }
+  ],
+  "bundles": {
+    "1322512d97b6bd6743eafe33509af467a91adfe9e9578bc8e28e90c14dae94ff": {
+      "status": "complete",
+      "epoch": "0c8054b08c064799850b6c7ae01d8e38",
+      "result_paths": [
+        "/home/catid/drafter/artifacts/final_smoke_pipeline/m4/timing/rank0/989b81f67936d39bd46f58051a9281a532bfd32210a329dac9aeaf0af9d0a154.json",
+        "/home/catid/drafter/artifacts/final_smoke_pipeline/m4/timing/rank0/88893c4699f9c07ceaa5cbbd21c3755dddd24ef9522a8a84d57f3b89432e493e.json",
+        "/home/catid/drafter/artifacts/final_smoke_pipeline/m4/timing/rank0/91a2a48e8c172e8925dd1c055538958a0c285efa70589b9c4aed663003ad6236.json",
+        "/home/catid/drafter/artifacts/final_smoke_pipeline/m4/timing/rank0/3b04754b37f47470a29a043b4d6ba3d266edbfd7e32d9d3b3d273ead56406dc9.json",
+        "/home/catid/drafter/artifacts/final_smoke_pipeline/m4/timing/rank0/f5c00544d4d6bdc198e01f5bde0d85e377d39bdcb3d5a6445ae438a72159b6df.json"
+      ]
+    },
+    "835e4ea5cc1b4bc65ff3065d3b1ce170997732bf570f9ff6e27e6304f3b36730": {
+      "status": "complete",
+      "epoch": "0c8054b08c064799850b6c7ae01d8e38",
+      "result_paths": [
+        "/home/catid/drafter/artifacts/final_smoke_pipeline/m4/timing/rank0/7cea13ce17a93e97e94c9d0a9927fe16982900d1a6b7f21f1e129067c9e462cb.json",
+        "/home/catid/drafter/artifacts/final_smoke_pipeline/m4/timing/rank0/249371f2231ab0d71db978f777b74f516bc377e255a3045538336f5571562893.json",
+        "/home/catid/drafter/artifacts/final_smoke_pipeline/m4/timing/rank0/7fff4f2835ae1f05b467fc2d128e71c353c372fb800739e6b4dbf068239431e8.json",
+        "/home/catid/drafter/artifacts/final_smoke_pipeline/m4/timing/rank0/bd9f9fc27fc84ca8cfcd706157cacceb6214a5f52d09230b3eab89697243cfbe.json",
+        "/home/catid/drafter/artifacts/final_smoke_pipeline/m4/timing/rank0/fda249d12ce04a0d9bb403394d34233aadae15de7b7143da3c7eaed50ca17c6f.json"
+      ]
+    },
+    "c6310b887506e1cf0b3fca6ca1222d138a81b2d32996da45969d76fefb1fb38f": {
+      "status": "complete",
+      "epoch": "0c8054b08c064799850b6c7ae01d8e38",
+      "result_paths": [
+        "/home/catid/drafter/artifacts/final_smoke_pipeline/m4/timing/rank0/03beea4fee36de1bbfdb4a48617f8eac974237d51c11efe4182f39da0926a1b8.json",
+        "/home/catid/drafter/artifacts/final_smoke_pipeline/m4/timing/rank0/9962a06790168593af5642bc4067ff39bf3f0091e3427eb97c2cc719945025d2.json",
+        "/home/catid/drafter/artifacts/final_smoke_pipeline/m4/timing/rank0/47806e2e39f7009b380650cdb0744a7187a564e98b6457cee9af3a3f75c35717.json",
+        "/home/catid/drafter/artifacts/final_smoke_pipeline/m4/timing/rank0/693e34b5a5f073ed606848bca6ba57a1c3b435076a3ec3f005fc2dbcef12aae6.json",
+        "/home/catid/drafter/artifacts/final_smoke_pipeline/m4/timing/rank0/8c97051f0e0b23d4ca3d920afcd222eefeb9bed5fdadafa641e35238e87171a7.json"
+      ]
+    },
+    "63fabc11efc7430d1e2fc1c8ac5952e9043ae6b1c61cca78954b4a5fe123504f": {
+      "status": "complete",
+      "epoch": "0c8054b08c064799850b6c7ae01d8e38",
+      "result_paths": [
+        "/home/catid/drafter/artifacts/final_smoke_pipeline/m4/timing/rank0/2eb96529dfc64972070b332e1f92186e189a748c98b3ba00332f399fb78ea157.json",
+        "/home/catid/drafter/artifacts/final_smoke_pipeline/m4/timing/rank0/e96cee07e64a94db45a28ba8bb4a22958fab79ead1ef169b3ad8ecd03fb602ff.json",
+        "/home/catid/drafter/artifacts/final_smoke_pipeline/m4/timing/rank0/5383dd520301e90b7f7bcf5051c25fc39b447d27a4d2ebecdd800f845543394a.json",
+        "/home/catid/drafter/artifacts/final_smoke_pipeline/m4/timing/rank0/00800e336e85a0ee56944beacbba174cb1f0090f80dfa8a55c6dfbd925559b92.json",
+        "/home/catid/drafter/artifacts/final_smoke_pipeline/m4/timing/rank0/e8bc079abdb94d6998ff4ab94cbc1988162ff42e5628f458407db315d4a5e3e0.json"
+      ]
+    },
+    "20905aa130ea60e69bad44cb5744bf5b4ec8a7ae85650ea7736962d0a8b830d9": {
+      "status": "complete",
+      "epoch": "0c8054b08c064799850b6c7ae01d8e38",
+      "result_paths": [
+        "/home/catid/drafter/artifacts/final_smoke_pipeline/m4/timing/rank0/f1e562831eb9e2e037a7e14f77992d080f00eb4954527d261ba4fac4f69825a0.json",
+        "/home/catid/drafter/artifacts/final_smoke_pipeline/m4/timing/rank0/1952d35d9abdcfb63d156e9a90b1b2d113e68a38f83d89d79693257f654e33a8.json",
+        "/home/catid/drafter/artifacts/final_smoke_pipeline/m4/timing/rank0/b5c413d4323cec2b2f229c4ab3c3d7c45676a1659947416c2dcdbf36e2680c34.json",
+        "/home/catid/drafter/artifacts/final_smoke_pipeline/m4/timing/rank0/4eaf140de6322ad43c5c84fd3ccb87bfad0199541349a78e996070c687dab008.json",
+        "/home/catid/drafter/artifacts/final_smoke_pipeline/m4/timing/rank0/586f7dc2ba0b0bc646b07c59628a226ab024be6b62b86424acc385d509862fa5.json"
+      ]
+    },
+    "38b413e6857f87e387cbf143ea2a4d0a5ba88107c0e0a667bba1a8a2c47a1309": {
+      "status": "complete",
+      "epoch": "0c8054b08c064799850b6c7ae01d8e38",
+      "result_paths": [
+        "/home/catid/drafter/artifacts/final_smoke_pipeline/m4/timing/rank0/00180c43a470fbc0b309fe3a0995178da8f84648ddfc9c359c2fbee7522cc91f.json",
+        "/home/catid/drafter/artifacts/final_smoke_pipeline/m4/timing/rank0/8194feefdedc88652d4db5cb75333f22a7a15e585d1ea930f7b1b9a8156f5ab1.json",
+        "/home/catid/drafter/artifacts/final_smoke_pipeline/m4/timing/rank0/e92aa836b3538842d21817ef605ad2af6d1bb4c6fd0dc1965352251f30e5e7b5.json",
+        "/home/catid/drafter/artifacts/final_smoke_pipeline/m4/timing/rank0/93199fe46bcbb7cd64ec0b3c24362d694ee10ec9a1ea242e0f78c3d69b0db73c.json",
+        "/home/catid/drafter/artifacts/final_smoke_pipeline/m4/timing/rank0/4253badd2020944106c1d05878f0bc27af8998d3f0438417a6b8ea549aa13ee6.json"
+      ]
+    },
+    "1c30978717b928910fbb4ec1750eb431272e726b17c5a399b2eac421e48bb4fd": {
+      "status": "complete",
+      "epoch": "0c8054b08c064799850b6c7ae01d8e38",
+      "result_paths": [
+        "/home/catid/drafter/artifacts/final_smoke_pipeline/m4/timing/rank0/09962fe898edbcf8e57572d7d7fff89f4968c6dedf29f2c072996d7aae42ff8e.json",
+        "/home/catid/drafter/artifacts/final_smoke_pipeline/m4/timing/rank0/5f3babc693b502c5b8f549f54e03847ed8e028a72ed6ab7c16c9d60cabd4c4ab.json",
+        "/home/catid/drafter/artifacts/final_smoke_pipeline/m4/timing/rank0/9a71d35b2d83e18c674eb15181463d72d945ecb6f88d73edf3179c017528c93c.json",
+        "/home/catid/drafter/artifacts/final_smoke_pipeline/m4/timing/rank0/c4e653dc982a1d1d10d876fb2ecfb3134ea68f9eeb1be74dce491c36d497299a.json",
+        "/home/catid/drafter/artifacts/final_smoke_pipeline/m4/timing/rank0/afd55de16131ffa9802d45155fff421c94f3a183cc7463cd1e4b61e786919b43.json"
+      ]
+    },
+    "925fd657eaf973d5bb9bf3fff4a11cc4e12a22b0a17df13dc3e95057c7f2dc6b": {
+      "status": "complete",
+      "epoch": "0c8054b08c064799850b6c7ae01d8e38",
+      "result_paths": [
+        "/home/catid/drafter/artifacts/final_smoke_pipeline/m4/timing/rank0/bd2cdd313dbeb3a60327b10a0a063fc3b958bb8308b2253387100161b0776f6a.json",
+        "/home/catid/drafter/artifacts/final_smoke_pipeline/m4/timing/rank0/d84c44d186f41d0a49dd04bf2554cba68307c6ee9cff64160e5611af2927aca4.json",
+        "/home/catid/drafter/artifacts/final_smoke_pipeline/m4/timing/rank0/9e38714d19c2da8f692c3799d32664b8d5c63a9af507832d008532176a4e2269.json",
+        "/home/catid/drafter/artifacts/final_smoke_pipeline/m4/timing/rank0/684b615e0e6c6bff41c585db4a3621945ba80fc7758275e05b67825c5703197a.json",
+        "/home/catid/drafter/artifacts/final_smoke_pipeline/m4/timing/rank0/45b76445833a556b975caf0d997966ccfeb98739b4e9243e61425031de556267.json"
+      ]
+    },
+    "7c15bd6e7a3310b780fb1e13f7805c2b62386cbcd84b9fd00c91f988a2e2007f": {
+      "status": "complete",
+      "epoch": "0c8054b08c064799850b6c7ae01d8e38",
+      "result_paths": [
+        "/home/catid/drafter/artifacts/final_smoke_pipeline/m4/timing/rank0/6f18e20e72cc9853594e926c3c0447736d19f732da13170522b18ce5e3c89d6e.json",
+        "/home/catid/drafter/artifacts/final_smoke_pipeline/m4/timing/rank0/64d728ff04ede2064d991171a42cad55fd1326e302ff60ef2ba0f19e42d302b1.json",
+        "/home/catid/drafter/artifacts/final_smoke_pipeline/m4/timing/rank0/1f94c76fc1c0f36dca3a48d4148e90353415c1407aa555c86597ea3e8ce7e8e6.json",
+        "/home/catid/drafter/artifacts/final_smoke_pipeline/m4/timing/rank0/cee12ce09e8b84fdf90ad9239b78ec074ca6a3658ca702941b4d0ffc81cfbd13.json",
+        "/home/catid/drafter/artifacts/final_smoke_pipeline/m4/timing/rank0/b20711b01e79f256d8a9306c4af789cb8dd2ce7365b1c47cd3aa070f1ffad200.json"
+      ]
+    },
+    "43c9720bffd63a6309a3805f5e474f7a9cd4e33978ecd7a88ef28b26ffa85763": {
+      "status": "complete",
+      "epoch": "0c8054b08c064799850b6c7ae01d8e38",
+      "result_paths": [
+        "/home/catid/drafter/artifacts/final_smoke_pipeline/m4/timing/rank0/39319bd099a70afa5d9f44ab9f3dc0895eaf75b28f1bea54d7e9ea586f9c2001.json",
+        "/home/catid/drafter/artifacts/final_smoke_pipeline/m4/timing/rank0/b0b9b18d25acdc588938fd412f436e6c4c7b448a86485872c7b724c8f41f4a6f.json",
+        "/home/catid/drafter/artifacts/final_smoke_pipeline/m4/timing/rank0/bff5cc49802df4e39edb60af757e4a2102d1c17793a248e9fcb5432711ed57b3.json",
+        "/home/catid/drafter/artifacts/final_smoke_pipeline/m4/timing/rank0/6256df1d7c36d9554276c5103c01204aa0d5a7d33d2a3bca6cf614cb99acf9bd.json",
+        "/home/catid/drafter/artifacts/final_smoke_pipeline/m4/timing/rank0/3f786324546d259b35485f4cbc6d4a0f4ae653c1cf46d6ced985003e50a01f1a.json"
+      ]
+    },
+    "e3f3c0ad33aa39c817847b8720f5ba6511cb7f474a7a2c3055424c6eb44e636e": {
+      "status": "complete",
+      "epoch": "0c8054b08c064799850b6c7ae01d8e38",
+      "result_paths": [
+        "/home/catid/drafter/artifacts/final_smoke_pipeline/m4/timing/rank0/72fffdd9916687ab102fc19e86bc14efb652b8ba8b7864868e7bcf5946169cce.json",
+        "/home/catid/drafter/artifacts/final_smoke_pipeline/m4/timing/rank0/f051641e96994ed367e19d970adf4ec06b70f4a6cebff89a637b95ff15e2bf9c.json",
+        "/home/catid/drafter/artifacts/final_smoke_pipeline/m4/timing/rank0/c76faa0e00bfafff7a7408f09afc90252c0605eccca5fe79ec3a9ea804f75112.json",
+        "/home/catid/drafter/artifacts/final_smoke_pipeline/m4/timing/rank0/213760316e0a0258b7230fee352f417518131c9d0e5143222d9e9262d65eb52c.json",
+        "/home/catid/drafter/artifacts/final_smoke_pipeline/m4/timing/rank0/6947fd22cf5d4a5d26aaaf783af965160cdbdf07469a1c18ea90152ca3cea7e7.json"
+      ]
+    },
+    "5b41a20e253d3ab185fa8bbd9d8a1a365bbf13962deeac5f3b1d61bd377ec249": {
+      "status": "complete",
+      "epoch": "0c8054b08c064799850b6c7ae01d8e38",
+      "result_paths": [
+        "/home/catid/drafter/artifacts/final_smoke_pipeline/m4/timing/rank0/0606e10026b3afa4c20e8b22bd4e056004de764ea740b5a5cb9b21e533d60a81.json",
+        "/home/catid/drafter/artifacts/final_smoke_pipeline/m4/timing/rank0/628259730b72648a001a03e51ddd50cc29a04ba1f6ee0f8e0266c439b3038adf.json",
+        "/home/catid/drafter/artifacts/final_smoke_pipeline/m4/timing/rank0/e0ac1405d3ac9267df4fe9946b90c4d32c29683b0fd411389fd05316ca6732d8.json",
+        "/home/catid/drafter/artifacts/final_smoke_pipeline/m4/timing/rank0/2f4cd5e83846d6dda1b0c5e77439b8defe5a2127064109b794b4bbee75f0a7c4.json",
+        "/home/catid/drafter/artifacts/final_smoke_pipeline/m4/timing/rank0/05d245b0e0864bd6a0c54f3c52325d995d973b5a0a41eda324e5ab54ccaa1162.json"
+      ]
+    },
+    "0db9b28165677577e2b8cd75ad605147dc06b74ffc277bfca7dfc9a718a00a69": {
+      "status": "complete",
+      "epoch": "0c8054b08c064799850b6c7ae01d8e38",
+      "result_paths": [
+        "/home/catid/drafter/artifacts/final_smoke_pipeline/m4/timing/rank0/0a1b8aa3eb7cc3fdcae1e96a8879638b3054faa3ea5f10e9509ee0da4fa66064.json",
+        "/home/catid/drafter/artifacts/final_smoke_pipeline/m4/timing/rank0/01b9f5a05bd104c32b36a58be424d1d722b98f0683f89826a4c76700a3232299.json",
+        "/home/catid/drafter/artifacts/final_smoke_pipeline/m4/timing/rank0/438bf17bd4bd68f9957eaf01191d517c6bf1ffcffc7bfdd8743aa9e824260aa0.json",
+        "/home/catid/drafter/artifacts/final_smoke_pipeline/m4/timing/rank0/2b0159ebabbf2b2d10d2b55fa612a25cfed36ed31ee2c1907bfd7a3aea8377b0.json",
+        "/home/catid/drafter/artifacts/final_smoke_pipeline/m4/timing/rank0/a66b395818642fcb83df7a23f897f7c47c636960be7e7e842bdfd973f73887a5.json"
+      ]
+    },
+    "dfb40f673f3f5677ca15c382cb8249772499d8ed0241c6aec6863bf7a0cba1e3": {
+      "status": "complete",
+      "epoch": "0c8054b08c064799850b6c7ae01d8e38",
+      "result_paths": [
+        "/home/catid/drafter/artifacts/final_smoke_pipeline/m4/timing/rank0/9ea18445ff4ccf70fc5823b7bd344dd52d661ee1a4d3f150e52b72f17db1eeee.json",
+        "/home/catid/drafter/artifacts/final_smoke_pipeline/m4/timing/rank0/4be82822e768f722487687ccea01ede274da8a77c29b4590555dff5c93fa69de.json",
+        "/home/catid/drafter/artifacts/final_smoke_pipeline/m4/timing/rank0/a486d4c974bcee750e4041ee7bf9f7ab42f2574cea29400d5ec06830561ffa02.json",
+        "/home/catid/drafter/artifacts/final_smoke_pipeline/m4/timing/rank0/71955f91cabe4cc5d7efb82daa077085857c1db9d3f7fbb3b2f11a26fc4962ea.json",
+        "/home/catid/drafter/artifacts/final_smoke_pipeline/m4/timing/rank0/c4fca6f5cae70a297d67203c20bc530e7969c34125b06b4f5b2824e662d490cd.json"
+      ]
+    },
+    "d918471bbec0278afd7798e0bd48322afc63767e9c94383e41cb470a1706add2": {
+      "status": "complete",
+      "epoch": "0c8054b08c064799850b6c7ae01d8e38",
+      "result_paths": [
+        "/home/catid/drafter/artifacts/final_smoke_pipeline/m4/timing/rank0/98971888c31c8c36353f07f5d2708016418d72dc21d0741b30f3918bc883915f.json",
+        "/home/catid/drafter/artifacts/final_smoke_pipeline/m4/timing/rank0/175f24380b0ed2be15c1acb25a48eed8204627a5509ee520718c4b44067a5ad9.json",
+        "/home/catid/drafter/artifacts/final_smoke_pipeline/m4/timing/rank0/e26fdd366a541113f5c917ace838452cab4b9fee5b81c7a55169697701ca3964.json",
+        "/home/catid/drafter/artifacts/final_smoke_pipeline/m4/timing/rank0/76d3b8d5f9b472cb18fd704ab4e9ad948951b25e74c72fe03c035e4185116a7a.json",
+        "/home/catid/drafter/artifacts/final_smoke_pipeline/m4/timing/rank0/4d0086c1ede8c0a1957ad6c7de52223842461a6910afcd9f2217b229948019a8.json"
+      ]
+    },
+    "78d33753e2ceef5a344ef90e4d765dbf6c6fbe723cc801cb0582813875c886b5": {
+      "status": "complete",
+      "epoch": "0c8054b08c064799850b6c7ae01d8e38",
+      "result_paths": [
+        "/home/catid/drafter/artifacts/final_smoke_pipeline/m4/timing/rank0/f1c0e951b3fc99ae807d7dab3a4193ddc596b85d6031c56a225cf75b8eb61fd5.json",
+        "/home/catid/drafter/artifacts/final_smoke_pipeline/m4/timing/rank0/b2730c7a33e1451159b03a23705235033e56bfaee4751ef150ccc631c8e7ec87.json",
+        "/home/catid/drafter/artifacts/final_smoke_pipeline/m4/timing/rank0/ebc81fa13b74e6ce1e42f914a16ea268eb7ab114fcdec1417b6373bb9a728c6f.json",
+        "/home/catid/drafter/artifacts/final_smoke_pipeline/m4/timing/rank0/61b5848f687217bf78ce3b53f939f831dea8e7162f803cec5e024ef574ae874a.json",
+        "/home/catid/drafter/artifacts/final_smoke_pipeline/m4/timing/rank0/83299b99772050873765cb7c55a387d298fdf0a303f9efa48f6515874769ae21.json"
+      ]
+    },
+    "d2b6f30a2adc4da62af997105ea915d4bbb90dbde3c17da018d0e69e28896d7d": {
+      "status": "complete",
+      "epoch": "0c8054b08c064799850b6c7ae01d8e38",
+      "result_paths": [
+        "/home/catid/drafter/artifacts/final_smoke_pipeline/m4/timing/rank0/cbc8c99881e3748abbbaa22b92a8f2c01ba45f8e2032dc0f9d831a9a11cbfba5.json",
+        "/home/catid/drafter/artifacts/final_smoke_pipeline/m4/timing/rank0/200b4dbd9c3677397592136a2390315253c155127d2c9c56944d46c6f335f739.json",
+        "/home/catid/drafter/artifacts/final_smoke_pipeline/m4/timing/rank0/8ca86f4e050c6497661846ba2ee1381e203b1bbd7e978b4b322cf6d3913dced9.json",
+        "/home/catid/drafter/artifacts/final_smoke_pipeline/m4/timing/rank0/73c15ae26625bd20da57b56010f3414928ee0c91003fef517cccf20a285a80a0.json",
+        "/home/catid/drafter/artifacts/final_smoke_pipeline/m4/timing/rank0/a2660383bc7fe4c2723ef047446d4bce1b9f9e11ba92031c88f74724424abc44.json"
+      ]
+    },
+    "f68a160033e15929457c9535fbc444398aa7c52c8c96e01169758c68cd5de4fb": {
+      "status": "complete",
+      "epoch": "0c8054b08c064799850b6c7ae01d8e38",
+      "result_paths": [
+        "/home/catid/drafter/artifacts/final_smoke_pipeline/m4/timing/rank0/2dd9328872184490b9b123018e7c83a04f928ff5367b5078e190cd7f1830d766.json",
+        "/home/catid/drafter/artifacts/final_smoke_pipeline/m4/timing/rank0/f76680b5ed01016357ac15bbc30bcb4acd915884ce02b641ca90c72ca37b9703.json",
+        "/home/catid/drafter/artifacts/final_smoke_pipeline/m4/timing/rank0/7da5f510b66162e46508263f49ccccc0bf1c449c6ea72f0d9b39e5bf28e62b5a.json",
+        "/home/catid/drafter/artifacts/final_smoke_pipeline/m4/timing/rank0/1d6701d6da3b6eddc6e4b8892d170c4afdfaed874d6912d2c1ad8585e0c5ed1b.json",
+        "/home/catid/drafter/artifacts/final_smoke_pipeline/m4/timing/rank0/55b91d79f0389ae29d5a011af766138a0a87a434d2d52aaf1ffbedb5be7ffd65.json"
+      ]
+    },
+    "636f0c005f2c00ee9acdfd6595f3c7798fce2e9a897c56c2df6f7e390a08c9ab": {
+      "status": "complete",
+      "epoch": "0c8054b08c064799850b6c7ae01d8e38",
+      "result_paths": [
+        "/home/catid/drafter/artifacts/final_smoke_pipeline/m4/timing/rank0/afc793eb781ba71fe09daefb05b23c6ac7b429c1b4055077f4f88187a0cddc8c.json",
+        "/home/catid/drafter/artifacts/final_smoke_pipeline/m4/timing/rank0/b1d4c8bd458bfa6cce5350be7448e948551068920092a44f67ff27f2ae3cd0e8.json",
+        "/home/catid/drafter/artifacts/final_smoke_pipeline/m4/timing/rank0/9fd8be6b3485c535b8527c4edeb599beace1dd7cba5cfc6c98bf3e2ddafc09c3.json",
+        "/home/catid/drafter/artifacts/final_smoke_pipeline/m4/timing/rank0/a34082c4803dca2dda08b8952726136b6516430731aa9faad3b6cd7c5c0faba9.json",
+        "/home/catid/drafter/artifacts/final_smoke_pipeline/m4/timing/rank0/a37e3c898e7e08a0cfb993fdc64f92818e685be4986a23726fca21ae91bfa283.json"
+      ]
+    },
+    "1f6a20e1615bb7c0160c903ce4a04c9ab51df103fcfda57c0281ad956f873438": {
+      "status": "complete",
+      "epoch": "0c8054b08c064799850b6c7ae01d8e38",
+      "result_paths": [
+        "/home/catid/drafter/artifacts/final_smoke_pipeline/m4/timing/rank0/ad419de743c11d480ecb99b36fb3f813ab542f9f5ad0f79e28ad7ba9dffb24b1.json",
+        "/home/catid/drafter/artifacts/final_smoke_pipeline/m4/timing/rank0/ba22cb67e16998ca2239ffc21ed029449297629d90aa35052caeaeabff396492.json",
+        "/home/catid/drafter/artifacts/final_smoke_pipeline/m4/timing/rank0/be86b81542bd00bd47d27ba4312cd6efc81a49162425232be38313cfa0ccc8ce.json",
+        "/home/catid/drafter/artifacts/final_smoke_pipeline/m4/timing/rank0/76e4d6f6ecbfa61df15d69c5f31570bc651c04942495ff23b8b7c430ef2ea0d2.json",
+        "/home/catid/drafter/artifacts/final_smoke_pipeline/m4/timing/rank0/db1a6a2e05ca06d56787b8ada7d4d0f55f98126a7898d499bb55ce08a8b56a1e.json"
+      ]
+    },
+    "650ff57bd5d554a586f094dbabbde96ce518d8445c71be061fa33adb1eecc2a7": {
+      "status": "complete",
+      "epoch": "0c8054b08c064799850b6c7ae01d8e38",
+      "result_paths": [
+        "/home/catid/drafter/artifacts/final_smoke_pipeline/m4/timing/rank0/bcedc53a63051062887a61cf03f402e801e5c4b2a4c2b9450c2945f43d8570a3.json",
+        "/home/catid/drafter/artifacts/final_smoke_pipeline/m4/timing/rank0/9be54a011ec0a5fa8cb361c49e9df2e027d43081ffb8f453fa341caf682d90a6.json",
+        "/home/catid/drafter/artifacts/final_smoke_pipeline/m4/timing/rank0/045e7b56892d5cabd723bdad84380dcc51b9d7d4307301d1e8e4e53b2f35c431.json",
+        "/home/catid/drafter/artifacts/final_smoke_pipeline/m4/timing/rank0/2c269cc0dff6808cee44f9da60bcde15f604dfe4ce3fadddd442136025fecc56.json",
+        "/home/catid/drafter/artifacts/final_smoke_pipeline/m4/timing/rank0/991124142850f86fbad62285ae07c37247da6ed23180cfed685e395c2680af26.json"
+      ]
+    },
+    "e34220acee9bd99c0216f27439fb80ac4b4a2fa4bc10715ee1bae5609303c6e3": {
+      "status": "complete",
+      "epoch": "0c8054b08c064799850b6c7ae01d8e38",
+      "result_paths": [
+        "/home/catid/drafter/artifacts/final_smoke_pipeline/m4/timing/rank0/e94fa3ade36ce8452bf74ec7ebbe5e62a41610d7f328df36b0642dca33eac478.json",
+        "/home/catid/drafter/artifacts/final_smoke_pipeline/m4/timing/rank0/20953bbfa00e94b0d1e88fbd2e847cbb4d71afd9ae5aa154d28428d43cffb1e0.json",
+        "/home/catid/drafter/artifacts/final_smoke_pipeline/m4/timing/rank0/ade6ec8af618832c06c40f1147136f5893a840c9e5f22fac191988091aee76d8.json",
+        "/home/catid/drafter/artifacts/final_smoke_pipeline/m4/timing/rank0/82ad64f55e9885d2606076d6de55c10782ff983360c7886fc86829acf6f4107b.json",
+        "/home/catid/drafter/artifacts/final_smoke_pipeline/m4/timing/rank0/d3fc73802b11985f8ab36e7840c00449a3e4cfa320e554f9e3e595605d04ca04.json"
+      ]
+    },
+    "39c7a8b2a1c635c046884065a18c3928c4052c74ba42343ca3cd58826d467d47": {
+      "status": "complete",
+      "epoch": "0c8054b08c064799850b6c7ae01d8e38",
+      "result_paths": [
+        "/home/catid/drafter/artifacts/final_smoke_pipeline/m4/timing/rank0/ea04734f8a3fc1bf07f1c90f837acb799e61c11eff9d8e3ab518c436564d0dc2.json",
+        "/home/catid/drafter/artifacts/final_smoke_pipeline/m4/timing/rank0/910dffd60a568e766ec752fec95068dbc709797d46bb71c65e0a9f266e710509.json",
+        "/home/catid/drafter/artifacts/final_smoke_pipeline/m4/timing/rank0/c467fad1569134de7c656be563018d5257b51e569d329ca3ef32e1502192de95.json",
+        "/home/catid/drafter/artifacts/final_smoke_pipeline/m4/timing/rank0/be2e1800eafdfb15a190d8ace575c841b5e1daafad77325267622f2a59bb4b66.json",
+        "/home/catid/drafter/artifacts/final_smoke_pipeline/m4/timing/rank0/34cf60fa548493d7e72af3085f9e589457590ffb589c53e70e24052468e63b96.json"
+      ]
+    },
+    "76aebb4aa172afb74328ba5a294778f6204f789b4b7009599431b04519fbaee6": {
+      "status": "complete",
+      "epoch": "0c8054b08c064799850b6c7ae01d8e38",
+      "result_paths": [
+        "/home/catid/drafter/artifacts/final_smoke_pipeline/m4/timing/rank0/19632e2bf2f26ef320f5fb0e3742198ac41e702b6920f3d6f93bb93e6d6721b2.json",
+        "/home/catid/drafter/artifacts/final_smoke_pipeline/m4/timing/rank0/969b7e0ef2ed1ff563bfa03422182395ed47980a82ef99305a4e92e4d2872944.json",
+        "/home/catid/drafter/artifacts/final_smoke_pipeline/m4/timing/rank0/6ca19472f7fbec1c5e3468e0c4dfda9b2a5acd42195950f473e07d05e65d5679.json",
+        "/home/catid/drafter/artifacts/final_smoke_pipeline/m4/timing/rank0/445ea971c8d95e6db878d5585579402a95c4fafd1b5e454f94bf260bf53b3a00.json",
+        "/home/catid/drafter/artifacts/final_smoke_pipeline/m4/timing/rank0/7ea93f0486df4bd6ad1aba2e6c6709fbbb74a61686b8a235a79229bb13988b8c.json"
+      ]
+    },
+    "499b15e9ae6c623d95dfb7da00e55d48fac33890f2b076c73a70e342e5f76c75": {
+      "status": "complete",
+      "epoch": "0c8054b08c064799850b6c7ae01d8e38",
+      "result_paths": [
+        "/home/catid/drafter/artifacts/final_smoke_pipeline/m4/timing/rank0/dadae12af0b31c8cc522832b097ef70563652b9071db461eac7d18a79d421493.json",
+        "/home/catid/drafter/artifacts/final_smoke_pipeline/m4/timing/rank0/77aac3bf38004385e3442ac5f0ad0470386be484c267b57cb93f0ebd250a07c2.json",
+        "/home/catid/drafter/artifacts/final_smoke_pipeline/m4/timing/rank0/d67ea8a4e5261bc5d1faf1870be317fabd1152a8102574b9e206c85760e9f554.json",
+        "/home/catid/drafter/artifacts/final_smoke_pipeline/m4/timing/rank0/a4ac7d454a9b860788ad382fedb721a1f3ad4856d1c34020f60d0c079275cfad.json",
+        "/home/catid/drafter/artifacts/final_smoke_pipeline/m4/timing/rank0/129a2e3e4210ab735d968586681a9e0116afb402d6b65184b218e5a64c9655f8.json"
+      ]
+    },
+    "482ed17a8265e19c2be745a4bf4dcd954a537db170547cb13f098b8b266c247e": {
+      "status": "complete",
+      "epoch": "0c8054b08c064799850b6c7ae01d8e38",
+      "result_paths": [
+        "/home/catid/drafter/artifacts/final_smoke_pipeline/m4/timing/rank0/94cb7f92342f6747ab1fb09268075c0554fbf9ae5265e4749966402f28179154.json",
+        "/home/catid/drafter/artifacts/final_smoke_pipeline/m4/timing/rank0/f356a832b7907ce1008983a6d2b5a40ed5674a922e917ef659ff2ebfbec59e31.json",
+        "/home/catid/drafter/artifacts/final_smoke_pipeline/m4/timing/rank0/1e08b95c10de9260645eeb56673846481c9b634424ba5d28cf8dea423653e124.json",
+        "/home/catid/drafter/artifacts/final_smoke_pipeline/m4/timing/rank0/b462f092f2d4fa649340c79a0b8d13fbb188bb85fcc30b5666c9f61328ede531.json",
+        "/home/catid/drafter/artifacts/final_smoke_pipeline/m4/timing/rank0/75c64455f3686a4c5412a9e8ccd51a30292dff3a5635c0521b6ff3b57ba858b9.json"
+      ]
+    },
+    "4aa4fa0231c9e64761095dfab44abef05bf6f0ea5a0544058bb95dafe1908c91": {
+      "status": "complete",
+      "epoch": "0c8054b08c064799850b6c7ae01d8e38",
+      "result_paths": [
+        "/home/catid/drafter/artifacts/final_smoke_pipeline/m4/timing/rank0/ce329c6e4fb6d2d9234fbc544ee5aaa39d2b4526c0246de2fabad3cca4451cdb.json",
+        "/home/catid/drafter/artifacts/final_smoke_pipeline/m4/timing/rank0/9edb14b9f40415204ef4025b76caaeb35dcc56c2bec96ca85e8525e2cc924e40.json",
+        "/home/catid/drafter/artifacts/final_smoke_pipeline/m4/timing/rank0/0d1d1238c8e0082057b6b2e15c7c5a656b0fdc62cfd3d8dddc0e99308fbc67a9.json",
+        "/home/catid/drafter/artifacts/final_smoke_pipeline/m4/timing/rank0/5d348d7481f7ff032b36b99daeffcb728e1b6d61df177e7cea59a95f845b4257.json",
+        "/home/catid/drafter/artifacts/final_smoke_pipeline/m4/timing/rank0/e3bb6b34ddb9e3c74d48a8f47a5a993176fb0f4b7d90a458d94affef8916f7c6.json"
+      ]
+    },
+    "945b27d44062d5e747ff12b9484f9eb871a8c0e127fb2cf47d518602a0b3c5c5": {
+      "status": "complete",
+      "epoch": "0c8054b08c064799850b6c7ae01d8e38",
+      "result_paths": [
+        "/home/catid/drafter/artifacts/final_smoke_pipeline/m4/timing/rank0/a930c7f2fe32401b40d2e758a68032b33865bfc540f716d46e9ec1f5e2aefd2e.json",
+        "/home/catid/drafter/artifacts/final_smoke_pipeline/m4/timing/rank0/089bb30d36976f2b42f29f0427105e6babac11bdfb5f23dacfcc57af7c0671ff.json",
+        "/home/catid/drafter/artifacts/final_smoke_pipeline/m4/timing/rank0/16babea18475cec0de673cd405c1f8fca8633af7b7f08ab68f37324d3b44b703.json",
+        "/home/catid/drafter/artifacts/final_smoke_pipeline/m4/timing/rank0/98e4a09e4c1eaf9bda13949801932ebfab643425cfc5d5755458fa4f58656191.json",
+        "/home/catid/drafter/artifacts/final_smoke_pipeline/m4/timing/rank0/e4a2691b3a02c72ffbb827f40d5836e05719b85c7caf276e6b17290b066d11c8.json"
+      ]
+    },
+    "9883fe72da303cc409e0151850f50fb339065b5a8e2c18bab4b2192373282d48": {
+      "status": "complete",
+      "epoch": "0c8054b08c064799850b6c7ae01d8e38",
+      "result_paths": [
+        "/home/catid/drafter/artifacts/final_smoke_pipeline/m4/timing/rank0/75dfa02ae6beba02a19587a2598e428dfa7485fac6569f194a77d7b4e540cf42.json",
+        "/home/catid/drafter/artifacts/final_smoke_pipeline/m4/timing/rank0/f2028222f0cd2c0290c37179d9f11c1742e0644ad06e24e4d855cc40f3c4bd91.json",
+        "/home/catid/drafter/artifacts/final_smoke_pipeline/m4/timing/rank0/2e9323d7da36c93021f1a66651f266d0871158835ac2eeb789136e6854f6297c.json",
+        "/home/catid/drafter/artifacts/final_smoke_pipeline/m4/timing/rank0/b0c1ac9d2f26e8a86ac46005faca76df35ff862c7d3f7a371c1fb51b6766f674.json",
+        "/home/catid/drafter/artifacts/final_smoke_pipeline/m4/timing/rank0/81d5538464a717d4d3158e1637c871e1c5204433a0cde50d18d7fa3fc9c14904.json"
+      ]
+    },
+    "a6d5a0b7b208bf70969baeec1150fd74cc923484085e32a812ac7ce2792e700e": {
+      "status": "complete",
+      "epoch": "0c8054b08c064799850b6c7ae01d8e38",
+      "result_paths": [
+        "/home/catid/drafter/artifacts/final_smoke_pipeline/m4/timing/rank0/fb389e4de1b49a178b54066a37d5a8247b17b5908489ab5d4f702b04bc0b9164.json",
+        "/home/catid/drafter/artifacts/final_smoke_pipeline/m4/timing/rank0/d4147cee28039de12d89cab0aa435f2250423ab50440c2803a378444ce577238.json",
+        "/home/catid/drafter/artifacts/final_smoke_pipeline/m4/timing/rank0/c75b44e4e945807fa67d8f15bfc8fbaab46e07c25f3158d46992edeb21819825.json",
+        "/home/catid/drafter/artifacts/final_smoke_pipeline/m4/timing/rank0/589647bbd058a2f9b19e69c9916732278d319bbcb62b9e0f3728c64a364189d0.json",
+        "/home/catid/drafter/artifacts/final_smoke_pipeline/m4/timing/rank0/7331a8efa8062438a0ce311532e633e0748ad9c36ca471d451160754d6689ba3.json"
+      ]
+    },
+    "69bd5f4a6228009caaa26ce42ccaf648ec41edff9e69163040426afa610d99a3": {
+      "status": "complete",
+      "epoch": "0c8054b08c064799850b6c7ae01d8e38",
+      "result_paths": [
+        "/home/catid/drafter/artifacts/final_smoke_pipeline/m4/timing/rank0/1b3909335e361ee249fe6c27744ff223a9f0449a1ba22a311035aa24a887a0f3.json",
+        "/home/catid/drafter/artifacts/final_smoke_pipeline/m4/timing/rank0/2c299667ac58834ce15c6ed99724f08d4ac8a07aaeb0a055c73b7a85568519e7.json",
+        "/home/catid/drafter/artifacts/final_smoke_pipeline/m4/timing/rank0/19d3e86a6c3941ecc4c653dad29e4e14467ee95b2261bc6ba2e86672622fab04.json",
+        "/home/catid/drafter/artifacts/final_smoke_pipeline/m4/timing/rank0/40d407e4136e29fffd4561b02e7884edce74ab99f0b8e1add562e8da59c9a6ca.json",
+        "/home/catid/drafter/artifacts/final_smoke_pipeline/m4/timing/rank0/620d12e0ab0a2c8566589f364a364af9b7324dd394fc37d3104e0595658d72ea.json"
+      ]
+    },
+    "a11c9a2567f450ff072ad5f7932bb24328167bf25fb1e26feb1c44f327597cd9": {
+      "status": "complete",
+      "epoch": "0c8054b08c064799850b6c7ae01d8e38",
+      "result_paths": [
+        "/home/catid/drafter/artifacts/final_smoke_pipeline/m4/timing/rank0/386e1fe33cee2c152abb72913db758bb508660bd903ba28990d3ca6b9d0a1520.json",
+        "/home/catid/drafter/artifacts/final_smoke_pipeline/m4/timing/rank0/5416f1a66ecdccd2ec2afc8f6165c73ddc86e14bfb8e017c22f1c15c4b1f9ced.json",
+        "/home/catid/drafter/artifacts/final_smoke_pipeline/m4/timing/rank0/3f553e150fe3290822fe9c9a25c9a1df3d2fb3cf56906ef655f56d257975bdaf.json",
+        "/home/catid/drafter/artifacts/final_smoke_pipeline/m4/timing/rank0/80850e92ccecd6beae04ec0912c3e3c7261cdbfa25fd18344387341f290bbb2f.json",
+        "/home/catid/drafter/artifacts/final_smoke_pipeline/m4/timing/rank0/ec33149094e60197dc537e5461a48c9e63d1fb843913f033ee7cb6a413157053.json"
+      ]
+    }
+  }
+}

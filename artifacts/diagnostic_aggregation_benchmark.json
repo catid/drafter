@@ -1,0 +1,46 @@
+{
+  "label": "reference_trace_CPU_aggregation_microbenchmark",
+  "scale": "reference",
+  "device": "cpu",
+  "torch_threads": 1,
+  "shards": [
+    {
+      "path": "/home/catid/drafter/artifacts/traces/rank0/f15efc4c2321c28095692d08f618d02fc8f7bb28b79e5beb3c1be62309e95616.pt",
+      "sha256": "67f279aedd69097100aea21956d3c31ed26461952fa3e6166bd2ddf107b2147b"
+    },
+    {
+      "path": "/home/catid/drafter/artifacts/traces/rank0/4eff1dc73dff1e4c25ca3dcd508bd97e80b34a0b5bc8b0003fee6218fdf29f7c.pt",
+      "sha256": "4ccbba72716c53f6480a7b59db3213482260096d8726e6136c1b9bbe4daf9304"
+    },
+    {
+      "path": "/home/catid/drafter/artifacts/traces/rank0/51d68f804e987f3c8e2c212eebcfec5bffa927a516a0e9dc0e5716d23e2850b8.pt",
+      "sha256": "305dc8612aed847793e55cbb725196e183751e90f09c8ff9f20bf97d71c45191"
+    },
+    {
+      "path": "/home/catid/drafter/artifacts/traces/rank0/fe8d5bf83414002bc7826b4e927167900e8adecca894d63e20b47021fdcd28de.pt",
+      "sha256": "417af29de5caedddd861850c0313a61107aaa5d596c2e962405f6a38a65a5331"
+    }
+  ],
+  "blocks": 249,
+  "logical_slots": 3735,
+  "repetitions": 3,
+  "scalar_seconds": [
+    0.3128933000843972,
+    0.3026985169854015,
+    0.3080648989416659
+  ],
+  "batched_seconds": [
+    0.05712113087065518,
+    0.0522145249415189,
+    0.05329402210190892
+  ],
+  "scalar_median_seconds": 0.3080648989416659,
+  "batched_median_seconds": 0.05329402210190892,
+  "aggregation_speedup": 5.780477561865825,
+  "read_and_aggregate_scalar_seconds": 1.5792525878641754,
+  "read_and_aggregate_batched_seconds": 1.1766308399382979,
+  "reports_match": true,
+  "groups": 6,
+  "comparison": "Every report field checked: all non-feature metrics including bootstrap outputs exact; float64 feature reductions tolerance abs=2e-13, rel=2e-13.",
+  "note": "CPU diagnostic aggregation only, not generation throughput; loading, complete source hashing and report bootstrap are separate costs."
+}

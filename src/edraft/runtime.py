@@ -4,6 +4,7 @@ from __future__ import annotations
 import argparse
 from contextlib import contextmanager
 from dataclasses import asdict, dataclass
+from datetime import datetime, timezone
 import fcntl
 import hashlib
 import importlib.metadata
@@ -114,7 +115,8 @@ def record_run(args, name):
 def environment(config=None):
     import torch
     packages = {}
-    for name in ['torch', 'transformers', 'accelerate', 'triton', 'datasets', 'dflash']:
+    for name in ['torch', 'transformers', 'accelerate', 'triton', 'datasets', 'dflash',
+                 'duckdb', 'numpy', 'pyarrow', 'huggingface-hub']:
         try:
             packages[name] = importlib.metadata.version(name)
         except importlib.metadata.PackageNotFoundError:
@@ -133,10 +135,21 @@ def environment(config=None):
     with locked_json(ROOT / 'artifacts/environment.json') as env:
         env.update({'os': platform.platform(), 'python': platform.python_version(), 'packages': packages,
                     'cuda': torch.version.cuda, 'gpus': gpus,
+                    'status': 'recorded', 'scale': (config or {}).get('scale', 'not_run'),
+                    'updated_at_utc': datetime.now(timezone.utc).isoformat(),
+                    'pytorch': torch.__version__, 'transformers': packages['transformers'],
+                    'accelerate': packages['accelerate'], 'triton': packages['triton'],
+                    'datasets': packages['datasets'],
                     'visible_devices': os.environ.get('CUDA_VISIBLE_DEVICES', 'unset (all visible)'),
                     'project_git_commit': git_commit(), 'resolved_config': config,
                     'dflash': {'url': 'https://github.com/z-lab/dflash', 'commit': git_commit(ROOT / 'vendor/dflash')},
                     'free_disk_bytes': shutil.disk_usage(ROOT).free})
+        identifiers = env.get('models', {})
+        identifiers['revisions'] = {role: env.get('model_artifacts', {}).get(identifiers.get(role), {}).get('revision')
+                                    for role in ['target', 'drafter']}
+        env['models'] = identifiers
+        env['tokenizer'] = {'identifier': identifiers.get('target'),
+                            'revision': identifiers['revisions'].get('target')}
     return env
 
 
