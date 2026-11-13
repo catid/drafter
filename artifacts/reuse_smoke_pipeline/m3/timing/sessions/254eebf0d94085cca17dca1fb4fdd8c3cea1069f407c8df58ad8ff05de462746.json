@@ -1,0 +1,371 @@
+{
+  "logical_session": "f59eec9d1bbb4e6c865e6c1cd1e79838",
+  "configuration": {
+    "configuration": {
+      "frozen_settings_hash": "c1ef9ac438877d485ea3b39fecf2f5edc548a3c4fa72ec1aedc0282cfc275a33",
+      "prompt_manifest_hash": "496873fa2eabc179ac17b1621fe87aa80bea6a3ee30b6c72d7c43721bc727610",
+      "selected_prompts": [
+        "synthetic-test-long_thinking-0",
+        "synthetic-test-long_thinking-1",
+        "synthetic-test-standard_nonthinking-0",
+        "synthetic-test-standard_nonthinking-1"
+      ],
+      "repeats": 3,
+      "warmups": 1
+    },
+    "checkpoint_hashes": {
+      "dense": "551a7a5907538169bf91ad2fb07c74d2c0549f6477fe7412fc7e505d47c59dce",
+      "dense_sparse": "3064fd63be5221bcae96a291b6247c50e6faee648ce6ad5562199675b2be6b54",
+      "projection": "synthetic-calibration-seed-2026",
+      "implementation": "d6e1b6ec966e29d03f1b86a173fdde28e948dcfce0f5af4231cda83ff90cdb6a"
+    },
+    "model_pair": [
+      "builtin_toy_target",
+      "builtin_parallel_drafter"
+    ],
+    "model_revisions": [
+      "synthetic-v1",
+      "synthetic-v1"
+    ],
+    "generation_caps": {
+      "standard": 2048,
+      "long": 24576,
+      "smoke": 32
+    },
+    "stage": "m3",
+    "scale": "smoke",
+    "device": "cpu",
+    "visible_devices": "",
+    "seed": 2026
+  },
+  "created_at_unix": 1794613165.3277848,
+  "epochs": [
+    {
+      "epoch": "71523b9ee2764970b9d9320709a5a594",
+      "started_at_unix": 1794613165.3277886,
+      "device": "cpu"
+    }
+  ],
+  "bundles": {
+    "4682e447437f0b6faefe07e8419186c40ca01c1d2c9e8395614d4a86b8d39ea1": {
+      "status": "complete",
+      "epoch": "71523b9ee2764970b9d9320709a5a594",
+      "result_paths": [
+        "/home/catid/drafter/artifacts/reuse_smoke_pipeline/m3/timing/rank0/73a2bd5b148883ea40db1c3d4760084379de692548b8f5b1e6ff145c62ca0b6b.json",
+        "/home/catid/drafter/artifacts/reuse_smoke_pipeline/m3/timing/rank0/4db7952a87370721e0f0427b8ec40b2a5e8c026381ec498da235990e2987a7a7.json",
+        "/home/catid/drafter/artifacts/reuse_smoke_pipeline/m3/timing/rank0/9dd54a75ba914e96c84ce872d7851b3cd9269b1c5f6c3bd1a854d70f7cce0a9c.json",
+        "/home/catid/drafter/artifacts/reuse_smoke_pipeline/m3/timing/rank0/647f9162ba34ca1931d6897f0b21194a30b8f63b86f263f05f8bd7ac6ab0e0cc.json"
+      ]
+    },
+    "921f81479d7db92df1ae2d7cb63306e8b1a0893eba3998a575309f87713e340d": {
+      "status": "complete",
+      "epoch": "71523b9ee2764970b9d9320709a5a594",
+      "result_paths": [
+        "/home/catid/drafter/artifacts/reuse_smoke_pipeline/m3/timing/rank0/3fd7cea0df476c9abb9c64fad8fdfb3a133181949649e69fffc2908b554f5012.json",
+        "/home/catid/drafter/artifacts/reuse_smoke_pipeline/m3/timing/rank0/7dd5422d7da532be29c430bca7948d85987c7b44fe67519d1100d3759d34767d.json",
+        "/home/catid/drafter/artifacts/reuse_smoke_pipeline/m3/timing/rank0/46b484b8f1935de32f3cc6a2568d692943a8d4ea91c9e7f1aa2cacbc28780e3e.json",
+        "/home/catid/drafter/artifacts/reuse_smoke_pipeline/m3/timing/rank0/2c086f353bcf7b3df347d9a4ceeaa716955bd4d92d2168f69794eb22babf1bf6.json"
+      ]
+    },
+    "5b95d5a9291ac59b0d284a985de018bbab3d8d16584eda342f4e0bcd2da39e9a": {
+      "status": "complete",
+      "epoch": "71523b9ee2764970b9d9320709a5a594",
+      "result_paths": [
+        "/home/catid/drafter/artifacts/reuse_smoke_pipeline/m3/timing/rank0/8b2c4d4f1d57179686e4fe13dcf9e06415740c6d3a27d382275afbd560df2ebc.json",
+        "/home/catid/drafter/artifacts/reuse_smoke_pipeline/m3/timing/rank0/159362d1d0edcffc17ef7a353015517db3e7655547c015c12d3faffe56c3dff1.json",
+        "/home/catid/drafter/artifacts/reuse_smoke_pipeline/m3/timing/rank0/0ff691b5806578d3415e3768fe861a7330699a015d1fd78f32ec94b296d3a3e5.json",
+        "/home/catid/drafter/artifacts/reuse_smoke_pipeline/m3/timing/rank0/e3fd45059e82be2c3ed4093da902fa80c86cb77e1e6e29bbfe21ac27c96aa9d1.json"
+      ]
+    },
+    "eb1bd43d32b92bde6b2d0baf170dbe2e4765c7bcc7e483f52c7671ceb40c3b37": {
+      "status": "complete",
+      "epoch": "71523b9ee2764970b9d9320709a5a594",
+      "result_paths": [
+        "/home/catid/drafter/artifacts/reuse_smoke_pipeline/m3/timing/rank0/9715f8c4d9f91498386246487459120b163917851638799c7db09e6fa37909d3.json",
+        "/home/catid/drafter/artifacts/reuse_smoke_pipeline/m3/timing/rank0/70908e1ee577b3e985198c0f7cba0981599ba075dda3383a5717780203a6e1f2.json",
+        "/home/catid/drafter/artifacts/reuse_smoke_pipeline/m3/timing/rank0/736a009b0dd6ca8677620ff829900fc2da9d803c3480ac5bd383f30dfc1bea8c.json",
+        "/home/catid/drafter/artifacts/reuse_smoke_pipeline/m3/timing/rank0/787d80f28629f0e5e805f0435473dc5477ec0cd3f0e374109c15ae8c2db63917.json"
+      ]
+    },
+    "20659e9c5db2f99cd9c0949d6e94956b8d692e2e14777b029097b6b6229257ae": {
+      "status": "complete",
+      "epoch": "71523b9ee2764970b9d9320709a5a594",
+      "result_paths": [
+        "/home/catid/drafter/artifacts/reuse_smoke_pipeline/m3/timing/rank0/d4809d59673c1a8549d45487884c0264bd349d32803298d6a4c316fd285bc5fe.json",
+        "/home/catid/drafter/artifacts/reuse_smoke_pipeline/m3/timing/rank0/6f4899833cdbefbc1df0bde2b3cd5710ebbeb56cd9058b326a6bc145c34c8c2d.json",
+        "/home/catid/drafter/artifacts/reuse_smoke_pipeline/m3/timing/rank0/538849778a58263006577fc2aead910a36bf7538023346789c677ee53d1dcfa3.json",
+        "/home/catid/drafter/artifacts/reuse_smoke_pipeline/m3/timing/rank0/8fa9a9d69276d7bccbf085f361e406c5cd157177ced9e3beef952a7a0611866c.json"
+      ]
+    },
+    "7f99d5df017a1c9b0018f45e62493f8f743e3ccddaa0a7c19344f876e94ad5e7": {
+      "status": "complete",
+      "epoch": "71523b9ee2764970b9d9320709a5a594",
+      "result_paths": [
+        "/home/catid/drafter/artifacts/reuse_smoke_pipeline/m3/timing/rank0/643e311b47c343d9838e2d1b325cbd2c1d2dd03afcac2b479457c796ac370981.json",
+        "/home/catid/drafter/artifacts/reuse_smoke_pipeline/m3/timing/rank0/6cf7303f03eb30d2efbad116b8f8ab5b2e84920daf3482b7c654c829d800effb.json",
+        "/home/catid/drafter/artifacts/reuse_smoke_pipeline/m3/timing/rank0/e56a85d5de664954654de9e89b9cc034649d2580168fb9ea2ae884923ce8353d.json",
+        "/home/catid/drafter/artifacts/reuse_smoke_pipeline/m3/timing/rank0/b515a6764a1ea8ac2725075c07db4c180e3dd7263fda94c6d7b08289a139ec77.json"
+      ]
+    },
+    "7dfe0f8ae8990921d954c54203201f572f66182df9c246173ee7e186effa4ac1": {
+      "status": "complete",
+      "epoch": "71523b9ee2764970b9d9320709a5a594",
+      "result_paths": [
+        "/home/catid/drafter/artifacts/reuse_smoke_pipeline/m3/timing/rank0/855215a58d2c3df4d82bd8c0c2a4673c5eaa0cb66a886b2ee30422baa99aa396.json",
+        "/home/catid/drafter/artifacts/reuse_smoke_pipeline/m3/timing/rank0/57882019bc005d4ea96424dc1669a7e0746ebff9fd745d7bd1763f0d0b7a76b6.json",
+        "/home/catid/drafter/artifacts/reuse_smoke_pipeline/m3/timing/rank0/c601f539565e93b7d5b3fe9eb99d579683c8eb690dcddfb231597f901f6ba67a.json",
+        "/home/catid/drafter/artifacts/reuse_smoke_pipeline/m3/timing/rank0/e4823ae4f28ec33b238a9664615954680660f0ee5b357f29c3480efabc249459.json"
+      ]
+    },
+    "bc38ae68ba5d0fe34222f6eefb20a17dc9674fbe726a27688d2b91f5021345d5": {
+      "status": "complete",
+      "epoch": "71523b9ee2764970b9d9320709a5a594",
+      "result_paths": [
+        "/home/catid/drafter/artifacts/reuse_smoke_pipeline/m3/timing/rank0/8c77579328fe2f6395ede434cec470bd210d83b7d0208f18d3dbfe60c1495b44.json",
+        "/home/catid/drafter/artifacts/reuse_smoke_pipeline/m3/timing/rank0/030f91e791b484539eaa6379bdbf97968e96dbe6597df6a21d0b659a1faa5b72.json",
+        "/home/catid/drafter/artifacts/reuse_smoke_pipeline/m3/timing/rank0/f3dd62cb379fdeeb2b400fc8d8e4c50be8c815d513a309f100bf33d353e95bd5.json",
+        "/home/catid/drafter/artifacts/reuse_smoke_pipeline/m3/timing/rank0/bd3b6c2cadb5487ab0e5e81b345ed4f5c635a7db75ceb295f7c173f7566c17fe.json"
+      ]
+    },
+    "a123cadfc94ffa739eb74f8dee7fdca77a34175282cdb1dfe215b7a6c2265019": {
+      "status": "complete",
+      "epoch": "71523b9ee2764970b9d9320709a5a594",
+      "result_paths": [
+        "/home/catid/drafter/artifacts/reuse_smoke_pipeline/m3/timing/rank0/d5e4b31df994da76d2826951c3717db71b3d00369aa466b8771cf6aa070d506d.json",
+        "/home/catid/drafter/artifacts/reuse_smoke_pipeline/m3/timing/rank0/ac6a34d04bda191593c2baabce08558dc25e9905ed9261e79344564d7c5934b7.json",
+        "/home/catid/drafter/artifacts/reuse_smoke_pipeline/m3/timing/rank0/a2bfb10fe95fc83d599b75a94b21b2942e2d6c83c84c2753d43766943ecf9a2e.json",
+        "/home/catid/drafter/artifacts/reuse_smoke_pipeline/m3/timing/rank0/aaf7f6889cee3e47242394356f3171bd6eee79368ab99050affbd117735dce43.json"
+      ]
+    },
+    "50a5d7eb101745f2bff0c3fddb3a826949954558d67d1836dd7023c8095ffcee": {
+      "status": "complete",
+      "epoch": "71523b9ee2764970b9d9320709a5a594",
+      "result_paths": [
+        "/home/catid/drafter/artifacts/reuse_smoke_pipeline/m3/timing/rank0/03c8a49205e29374d90537e74f7d5051d529057257eefe4d408549dfaa05fe35.json",
+        "/home/catid/drafter/artifacts/reuse_smoke_pipeline/m3/timing/rank0/396f007a60e673d7d983206f5c6f28c5f2feb9318d80db961edb8269f0a1958d.json",
+        "/home/catid/drafter/artifacts/reuse_smoke_pipeline/m3/timing/rank0/1e27a3aa5e40035a5d2aae5198b570608cf9008e33d122fcff9b69afab0ada94.json",
+        "/home/catid/drafter/artifacts/reuse_smoke_pipeline/m3/timing/rank0/17a685128375612dd72243b44f6216c0456c2730ac6d3f0e8615df7bed7f6089.json"
+      ]
+    },
+    "d706c6efdc91ea9ab5cfaa5f0347e6ec4286cfa5a86b54b15ce4646d4970f718": {
+      "status": "complete",
+      "epoch": "71523b9ee2764970b9d9320709a5a594",
+      "result_paths": [
+        "/home/catid/drafter/artifacts/reuse_smoke_pipeline/m3/timing/rank0/b8ceb6fce19f8cfd7d26ebe963333aa4542a355bb9a36e38c506c7d70da9ff85.json",
+        "/home/catid/drafter/artifacts/reuse_smoke_pipeline/m3/timing/rank0/ddef2e6753f03fb746e509e4ee24e33c54137eca82280fc311b14b09e0365184.json",
+        "/home/catid/drafter/artifacts/reuse_smoke_pipeline/m3/timing/rank0/1cde2090a7fbaa00c3202a34a8ff6c017f57f0255c1df321bf062691fd82c40b.json",
+        "/home/catid/drafter/artifacts/reuse_smoke_pipeline/m3/timing/rank0/3bd3e2479c3afe6809c34af1b51bb2f3c86525c1abd1c23df6749695ac8baf64.json"
+      ]
+    },
+    "40a9ce43b8110a6fa24f9c29fc5a1ced333eb91e220a42c4d187219ad2d264c8": {
+      "status": "complete",
+      "epoch": "71523b9ee2764970b9d9320709a5a594",
+      "result_paths": [
+        "/home/catid/drafter/artifacts/reuse_smoke_pipeline/m3/timing/rank0/6269a70c2b0fe883cbf81b7291c18dd5dcbeabfe6d094b0ea266ce4f0bd67b49.json",
+        "/home/catid/drafter/artifacts/reuse_smoke_pipeline/m3/timing/rank0/ba614949f1382d62d2582dd4cd6e06a2b5491f8a7b54fbfedc3aa0c975574bc1.json",
+        "/home/catid/drafter/artifacts/reuse_smoke_pipeline/m3/timing/rank0/7a651b149f8b5e11d297ef16781de0db380c77ef681f7bf557b827e440b48dc3.json",
+        "/home/catid/drafter/artifacts/reuse_smoke_pipeline/m3/timing/rank0/b88a23fe222d5504a4d00a8a73b297b19c824af2186685eca41a6f28561f7ba2.json"
+      ]
+    },
+    "946b294132a62aa8872bb0685ef0f7dd18fc35f39cc363ed66422ba723c2e0c1": {
+      "status": "complete",
+      "epoch": "71523b9ee2764970b9d9320709a5a594",
+      "result_paths": [
+        "/home/catid/drafter/artifacts/reuse_smoke_pipeline/m3/timing/rank0/e36268c6569fca4cd5eb49374531b85e1b5f3464f56febd73c3dd1f986b54d28.json",
+        "/home/catid/drafter/artifacts/reuse_smoke_pipeline/m3/timing/rank0/f42a40650176e9d033d2e567929bdf64ff1abf44930991ecfe17fee5e2dc13ae.json",
+        "/home/catid/drafter/artifacts/reuse_smoke_pipeline/m3/timing/rank0/5ec97f9b06b494b9e1ccacd6b7c105c0a22d70935d56727798a6d54dc3b41024.json",
+        "/home/catid/drafter/artifacts/reuse_smoke_pipeline/m3/timing/rank0/185deac89ebef49d0e794f6655ce016451a84f392d232fc36d4f918bbbee2681.json"
+      ]
+    },
+    "b26c985b530cf0d886bcc579ba15f22a1203754bb80ae8124a1bc5b5b23da713": {
+      "status": "complete",
+      "epoch": "71523b9ee2764970b9d9320709a5a594",
+      "result_paths": [
+        "/home/catid/drafter/artifacts/reuse_smoke_pipeline/m3/timing/rank0/fbd6bd05eb782edd627ba13fa6df3b9273b43f5fe396f1fcf071ee7aeb44c817.json",
+        "/home/catid/drafter/artifacts/reuse_smoke_pipeline/m3/timing/rank0/2627bf476d30d883055cc73ffa632bd021b4d0908ed185e3e01557452f3359b6.json",
+        "/home/catid/drafter/artifacts/reuse_smoke_pipeline/m3/timing/rank0/85dd31904197454155db19b8bf8c5b48bd12d289b302db84266c1e21cd4f3dc4.json",
+        "/home/catid/drafter/artifacts/reuse_smoke_pipeline/m3/timing/rank0/29d5c5cf8b256e91bf047083873a020ddc73086d9a4975e695a16cc1fd15dafa.json"
+      ]
+    },
+    "9a8a5e53314ff5d405a9e3786b84595724125f60d53c805a459a0e7a832f97df": {
+      "status": "complete",
+      "epoch": "71523b9ee2764970b9d9320709a5a594",
+      "result_paths": [
+        "/home/catid/drafter/artifacts/reuse_smoke_pipeline/m3/timing/rank0/3490a09399a23c96d4165c9d58e659f347eae0021d999c5a840fbcb3761c32f1.json",
+        "/home/catid/drafter/artifacts/reuse_smoke_pipeline/m3/timing/rank0/3589c5089f383e83f12c2744eb0183355bd16cc9fd39f2212ab54df56dea32fd.json",
+        "/home/catid/drafter/artifacts/reuse_smoke_pipeline/m3/timing/rank0/95b5b5ce4249a47d1e02f05110601cf45a00e26d3ee79e005f6f3ba82431caf8.json",
+        "/home/catid/drafter/artifacts/reuse_smoke_pipeline/m3/timing/rank0/092e364fc7c1fe884f745c81f75663ebcb7308ddf57a6a50af59adcdfa3da3f6.json"
+      ]
+    },
+    "945f559c46cc20e51b3e4328523fa84cdafb93cb85b388edffd75b4d214a751b": {
+      "status": "complete",
+      "epoch": "71523b9ee2764970b9d9320709a5a594",
+      "result_paths": [
+        "/home/catid/drafter/artifacts/reuse_smoke_pipeline/m3/timing/rank0/631c4beca01c10c7a5c0c72f6e43a5eb92cb59ad536ad4c155d35b0ec34bf724.json",
+        "/home/catid/drafter/artifacts/reuse_smoke_pipeline/m3/timing/rank0/27f1c0659ff2e4f31d4db375b6b8016c4f22a65941e82ebe0b1f5b525d56b8b0.json",
+        "/home/catid/drafter/artifacts/reuse_smoke_pipeline/m3/timing/rank0/31aa525b532a054d32eab4b9a452d80af772b2f1be44668f6276aec92a543f96.json",
+        "/home/catid/drafter/artifacts/reuse_smoke_pipeline/m3/timing/rank0/e497011c6c35b4679d1516981cb97c31e08b958ac1801a1cfd1b86dfc183a9a3.json"
+      ]
+    },
+    "af225c8694d9c5270182838da72245986022df7d87eb4c1aa9a1fb831e3416c4": {
+      "status": "complete",
+      "epoch": "71523b9ee2764970b9d9320709a5a594",
+      "result_paths": [
+        "/home/catid/drafter/artifacts/reuse_smoke_pipeline/m3/timing/rank0/ab478676c459e2c09a9b4a0d8f5a878ca91df71f41f57683a1ee9f61754fa022.json",
+        "/home/catid/drafter/artifacts/reuse_smoke_pipeline/m3/timing/rank0/48523783e117a43c2f1e35260cd33044faf866a89fd4453afb8d75aef741289c.json",
+        "/home/catid/drafter/artifacts/reuse_smoke_pipeline/m3/timing/rank0/a1fe5df23b9b06ef29936fb2d07ed89ec3cf83455486df2a0a9b51eca7f147bf.json",
+        "/home/catid/drafter/artifacts/reuse_smoke_pipeline/m3/timing/rank0/faac8052473b919c81b6d24e41e403f5c8dde94706c755b3947cbbbf4c4ccc74.json"
+      ]
+    },
+    "6f0ec93e8cc48774fd5942c12ff2c6429bcff080b592665183d67e4bdf5a726b": {
+      "status": "complete",
+      "epoch": "71523b9ee2764970b9d9320709a5a594",
+      "result_paths": [
+        "/home/catid/drafter/artifacts/reuse_smoke_pipeline/m3/timing/rank0/152334c3c4bb1108d5d0566ace50e224600f7efde650086d42697cfd4a2e2236.json",
+        "/home/catid/drafter/artifacts/reuse_smoke_pipeline/m3/timing/rank0/cd06c86a452b60a0d694168c366396dc18c53884428cd09f2c148fa8dd057ba7.json",
+        "/home/catid/drafter/artifacts/reuse_smoke_pipeline/m3/timing/rank0/ac66dfebcf66cdb7a7f8fd4a0581f59e744eb8c7f1d34cfb18deb3934e0ab9ce.json",
+        "/home/catid/drafter/artifacts/reuse_smoke_pipeline/m3/timing/rank0/51489b1cb4813815c89a6ffeea78d664bbcc37db51535a1efc7079007d77a501.json"
+      ]
+    },
+    "4ea5a9c86c31f41d6bb3e7f31a92e2c450bcf0d2731a43dceeda83835a36f690": {
+      "status": "complete",
+      "epoch": "71523b9ee2764970b9d9320709a5a594",
+      "result_paths": [
+        "/home/catid/drafter/artifacts/reuse_smoke_pipeline/m3/timing/rank0/e035d781c276671b66568288f694fa071c4ae8124687fc63baab3daf673f8cd3.json",
+        "/home/catid/drafter/artifacts/reuse_smoke_pipeline/m3/timing/rank0/65465ec85f7e01c2a09f0c05f042d0be447bbd294fb57f09b02fdf9ed3e1bc5f.json",
+        "/home/catid/drafter/artifacts/reuse_smoke_pipeline/m3/timing/rank0/c4d01dcd49ab89814b7c411b21812cd6437003480b5c77fb5996104152616c31.json",
+        "/home/catid/drafter/artifacts/reuse_smoke_pipeline/m3/timing/rank0/1ae7a415bfdcbc9ac1d7bced9a337df6398076445259e5d27d461c3b510dfb5d.json"
+      ]
+    },
+    "80f70c9f6cbe7d42e4068eeb6fa289111a8ea0a2d29c06ee37351cc6a67e8424": {
+      "status": "complete",
+      "epoch": "71523b9ee2764970b9d9320709a5a594",
+      "result_paths": [
+        "/home/catid/drafter/artifacts/reuse_smoke_pipeline/m3/timing/rank0/ea7302025a9889664402a0fa944ba53bb7e48114e18a48c6e65902fb87deed86.json",
+        "/home/catid/drafter/artifacts/reuse_smoke_pipeline/m3/timing/rank0/9610970b60b611024a8a211a0be3c87d7fcd3106333be890fc3e882930227dfc.json",
+        "/home/catid/drafter/artifacts/reuse_smoke_pipeline/m3/timing/rank0/058234b79e170844726c3c2bcff3f33d51e701dcf8822cfe501595cc062bc856.json",
+        "/home/catid/drafter/artifacts/reuse_smoke_pipeline/m3/timing/rank0/9fd7ddc9223f2b34bc80c1bf1ded63230587892b648d3defbcd42a786acb54bf.json"
+      ]
+    },
+    "165f5756d8d1f2f2e4f5cc2d49f8895f8ede0fef67dbbc76ede9de113652699f": {
+      "status": "complete",
+      "epoch": "71523b9ee2764970b9d9320709a5a594",
+      "result_paths": [
+        "/home/catid/drafter/artifacts/reuse_smoke_pipeline/m3/timing/rank0/c2b0230482c1c89eedf90560bacf1d6c92a2172f78e752f80e6be9584b330aa5.json",
+        "/home/catid/drafter/artifacts/reuse_smoke_pipeline/m3/timing/rank0/acab1aa21b1acbabf61e24b5479cda8dc5afa8b7de6ba74176b6271aad176a23.json",
+        "/home/catid/drafter/artifacts/reuse_smoke_pipeline/m3/timing/rank0/4e65bebe8faf435ceb98dc3a460e1801265ad918c43b68655d7f8ecc84277d9b.json",
+        "/home/catid/drafter/artifacts/reuse_smoke_pipeline/m3/timing/rank0/b39d2d4345e2023ae4e06c76317d3e07607548be2763ec45bba7872883d8c193.json"
+      ]
+    },
+    "f4e31b8c2d18a56a884b780bdae69fca4a871699adf93540fa3fd14d1cdb51e7": {
+      "status": "complete",
+      "epoch": "71523b9ee2764970b9d9320709a5a594",
+      "result_paths": [
+        "/home/catid/drafter/artifacts/reuse_smoke_pipeline/m3/timing/rank0/ea379337d272e6d6561465e0d0474b57fe299d2d9bd73ac80fed56637fc613de.json",
+        "/home/catid/drafter/artifacts/reuse_smoke_pipeline/m3/timing/rank0/bfe697b2c72b7db8e107ca71e1e803ab51641cf89bf9d3931caece99c1b281c3.json",
+        "/home/catid/drafter/artifacts/reuse_smoke_pipeline/m3/timing/rank0/5a1e90dbf41be67819f282378b1ad9e3c730f070ced90c0de7e5b34cb92224ce.json",
+        "/home/catid/drafter/artifacts/reuse_smoke_pipeline/m3/timing/rank0/abc8d1b087381379f6b85ee11e9468bc0ca6dcf2c3dcb720547c30e91d262167.json"
+      ]
+    },
+    "a38eb6bdefc55b840886f3bbc2ba823f737ac139c0773fe4f37da72b8d3d827f": {
+      "status": "complete",
+      "epoch": "71523b9ee2764970b9d9320709a5a594",
+      "result_paths": [
+        "/home/catid/drafter/artifacts/reuse_smoke_pipeline/m3/timing/rank0/63a2d8270624142db1af6f21777a5935fe7a6e978986ab6bb51e1d2119bd07fe.json",
+        "/home/catid/drafter/artifacts/reuse_smoke_pipeline/m3/timing/rank0/83af2dd479adf39d921058318482912a9c1b49a45e89c131d0c7ddc82d704a0b.json",
+        "/home/catid/drafter/artifacts/reuse_smoke_pipeline/m3/timing/rank0/5fe2bef6fd31f4c416a7e84cae3089ec7d045473aba6c0441a5f9388602c86ce.json",
+        "/home/catid/drafter/artifacts/reuse_smoke_pipeline/m3/timing/rank0/d70a0ff522dd14da22910505c1a3ec0935aa53f2d4c19ada6ef815ec7d0b3409.json"
+      ]
+    },
+    "b4358159cb43d3d25ccdf72f5d59d78f3c95bad90d280947abaa0a56ff709a93": {
+      "status": "complete",
+      "epoch": "71523b9ee2764970b9d9320709a5a594",
+      "result_paths": [
+        "/home/catid/drafter/artifacts/reuse_smoke_pipeline/m3/timing/rank0/b0d926285ea7a009b6c259111f11429d43cf02a3d9728aa6f3d0356578990788.json",
+        "/home/catid/drafter/artifacts/reuse_smoke_pipeline/m3/timing/rank0/66cbc8674a347f75a19f4a6589d0465ad9a0bc2fd24631fa84aab669ca499610.json",
+        "/home/catid/drafter/artifacts/reuse_smoke_pipeline/m3/timing/rank0/bcec393e7b125ccfcc82112230823b1fd21a7305e8bb48420e878cf84ef694bf.json",
+        "/home/catid/drafter/artifacts/reuse_smoke_pipeline/m3/timing/rank0/89c550d188ab3e13cb087e63113774b6d22b56cf7f9f07e51d8522014bcc1735.json"
+      ]
+    },
+    "7988bca9eb65ff489209bb187e57408d4d39de211fcf262b4fe06aa6ee65b007": {
+      "status": "complete",
+      "epoch": "71523b9ee2764970b9d9320709a5a594",
+      "result_paths": [
+        "/home/catid/drafter/artifacts/reuse_smoke_pipeline/m3/timing/rank0/fc0528b9200ec30939f225d7bafde873c75864de354764454fc7b476ebb1a105.json",
+        "/home/catid/drafter/artifacts/reuse_smoke_pipeline/m3/timing/rank0/fb82d1ffecfeb32fbd5c6cafba0d69d6cbfc4b7e9b8d538c4ee18352e68d1f75.json",
+        "/home/catid/drafter/artifacts/reuse_smoke_pipeline/m3/timing/rank0/d96f0c5767b98e6890bbf9696f598d9eb74ae1f636e7a9277e86ad4caf86def4.json",
+        "/home/catid/drafter/artifacts/reuse_smoke_pipeline/m3/timing/rank0/cfdda80ce3f1fe15c88ad9ef14aba0ef1d20af171203f67d228ff4e97958300a.json"
+      ]
+    },
+    "f2dde810b15dbc704af7471fb6ed33eeccbef5d681556da981ec75caec8281aa": {
+      "status": "complete",
+      "epoch": "71523b9ee2764970b9d9320709a5a594",
+      "result_paths": [
+        "/home/catid/drafter/artifacts/reuse_smoke_pipeline/m3/timing/rank0/9715cb2bf6086b82c03a037c00de24330ef5f79ecae43b5aa3f2d232cac723ac.json",
+        "/home/catid/drafter/artifacts/reuse_smoke_pipeline/m3/timing/rank0/caddc2145d75ae1d0333edefe1a8fda687d5750fd64d8c42278a738d541c39b2.json",
+        "/home/catid/drafter/artifacts/reuse_smoke_pipeline/m3/timing/rank0/9caca832d318241416f11a33c9332fc8c35d274b072595d547afa7213273d029.json",
+        "/home/catid/drafter/artifacts/reuse_smoke_pipeline/m3/timing/rank0/e4c017a17f5405958cef96ce528e2197a41f21fa43e7dbc052bb2f7437285f46.json"
+      ]
+    },
+    "ccc08836ccf2d57c3481b7cbad781f0435a3ae8fdf2959f6739e2d6d5d6fd6ec": {
+      "status": "complete",
+      "epoch": "71523b9ee2764970b9d9320709a5a594",
+      "result_paths": [
+        "/home/catid/drafter/artifacts/reuse_smoke_pipeline/m3/timing/rank0/a577118af57b28126ecc3e2710c80c6ad3fde193ef28ece7bc65171c838683c3.json",
+        "/home/catid/drafter/artifacts/reuse_smoke_pipeline/m3/timing/rank0/895a55bff4f61afbc4a01d00560672633edf75ff040fcec0bc6b280fac2b9966.json",
+        "/home/catid/drafter/artifacts/reuse_smoke_pipeline/m3/timing/rank0/0901d64c557efab8743d639c2addda1fdb47031e02027e713cb88562eaacea67.json",
+        "/home/catid/drafter/artifacts/reuse_smoke_pipeline/m3/timing/rank0/3f9753a72119d841a6dd45a253c36cfa14a7f0d06d7309ef5eb2e36318a19a1e.json"
+      ]
+    },
+    "312ee600918f5db1f15dea0b73e42fdad3f78fb885e4a7804ee69dca5345f91a": {
+      "status": "complete",
+      "epoch": "71523b9ee2764970b9d9320709a5a594",
+      "result_paths": [
+        "/home/catid/drafter/artifacts/reuse_smoke_pipeline/m3/timing/rank0/42f42112e78281c103f86c9ff01efe06676f0d27e99013f82a3d2a9d1d05c1c8.json",
+        "/home/catid/drafter/artifacts/reuse_smoke_pipeline/m3/timing/rank0/7b72d30e4d34f251bc9d1cca68830e1b3193a19587cd9a7ef0ecf54cabb4a980.json",
+        "/home/catid/drafter/artifacts/reuse_smoke_pipeline/m3/timing/rank0/a0b2871ae71862964e17ed7e4d58315cd5ad22d0fef18abcdc85bc1ec045efb1.json",
+        "/home/catid/drafter/artifacts/reuse_smoke_pipeline/m3/timing/rank0/938d47c78c771acf671809383b9349065d090b6c9049008d9ecbce11a2de03fa.json"
+      ]
+    },
+    "3d4e7356f5e133f8f3960db556ca01424885a850a208d0b7ab23e8311998778d": {
+      "status": "complete",
+      "epoch": "71523b9ee2764970b9d9320709a5a594",
+      "result_paths": [
+        "/home/catid/drafter/artifacts/reuse_smoke_pipeline/m3/timing/rank0/c9a13485b8e4e83729ceaa9fc84ef85ba11f128292a58a28dc4c971e36910029.json",
+        "/home/catid/drafter/artifacts/reuse_smoke_pipeline/m3/timing/rank0/7c50bc1f2aedb704b0e243553088e9edcd7c65bac59f2e6033563c1334e5a232.json",
+        "/home/catid/drafter/artifacts/reuse_smoke_pipeline/m3/timing/rank0/abaf3e7a25287851207d3624bbf2471a3071ed925153cec5b7a74b0faa91cf50.json",
+        "/home/catid/drafter/artifacts/reuse_smoke_pipeline/m3/timing/rank0/be5218563cab073bdf98e096fb65251b863c51350ab967e419368243ff189ca8.json"
+      ]
+    },
+    "453e2157b6c74f2426618762b119094d1c19d2bd8980b9a81f3659a9ff08dc2d": {
+      "status": "complete",
+      "epoch": "71523b9ee2764970b9d9320709a5a594",
+      "result_paths": [
+        "/home/catid/drafter/artifacts/reuse_smoke_pipeline/m3/timing/rank0/dca51a0507dd7101b8a69e5d276aa55b7c63591ea4e73ce72faaf939ca784ba7.json",
+        "/home/catid/drafter/artifacts/reuse_smoke_pipeline/m3/timing/rank0/6b0062b7c809083a98a672d717250952e927e9a6c8320f17d13a6066627e2917.json",
+        "/home/catid/drafter/artifacts/reuse_smoke_pipeline/m3/timing/rank0/e6824d053012688d923f3a02109e781ff42fe5e6c3359ca899194f3daf474745.json",
+        "/home/catid/drafter/artifacts/reuse_smoke_pipeline/m3/timing/rank0/66ec6e65027aa0a8a32541227c39deee66b11198169224950c4baefd3559f2dc.json"
+      ]
+    },
+    "8aefc776d38d0c31fbdec58aeb68181e319142a3e58ba1855381e30fb9d3d9af": {
+      "status": "complete",
+      "epoch": "71523b9ee2764970b9d9320709a5a594",
+      "result_paths": [
+        "/home/catid/drafter/artifacts/reuse_smoke_pipeline/m3/timing/rank0/b70bf49f1c0894a9888b0443cd74af2facc0bba4eef3de0c11c6f8ceeab46b0a.json",
+        "/home/catid/drafter/artifacts/reuse_smoke_pipeline/m3/timing/rank0/ae1142210c9941cd0066bc27776627f22454999605e1a0ae94b96e952f9ea6a6.json",
+        "/home/catid/drafter/artifacts/reuse_smoke_pipeline/m3/timing/rank0/fbe708af21b91cf1dcdd67fbc21623df450d7c401395e664d68d89cb21bc195d.json",
+        "/home/catid/drafter/artifacts/reuse_smoke_pipeline/m3/timing/rank0/3febd3387f021c6171f9879f80132f7ea5d7c443d7f1295b3a78533c1203462c.json"
+      ]
+    },
+    "0ad56eb2f70c8f64108cb1c9e1eca03fbf5f60aab05bfbbaaa3fad506af060ab": {
+      "status": "complete",
+      "epoch": "71523b9ee2764970b9d9320709a5a594",
+      "result_paths": [
+        "/home/catid/drafter/artifacts/reuse_smoke_pipeline/m3/timing/rank0/fc50b0b5e0e0b6398779111ad94eaab32d10812f51167b0e22bd2990a3e96c6c.json",
+        "/home/catid/drafter/artifacts/reuse_smoke_pipeline/m3/timing/rank0/440fc544307dcf23db2289b43b95f1957066ec3c2fe48d7d2a6c9a021f07a736.json",
+        "/home/catid/drafter/artifacts/reuse_smoke_pipeline/m3/timing/rank0/ce14a4e36081e94cbd0aa475629d3e4a303d6efc71484f4b5b651c7d2de58888.json",
+        "/home/catid/drafter/artifacts/reuse_smoke_pipeline/m3/timing/rank0/3db9684ec0fc7999b2ff4b155de58fad42efddcdc7aa8f1db3f5e183ff6ef623.json"
+      ]
+    }
+  }
+}

@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from collections import defaultdict
+import copy
 from dataclasses import asdict
 import hashlib
 import json
@@ -35,7 +36,8 @@ def file_sha256(path):
 
 
 def implementation_hash():
-    paths = [Path(__file__).parent / name for name in ('adapter.py', 'online.py', 'features.py', 'dflash_loop.py', 'sampler.py', 'verify.py', 'backend.py')]
+    paths = [Path(__file__).parent / name for name in ('adapter.py', 'online.py', 'features.py', 'dflash_loop.py',
+             'sampler.py', 'verify.py', 'backend.py', 'sparse.py', 'toy.py', 'diagnose.py', 'eval_closed_loop.py')]
     digest = hashlib.sha256()
     for path in paths:
         digest.update(path.name.encode())
@@ -123,7 +125,7 @@ def candidate_settings(arm):
             for lr, l2 in ((1e-4, .01), (1e-3, .1))]
 
 
-def validate_frozen_settings(settings, stage, scale, checkpoint_hashes, prompt_manifest, generation_caps=None, model_pair=None, model_revisions=None):
+def validate_frozen_settings(settings, stage, scale, checkpoint_hashes, prompt_manifest, generation_caps=None, model_pair=None, model_revisions=None, generation_environment=None):
     if not settings.get('frozen') or settings.get('stage') != stage or settings.get('scale') != scale:
         raise ValueError('test evaluation requires frozen settings for this stage and scale')
     if settings['checkpoint_hashes'] != checkpoint_hashes:
@@ -136,6 +138,8 @@ def validate_frozen_settings(settings, stage, scale, checkpoint_hashes, prompt_m
         raise ValueError('model pair changed since development selection')
     if model_revisions is not None and settings.get('model_revisions') != model_revisions:
         raise ValueError('model revisions changed since development selection')
+    if generation_environment is not None and settings.get('generation_environment') != generation_environment:
+        raise ValueError('tokenizer/model generation environment changed since development selection')
     dev_ids = set(settings['development_prompt_ids'])
     by_id = {p['prompt_id']: p for p in prompt_manifest['prompts']}
     if not dev_ids or any(i not in by_id or by_id[i]['split'] != 'dev' for i in dev_ids):
@@ -218,6 +222,57 @@ class EvaluationRunner:
             self.model_pair = [args.target, args.drafter]
         self.dense.eval()
         self.dense_sparse.eval()
+        if self.tiny:
+            self.generation_environment = {'target_state_sha256': adapter_tensor_hash(self.target),
+                'tokenizer': {'kind': 'synthetic prompt-ID prefix', 'vocabulary_size': self.target.embedding.shape[0]},
+                'stop_token_ids': [], 'context_limit': None, 'torch_version': torch.__version__}
+        else:
+            tokenizer = self.backend.tokenizer
+            self.generation_environment = {
+                'tokenizer': {'model': self.model_pair[0], 'revision': self.model_revisions[0],
+                    'class': type(tokenizer).__module__ + '.' + type(tokenizer).__qualname__,
+                    'vocabulary_sha256': fingerprint(tokenizer.get_vocab()),
+                    'backend_sha256': hashlib.sha256(tokenizer.backend_tokenizer.to_str().encode()).hexdigest(),
+                    'chat_template_sha256': fingerprint(tokenizer.chat_template),
+                    'special_tokens_sha256': fingerprint(tokenizer.special_tokens_map)},
+                'target_config_sha256': fingerprint(self.backend.target.config.to_dict()),
+                'target_generation_config_sha256': fingerprint(self.backend.target.generation_config.to_dict()),
+                'stop_token_ids': self.backend.stop_token_ids,
+                'context_limit': self.backend.target.config.max_position_embeddings,
+                'dtype': str(self.backend.target.dtype), 'torch_version': torch.__version__}
+
+    def prepare_inputs(self, prompt, max_new_tokens_override=None):
+        cap = self.args.smoke_tokens if self.tiny else self.args.long_max_new_tokens if prompt['condition'].startswith('long_') else self.args.max_new_tokens
+        if max_new_tokens_override is not None:
+            cap = min(cap, max_new_tokens_override)
+        if self.tiny:
+            inputs = [1, 2, 3, int(hashlib.sha256(prompt['prompt_id'].encode()).hexdigest()[:4], 16) % 8]
+            input_tokens, effective_cap = inputs, cap
+        else:
+            inputs = self.backend.tokenize(prompt['text'], enable_thinking=prompt['condition'] == 'long_thinking')
+            input_tokens = inputs[0].tolist()
+            effective_cap = min(cap, self.backend.target.config.max_position_embeddings - len(input_tokens))
+        if effective_cap < 1:
+            raise ValueError('prompt exhausts model context')
+        metadata = {'input_token_ids_sha256': fingerprint(input_tokens), 'input_token_count': len(input_tokens),
+                    'enable_thinking': prompt['condition'] == 'long_thinking',
+                    'requested_generation_cap': cap, 'effective_generation_cap': effective_cap,
+                    'generation_environment_sha256': fingerprint(self.generation_environment)}
+        return inputs, effective_cap, metadata
+
+    def run_target_only(self, prompt, prepared):
+        inputs, cap, metadata = prepared
+        if self.tiny:
+            output = self.target.generate(inputs, cap)
+        else:
+            result = self.backend.target_only_generate(inputs, cap)
+            output = result[0, inputs.shape[1]:].tolist()
+        eos = bool(output and output[-1] in self.generation_environment['stop_token_ids'])
+        return {'scale': self.args.scale, 'label': 'synthetic' if self.tiny else self.args.scale,
+                'origin_stage': self.args.stage, 'prompt_id': prompt['prompt_id'], 'input_metadata': metadata,
+                'output_tokens': output, 'generated_tokens': len(output),
+                'generation': {'complete': True, 'eos_reached': eos, 'capped': len(output) == cap},
+                'timing_scope': 'output exactness diagnostic only; no throughput or latency claim'}
 
     def run(self, job, setting, profile=False):
         from .dflash_loop import generate_reference, generate_toy
@@ -243,20 +298,15 @@ class EvaluationRunner:
             kwargs = {k: v for k, v in setting.items() if k != 'beta'}
             online = OnlineState(offline, enable_sparse=True, sparse_capacity=257 if self.tiny else 2**20,
                                  bias_sparse_only=arm == 'online_dbS', **kwargs)
-        max_tokens = args.smoke_tokens if self.tiny else args.long_max_new_tokens if prompt['condition'].startswith('long_') else args.max_new_tokens
-        max_tokens = min(max_tokens, job.get('max_new_tokens_override', max_tokens))
+        inputs, max_tokens, input_metadata = self.prepare_inputs(prompt, job.get('max_new_tokens_override'))
         generator = torch.Generator(device=self.device).manual_seed(job['seed'])
         if self.tiny:
-            prefix = [1, 2, 3, int(hashlib.sha256(prompt['prompt_id'].encode()).hexdigest()[:4], 16) % 8]
+            prefix = inputs
             result = generate_toy(self.target, self.drafter, prefix, max_tokens, temperature=temperature, warper=warper,
                 generator=generator, adapter=adapter, online_state=online, projection=self.projection if adapter is not None or online is not None else None,
                 bigram=bigram, beta=beta, measure_phases=profile)
             eos = False
         else:
-            inputs = self.backend.tokenize(prompt['text'], enable_thinking=prompt['condition'] == 'long_thinking')
-            max_tokens = min(max_tokens, self.backend.target.config.max_position_embeddings - inputs.shape[1])
-            if max_tokens < 1:
-                raise ValueError('prompt exhausts model context')
             result = generate_reference(self.backend, inputs, max_tokens, temperature=temperature, warper=warper,
                 generator=generator, adapter=adapter, online_state=online, projection=self.projection if adapter is not None or online is not None else None,
                 bigram=bigram, beta=beta, measure_phases=profile)
@@ -287,6 +337,7 @@ class EvaluationRunner:
             'temperature': temperature, 'sampling_warp_config': asdict(warper), 'settings': setting, 'effective_beta': beta,
             'verification_rule': 'ratio' if temperature > 0 else 'greedy',
             'model_pair': self.model_pair, 'model_revisions': self.model_revisions,
+            'input_metadata': input_metadata,
             'checkpoint_hashes': self.checkpoint_hashes,
             'offline_fit_provenance': 'four built-in synthetic calibration-train prefixes' if self.tiny else 'gated M2 checkpoints', 'generated_tokens': result.num_output_tokens,
             'elapsed_seconds': request_elapsed, 'generation_loop_elapsed_seconds': result.elapsed_seconds,
@@ -313,31 +364,161 @@ def checkpoint_hashes(args):
             'projection': file_sha256(args.projection), 'implementation': implementation_hash()}
 
 
-def run_identity(runner, job, setting, mode, frozen_hash='', session=None, repeat=None):
-    return {'model_pair': runner.model_pair, 'prompt': job['prompt']['prompt_id'],
+def run_identity(runner, job, setting, mode, frozen_hash='', session=None, repeat=None, profile=False):
+    cap = runner.args.smoke_tokens if runner.tiny else runner.args.long_max_new_tokens if job['prompt']['condition'].startswith('long_') else runner.args.max_new_tokens
+    return {'model_pair': runner.model_pair, 'prompt': job['prompt']['prompt_id'], 'scale': runner.args.scale,
             'prompt_payload_hash': fingerprint(job['prompt']),
             'condition': job['prompt']['condition'], 'seed': job['seed'], 'temperature': job['temperature'],
+            'sampling_name': job['sampling_name'],
             'verification_rule': 'ratio' if job['temperature'] > 0 else 'greedy',
             'proposal_mode': job['arm'], 'checkpoint': runner.checkpoint_hashes, 'adapter_version': 0,
             'model_revisions': runner.model_revisions, 'stage': runner.args.stage, 'mode': mode,
             'sampling_warp_config': asdict(job['warper']), 'setting': setting, 'frozen_settings_hash': frozen_hash,
-            'generation_cap': runner.args.smoke_tokens if runner.tiny else runner.args.long_max_new_tokens if job['prompt']['condition'].startswith('long_') else runner.args.max_new_tokens,
-            'timing_session': session, 'repeat': repeat}
+            'generation_cap': min(cap, job.get('max_new_tokens_override', cap)),
+            'generation_caps': generation_caps(runner.args),
+            'timing_session': session, 'repeat': repeat, 'phase_profile': profile}
+
+
+BASELINE_REUSE_ARMS = ('plain_dflash', 'online_bigram')
+BASELINE_REUSE_EXCLUDED_IDENTITY_FIELDS = ('stage', 'frozen_settings_hash')
+REUSED_UNAVAILABLE_FIELDS = ('elapsed_seconds', 'generation_loop_elapsed_seconds', 'tokens_per_second',
+                            'phase_ms', 'estimated_online_state_bandwidth_GBps',
+                            'peak_allocated_bytes', 'peak_reserved_bytes')
+
+
+def baseline_generation_identity(identity):
+    """Only stage and the all-arm selection record may differ between M3/M4."""
+    return {key: value for key, value in identity.items() if key not in BASELINE_REUSE_EXCLUDED_IDENTITY_FIELDS}
+
+
+def m3_baseline_sources(runner):
+    """Index metadata once; read only the exact matching request's output file."""
+    if hasattr(runner, '_m3_baseline_sources'):
+        return runner._m3_baseline_sources
+    directory = runner.args.output / 'm3'
+    index = {'candidates': defaultdict(list), 'settings': None, 'reason': None}
+    try:
+        settings_path = directory / 'settings.json'
+        settings_bytes = settings_path.read_bytes()
+        settings = json.loads(settings_bytes)
+        if not settings.get('frozen') or settings.get('stage') != 'm3' or settings.get('scale') != runner.args.scale:
+            raise ValueError('M3 source settings are not frozen at the matching scale')
+        index.update(settings=settings, settings_hash=fingerprint(settings), settings_path=str(settings_path.resolve()),
+                     settings_sha256=hashlib.sha256(settings_bytes).hexdigest())
+        for manifest_path in sorted((directory / 'evaluate').glob('manifest-rank*.json')):
+            manifest_bytes = manifest_path.read_bytes()
+            manifest = json.loads(manifest_bytes)
+            for key, entry in manifest['jobs'].items():
+                identity = entry.get('identity', {})
+                if (entry.get('status') == 'complete' and identity.get('stage') == 'm3'
+                        and identity.get('mode') == 'evaluate' and identity.get('proposal_mode') in BASELINE_REUSE_ARMS
+                        and key == fingerprint(identity)):
+                    index['candidates'][(identity.get('prompt'), identity['proposal_mode'])].append(
+                        dict(entry, source_manifest_path=str(manifest_path.resolve()),
+                             source_manifest_sha256=hashlib.sha256(manifest_bytes).hexdigest()))
+    except (OSError, ValueError, KeyError, TypeError) as error:
+        index['reason'] = f'M3 source evidence unavailable: {error}'
+    runner._m3_baseline_sources = index
+    return index
+
+
+def reuse_m3_baseline(runner, identity):
+    """Return copied acceptance/output evidence, never tune or timing work."""
+    if (identity['stage'] != 'm4' or identity['mode'] != 'evaluate'
+            or identity['proposal_mode'] not in BASELINE_REUSE_ARMS or identity['phase_profile']
+            or identity['timing_session'] is not None or identity['repeat'] is not None):
+        return None, None
+    sources = m3_baseline_sources(runner)
+    decision = {'status': 'fresh', 'source_stage': 'm3',
+                'scope': 'acceptance and output metrics only'}
+    if sources['reason']:
+        return None, dict(decision, reason=sources['reason'])
+    candidates = sources['candidates'].get((identity['prompt'], identity['proposal_mode']), [])
+    if not candidates:
+        return None, dict(decision, reason='no completed M3 baseline request for this prompt and arm')
+    expected = baseline_generation_identity(identity)
+    differences = []
+    for entry in candidates:
+        source = baseline_generation_identity(entry['identity'])
+        differences.append((entry, sorted(key for key in expected.keys() | source.keys()
+                                         if key not in expected or key not in source or expected[key] != source[key])))
+    matches = [entry for entry, fields in differences if not fields]
+    if not matches:
+        fields = min((fields for _, fields in differences), key=lambda fields: (len(fields), fields))
+        return None, dict(decision, reason='M3 generation identity differs; use the frozen M4 settings', mismatched_fields=fields)
+    # A stable choice avoids silently preferring one rank's differing evidence.
+    if len({entry.get('result_sha256') for entry in matches}) != 1:
+        return None, dict(decision, reason='conflicting completed M3 baseline sources')
+    entry = matches[0]
+    source_identity = entry['identity']
+    try:
+        settings = sources['settings']
+        # The all-arm frozen hashes differ across stages, so independently bind
+        # the full tokenizer/model environment and its per-request input digest.
+        if (source_identity['frozen_settings_hash'] != sources['settings_hash']
+                or settings['selected'][identity['proposal_mode']] != identity['setting']
+                or settings['checkpoint_hashes'] != identity['checkpoint']
+                or settings['model_pair'] != identity['model_pair']
+                or settings['model_revisions'] != identity['model_revisions']
+                or settings.get('generation_environment') != getattr(runner, 'generation_environment', None)
+                or settings['generation_caps'] != identity['generation_caps']):
+            raise ValueError('M3 request does not match its frozen source settings')
+        path = Path(entry['result_path'])
+        payload = path.read_bytes()
+        digest = hashlib.sha256(payload).hexdigest()
+        if not entry.get('result_sha256') or digest != entry['result_sha256']:
+            raise ValueError('M3 source result checksum missing or changed')
+        row = json.loads(payload)
+        if row['identity'] != source_identity or row.get('phase_profile') or not row['generation']['complete']:
+            raise ValueError('M3 source result is not a complete unprofiled evaluation request')
+        row_fields = {'stage': 'stage', 'scale': 'scale', 'arm': 'proposal_mode', 'prompt_id': 'prompt',
+                      'condition': 'condition', 'seed': 'seed', 'temperature': 'temperature',
+                      'sampling_name': 'sampling_name', 'sampling_warp_config': 'sampling_warp_config',
+                      'settings': 'setting', 'verification_rule': 'verification_rule',
+                      'model_pair': 'model_pair', 'model_revisions': 'model_revisions', 'checkpoint_hashes': 'checkpoint'}
+        if any(row[field] != source_identity[key] for field, key in row_fields.items()):
+            raise ValueError('M3 source row metadata differs from its generation identity')
+        if row['generated_tokens'] != len(row['output_tokens']):
+            raise ValueError('M3 source output length differs from its token count')
+        if row.get('input_metadata', {}).get('generation_environment_sha256') != fingerprint(getattr(runner, 'generation_environment', None)):
+            raise ValueError('M3 source tokenizer/model generation environment differs')
+    except (OSError, ValueError, KeyError, TypeError) as error:
+        return None, dict(decision, reason=f'invalid M3 source evidence: {error}')
+    provenance = dict(decision, status='reused', reason='exact generation identity and verified source checksums',
+                      source_result_path=str(path.resolve()), source_result_sha256=digest,
+                      source_manifest_path=entry['source_manifest_path'], source_manifest_sha256=entry['source_manifest_sha256'],
+                      source_settings_path=sources['settings_path'], source_settings_sha256=sources['settings_sha256'],
+                      source_identity_hash=fingerprint(source_identity), source_frozen_settings_hash=sources['settings_hash'],
+                      excluded_identity_fields=list(BASELINE_REUSE_EXCLUDED_IDENTITY_FIELDS),
+                      unavailable_measurements=list(REUSED_UNAVAILABLE_FIELDS))
+    row = copy.deepcopy(row)
+    row.update({field: None for field in REUSED_UNAVAILABLE_FIELDS})
+    row.update(stage='m4', latency_scope='unavailable: reused M3 acceptance/output evidence; M4 isolated timing is measured separately')
+    return row, provenance
 
 
 def execute_job(runner, job, setting, mode, frozen_hash='', session=None, repeat=None, profile=False):
     args = runner.args
     directory = args.output / args.stage / mode
     manifest = Manifest(directory / f'manifest-rank{args.rank}.json')
-    identity = run_identity(runner, job, setting, mode, frozen_hash, session, repeat)
+    identity = run_identity(runner, job, setting, mode, frozen_hash, session, repeat, profile)
     path = directory / f'rank{args.rank}' / f'{manifest.key(identity)}.json'
     if manifest.completed(identity):
+        entry = manifest.data['jobs'][manifest.key(identity)]
+        if entry.get('result_sha256') and entry['result_sha256'] != file_sha256(path):
+            raise ValueError('completed evaluation result checksum changed')
         return json.loads(path.read_text())
-    row = runner.run(job, setting, profile)
+    row, reuse = reuse_m3_baseline(runner, identity)
+    if row is None:
+        row = runner.run(job, setting, profile)
+    if reuse is not None:
+        row['baseline_reuse'] = reuse
     row.update({'identity': identity, 'timing_session': session, 'repeat': repeat,
                 'timing_isolated': mode == 'timing', 'rank': args.rank})
     atomic_json(path, row)
-    manifest.finish(identity, path)
+    manifest.data['jobs'][manifest.key(identity)] = {'identity': identity, 'status': 'complete',
+                                                   'result_path': str(path), 'result_sha256': file_sha256(path)}
+    atomic_json(manifest.path, manifest.data)
     return row
 
 
@@ -446,6 +627,7 @@ def tune(runner, manifest):
               'comparison_session': session_state['logical_session'], 'warmup_policy': 'all candidates on each condition before measured dev requests',
               'checkpoint_hashes': runner.checkpoint_hashes,
               'model_pair': runner.model_pair, 'model_revisions': runner.model_revisions, 'selected': selected,
+              'generation_environment': runner.generation_environment,
               'candidates': candidate_reports, 'selection_metric': 'mean across conditions of prompt throughput relative to same-prompt plain DFlash',
               'budget': 'two configurations per tuned arm, identical dev prompts, seeds and token caps; plain DFlash has no tuned parameters',
               'settings_seed': args.seed, 'created_at_unix': session_state['created_at_unix']}
@@ -479,12 +661,13 @@ def summarize_rows(rows, isolated_timing=False):
     reports = []
     for (condition, temperature, warp, arm), group in sorted(groups.items()):
         primary = [row for row in group if not (condition.startswith('long_') and row['generation']['repetition_dominated'])]
+        timed_primary = [row for row in primary if row.get('elapsed_seconds') is not None]
         metrics = {metric: prompt_bootstrap(primary, metric) for metric in ('mean_accepted_length', 'median_accepted_length', 'target_forwards_per_generated_token')}
         if any(row.get('estimated_online_state_bandwidth_GBps') is not None for row in primary):
             metrics['estimated_online_state_bandwidth_GBps'] = prompt_bootstrap(primary, 'estimated_online_state_bandwidth_GBps')
         if isolated_timing:
-            metrics['tokens_per_second'] = prompt_bootstrap(primary, 'tokens_per_second')
-            metrics['elapsed_seconds'] = prompt_bootstrap(primary, 'elapsed_seconds')
+            metrics['tokens_per_second'] = prompt_bootstrap([row for row in primary if row.get('tokens_per_second') is not None], 'tokens_per_second')
+            metrics['elapsed_seconds'] = prompt_bootstrap(timed_primary, 'elapsed_seconds')
         bins = defaultdict(lambda: defaultdict(lambda: [0, 0]))
         accepted_in_bins = defaultdict(list)
         by_position = defaultdict(lambda: defaultdict(lambda: [0, 0]))
@@ -506,13 +689,15 @@ def summarize_rows(rows, isolated_timing=False):
         def rates(data):
             return prompt_bootstrap([{'prompt_id': p, 'seed': seed, 'rate': yes / total} for (p, seed), (yes, total) in data.items()], 'rate')
         pooled_lengths = [block['accepted_length'] for row in primary for block in row['blocks']]
-        latency = torch.tensor([row['elapsed_seconds'] for row in primary], dtype=torch.float64)
+        latency = torch.tensor([row['elapsed_seconds'] for row in timed_primary], dtype=torch.float64)
         phases = defaultdict(list)
         for row in primary:
-            for phase, value in row.get('phase_ms', {}).items():
+            for phase, value in (row.get('phase_ms') or {}).items():
                 phases[phase].append(value)
         reports.append({'condition': condition, 'temperature': temperature, 'sampling_warp_config': json.loads(warp), 'arm': arm,
             'requests': len(group), 'primary_requests': len(primary), 'repetition_excluded': len(group) - len(primary),
+            'reused_acceptance_output_requests': sum(row.get('baseline_reuse', {}).get('status') == 'reused' for row in group),
+            'requests_with_latency': len(timed_primary), 'requests_without_latency': len(primary) - len(timed_primary),
             'metrics': metrics,
             'pooled_block_accepted_length_mean': statistics.mean(pooled_lengths) if pooled_lengths else None,
             'pooled_block_accepted_length_median': statistics.median(pooled_lengths) if pooled_lengths else None,
@@ -521,16 +706,163 @@ def summarize_rows(rows, isolated_timing=False):
             'acceptance_bins': [{'axis': axis, 'bin': label, **rates(data), 'accepted_length': prompt_bootstrap(accepted_in_bins[(axis, label)], 'accepted_length')} for (axis, label), data in sorted(bins.items())],
             'request_latency_p50_seconds': float(torch.quantile(latency, .5)) if len(latency) else None,
             'request_latency_p95_seconds': float(torch.quantile(latency, .95)) if len(latency) else None,
-            'request_latency_p50_prompt_bootstrap': prompt_quantile_ci(primary, 'elapsed_seconds', .5) if isolated_timing else None,
-            'request_latency_p95_prompt_bootstrap': prompt_quantile_ci(primary, 'elapsed_seconds', .95) if isolated_timing else None,
+            'request_latency_p50_prompt_bootstrap': prompt_quantile_ci(timed_primary, 'elapsed_seconds', .5) if isolated_timing else None,
+            'request_latency_p95_prompt_bootstrap': prompt_quantile_ci(timed_primary, 'elapsed_seconds', .95) if isolated_timing else None,
             'phase_ms_median': {phase: statistics.median(values) for phase, values in phases.items()},
             'realized_output_length_mean': statistics.mean(row['generated_tokens'] for row in primary) if primary else None,
             'realized_generations_above_8K': sum(row['generated_tokens'] > 8192 for row in primary),
             'realized_generations_above_16K': sum(row['generated_tokens'] > 16384 for row in primary),
-            'peak_allocated_bytes': max((row['peak_allocated_bytes'] or 0 for row in group), default=0),
-            'peak_reserved_bytes': max((row['peak_reserved_bytes'] or 0 for row in group), default=0),
+            'peak_allocated_bytes': max((row['peak_allocated_bytes'] for row in group if row.get('peak_allocated_bytes') is not None), default=None),
+            'peak_reserved_bytes': max((row['peak_reserved_bytes'] for row in group if row.get('peak_reserved_bytes') is not None), default=None),
             'online_final_state': [row['online'] for row in primary if row['online'] is not None]})
     return reports
+
+
+def baseline_reuse_report(rows):
+    decisions = [row['baseline_reuse'] for row in rows if row.get('baseline_reuse')]
+    reasons = defaultdict(int)
+    for decision in decisions:
+        if decision['status'] != 'reused':
+            reason = decision['reason']
+            if decision.get('mismatched_fields'):
+                reason += ': ' + ', '.join(decision['mismatched_fields'])
+            reasons[reason] += 1
+    return {'policy': 'M4 baseline acceptance/output only; exact M3 generation identities and source checksums; tune/timing/profile always execute',
+            'reused_requests': sum(decision['status'] == 'reused' for decision in decisions),
+            'fresh_baseline_requests': sum(decision['status'] != 'reused' for decision in decisions),
+            'fresh_reasons': dict(reasons)}
+
+
+def target_only_identity(evaluation_identity, input_metadata):
+    """Conservatively retain all generation provenance, including unused draft/fit hashes.
+
+    Only stage, frozen arm selection, and the adapter proposal/setting differ.
+    This diagnostic has no timing session and is shared by M3 and M4.
+    """
+    identity = baseline_generation_identity(evaluation_identity)
+    identity.update(mode='greedy_target_only', proposal_mode='target_only', setting={},
+                    input_metadata=input_metadata, timing_session=None, repeat=None, phase_profile=False)
+    return identity
+
+
+def target_only_paths(output, identity):
+    directory = Path(output) / 'greedy_target_only'
+    key = fingerprint(identity)
+    return directory / f'{key}.json', directory / f'{key}.manifest.json'
+
+
+def read_target_only(output, identity):
+    path, manifest_path = target_only_paths(output, identity)
+    try:
+        entry = Manifest(manifest_path).data['jobs'][fingerprint(identity)]
+        payload = path.read_bytes()
+        digest = hashlib.sha256(payload).hexdigest()
+        if (entry['status'] != 'complete' or entry['identity'] != identity
+                or entry.get('result_sha256') != digest):
+            raise ValueError('target-only diagnostic identity/checksum changed')
+        row = json.loads(payload)
+        if (row['identity'] != identity or row['input_metadata'] != identity['input_metadata']
+                or not row['generation']['complete'] or row['generated_tokens'] != len(row['output_tokens'])):
+            raise ValueError('target-only diagnostic output metadata is inconsistent')
+        return row, {'path': str(path.resolve()), 'sha256': digest,
+                     'manifest_path': str(manifest_path.resolve()), 'manifest_sha256': file_sha256(manifest_path)}
+    except (OSError, ValueError, KeyError, TypeError) as error:
+        return None, {'reason': f'missing or invalid matching target-only diagnostic: {error}'}
+
+
+def execute_target_only(runner, job):
+    if job['temperature'] != 0 or job['arm'] != 'plain_dflash' or job['prompt']['condition'] != 'standard_nonthinking':
+        raise ValueError('target-only diagnostic is restricted to standard greedy test prompts')
+    prepared = runner.prepare_inputs(job['prompt'])
+    identity = target_only_identity(run_identity(runner, job, {}, 'evaluate'), prepared[2])
+    previous, source = read_target_only(runner.args.output, identity)
+    if previous is not None:
+        return dict(source, status='reused', prompt_id=job['prompt']['prompt_id'], origin_stage=previous['origin_stage'])
+    row = runner.run_target_only(job['prompt'], prepared)
+    row['identity'] = identity
+    path, manifest_path = target_only_paths(runner.args.output, identity)
+    atomic_json(path, row)
+    manifest = Manifest(manifest_path)
+    manifest.data['jobs'][manifest.key(identity)] = {'identity': identity, 'status': 'complete',
+        'result_path': str(path), 'result_sha256': file_sha256(path)}
+    atomic_json(manifest_path, manifest.data)
+    return {'status': 'generated', 'prompt_id': job['prompt']['prompt_id'], 'origin_stage': runner.args.stage,
+            'path': str(path.resolve()), 'sha256': file_sha256(path), 'reason': source['reason']}
+
+
+def greedy_token_mismatch(output, reference):
+    count = max(len(output), len(reference))
+    positions = [i for i in range(count) if i >= len(output) or i >= len(reference) or output[i] != reference[i]]
+    return {'sequence_equal': not positions, 'mismatched_tokens': len(positions), 'compared_tokens': count,
+            'token_mismatch_rate': len(positions) / count if count else 0.,
+            'first_mismatch': positions[0] if positions else None,
+            'output_length': len(output), 'reference_length': len(reference),
+            'length_difference': len(output) - len(reference)}
+
+
+def greedy_output_report(rows, jobs, output):
+    expected = [job for job in jobs if job['temperature'] == 0 and job['prompt']['condition'] == 'standard_nonthinking']
+    by_key = {(row['prompt_id'], row['seed'], row['arm']): row for row in rows
+              if row['temperature'] == 0 and row['condition'] == 'standard_nonthinking'}
+    comparisons, missing = [], []
+    targets = {}
+    for job in expected:
+        key = (job['prompt']['prompt_id'], job['seed'])
+        row = by_key.get((*key, job['arm']))
+        plain = by_key.get((*key, 'plain_dflash'))
+        for reference in ('plain_dflash', 'target_only'):
+            label = {'prompt_id': key[0], 'seed': key[1], 'arm': job['arm'], 'reference': reference}
+            if row is None:
+                missing.append(dict(label, reason='missing greedy arm output'))
+                continue
+            if not row.get('input_metadata'):
+                missing.append(dict(label, reason='missing tokenized input/cap provenance'))
+                continue
+            if reference == 'plain_dflash':
+                if plain is None:
+                    missing.append(dict(label, reason='missing paired plain-DFlash greedy output'))
+                    continue
+                def comparison_identity(value):
+                    return {k: v for k, v in baseline_generation_identity(value['identity']).items()
+                            if k not in ('proposal_mode', 'setting')}
+                if (comparison_identity(row) != comparison_identity(plain)
+                        or row['input_metadata'] != plain.get('input_metadata')):
+                    missing.append(dict(label, reason='plain-DFlash generation/input identities do not match'))
+                    continue
+                reference_row, provenance = plain, {'identity_sha256': fingerprint(plain['identity'])}
+            else:
+                identity = target_only_identity(row['identity'], row['input_metadata'])
+                target_key = fingerprint(identity)
+                if target_key not in targets:
+                    targets[target_key] = read_target_only(output, identity)
+                reference_row, provenance = targets[target_key]
+                if reference_row is None:
+                    missing.append(dict(label, reason=provenance['reason']))
+                    continue
+            comparisons.append(dict(label, **greedy_token_mismatch(row['output_tokens'], reference_row['output_tokens']),
+                                    output_generation=row['generation'], reference_generation=reference_row['generation'],
+                                    reference_provenance=provenance))
+    groups = []
+    for arm in sorted({job['arm'] for job in expected}):
+        expected_requests = sum(job['arm'] == arm for job in expected)
+        for reference in ('plain_dflash', 'target_only'):
+            matched = [row for row in comparisons if row['arm'] == arm and row['reference'] == reference]
+            compared_tokens = sum(row['compared_tokens'] for row in matched)
+            mismatched_tokens = sum(row['mismatched_tokens'] for row in matched)
+            groups.append({'arm': arm, 'reference': reference, 'expected_requests': expected_requests,
+                'compared_requests': len(matched), 'missing_requests': expected_requests - len(matched),
+                'mismatched_sequences': sum(not row['sequence_equal'] for row in matched),
+                'sequence_mismatch_rate': sum(not row['sequence_equal'] for row in matched) / len(matched) if matched else None,
+                'mismatched_tokens': mismatched_tokens, 'compared_tokens': compared_tokens,
+                'token_mismatch_rate': mismatched_tokens / compared_tokens if compared_tokens else None,
+                'length_mismatched_sequences': sum(row['length_difference'] != 0 for row in matched)})
+    return {'status': 'complete' if expected and not missing else 'incomplete',
+            'scope': 'all standard nonthinking greedy test prompts; outputs only, no timing comparisons',
+            'expected_prompts': len({job['prompt']['prompt_id'] for job in expected}),
+            'expected_comparisons': len(expected) * 2, 'completed_comparisons': len(comparisons),
+            'missing_comparisons': missing, 'groups': groups, 'comparisons': comparisons,
+            'numerical_mismatches_observed': any(not row['sequence_equal'] for row in comparisons),
+            'interpretation': 'Coverage gates completeness. Real-model BF16/tie-breaking mismatches are reported, not automatically failed; toy greedy equality and ratio-verifier exactness are separate guarantees.'}
 
 
 def evaluate(runner, prompt_manifest, settings):
@@ -544,8 +876,14 @@ def evaluate(runner, prompt_manifest, settings):
         if prompt_rank[job['prompt']['prompt_id']] != args.rank:
             continue
         rows.append(execute_job(runner, job, settings['selected'][job['arm']], 'evaluate', frozen_hash))
+    target_diagnostics = [execute_target_only(runner, job) for job in jobs
+                          if job['temperature'] == 0 and job['arm'] == 'plain_dflash'
+                          and job['prompt']['condition'] == 'standard_nonthinking'
+                          and prompt_rank[job['prompt']['prompt_id']] == args.rank]
     report = {'scale': args.scale, 'stage': args.stage, 'status': 'rank_complete', 'rank': args.rank,
               'world_size': args.world_size, 'rows': len(rows), 'frozen_settings_hash': frozen_hash,
+              'baseline_reuse': baseline_reuse_report(rows),
+              'greedy_target_only_diagnostics': target_diagnostics,
               'groups': summarize_rows(rows), 'timing_warning': 'Sharded evaluation timing is observational only; isolated timing session determines speed conclusions.'}
     atomic_json(args.output / args.stage / f'evaluation-rank{args.rank}.json', report)
     return report
@@ -809,7 +1147,8 @@ def m4_feature_context(args, prompt_manifest, settings, prompts):
 def aggregate(args, prompt_manifest, settings):
     from types import SimpleNamespace
     runner = SimpleNamespace(args=args, tiny=args.scale == 'smoke', checkpoint_hashes=settings['checkpoint_hashes'],
-                             model_pair=settings['model_pair'], model_revisions=settings['model_revisions'])
+                             model_pair=settings['model_pair'], model_revisions=settings['model_revisions'],
+                             generation_environment=settings.get('generation_environment'))
     prompts = select_prompts(prompt_manifest, 'test', args.scale)
     jobs = evaluation_jobs(prompts, args.stage, args.scale, args.seed)
     frozen_hash = fingerprint(settings)
@@ -826,6 +1165,8 @@ def aggregate(args, prompt_manifest, settings):
             missing.append({'prompt_id': job['prompt']['prompt_id'], 'arm': job['arm'], 'temperature': job['temperature'], 'seed': job['seed']})
             continue
         row = json.loads(Path(entry['result_path']).read_text())
+        if entry.get('result_sha256') and file_sha256(entry['result_path']) != entry['result_sha256']:
+            raise ValueError('evaluation result checksum changed')
         if row['identity'] != identity:
             raise ValueError('evaluation result identity mismatch')
         rows.append(row)
@@ -834,10 +1175,17 @@ def aggregate(args, prompt_manifest, settings):
     timing_valid = timed is not None and timed.get('status') == 'complete' and timed.get('full_reference_prompt_coverage', False) and timed.get('frozen_settings_hash') == frozen_hash
     feature_context = m4_feature_context(args, prompt_manifest, settings, prompts) if args.stage == 'm4' else None
     feature_context_valid = feature_context is None or feature_context['status'] == 'complete'
-    status = 'complete' if not missing and timing_valid and feature_context_valid else 'incomplete'
+    greedy_report = greedy_output_report(rows, jobs, args.output)
+    greedy_path = args.output / args.stage / 'greedy_output_comparisons.json'
+    atomic_json(greedy_path, greedy_report)
+    greedy_complete = greedy_report['status'] == 'complete'
+    status = 'complete' if not missing and timing_valid and feature_context_valid and greedy_complete else 'incomplete'
     report = {'scale': args.scale, 'label': 'synthetic' if args.scale == 'smoke' else args.scale,
               'stage': args.stage, 'status': status, 'expected_requests': len(jobs), 'completed_requests': len(rows),
               'missing_requests': missing, 'settings': settings, 'groups': summarize_rows(rows),
+              'baseline_reuse': baseline_reuse_report(rows),
+              'greedy_output_comparisons_complete': greedy_complete,
+              'greedy_output_comparisons': dict(greedy_report, artifact_path=str(greedy_path.resolve()), artifact_sha256=file_sha256(greedy_path)),
               'feature_context_complete': feature_context_valid if args.stage == 'm4' else None,
               'feature_context': feature_context,
               'isolated_timing_complete': timing_valid, 'timing_report': str(timing_path) if timing_valid else None,
@@ -904,7 +1252,8 @@ def main(argv=None):
     current_hashes = (runner.checkpoint_hashes if runner is not None else dict(settings['checkpoint_hashes'], implementation=implementation_hash())) if args.scale == 'smoke' else checkpoint_hashes(args)
     validate_frozen_settings(settings, args.stage, args.scale, current_hashes, prompt_manifest,
         generation_caps(args), runner.model_pair if runner is not None else [args.target, args.drafter] if args.scale != 'smoke' else settings['model_pair'],
-        runner.model_revisions if runner is not None else None)
+        runner.model_revisions if runner is not None else None,
+        runner.generation_environment if runner is not None else None)
     if args.mode in ('evaluate', 'all'):
         evaluate(runner, prompt_manifest, settings)
     if args.mode in ('timing', 'all'):

@@ -1,0 +1,59 @@
+{
+  "jobs": {
+    "e569a0c047c41217c91249295adc5f6928cd4e74436a752e8a56c7ce7e4d1171": {
+      "identity": {
+        "model_pair": [
+          "builtin_toy_target",
+          "builtin_parallel_drafter"
+        ],
+        "prompt": "synthetic-test-standard_nonthinking-0",
+        "scale": "smoke",
+        "prompt_payload_hash": "b18d97783bb0aa7d53b6745aa798364448ff7c90b1d711235f7a79792a381160",
+        "condition": "standard_nonthinking",
+        "seed": 2026,
+        "temperature": 0.0,
+        "sampling_name": "greedy",
+        "verification_rule": "greedy",
+        "proposal_mode": "target_only",
+        "checkpoint": {
+          "dense": "551a7a5907538169bf91ad2fb07c74d2c0549f6477fe7412fc7e505d47c59dce",
+          "dense_sparse": "3064fd63be5221bcae96a291b6247c50e6faee648ce6ad5562199675b2be6b54",
+          "projection": "synthetic-calibration-seed-2026",
+          "implementation": "d6e1b6ec966e29d03f1b86a173fdde28e948dcfce0f5af4231cda83ff90cdb6a"
+        },
+        "adapter_version": 0,
+        "model_revisions": [
+          "synthetic-v1",
+          "synthetic-v1"
+        ],
+        "mode": "greedy_target_only",
+        "sampling_warp_config": {
+          "top_k": 0,
+          "top_p": 1.0,
+          "min_p": 0.0
+        },
+        "setting": {},
+        "generation_cap": 32,
+        "generation_caps": {
+          "standard": 2048,
+          "long": 24576,
+          "smoke": 32
+        },
+        "timing_session": null,
+        "repeat": null,
+        "phase_profile": false,
+        "input_metadata": {
+          "input_token_ids_sha256": "b373ee423f813fcd0246b5238b2b2c61680bb07712d83204ee97256ffc9490d8",
+          "input_token_count": 4,
+          "enable_thinking": false,
+          "requested_generation_cap": 32,
+          "effective_generation_cap": 32,
+          "generation_environment_sha256": "588e3c69b32771da3c9da7be36341e956acc5ee40a1a1e9bcae3ff7c745fdbb1"
+        }
+      },
+      "status": "complete",
+      "result_path": "/home/catid/drafter/artifacts/reuse_smoke_pipeline/greedy_target_only/e569a0c047c41217c91249295adc5f6928cd4e74436a752e8a56c7ce7e4d1171.json",
+      "result_sha256": "7f9d5284a345ed30e9562e1f0a7146c7c9a863e3716d27bfa36049aba96cc1a5"
+    }
+  }
+}

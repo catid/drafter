@@ -1,0 +1,1636 @@
+{
+  "jobs": {
+    "4f2bee5e017131b0d5fce0e12e526a0629755f06bd42be41c1a1155bffb2354e": {
+      "identity": {
+        "model_pair": [
+          "builtin_toy_target",
+          "builtin_parallel_drafter"
+        ],
+        "prompt": "synthetic-test-standard_nonthinking-0",
+        "scale": "smoke",
+        "prompt_payload_hash": "b18d97783bb0aa7d53b6745aa798364448ff7c90b1d711235f7a79792a381160",
+        "condition": "standard_nonthinking",
+        "seed": 2026,
+        "temperature": 0.0,
+        "sampling_name": "greedy",
+        "verification_rule": "greedy",
+        "proposal_mode": "plain_dflash",
+        "checkpoint": {
+          "dense": "551a7a5907538169bf91ad2fb07c74d2c0549f6477fe7412fc7e505d47c59dce",
+          "dense_sparse": "3064fd63be5221bcae96a291b6247c50e6faee648ce6ad5562199675b2be6b54",
+          "projection": "synthetic-calibration-seed-2026",
+          "implementation": "d6e1b6ec966e29d03f1b86a173fdde28e948dcfce0f5af4231cda83ff90cdb6a"
+        },
+        "adapter_version": 0,
+        "model_revisions": [
+          "synthetic-v1",
+          "synthetic-v1"
+        ],
+        "stage": "m3",
+        "mode": "evaluate",
+        "sampling_warp_config": {
+          "top_k": 0,
+          "top_p": 1.0,
+          "min_p": 0.0
+        },
+        "setting": {},
+        "frozen_settings_hash": "c1ef9ac438877d485ea3b39fecf2f5edc548a3c4fa72ec1aedc0282cfc275a33",
+        "generation_cap": 32,
+        "generation_caps": {
+          "standard": 2048,
+          "long": 24576,
+          "smoke": 32
+        },
+        "timing_session": null,
+        "repeat": null,
+        "phase_profile": false
+      },
+      "status": "complete",
+      "result_path": "/home/catid/drafter/artifacts/reuse_smoke_pipeline/m3/evaluate/rank0/4f2bee5e017131b0d5fce0e12e526a0629755f06bd42be41c1a1155bffb2354e.json",
+      "result_sha256": "062c379544c21837c12a614cbfed8bdedbbd411fd082347de31de75e4a749851"
+    },
+    "4fd778e26165df42aacb6f32fdb4b87bfd3862459f01b628d92937567bbf5a99": {
+      "identity": {
+        "model_pair": [
+          "builtin_toy_target",
+          "builtin_parallel_drafter"
+        ],
+        "prompt": "synthetic-test-standard_nonthinking-0",
+        "scale": "smoke",
+        "prompt_payload_hash": "b18d97783bb0aa7d53b6745aa798364448ff7c90b1d711235f7a79792a381160",
+        "condition": "standard_nonthinking",
+        "seed": 2026,
+        "temperature": 0.0,
+        "sampling_name": "greedy",
+        "verification_rule": "greedy",
+        "proposal_mode": "online_bigram",
+        "checkpoint": {
+          "dense": "551a7a5907538169bf91ad2fb07c74d2c0549f6477fe7412fc7e505d47c59dce",
+          "dense_sparse": "3064fd63be5221bcae96a291b6247c50e6faee648ce6ad5562199675b2be6b54",
+          "projection": "synthetic-calibration-seed-2026",
+          "implementation": "d6e1b6ec966e29d03f1b86a173fdde28e948dcfce0f5af4231cda83ff90cdb6a"
+        },
+        "adapter_version": 0,
+        "model_revisions": [
+          "synthetic-v1",
+          "synthetic-v1"
+        ],
+        "stage": "m3",
+        "mode": "evaluate",
+        "sampling_warp_config": {
+          "top_k": 0,
+          "top_p": 1.0,
+          "min_p": 0.0
+        },
+        "setting": {
+          "lambda_tr": 0.2,
+          "alpha": 1.0,
+          "k_ret": null
+        },
+        "frozen_settings_hash": "c1ef9ac438877d485ea3b39fecf2f5edc548a3c4fa72ec1aedc0282cfc275a33",
+        "generation_cap": 32,
+        "generation_caps": {
+          "standard": 2048,
+          "long": 24576,
+          "smoke": 32
+        },
+        "timing_session": null,
+        "repeat": null,
+        "phase_profile": false
+      },
+      "status": "complete",
+      "result_path": "/home/catid/drafter/artifacts/reuse_smoke_pipeline/m3/evaluate/rank0/4fd778e26165df42aacb6f32fdb4b87bfd3862459f01b628d92937567bbf5a99.json",
+      "result_sha256": "942ba26700d2af3675b680f6e1b1a999f59b2f5642195f6f00164fe1d40d0ffd"
+    },
+    "7098fb339d09a1bf0a4a52ca73e139a42f5178875a4ceac31c2362cb5df0adab": {
+      "identity": {
+        "model_pair": [
+          "builtin_toy_target",
+          "builtin_parallel_drafter"
+        ],
+        "prompt": "synthetic-test-standard_nonthinking-0",
+        "scale": "smoke",
+        "prompt_payload_hash": "b18d97783bb0aa7d53b6745aa798364448ff7c90b1d711235f7a79792a381160",
+        "condition": "standard_nonthinking",
+        "seed": 2026,
+        "temperature": 0.0,
+        "sampling_name": "greedy",
+        "verification_rule": "greedy",
+        "proposal_mode": "dense",
+        "checkpoint": {
+          "dense": "551a7a5907538169bf91ad2fb07c74d2c0549f6477fe7412fc7e505d47c59dce",
+          "dense_sparse": "3064fd63be5221bcae96a291b6247c50e6faee648ce6ad5562199675b2be6b54",
+          "projection": "synthetic-calibration-seed-2026",
+          "implementation": "d6e1b6ec966e29d03f1b86a173fdde28e948dcfce0f5af4231cda83ff90cdb6a"
+        },
+        "adapter_version": 0,
+        "model_revisions": [
+          "synthetic-v1",
+          "synthetic-v1"
+        ],
+        "stage": "m3",
+        "mode": "evaluate",
+        "sampling_warp_config": {
+          "top_k": 0,
+          "top_p": 1.0,
+          "min_p": 0.0
+        },
+        "setting": {
+          "beta": 0.5
+        },
+        "frozen_settings_hash": "c1ef9ac438877d485ea3b39fecf2f5edc548a3c4fa72ec1aedc0282cfc275a33",
+        "generation_cap": 32,
+        "generation_caps": {
+          "standard": 2048,
+          "long": 24576,
+          "smoke": 32
+        },
+        "timing_session": null,
+        "repeat": null,
+        "phase_profile": false
+      },
+      "status": "complete",
+      "result_path": "/home/catid/drafter/artifacts/reuse_smoke_pipeline/m3/evaluate/rank0/7098fb339d09a1bf0a4a52ca73e139a42f5178875a4ceac31c2362cb5df0adab.json",
+      "result_sha256": "1f9c175d03524395ac63b63c140a8b68ab2bb17b8711dcc873bc311cb1a695ba"
+    },
+    "6e538dc2f23fd2b24167c5ce72d4dc65e4d521024f5cb48946eefd533e61d55b": {
+      "identity": {
+        "model_pair": [
+          "builtin_toy_target",
+          "builtin_parallel_drafter"
+        ],
+        "prompt": "synthetic-test-standard_nonthinking-0",
+        "scale": "smoke",
+        "prompt_payload_hash": "b18d97783bb0aa7d53b6745aa798364448ff7c90b1d711235f7a79792a381160",
+        "condition": "standard_nonthinking",
+        "seed": 2026,
+        "temperature": 0.0,
+        "sampling_name": "greedy",
+        "verification_rule": "greedy",
+        "proposal_mode": "dense_sparse",
+        "checkpoint": {
+          "dense": "551a7a5907538169bf91ad2fb07c74d2c0549f6477fe7412fc7e505d47c59dce",
+          "dense_sparse": "3064fd63be5221bcae96a291b6247c50e6faee648ce6ad5562199675b2be6b54",
+          "projection": "synthetic-calibration-seed-2026",
+          "implementation": "d6e1b6ec966e29d03f1b86a173fdde28e948dcfce0f5af4231cda83ff90cdb6a"
+        },
+        "adapter_version": 0,
+        "model_revisions": [
+          "synthetic-v1",
+          "synthetic-v1"
+        ],
+        "stage": "m3",
+        "mode": "evaluate",
+        "sampling_warp_config": {
+          "top_k": 0,
+          "top_p": 1.0,
+          "min_p": 0.0
+        },
+        "setting": {
+          "beta": 0.5
+        },
+        "frozen_settings_hash": "c1ef9ac438877d485ea3b39fecf2f5edc548a3c4fa72ec1aedc0282cfc275a33",
+        "generation_cap": 32,
+        "generation_caps": {
+          "standard": 2048,
+          "long": 24576,
+          "smoke": 32
+        },
+        "timing_session": null,
+        "repeat": null,
+        "phase_profile": false
+      },
+      "status": "complete",
+      "result_path": "/home/catid/drafter/artifacts/reuse_smoke_pipeline/m3/evaluate/rank0/6e538dc2f23fd2b24167c5ce72d4dc65e4d521024f5cb48946eefd533e61d55b.json",
+      "result_sha256": "bd12315995f4fc763fe6a35829b40f9b2f4912d7a1dc64a13c4405219b5d1d56"
+    },
+    "f59f44a32d1c402cc0ce7daec6cfcba2a0079b27abd43a1096eb5e84b1eda963": {
+      "identity": {
+        "model_pair": [
+          "builtin_toy_target",
+          "builtin_parallel_drafter"
+        ],
+        "prompt": "synthetic-test-standard_nonthinking-0",
+        "scale": "smoke",
+        "prompt_payload_hash": "b18d97783bb0aa7d53b6745aa798364448ff7c90b1d711235f7a79792a381160",
+        "condition": "standard_nonthinking",
+        "seed": 2026,
+        "temperature": 0.7,
+        "sampling_name": "nonthinking_recommended",
+        "verification_rule": "ratio",
+        "proposal_mode": "plain_dflash",
+        "checkpoint": {
+          "dense": "551a7a5907538169bf91ad2fb07c74d2c0549f6477fe7412fc7e505d47c59dce",
+          "dense_sparse": "3064fd63be5221bcae96a291b6247c50e6faee648ce6ad5562199675b2be6b54",
+          "projection": "synthetic-calibration-seed-2026",
+          "implementation": "d6e1b6ec966e29d03f1b86a173fdde28e948dcfce0f5af4231cda83ff90cdb6a"
+        },
+        "adapter_version": 0,
+        "model_revisions": [
+          "synthetic-v1",
+          "synthetic-v1"
+        ],
+        "stage": "m3",
+        "mode": "evaluate",
+        "sampling_warp_config": {
+          "top_k": 20,
+          "top_p": 0.8,
+          "min_p": 0.0
+        },
+        "setting": {},
+        "frozen_settings_hash": "c1ef9ac438877d485ea3b39fecf2f5edc548a3c4fa72ec1aedc0282cfc275a33",
+        "generation_cap": 32,
+        "generation_caps": {
+          "standard": 2048,
+          "long": 24576,
+          "smoke": 32
+        },
+        "timing_session": null,
+        "repeat": null,
+        "phase_profile": false
+      },
+      "status": "complete",
+      "result_path": "/home/catid/drafter/artifacts/reuse_smoke_pipeline/m3/evaluate/rank0/f59f44a32d1c402cc0ce7daec6cfcba2a0079b27abd43a1096eb5e84b1eda963.json",
+      "result_sha256": "afe33bbe3d26eb04f724c686f92141dc4725838c7adc19585c9a1dcb0270aad1"
+    },
+    "a51d36923445bd542f24a8c7635647b772ae17ffb55a8fec8e94bd97c76a86ac": {
+      "identity": {
+        "model_pair": [
+          "builtin_toy_target",
+          "builtin_parallel_drafter"
+        ],
+        "prompt": "synthetic-test-standard_nonthinking-0",
+        "scale": "smoke",
+        "prompt_payload_hash": "b18d97783bb0aa7d53b6745aa798364448ff7c90b1d711235f7a79792a381160",
+        "condition": "standard_nonthinking",
+        "seed": 2026,
+        "temperature": 0.7,
+        "sampling_name": "nonthinking_recommended",
+        "verification_rule": "ratio",
+        "proposal_mode": "online_bigram",
+        "checkpoint": {
+          "dense": "551a7a5907538169bf91ad2fb07c74d2c0549f6477fe7412fc7e505d47c59dce",
+          "dense_sparse": "3064fd63be5221bcae96a291b6247c50e6faee648ce6ad5562199675b2be6b54",
+          "projection": "synthetic-calibration-seed-2026",
+          "implementation": "d6e1b6ec966e29d03f1b86a173fdde28e948dcfce0f5af4231cda83ff90cdb6a"
+        },
+        "adapter_version": 0,
+        "model_revisions": [
+          "synthetic-v1",
+          "synthetic-v1"
+        ],
+        "stage": "m3",
+        "mode": "evaluate",
+        "sampling_warp_config": {
+          "top_k": 20,
+          "top_p": 0.8,
+          "min_p": 0.0
+        },
+        "setting": {
+          "lambda_tr": 0.2,
+          "alpha": 1.0,
+          "k_ret": null
+        },
+        "frozen_settings_hash": "c1ef9ac438877d485ea3b39fecf2f5edc548a3c4fa72ec1aedc0282cfc275a33",
+        "generation_cap": 32,
+        "generation_caps": {
+          "standard": 2048,
+          "long": 24576,
+          "smoke": 32
+        },
+        "timing_session": null,
+        "repeat": null,
+        "phase_profile": false
+      },
+      "status": "complete",
+      "result_path": "/home/catid/drafter/artifacts/reuse_smoke_pipeline/m3/evaluate/rank0/a51d36923445bd542f24a8c7635647b772ae17ffb55a8fec8e94bd97c76a86ac.json",
+      "result_sha256": "d5a77a99a8e0b3e1848478ef796c6a443fc8baaf45150864ea39aa4634b96695"
+    },
+    "6255ae540970ff220a97b4e48b687f128e89b341f7dd754824cdbf89e72c7a7f": {
+      "identity": {
+        "model_pair": [
+          "builtin_toy_target",
+          "builtin_parallel_drafter"
+        ],
+        "prompt": "synthetic-test-standard_nonthinking-0",
+        "scale": "smoke",
+        "prompt_payload_hash": "b18d97783bb0aa7d53b6745aa798364448ff7c90b1d711235f7a79792a381160",
+        "condition": "standard_nonthinking",
+        "seed": 2026,
+        "temperature": 0.7,
+        "sampling_name": "nonthinking_recommended",
+        "verification_rule": "ratio",
+        "proposal_mode": "dense",
+        "checkpoint": {
+          "dense": "551a7a5907538169bf91ad2fb07c74d2c0549f6477fe7412fc7e505d47c59dce",
+          "dense_sparse": "3064fd63be5221bcae96a291b6247c50e6faee648ce6ad5562199675b2be6b54",
+          "projection": "synthetic-calibration-seed-2026",
+          "implementation": "d6e1b6ec966e29d03f1b86a173fdde28e948dcfce0f5af4231cda83ff90cdb6a"
+        },
+        "adapter_version": 0,
+        "model_revisions": [
+          "synthetic-v1",
+          "synthetic-v1"
+        ],
+        "stage": "m3",
+        "mode": "evaluate",
+        "sampling_warp_config": {
+          "top_k": 20,
+          "top_p": 0.8,
+          "min_p": 0.0
+        },
+        "setting": {
+          "beta": 0.5
+        },
+        "frozen_settings_hash": "c1ef9ac438877d485ea3b39fecf2f5edc548a3c4fa72ec1aedc0282cfc275a33",
+        "generation_cap": 32,
+        "generation_caps": {
+          "standard": 2048,
+          "long": 24576,
+          "smoke": 32
+        },
+        "timing_session": null,
+        "repeat": null,
+        "phase_profile": false
+      },
+      "status": "complete",
+      "result_path": "/home/catid/drafter/artifacts/reuse_smoke_pipeline/m3/evaluate/rank0/6255ae540970ff220a97b4e48b687f128e89b341f7dd754824cdbf89e72c7a7f.json",
+      "result_sha256": "4e8a01ae8860f172c9117c3a7fbcb036c2a5d2b25740a70651fb495c07116e53"
+    },
+    "27374cff855d807bdfeab3491e52a63afb4eaa1973f47c69b7ca5cd1d941b05a": {
+      "identity": {
+        "model_pair": [
+          "builtin_toy_target",
+          "builtin_parallel_drafter"
+        ],
+        "prompt": "synthetic-test-standard_nonthinking-0",
+        "scale": "smoke",
+        "prompt_payload_hash": "b18d97783bb0aa7d53b6745aa798364448ff7c90b1d711235f7a79792a381160",
+        "condition": "standard_nonthinking",
+        "seed": 2026,
+        "temperature": 0.7,
+        "sampling_name": "nonthinking_recommended",
+        "verification_rule": "ratio",
+        "proposal_mode": "dense_sparse",
+        "checkpoint": {
+          "dense": "551a7a5907538169bf91ad2fb07c74d2c0549f6477fe7412fc7e505d47c59dce",
+          "dense_sparse": "3064fd63be5221bcae96a291b6247c50e6faee648ce6ad5562199675b2be6b54",
+          "projection": "synthetic-calibration-seed-2026",
+          "implementation": "d6e1b6ec966e29d03f1b86a173fdde28e948dcfce0f5af4231cda83ff90cdb6a"
+        },
+        "adapter_version": 0,
+        "model_revisions": [
+          "synthetic-v1",
+          "synthetic-v1"
+        ],
+        "stage": "m3",
+        "mode": "evaluate",
+        "sampling_warp_config": {
+          "top_k": 20,
+          "top_p": 0.8,
+          "min_p": 0.0
+        },
+        "setting": {
+          "beta": 0.5
+        },
+        "frozen_settings_hash": "c1ef9ac438877d485ea3b39fecf2f5edc548a3c4fa72ec1aedc0282cfc275a33",
+        "generation_cap": 32,
+        "generation_caps": {
+          "standard": 2048,
+          "long": 24576,
+          "smoke": 32
+        },
+        "timing_session": null,
+        "repeat": null,
+        "phase_profile": false
+      },
+      "status": "complete",
+      "result_path": "/home/catid/drafter/artifacts/reuse_smoke_pipeline/m3/evaluate/rank0/27374cff855d807bdfeab3491e52a63afb4eaa1973f47c69b7ca5cd1d941b05a.json",
+      "result_sha256": "b8f6035ad2344aa0218f7346a40b8119a84abe406c82365c723129a6716782ac"
+    },
+    "3913db2004169589c6d2e63e61140b5f867743b678a50f7bef81d6dd4e4dfa72": {
+      "identity": {
+        "model_pair": [
+          "builtin_toy_target",
+          "builtin_parallel_drafter"
+        ],
+        "prompt": "synthetic-test-standard_nonthinking-0",
+        "scale": "smoke",
+        "prompt_payload_hash": "b18d97783bb0aa7d53b6745aa798364448ff7c90b1d711235f7a79792a381160",
+        "condition": "standard_nonthinking",
+        "seed": 2026,
+        "temperature": 1.0,
+        "sampling_name": "pure_temperature_diagnostic",
+        "verification_rule": "ratio",
+        "proposal_mode": "plain_dflash",
+        "checkpoint": {
+          "dense": "551a7a5907538169bf91ad2fb07c74d2c0549f6477fe7412fc7e505d47c59dce",
+          "dense_sparse": "3064fd63be5221bcae96a291b6247c50e6faee648ce6ad5562199675b2be6b54",
+          "projection": "synthetic-calibration-seed-2026",
+          "implementation": "d6e1b6ec966e29d03f1b86a173fdde28e948dcfce0f5af4231cda83ff90cdb6a"
+        },
+        "adapter_version": 0,
+        "model_revisions": [
+          "synthetic-v1",
+          "synthetic-v1"
+        ],
+        "stage": "m3",
+        "mode": "evaluate",
+        "sampling_warp_config": {
+          "top_k": 0,
+          "top_p": 1.0,
+          "min_p": 0.0
+        },
+        "setting": {},
+        "frozen_settings_hash": "c1ef9ac438877d485ea3b39fecf2f5edc548a3c4fa72ec1aedc0282cfc275a33",
+        "generation_cap": 32,
+        "generation_caps": {
+          "standard": 2048,
+          "long": 24576,
+          "smoke": 32
+        },
+        "timing_session": null,
+        "repeat": null,
+        "phase_profile": false
+      },
+      "status": "complete",
+      "result_path": "/home/catid/drafter/artifacts/reuse_smoke_pipeline/m3/evaluate/rank0/3913db2004169589c6d2e63e61140b5f867743b678a50f7bef81d6dd4e4dfa72.json",
+      "result_sha256": "d23970104dcccfe99bb21c4053c40c302ca791986b3fc5033723970806335ae3"
+    },
+    "f0f9b2c256779dd2bda5308494d205c66de52b76ead96c3acb1fd490cc1ca0d6": {
+      "identity": {
+        "model_pair": [
+          "builtin_toy_target",
+          "builtin_parallel_drafter"
+        ],
+        "prompt": "synthetic-test-standard_nonthinking-0",
+        "scale": "smoke",
+        "prompt_payload_hash": "b18d97783bb0aa7d53b6745aa798364448ff7c90b1d711235f7a79792a381160",
+        "condition": "standard_nonthinking",
+        "seed": 2026,
+        "temperature": 1.0,
+        "sampling_name": "pure_temperature_diagnostic",
+        "verification_rule": "ratio",
+        "proposal_mode": "online_bigram",
+        "checkpoint": {
+          "dense": "551a7a5907538169bf91ad2fb07c74d2c0549f6477fe7412fc7e505d47c59dce",
+          "dense_sparse": "3064fd63be5221bcae96a291b6247c50e6faee648ce6ad5562199675b2be6b54",
+          "projection": "synthetic-calibration-seed-2026",
+          "implementation": "d6e1b6ec966e29d03f1b86a173fdde28e948dcfce0f5af4231cda83ff90cdb6a"
+        },
+        "adapter_version": 0,
+        "model_revisions": [
+          "synthetic-v1",
+          "synthetic-v1"
+        ],
+        "stage": "m3",
+        "mode": "evaluate",
+        "sampling_warp_config": {
+          "top_k": 0,
+          "top_p": 1.0,
+          "min_p": 0.0
+        },
+        "setting": {
+          "lambda_tr": 0.2,
+          "alpha": 1.0,
+          "k_ret": null
+        },
+        "frozen_settings_hash": "c1ef9ac438877d485ea3b39fecf2f5edc548a3c4fa72ec1aedc0282cfc275a33",
+        "generation_cap": 32,
+        "generation_caps": {
+          "standard": 2048,
+          "long": 24576,
+          "smoke": 32
+        },
+        "timing_session": null,
+        "repeat": null,
+        "phase_profile": false
+      },
+      "status": "complete",
+      "result_path": "/home/catid/drafter/artifacts/reuse_smoke_pipeline/m3/evaluate/rank0/f0f9b2c256779dd2bda5308494d205c66de52b76ead96c3acb1fd490cc1ca0d6.json",
+      "result_sha256": "75a15012a54a1bcf9c2061ceea1439f0d71508ef1907199372ab05feb4ec130d"
+    },
+    "16c00c8a2c2076f4f06a2d295cbbdde9db92e2fd3b8df3e75a821edf92fd4609": {
+      "identity": {
+        "model_pair": [
+          "builtin_toy_target",
+          "builtin_parallel_drafter"
+        ],
+        "prompt": "synthetic-test-standard_nonthinking-0",
+        "scale": "smoke",
+        "prompt_payload_hash": "b18d97783bb0aa7d53b6745aa798364448ff7c90b1d711235f7a79792a381160",
+        "condition": "standard_nonthinking",
+        "seed": 2026,
+        "temperature": 1.0,
+        "sampling_name": "pure_temperature_diagnostic",
+        "verification_rule": "ratio",
+        "proposal_mode": "dense",
+        "checkpoint": {
+          "dense": "551a7a5907538169bf91ad2fb07c74d2c0549f6477fe7412fc7e505d47c59dce",
+          "dense_sparse": "3064fd63be5221bcae96a291b6247c50e6faee648ce6ad5562199675b2be6b54",
+          "projection": "synthetic-calibration-seed-2026",
+          "implementation": "d6e1b6ec966e29d03f1b86a173fdde28e948dcfce0f5af4231cda83ff90cdb6a"
+        },
+        "adapter_version": 0,
+        "model_revisions": [
+          "synthetic-v1",
+          "synthetic-v1"
+        ],
+        "stage": "m3",
+        "mode": "evaluate",
+        "sampling_warp_config": {
+          "top_k": 0,
+          "top_p": 1.0,
+          "min_p": 0.0
+        },
+        "setting": {
+          "beta": 0.5
+        },
+        "frozen_settings_hash": "c1ef9ac438877d485ea3b39fecf2f5edc548a3c4fa72ec1aedc0282cfc275a33",
+        "generation_cap": 32,
+        "generation_caps": {
+          "standard": 2048,
+          "long": 24576,
+          "smoke": 32
+        },
+        "timing_session": null,
+        "repeat": null,
+        "phase_profile": false
+      },
+      "status": "complete",
+      "result_path": "/home/catid/drafter/artifacts/reuse_smoke_pipeline/m3/evaluate/rank0/16c00c8a2c2076f4f06a2d295cbbdde9db92e2fd3b8df3e75a821edf92fd4609.json",
+      "result_sha256": "a4b1735b081827940f663731d1c31b48d41b945835e5d5aad901a5aed8a30571"
+    },
+    "108954a129978cf2dbb49c32862805191ef705f4268c13b3d493f7b0cb302ce2": {
+      "identity": {
+        "model_pair": [
+          "builtin_toy_target",
+          "builtin_parallel_drafter"
+        ],
+        "prompt": "synthetic-test-standard_nonthinking-0",
+        "scale": "smoke",
+        "prompt_payload_hash": "b18d97783bb0aa7d53b6745aa798364448ff7c90b1d711235f7a79792a381160",
+        "condition": "standard_nonthinking",
+        "seed": 2026,
+        "temperature": 1.0,
+        "sampling_name": "pure_temperature_diagnostic",
+        "verification_rule": "ratio",
+        "proposal_mode": "dense_sparse",
+        "checkpoint": {
+          "dense": "551a7a5907538169bf91ad2fb07c74d2c0549f6477fe7412fc7e505d47c59dce",
+          "dense_sparse": "3064fd63be5221bcae96a291b6247c50e6faee648ce6ad5562199675b2be6b54",
+          "projection": "synthetic-calibration-seed-2026",
+          "implementation": "d6e1b6ec966e29d03f1b86a173fdde28e948dcfce0f5af4231cda83ff90cdb6a"
+        },
+        "adapter_version": 0,
+        "model_revisions": [
+          "synthetic-v1",
+          "synthetic-v1"
+        ],
+        "stage": "m3",
+        "mode": "evaluate",
+        "sampling_warp_config": {
+          "top_k": 0,
+          "top_p": 1.0,
+          "min_p": 0.0
+        },
+        "setting": {
+          "beta": 0.5
+        },
+        "frozen_settings_hash": "c1ef9ac438877d485ea3b39fecf2f5edc548a3c4fa72ec1aedc0282cfc275a33",
+        "generation_cap": 32,
+        "generation_caps": {
+          "standard": 2048,
+          "long": 24576,
+          "smoke": 32
+        },
+        "timing_session": null,
+        "repeat": null,
+        "phase_profile": false
+      },
+      "status": "complete",
+      "result_path": "/home/catid/drafter/artifacts/reuse_smoke_pipeline/m3/evaluate/rank0/108954a129978cf2dbb49c32862805191ef705f4268c13b3d493f7b0cb302ce2.json",
+      "result_sha256": "d4461613ce4973dba673a1974eaa794aec7167e1bd83c4bc38d7ff838f33557f"
+    },
+    "09cc40d993395b7e070ce963880660755f491a5e676667d80f2aa84018daedb3": {
+      "identity": {
+        "model_pair": [
+          "builtin_toy_target",
+          "builtin_parallel_drafter"
+        ],
+        "prompt": "synthetic-test-standard_nonthinking-1",
+        "scale": "smoke",
+        "prompt_payload_hash": "4a278c7d5563195570f806b01bc533f3e54a0a6f760467eaf2ec55194cf2a8db",
+        "condition": "standard_nonthinking",
+        "seed": 2026,
+        "temperature": 0.0,
+        "sampling_name": "greedy",
+        "verification_rule": "greedy",
+        "proposal_mode": "plain_dflash",
+        "checkpoint": {
+          "dense": "551a7a5907538169bf91ad2fb07c74d2c0549f6477fe7412fc7e505d47c59dce",
+          "dense_sparse": "3064fd63be5221bcae96a291b6247c50e6faee648ce6ad5562199675b2be6b54",
+          "projection": "synthetic-calibration-seed-2026",
+          "implementation": "d6e1b6ec966e29d03f1b86a173fdde28e948dcfce0f5af4231cda83ff90cdb6a"
+        },
+        "adapter_version": 0,
+        "model_revisions": [
+          "synthetic-v1",
+          "synthetic-v1"
+        ],
+        "stage": "m3",
+        "mode": "evaluate",
+        "sampling_warp_config": {
+          "top_k": 0,
+          "top_p": 1.0,
+          "min_p": 0.0
+        },
+        "setting": {},
+        "frozen_settings_hash": "c1ef9ac438877d485ea3b39fecf2f5edc548a3c4fa72ec1aedc0282cfc275a33",
+        "generation_cap": 32,
+        "generation_caps": {
+          "standard": 2048,
+          "long": 24576,
+          "smoke": 32
+        },
+        "timing_session": null,
+        "repeat": null,
+        "phase_profile": false
+      },
+      "status": "complete",
+      "result_path": "/home/catid/drafter/artifacts/reuse_smoke_pipeline/m3/evaluate/rank0/09cc40d993395b7e070ce963880660755f491a5e676667d80f2aa84018daedb3.json",
+      "result_sha256": "07a63e3f190e22f877521991c88ec971e25942739f0d43f959fd5b7d3ea257fa"
+    },
+    "5bcdbc85cf1e50d8b9c03b1f4575fd0ddd599fe9e08f413000e199c1516502b5": {
+      "identity": {
+        "model_pair": [
+          "builtin_toy_target",
+          "builtin_parallel_drafter"
+        ],
+        "prompt": "synthetic-test-standard_nonthinking-1",
+        "scale": "smoke",
+        "prompt_payload_hash": "4a278c7d5563195570f806b01bc533f3e54a0a6f760467eaf2ec55194cf2a8db",
+        "condition": "standard_nonthinking",
+        "seed": 2026,
+        "temperature": 0.0,
+        "sampling_name": "greedy",
+        "verification_rule": "greedy",
+        "proposal_mode": "online_bigram",
+        "checkpoint": {
+          "dense": "551a7a5907538169bf91ad2fb07c74d2c0549f6477fe7412fc7e505d47c59dce",
+          "dense_sparse": "3064fd63be5221bcae96a291b6247c50e6faee648ce6ad5562199675b2be6b54",
+          "projection": "synthetic-calibration-seed-2026",
+          "implementation": "d6e1b6ec966e29d03f1b86a173fdde28e948dcfce0f5af4231cda83ff90cdb6a"
+        },
+        "adapter_version": 0,
+        "model_revisions": [
+          "synthetic-v1",
+          "synthetic-v1"
+        ],
+        "stage": "m3",
+        "mode": "evaluate",
+        "sampling_warp_config": {
+          "top_k": 0,
+          "top_p": 1.0,
+          "min_p": 0.0
+        },
+        "setting": {
+          "lambda_tr": 0.2,
+          "alpha": 1.0,
+          "k_ret": null
+        },
+        "frozen_settings_hash": "c1ef9ac438877d485ea3b39fecf2f5edc548a3c4fa72ec1aedc0282cfc275a33",
+        "generation_cap": 32,
+        "generation_caps": {
+          "standard": 2048,
+          "long": 24576,
+          "smoke": 32
+        },
+        "timing_session": null,
+        "repeat": null,
+        "phase_profile": false
+      },
+      "status": "complete",
+      "result_path": "/home/catid/drafter/artifacts/reuse_smoke_pipeline/m3/evaluate/rank0/5bcdbc85cf1e50d8b9c03b1f4575fd0ddd599fe9e08f413000e199c1516502b5.json",
+      "result_sha256": "5803413cf5bc821089fc82e3d8577145c980c103e41d9e51d7dc726f4fef446e"
+    },
+    "c720a4d50266135987e7d7c4c63d508af31b65eabf63dad50f32e59249e22945": {
+      "identity": {
+        "model_pair": [
+          "builtin_toy_target",
+          "builtin_parallel_drafter"
+        ],
+        "prompt": "synthetic-test-standard_nonthinking-1",
+        "scale": "smoke",
+        "prompt_payload_hash": "4a278c7d5563195570f806b01bc533f3e54a0a6f760467eaf2ec55194cf2a8db",
+        "condition": "standard_nonthinking",
+        "seed": 2026,
+        "temperature": 0.0,
+        "sampling_name": "greedy",
+        "verification_rule": "greedy",
+        "proposal_mode": "dense",
+        "checkpoint": {
+          "dense": "551a7a5907538169bf91ad2fb07c74d2c0549f6477fe7412fc7e505d47c59dce",
+          "dense_sparse": "3064fd63be5221bcae96a291b6247c50e6faee648ce6ad5562199675b2be6b54",
+          "projection": "synthetic-calibration-seed-2026",
+          "implementation": "d6e1b6ec966e29d03f1b86a173fdde28e948dcfce0f5af4231cda83ff90cdb6a"
+        },
+        "adapter_version": 0,
+        "model_revisions": [
+          "synthetic-v1",
+          "synthetic-v1"
+        ],
+        "stage": "m3",
+        "mode": "evaluate",
+        "sampling_warp_config": {
+          "top_k": 0,
+          "top_p": 1.0,
+          "min_p": 0.0
+        },
+        "setting": {
+          "beta": 0.5
+        },
+        "frozen_settings_hash": "c1ef9ac438877d485ea3b39fecf2f5edc548a3c4fa72ec1aedc0282cfc275a33",
+        "generation_cap": 32,
+        "generation_caps": {
+          "standard": 2048,
+          "long": 24576,
+          "smoke": 32
+        },
+        "timing_session": null,
+        "repeat": null,
+        "phase_profile": false
+      },
+      "status": "complete",
+      "result_path": "/home/catid/drafter/artifacts/reuse_smoke_pipeline/m3/evaluate/rank0/c720a4d50266135987e7d7c4c63d508af31b65eabf63dad50f32e59249e22945.json",
+      "result_sha256": "cbc4b9976d7615c9ef29e345c39d6b7323ddda27236b731102ad4b09e897dd52"
+    },
+    "cf38a8352810e3e5546d43ccd44e6ad7c5da8c758a2d8dfa0cad59d71cc2b0ef": {
+      "identity": {
+        "model_pair": [
+          "builtin_toy_target",
+          "builtin_parallel_drafter"
+        ],
+        "prompt": "synthetic-test-standard_nonthinking-1",
+        "scale": "smoke",
+        "prompt_payload_hash": "4a278c7d5563195570f806b01bc533f3e54a0a6f760467eaf2ec55194cf2a8db",
+        "condition": "standard_nonthinking",
+        "seed": 2026,
+        "temperature": 0.0,
+        "sampling_name": "greedy",
+        "verification_rule": "greedy",
+        "proposal_mode": "dense_sparse",
+        "checkpoint": {
+          "dense": "551a7a5907538169bf91ad2fb07c74d2c0549f6477fe7412fc7e505d47c59dce",
+          "dense_sparse": "3064fd63be5221bcae96a291b6247c50e6faee648ce6ad5562199675b2be6b54",
+          "projection": "synthetic-calibration-seed-2026",
+          "implementation": "d6e1b6ec966e29d03f1b86a173fdde28e948dcfce0f5af4231cda83ff90cdb6a"
+        },
+        "adapter_version": 0,
+        "model_revisions": [
+          "synthetic-v1",
+          "synthetic-v1"
+        ],
+        "stage": "m3",
+        "mode": "evaluate",
+        "sampling_warp_config": {
+          "top_k": 0,
+          "top_p": 1.0,
+          "min_p": 0.0
+        },
+        "setting": {
+          "beta": 0.5
+        },
+        "frozen_settings_hash": "c1ef9ac438877d485ea3b39fecf2f5edc548a3c4fa72ec1aedc0282cfc275a33",
+        "generation_cap": 32,
+        "generation_caps": {
+          "standard": 2048,
+          "long": 24576,
+          "smoke": 32
+        },
+        "timing_session": null,
+        "repeat": null,
+        "phase_profile": false
+      },
+      "status": "complete",
+      "result_path": "/home/catid/drafter/artifacts/reuse_smoke_pipeline/m3/evaluate/rank0/cf38a8352810e3e5546d43ccd44e6ad7c5da8c758a2d8dfa0cad59d71cc2b0ef.json",
+      "result_sha256": "a6307a83a2987e8013b18e6b4e6319e32d67bb856374dec0f695a304e00525f9"
+    },
+    "2321df05f9226985c39c96c956d2cbf6d9aa2970fa59bd53b8950833585091eb": {
+      "identity": {
+        "model_pair": [
+          "builtin_toy_target",
+          "builtin_parallel_drafter"
+        ],
+        "prompt": "synthetic-test-standard_nonthinking-1",
+        "scale": "smoke",
+        "prompt_payload_hash": "4a278c7d5563195570f806b01bc533f3e54a0a6f760467eaf2ec55194cf2a8db",
+        "condition": "standard_nonthinking",
+        "seed": 2026,
+        "temperature": 0.7,
+        "sampling_name": "nonthinking_recommended",
+        "verification_rule": "ratio",
+        "proposal_mode": "plain_dflash",
+        "checkpoint": {
+          "dense": "551a7a5907538169bf91ad2fb07c74d2c0549f6477fe7412fc7e505d47c59dce",
+          "dense_sparse": "3064fd63be5221bcae96a291b6247c50e6faee648ce6ad5562199675b2be6b54",
+          "projection": "synthetic-calibration-seed-2026",
+          "implementation": "d6e1b6ec966e29d03f1b86a173fdde28e948dcfce0f5af4231cda83ff90cdb6a"
+        },
+        "adapter_version": 0,
+        "model_revisions": [
+          "synthetic-v1",
+          "synthetic-v1"
+        ],
+        "stage": "m3",
+        "mode": "evaluate",
+        "sampling_warp_config": {
+          "top_k": 20,
+          "top_p": 0.8,
+          "min_p": 0.0
+        },
+        "setting": {},
+        "frozen_settings_hash": "c1ef9ac438877d485ea3b39fecf2f5edc548a3c4fa72ec1aedc0282cfc275a33",
+        "generation_cap": 32,
+        "generation_caps": {
+          "standard": 2048,
+          "long": 24576,
+          "smoke": 32
+        },
+        "timing_session": null,
+        "repeat": null,
+        "phase_profile": false
+      },
+      "status": "complete",
+      "result_path": "/home/catid/drafter/artifacts/reuse_smoke_pipeline/m3/evaluate/rank0/2321df05f9226985c39c96c956d2cbf6d9aa2970fa59bd53b8950833585091eb.json",
+      "result_sha256": "3fe4582fee5b626e4399f8c12965c53ac5dde3553a2998a4d723a9c6cd742a99"
+    },
+    "b1f658ff1bb12ee24d58db1c90ef6f8b95833c81e4ffd660684f3c45bf149ba0": {
+      "identity": {
+        "model_pair": [
+          "builtin_toy_target",
+          "builtin_parallel_drafter"
+        ],
+        "prompt": "synthetic-test-standard_nonthinking-1",
+        "scale": "smoke",
+        "prompt_payload_hash": "4a278c7d5563195570f806b01bc533f3e54a0a6f760467eaf2ec55194cf2a8db",
+        "condition": "standard_nonthinking",
+        "seed": 2026,
+        "temperature": 0.7,
+        "sampling_name": "nonthinking_recommended",
+        "verification_rule": "ratio",
+        "proposal_mode": "online_bigram",
+        "checkpoint": {
+          "dense": "551a7a5907538169bf91ad2fb07c74d2c0549f6477fe7412fc7e505d47c59dce",
+          "dense_sparse": "3064fd63be5221bcae96a291b6247c50e6faee648ce6ad5562199675b2be6b54",
+          "projection": "synthetic-calibration-seed-2026",
+          "implementation": "d6e1b6ec966e29d03f1b86a173fdde28e948dcfce0f5af4231cda83ff90cdb6a"
+        },
+        "adapter_version": 0,
+        "model_revisions": [
+          "synthetic-v1",
+          "synthetic-v1"
+        ],
+        "stage": "m3",
+        "mode": "evaluate",
+        "sampling_warp_config": {
+          "top_k": 20,
+          "top_p": 0.8,
+          "min_p": 0.0
+        },
+        "setting": {
+          "lambda_tr": 0.2,
+          "alpha": 1.0,
+          "k_ret": null
+        },
+        "frozen_settings_hash": "c1ef9ac438877d485ea3b39fecf2f5edc548a3c4fa72ec1aedc0282cfc275a33",
+        "generation_cap": 32,
+        "generation_caps": {
+          "standard": 2048,
+          "long": 24576,
+          "smoke": 32
+        },
+        "timing_session": null,
+        "repeat": null,
+        "phase_profile": false
+      },
+      "status": "complete",
+      "result_path": "/home/catid/drafter/artifacts/reuse_smoke_pipeline/m3/evaluate/rank0/b1f658ff1bb12ee24d58db1c90ef6f8b95833c81e4ffd660684f3c45bf149ba0.json",
+      "result_sha256": "d158b4b744d64e02c5e7f2dab7d3a3dbd58a2715a1e59ab4831ece88f8152f53"
+    },
+    "a3ab50be2650ad62100d0166bd437a11efd07515d2bd49c49a507560b18586c6": {
+      "identity": {
+        "model_pair": [
+          "builtin_toy_target",
+          "builtin_parallel_drafter"
+        ],
+        "prompt": "synthetic-test-standard_nonthinking-1",
+        "scale": "smoke",
+        "prompt_payload_hash": "4a278c7d5563195570f806b01bc533f3e54a0a6f760467eaf2ec55194cf2a8db",
+        "condition": "standard_nonthinking",
+        "seed": 2026,
+        "temperature": 0.7,
+        "sampling_name": "nonthinking_recommended",
+        "verification_rule": "ratio",
+        "proposal_mode": "dense",
+        "checkpoint": {
+          "dense": "551a7a5907538169bf91ad2fb07c74d2c0549f6477fe7412fc7e505d47c59dce",
+          "dense_sparse": "3064fd63be5221bcae96a291b6247c50e6faee648ce6ad5562199675b2be6b54",
+          "projection": "synthetic-calibration-seed-2026",
+          "implementation": "d6e1b6ec966e29d03f1b86a173fdde28e948dcfce0f5af4231cda83ff90cdb6a"
+        },
+        "adapter_version": 0,
+        "model_revisions": [
+          "synthetic-v1",
+          "synthetic-v1"
+        ],
+        "stage": "m3",
+        "mode": "evaluate",
+        "sampling_warp_config": {
+          "top_k": 20,
+          "top_p": 0.8,
+          "min_p": 0.0
+        },
+        "setting": {
+          "beta": 0.5
+        },
+        "frozen_settings_hash": "c1ef9ac438877d485ea3b39fecf2f5edc548a3c4fa72ec1aedc0282cfc275a33",
+        "generation_cap": 32,
+        "generation_caps": {
+          "standard": 2048,
+          "long": 24576,
+          "smoke": 32
+        },
+        "timing_session": null,
+        "repeat": null,
+        "phase_profile": false
+      },
+      "status": "complete",
+      "result_path": "/home/catid/drafter/artifacts/reuse_smoke_pipeline/m3/evaluate/rank0/a3ab50be2650ad62100d0166bd437a11efd07515d2bd49c49a507560b18586c6.json",
+      "result_sha256": "714997d330e54250d68e4d83128e78982442b96bbf6b40b5dfd3d7a5bc15f4ad"
+    },
+    "e6f516985f72fad4151cfb30797cd462c0bcee98141f0ed9b125813afe40a92a": {
+      "identity": {
+        "model_pair": [
+          "builtin_toy_target",
+          "builtin_parallel_drafter"
+        ],
+        "prompt": "synthetic-test-standard_nonthinking-1",
+        "scale": "smoke",
+        "prompt_payload_hash": "4a278c7d5563195570f806b01bc533f3e54a0a6f760467eaf2ec55194cf2a8db",
+        "condition": "standard_nonthinking",
+        "seed": 2026,
+        "temperature": 0.7,
+        "sampling_name": "nonthinking_recommended",
+        "verification_rule": "ratio",
+        "proposal_mode": "dense_sparse",
+        "checkpoint": {
+          "dense": "551a7a5907538169bf91ad2fb07c74d2c0549f6477fe7412fc7e505d47c59dce",
+          "dense_sparse": "3064fd63be5221bcae96a291b6247c50e6faee648ce6ad5562199675b2be6b54",
+          "projection": "synthetic-calibration-seed-2026",
+          "implementation": "d6e1b6ec966e29d03f1b86a173fdde28e948dcfce0f5af4231cda83ff90cdb6a"
+        },
+        "adapter_version": 0,
+        "model_revisions": [
+          "synthetic-v1",
+          "synthetic-v1"
+        ],
+        "stage": "m3",
+        "mode": "evaluate",
+        "sampling_warp_config": {
+          "top_k": 20,
+          "top_p": 0.8,
+          "min_p": 0.0
+        },
+        "setting": {
+          "beta": 0.5
+        },
+        "frozen_settings_hash": "c1ef9ac438877d485ea3b39fecf2f5edc548a3c4fa72ec1aedc0282cfc275a33",
+        "generation_cap": 32,
+        "generation_caps": {
+          "standard": 2048,
+          "long": 24576,
+          "smoke": 32
+        },
+        "timing_session": null,
+        "repeat": null,
+        "phase_profile": false
+      },
+      "status": "complete",
+      "result_path": "/home/catid/drafter/artifacts/reuse_smoke_pipeline/m3/evaluate/rank0/e6f516985f72fad4151cfb30797cd462c0bcee98141f0ed9b125813afe40a92a.json",
+      "result_sha256": "c02a61ae1efcfd67b9b268e72faddf0dd9b161770e0be485d3455bf1366a61ab"
+    },
+    "9682a7469bbae8a71b05c622d1829aa5d51248a80c126c987c725249385d37dd": {
+      "identity": {
+        "model_pair": [
+          "builtin_toy_target",
+          "builtin_parallel_drafter"
+        ],
+        "prompt": "synthetic-test-standard_nonthinking-1",
+        "scale": "smoke",
+        "prompt_payload_hash": "4a278c7d5563195570f806b01bc533f3e54a0a6f760467eaf2ec55194cf2a8db",
+        "condition": "standard_nonthinking",
+        "seed": 2026,
+        "temperature": 1.0,
+        "sampling_name": "pure_temperature_diagnostic",
+        "verification_rule": "ratio",
+        "proposal_mode": "plain_dflash",
+        "checkpoint": {
+          "dense": "551a7a5907538169bf91ad2fb07c74d2c0549f6477fe7412fc7e505d47c59dce",
+          "dense_sparse": "3064fd63be5221bcae96a291b6247c50e6faee648ce6ad5562199675b2be6b54",
+          "projection": "synthetic-calibration-seed-2026",
+          "implementation": "d6e1b6ec966e29d03f1b86a173fdde28e948dcfce0f5af4231cda83ff90cdb6a"
+        },
+        "adapter_version": 0,
+        "model_revisions": [
+          "synthetic-v1",
+          "synthetic-v1"
+        ],
+        "stage": "m3",
+        "mode": "evaluate",
+        "sampling_warp_config": {
+          "top_k": 0,
+          "top_p": 1.0,
+          "min_p": 0.0
+        },
+        "setting": {},
+        "frozen_settings_hash": "c1ef9ac438877d485ea3b39fecf2f5edc548a3c4fa72ec1aedc0282cfc275a33",
+        "generation_cap": 32,
+        "generation_caps": {
+          "standard": 2048,
+          "long": 24576,
+          "smoke": 32
+        },
+        "timing_session": null,
+        "repeat": null,
+        "phase_profile": false
+      },
+      "status": "complete",
+      "result_path": "/home/catid/drafter/artifacts/reuse_smoke_pipeline/m3/evaluate/rank0/9682a7469bbae8a71b05c622d1829aa5d51248a80c126c987c725249385d37dd.json",
+      "result_sha256": "8f5b4be907f90c577c438a925bfc9594e16b258df1000e37313ae9200f27a56f"
+    },
+    "e6e4f446412990ac771cc8af08c46156ebc557c95a1a58062c7fdaf04b7d088f": {
+      "identity": {
+        "model_pair": [
+          "builtin_toy_target",
+          "builtin_parallel_drafter"
+        ],
+        "prompt": "synthetic-test-standard_nonthinking-1",
+        "scale": "smoke",
+        "prompt_payload_hash": "4a278c7d5563195570f806b01bc533f3e54a0a6f760467eaf2ec55194cf2a8db",
+        "condition": "standard_nonthinking",
+        "seed": 2026,
+        "temperature": 1.0,
+        "sampling_name": "pure_temperature_diagnostic",
+        "verification_rule": "ratio",
+        "proposal_mode": "online_bigram",
+        "checkpoint": {
+          "dense": "551a7a5907538169bf91ad2fb07c74d2c0549f6477fe7412fc7e505d47c59dce",
+          "dense_sparse": "3064fd63be5221bcae96a291b6247c50e6faee648ce6ad5562199675b2be6b54",
+          "projection": "synthetic-calibration-seed-2026",
+          "implementation": "d6e1b6ec966e29d03f1b86a173fdde28e948dcfce0f5af4231cda83ff90cdb6a"
+        },
+        "adapter_version": 0,
+        "model_revisions": [
+          "synthetic-v1",
+          "synthetic-v1"
+        ],
+        "stage": "m3",
+        "mode": "evaluate",
+        "sampling_warp_config": {
+          "top_k": 0,
+          "top_p": 1.0,
+          "min_p": 0.0
+        },
+        "setting": {
+          "lambda_tr": 0.2,
+          "alpha": 1.0,
+          "k_ret": null
+        },
+        "frozen_settings_hash": "c1ef9ac438877d485ea3b39fecf2f5edc548a3c4fa72ec1aedc0282cfc275a33",
+        "generation_cap": 32,
+        "generation_caps": {
+          "standard": 2048,
+          "long": 24576,
+          "smoke": 32
+        },
+        "timing_session": null,
+        "repeat": null,
+        "phase_profile": false
+      },
+      "status": "complete",
+      "result_path": "/home/catid/drafter/artifacts/reuse_smoke_pipeline/m3/evaluate/rank0/e6e4f446412990ac771cc8af08c46156ebc557c95a1a58062c7fdaf04b7d088f.json",
+      "result_sha256": "5d292bb613e1895b131a8546ef9acf54fd9643b818631802ed7d075deb724752"
+    },
+    "b951ad44e4d956c28622b0d70908132240b2bbccfaa73cd32ef54cd8cf668dae": {
+      "identity": {
+        "model_pair": [
+          "builtin_toy_target",
+          "builtin_parallel_drafter"
+        ],
+        "prompt": "synthetic-test-standard_nonthinking-1",
+        "scale": "smoke",
+        "prompt_payload_hash": "4a278c7d5563195570f806b01bc533f3e54a0a6f760467eaf2ec55194cf2a8db",
+        "condition": "standard_nonthinking",
+        "seed": 2026,
+        "temperature": 1.0,
+        "sampling_name": "pure_temperature_diagnostic",
+        "verification_rule": "ratio",
+        "proposal_mode": "dense",
+        "checkpoint": {
+          "dense": "551a7a5907538169bf91ad2fb07c74d2c0549f6477fe7412fc7e505d47c59dce",
+          "dense_sparse": "3064fd63be5221bcae96a291b6247c50e6faee648ce6ad5562199675b2be6b54",
+          "projection": "synthetic-calibration-seed-2026",
+          "implementation": "d6e1b6ec966e29d03f1b86a173fdde28e948dcfce0f5af4231cda83ff90cdb6a"
+        },
+        "adapter_version": 0,
+        "model_revisions": [
+          "synthetic-v1",
+          "synthetic-v1"
+        ],
+        "stage": "m3",
+        "mode": "evaluate",
+        "sampling_warp_config": {
+          "top_k": 0,
+          "top_p": 1.0,
+          "min_p": 0.0
+        },
+        "setting": {
+          "beta": 0.5
+        },
+        "frozen_settings_hash": "c1ef9ac438877d485ea3b39fecf2f5edc548a3c4fa72ec1aedc0282cfc275a33",
+        "generation_cap": 32,
+        "generation_caps": {
+          "standard": 2048,
+          "long": 24576,
+          "smoke": 32
+        },
+        "timing_session": null,
+        "repeat": null,
+        "phase_profile": false
+      },
+      "status": "complete",
+      "result_path": "/home/catid/drafter/artifacts/reuse_smoke_pipeline/m3/evaluate/rank0/b951ad44e4d956c28622b0d70908132240b2bbccfaa73cd32ef54cd8cf668dae.json",
+      "result_sha256": "3dde67a5eaf128e9b44951e574e3917f86ed8b61b275c1bf920b144dac5d7967"
+    },
+    "6889dd5f9d629f616e494d151b9c9bb68a63e66750474733a16a53eaa7dee18d": {
+      "identity": {
+        "model_pair": [
+          "builtin_toy_target",
+          "builtin_parallel_drafter"
+        ],
+        "prompt": "synthetic-test-standard_nonthinking-1",
+        "scale": "smoke",
+        "prompt_payload_hash": "4a278c7d5563195570f806b01bc533f3e54a0a6f760467eaf2ec55194cf2a8db",
+        "condition": "standard_nonthinking",
+        "seed": 2026,
+        "temperature": 1.0,
+        "sampling_name": "pure_temperature_diagnostic",
+        "verification_rule": "ratio",
+        "proposal_mode": "dense_sparse",
+        "checkpoint": {
+          "dense": "551a7a5907538169bf91ad2fb07c74d2c0549f6477fe7412fc7e505d47c59dce",
+          "dense_sparse": "3064fd63be5221bcae96a291b6247c50e6faee648ce6ad5562199675b2be6b54",
+          "projection": "synthetic-calibration-seed-2026",
+          "implementation": "d6e1b6ec966e29d03f1b86a173fdde28e948dcfce0f5af4231cda83ff90cdb6a"
+        },
+        "adapter_version": 0,
+        "model_revisions": [
+          "synthetic-v1",
+          "synthetic-v1"
+        ],
+        "stage": "m3",
+        "mode": "evaluate",
+        "sampling_warp_config": {
+          "top_k": 0,
+          "top_p": 1.0,
+          "min_p": 0.0
+        },
+        "setting": {
+          "beta": 0.5
+        },
+        "frozen_settings_hash": "c1ef9ac438877d485ea3b39fecf2f5edc548a3c4fa72ec1aedc0282cfc275a33",
+        "generation_cap": 32,
+        "generation_caps": {
+          "standard": 2048,
+          "long": 24576,
+          "smoke": 32
+        },
+        "timing_session": null,
+        "repeat": null,
+        "phase_profile": false
+      },
+      "status": "complete",
+      "result_path": "/home/catid/drafter/artifacts/reuse_smoke_pipeline/m3/evaluate/rank0/6889dd5f9d629f616e494d151b9c9bb68a63e66750474733a16a53eaa7dee18d.json",
+      "result_sha256": "a46a944b3fb17a2b91b3dc4f6e87c8b7b6c90b1739c1aa325d6c1524b2ca7472"
+    },
+    "be918f76692793bcf06ce18a653e501d208b98d6432687c277cf25247155a94e": {
+      "identity": {
+        "model_pair": [
+          "builtin_toy_target",
+          "builtin_parallel_drafter"
+        ],
+        "prompt": "synthetic-test-long_thinking-0",
+        "scale": "smoke",
+        "prompt_payload_hash": "df019d45f1d1ad8988b416f325fb7226bf4bbe6983eb54e95f5de00f6e8f6a1a",
+        "condition": "long_thinking",
+        "seed": 2026,
+        "temperature": 0.6,
+        "sampling_name": "thinking_recommended",
+        "verification_rule": "ratio",
+        "proposal_mode": "plain_dflash",
+        "checkpoint": {
+          "dense": "551a7a5907538169bf91ad2fb07c74d2c0549f6477fe7412fc7e505d47c59dce",
+          "dense_sparse": "3064fd63be5221bcae96a291b6247c50e6faee648ce6ad5562199675b2be6b54",
+          "projection": "synthetic-calibration-seed-2026",
+          "implementation": "d6e1b6ec966e29d03f1b86a173fdde28e948dcfce0f5af4231cda83ff90cdb6a"
+        },
+        "adapter_version": 0,
+        "model_revisions": [
+          "synthetic-v1",
+          "synthetic-v1"
+        ],
+        "stage": "m3",
+        "mode": "evaluate",
+        "sampling_warp_config": {
+          "top_k": 20,
+          "top_p": 0.95,
+          "min_p": 0.0
+        },
+        "setting": {},
+        "frozen_settings_hash": "c1ef9ac438877d485ea3b39fecf2f5edc548a3c4fa72ec1aedc0282cfc275a33",
+        "generation_cap": 32,
+        "generation_caps": {
+          "standard": 2048,
+          "long": 24576,
+          "smoke": 32
+        },
+        "timing_session": null,
+        "repeat": null,
+        "phase_profile": false
+      },
+      "status": "complete",
+      "result_path": "/home/catid/drafter/artifacts/reuse_smoke_pipeline/m3/evaluate/rank0/be918f76692793bcf06ce18a653e501d208b98d6432687c277cf25247155a94e.json",
+      "result_sha256": "4bd259e37a02295f491c6be24f7ac8171da6f48aeff8a0a1e9d76c4b80f16b42"
+    },
+    "806f01c047c4d410d344bbc8dd5b983be6469dc2dfcdbebe69396be4d68d9907": {
+      "identity": {
+        "model_pair": [
+          "builtin_toy_target",
+          "builtin_parallel_drafter"
+        ],
+        "prompt": "synthetic-test-long_thinking-0",
+        "scale": "smoke",
+        "prompt_payload_hash": "df019d45f1d1ad8988b416f325fb7226bf4bbe6983eb54e95f5de00f6e8f6a1a",
+        "condition": "long_thinking",
+        "seed": 2026,
+        "temperature": 0.6,
+        "sampling_name": "thinking_recommended",
+        "verification_rule": "ratio",
+        "proposal_mode": "online_bigram",
+        "checkpoint": {
+          "dense": "551a7a5907538169bf91ad2fb07c74d2c0549f6477fe7412fc7e505d47c59dce",
+          "dense_sparse": "3064fd63be5221bcae96a291b6247c50e6faee648ce6ad5562199675b2be6b54",
+          "projection": "synthetic-calibration-seed-2026",
+          "implementation": "d6e1b6ec966e29d03f1b86a173fdde28e948dcfce0f5af4231cda83ff90cdb6a"
+        },
+        "adapter_version": 0,
+        "model_revisions": [
+          "synthetic-v1",
+          "synthetic-v1"
+        ],
+        "stage": "m3",
+        "mode": "evaluate",
+        "sampling_warp_config": {
+          "top_k": 20,
+          "top_p": 0.95,
+          "min_p": 0.0
+        },
+        "setting": {
+          "lambda_tr": 0.2,
+          "alpha": 1.0,
+          "k_ret": null
+        },
+        "frozen_settings_hash": "c1ef9ac438877d485ea3b39fecf2f5edc548a3c4fa72ec1aedc0282cfc275a33",
+        "generation_cap": 32,
+        "generation_caps": {
+          "standard": 2048,
+          "long": 24576,
+          "smoke": 32
+        },
+        "timing_session": null,
+        "repeat": null,
+        "phase_profile": false
+      },
+      "status": "complete",
+      "result_path": "/home/catid/drafter/artifacts/reuse_smoke_pipeline/m3/evaluate/rank0/806f01c047c4d410d344bbc8dd5b983be6469dc2dfcdbebe69396be4d68d9907.json",
+      "result_sha256": "f3c24018115d062cdc3beaf620709e25cb13d357279d65094bd71b8712b4fac1"
+    },
+    "3afb456ef7021e8b8a7e17e30b900f04afdecaae94f295bb0515eb4fe6f967b6": {
+      "identity": {
+        "model_pair": [
+          "builtin_toy_target",
+          "builtin_parallel_drafter"
+        ],
+        "prompt": "synthetic-test-long_thinking-0",
+        "scale": "smoke",
+        "prompt_payload_hash": "df019d45f1d1ad8988b416f325fb7226bf4bbe6983eb54e95f5de00f6e8f6a1a",
+        "condition": "long_thinking",
+        "seed": 2026,
+        "temperature": 0.6,
+        "sampling_name": "thinking_recommended",
+        "verification_rule": "ratio",
+        "proposal_mode": "dense",
+        "checkpoint": {
+          "dense": "551a7a5907538169bf91ad2fb07c74d2c0549f6477fe7412fc7e505d47c59dce",
+          "dense_sparse": "3064fd63be5221bcae96a291b6247c50e6faee648ce6ad5562199675b2be6b54",
+          "projection": "synthetic-calibration-seed-2026",
+          "implementation": "d6e1b6ec966e29d03f1b86a173fdde28e948dcfce0f5af4231cda83ff90cdb6a"
+        },
+        "adapter_version": 0,
+        "model_revisions": [
+          "synthetic-v1",
+          "synthetic-v1"
+        ],
+        "stage": "m3",
+        "mode": "evaluate",
+        "sampling_warp_config": {
+          "top_k": 20,
+          "top_p": 0.95,
+          "min_p": 0.0
+        },
+        "setting": {
+          "beta": 0.5
+        },
+        "frozen_settings_hash": "c1ef9ac438877d485ea3b39fecf2f5edc548a3c4fa72ec1aedc0282cfc275a33",
+        "generation_cap": 32,
+        "generation_caps": {
+          "standard": 2048,
+          "long": 24576,
+          "smoke": 32
+        },
+        "timing_session": null,
+        "repeat": null,
+        "phase_profile": false
+      },
+      "status": "complete",
+      "result_path": "/home/catid/drafter/artifacts/reuse_smoke_pipeline/m3/evaluate/rank0/3afb456ef7021e8b8a7e17e30b900f04afdecaae94f295bb0515eb4fe6f967b6.json",
+      "result_sha256": "9e85bf537d61b99efbea988e568bf184144d6ba0110c05f92d14445a91457e91"
+    },
+    "f576948198f4e1d5b7fe1023e1e224948095667589be19ca8e3ce1875849cd09": {
+      "identity": {
+        "model_pair": [
+          "builtin_toy_target",
+          "builtin_parallel_drafter"
+        ],
+        "prompt": "synthetic-test-long_thinking-0",
+        "scale": "smoke",
+        "prompt_payload_hash": "df019d45f1d1ad8988b416f325fb7226bf4bbe6983eb54e95f5de00f6e8f6a1a",
+        "condition": "long_thinking",
+        "seed": 2026,
+        "temperature": 0.6,
+        "sampling_name": "thinking_recommended",
+        "verification_rule": "ratio",
+        "proposal_mode": "dense_sparse",
+        "checkpoint": {
+          "dense": "551a7a5907538169bf91ad2fb07c74d2c0549f6477fe7412fc7e505d47c59dce",
+          "dense_sparse": "3064fd63be5221bcae96a291b6247c50e6faee648ce6ad5562199675b2be6b54",
+          "projection": "synthetic-calibration-seed-2026",
+          "implementation": "d6e1b6ec966e29d03f1b86a173fdde28e948dcfce0f5af4231cda83ff90cdb6a"
+        },
+        "adapter_version": 0,
+        "model_revisions": [
+          "synthetic-v1",
+          "synthetic-v1"
+        ],
+        "stage": "m3",
+        "mode": "evaluate",
+        "sampling_warp_config": {
+          "top_k": 20,
+          "top_p": 0.95,
+          "min_p": 0.0
+        },
+        "setting": {
+          "beta": 0.5
+        },
+        "frozen_settings_hash": "c1ef9ac438877d485ea3b39fecf2f5edc548a3c4fa72ec1aedc0282cfc275a33",
+        "generation_cap": 32,
+        "generation_caps": {
+          "standard": 2048,
+          "long": 24576,
+          "smoke": 32
+        },
+        "timing_session": null,
+        "repeat": null,
+        "phase_profile": false
+      },
+      "status": "complete",
+      "result_path": "/home/catid/drafter/artifacts/reuse_smoke_pipeline/m3/evaluate/rank0/f576948198f4e1d5b7fe1023e1e224948095667589be19ca8e3ce1875849cd09.json",
+      "result_sha256": "8ff2338954ee9bfb13cc7d5d07c05304403797bf25016865001f47ef62557316"
+    },
+    "cd9e886a228c20f183025542b4fe47f85cd815052a035c3fa81a3972a0823fe1": {
+      "identity": {
+        "model_pair": [
+          "builtin_toy_target",
+          "builtin_parallel_drafter"
+        ],
+        "prompt": "synthetic-test-long_thinking-1",
+        "scale": "smoke",
+        "prompt_payload_hash": "c31bbb6d4dbe523fe7460664a84e8eff30200eaa59b65cffa489b9c1c5852f88",
+        "condition": "long_thinking",
+        "seed": 2026,
+        "temperature": 0.6,
+        "sampling_name": "thinking_recommended",
+        "verification_rule": "ratio",
+        "proposal_mode": "plain_dflash",
+        "checkpoint": {
+          "dense": "551a7a5907538169bf91ad2fb07c74d2c0549f6477fe7412fc7e505d47c59dce",
+          "dense_sparse": "3064fd63be5221bcae96a291b6247c50e6faee648ce6ad5562199675b2be6b54",
+          "projection": "synthetic-calibration-seed-2026",
+          "implementation": "d6e1b6ec966e29d03f1b86a173fdde28e948dcfce0f5af4231cda83ff90cdb6a"
+        },
+        "adapter_version": 0,
+        "model_revisions": [
+          "synthetic-v1",
+          "synthetic-v1"
+        ],
+        "stage": "m3",
+        "mode": "evaluate",
+        "sampling_warp_config": {
+          "top_k": 20,
+          "top_p": 0.95,
+          "min_p": 0.0
+        },
+        "setting": {},
+        "frozen_settings_hash": "c1ef9ac438877d485ea3b39fecf2f5edc548a3c4fa72ec1aedc0282cfc275a33",
+        "generation_cap": 32,
+        "generation_caps": {
+          "standard": 2048,
+          "long": 24576,
+          "smoke": 32
+        },
+        "timing_session": null,
+        "repeat": null,
+        "phase_profile": false
+      },
+      "status": "complete",
+      "result_path": "/home/catid/drafter/artifacts/reuse_smoke_pipeline/m3/evaluate/rank0/cd9e886a228c20f183025542b4fe47f85cd815052a035c3fa81a3972a0823fe1.json",
+      "result_sha256": "838f019a5ae93fef73167fc054a41c14654b2a09a9abe5c2f971f1d0a103ebe3"
+    },
+    "b50599aaf6d9e84d5bdd75f61158a423e91594b5fb5ae0ce5fdc1ce25d632430": {
+      "identity": {
+        "model_pair": [
+          "builtin_toy_target",
+          "builtin_parallel_drafter"
+        ],
+        "prompt": "synthetic-test-long_thinking-1",
+        "scale": "smoke",
+        "prompt_payload_hash": "c31bbb6d4dbe523fe7460664a84e8eff30200eaa59b65cffa489b9c1c5852f88",
+        "condition": "long_thinking",
+        "seed": 2026,
+        "temperature": 0.6,
+        "sampling_name": "thinking_recommended",
+        "verification_rule": "ratio",
+        "proposal_mode": "online_bigram",
+        "checkpoint": {
+          "dense": "551a7a5907538169bf91ad2fb07c74d2c0549f6477fe7412fc7e505d47c59dce",
+          "dense_sparse": "3064fd63be5221bcae96a291b6247c50e6faee648ce6ad5562199675b2be6b54",
+          "projection": "synthetic-calibration-seed-2026",
+          "implementation": "d6e1b6ec966e29d03f1b86a173fdde28e948dcfce0f5af4231cda83ff90cdb6a"
+        },
+        "adapter_version": 0,
+        "model_revisions": [
+          "synthetic-v1",
+          "synthetic-v1"
+        ],
+        "stage": "m3",
+        "mode": "evaluate",
+        "sampling_warp_config": {
+          "top_k": 20,
+          "top_p": 0.95,
+          "min_p": 0.0
+        },
+        "setting": {
+          "lambda_tr": 0.2,
+          "alpha": 1.0,
+          "k_ret": null
+        },
+        "frozen_settings_hash": "c1ef9ac438877d485ea3b39fecf2f5edc548a3c4fa72ec1aedc0282cfc275a33",
+        "generation_cap": 32,
+        "generation_caps": {
+          "standard": 2048,
+          "long": 24576,
+          "smoke": 32
+        },
+        "timing_session": null,
+        "repeat": null,
+        "phase_profile": false
+      },
+      "status": "complete",
+      "result_path": "/home/catid/drafter/artifacts/reuse_smoke_pipeline/m3/evaluate/rank0/b50599aaf6d9e84d5bdd75f61158a423e91594b5fb5ae0ce5fdc1ce25d632430.json",
+      "result_sha256": "ef49fb1978b43871d33d4035ab909a64827b3b9b5b1a9de0c96b2441b59c5098"
+    },
+    "11bdeaa576961d169a3f672ecd872dcbf3d2ca0dd32333a0c89de5e7312df5f7": {
+      "identity": {
+        "model_pair": [
+          "builtin_toy_target",
+          "builtin_parallel_drafter"
+        ],
+        "prompt": "synthetic-test-long_thinking-1",
+        "scale": "smoke",
+        "prompt_payload_hash": "c31bbb6d4dbe523fe7460664a84e8eff30200eaa59b65cffa489b9c1c5852f88",
+        "condition": "long_thinking",
+        "seed": 2026,
+        "temperature": 0.6,
+        "sampling_name": "thinking_recommended",
+        "verification_rule": "ratio",
+        "proposal_mode": "dense",
+        "checkpoint": {
+          "dense": "551a7a5907538169bf91ad2fb07c74d2c0549f6477fe7412fc7e505d47c59dce",
+          "dense_sparse": "3064fd63be5221bcae96a291b6247c50e6faee648ce6ad5562199675b2be6b54",
+          "projection": "synthetic-calibration-seed-2026",
+          "implementation": "d6e1b6ec966e29d03f1b86a173fdde28e948dcfce0f5af4231cda83ff90cdb6a"
+        },
+        "adapter_version": 0,
+        "model_revisions": [
+          "synthetic-v1",
+          "synthetic-v1"
+        ],
+        "stage": "m3",
+        "mode": "evaluate",
+        "sampling_warp_config": {
+          "top_k": 20,
+          "top_p": 0.95,
+          "min_p": 0.0
+        },
+        "setting": {
+          "beta": 0.5
+        },
+        "frozen_settings_hash": "c1ef9ac438877d485ea3b39fecf2f5edc548a3c4fa72ec1aedc0282cfc275a33",
+        "generation_cap": 32,
+        "generation_caps": {
+          "standard": 2048,
+          "long": 24576,
+          "smoke": 32
+        },
+        "timing_session": null,
+        "repeat": null,
+        "phase_profile": false
+      },
+      "status": "complete",
+      "result_path": "/home/catid/drafter/artifacts/reuse_smoke_pipeline/m3/evaluate/rank0/11bdeaa576961d169a3f672ecd872dcbf3d2ca0dd32333a0c89de5e7312df5f7.json",
+      "result_sha256": "6b1f70f2b96201c064e604119ca344528bad7e18fc8fe99a3f77d908b324c660"
+    },
+    "8c2944a40c4a0551f56e1aadc756e42935888c8de33aa2389a4482d9c885ff61": {
+      "identity": {
+        "model_pair": [
+          "builtin_toy_target",
+          "builtin_parallel_drafter"
+        ],
+        "prompt": "synthetic-test-long_thinking-1",
+        "scale": "smoke",
+        "prompt_payload_hash": "c31bbb6d4dbe523fe7460664a84e8eff30200eaa59b65cffa489b9c1c5852f88",
+        "condition": "long_thinking",
+        "seed": 2026,
+        "temperature": 0.6,
+        "sampling_name": "thinking_recommended",
+        "verification_rule": "ratio",
+        "proposal_mode": "dense_sparse",
+        "checkpoint": {
+          "dense": "551a7a5907538169bf91ad2fb07c74d2c0549f6477fe7412fc7e505d47c59dce",
+          "dense_sparse": "3064fd63be5221bcae96a291b6247c50e6faee648ce6ad5562199675b2be6b54",
+          "projection": "synthetic-calibration-seed-2026",
+          "implementation": "d6e1b6ec966e29d03f1b86a173fdde28e948dcfce0f5af4231cda83ff90cdb6a"
+        },
+        "adapter_version": 0,
+        "model_revisions": [
+          "synthetic-v1",
+          "synthetic-v1"
+        ],
+        "stage": "m3",
+        "mode": "evaluate",
+        "sampling_warp_config": {
+          "top_k": 20,
+          "top_p": 0.95,
+          "min_p": 0.0
+        },
+        "setting": {
+          "beta": 0.5
+        },
+        "frozen_settings_hash": "c1ef9ac438877d485ea3b39fecf2f5edc548a3c4fa72ec1aedc0282cfc275a33",
+        "generation_cap": 32,
+        "generation_caps": {
+          "standard": 2048,
+          "long": 24576,
+          "smoke": 32
+        },
+        "timing_session": null,
+        "repeat": null,
+        "phase_profile": false
+      },
+      "status": "complete",
+      "result_path": "/home/catid/drafter/artifacts/reuse_smoke_pipeline/m3/evaluate/rank0/8c2944a40c4a0551f56e1aadc756e42935888c8de33aa2389a4482d9c885ff61.json",
+      "result_sha256": "10e33307c3df0edca5165f2e33c936e134a0246a775f4462b28875915f02f80a"
+    }
+  }
+}

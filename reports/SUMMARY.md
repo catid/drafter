@@ -9,7 +9,7 @@ Synthetic tests and smoke results do not satisfy the real reference gates.
 | --- | --- | --- |
 | M0 | passed | Upstream/local reproduction and target-only mismatch investigation |
 | M1-pre | passed | 64 train calibration prompts; 22,377 hidden vectors; frozen hidden and token features |
-| M1a | running | Four collection workers; final token/split/reconstruction audit pending |
+| M1a | running | Eight long-collection workers; final token/split/reconstruction audit pending |
 | M1b | not_run | Headroom, realized long-output bins, repetition, and feature-shift report pending |
 | M2 | not_run | Primary offline fit and reference loss/sparsity/collision results pending |
 | M3 | not_run | Dev selection, four-arm test evaluation, and isolated timing pending |
@@ -37,15 +37,20 @@ fixed projection has shape `[256, 4096]`; the embedding-PCA token table has shap
 `[151936, 64]`. Projection moments and token-feature statistics were frozen before
 trace collection. See [calibration.json](../artifacts/calibration.json).
 
-M1a is collecting at least 500,000 primary train output tokens, split equally
-between greedy and the model-card warped `T=0.7` condition. Pure-temperature
-diagnostics and long thinking are counted separately. The long condition requires
+M1a has collected 501,510 primary train output tokens: 250,790 greedy and 250,720
+at the model-card warped `T=0.7` setting. Standard dev/test and pure-temperature
+diagnostic generations are also collected. Long thinking is counted separately
+and is still running. The long condition requires
 12 dev and 32 test generations at `T=0.6, top_k=20, top_p=0.95, min_p=0`, with
 thinking enabled. This is out of distribution for the drafter. Final realized
-lengths and repetition filtering have not been reported; no claim about 8K/16K
-adaptation is supported yet. Collection progress is recorded in
+lengths and repetition filtering are pending the final audit; early natural-EOS
+outputs exceed 8K, but no claim about adaptation is supported yet. Collection progress is recorded in
 [collection-processes.json](../artifacts/collection-processes.json).
 
+All 222 CPU tests pass. Complete M3 and M4 smoke runs also pass, including verified
+baseline reuse, direct greedy comparisons, fresh isolated timing, sparse norms,
+version boundaries, feature-context linkage, and parallel diagnostic parity;
+see [validation.json](../artifacts/reuse_smoke_pipeline/validation.json).
 CPU smoke paths exercise collection, compact grouped-loss fitting, all required
 evaluation arms, and synchronous request-local online updates. Synthetic fitting
 and reference-sized random-tensor microbenchmarks are implementation checks;

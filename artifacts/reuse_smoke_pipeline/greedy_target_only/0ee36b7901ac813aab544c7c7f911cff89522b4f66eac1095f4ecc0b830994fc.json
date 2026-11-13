@@ -1,0 +1,105 @@
+{
+  "scale": "smoke",
+  "label": "synthetic",
+  "origin_stage": "m3",
+  "prompt_id": "synthetic-test-standard_nonthinking-1",
+  "input_metadata": {
+    "input_token_ids_sha256": "b968b8117f0a33b3cb760404df844cf85b776b3fbb18a0454dea87b9bcecae80",
+    "input_token_count": 4,
+    "enable_thinking": false,
+    "requested_generation_cap": 32,
+    "effective_generation_cap": 32,
+    "generation_environment_sha256": "588e3c69b32771da3c9da7be36341e956acc5ee40a1a1e9bcae3ff7c745fdbb1"
+  },
+  "output_tokens": [
+    5,
+    6,
+    0,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1
+  ],
+  "generated_tokens": 32,
+  "generation": {
+    "complete": true,
+    "eos_reached": false,
+    "capped": true
+  },
+  "timing_scope": "output exactness diagnostic only; no throughput or latency claim",
+  "identity": {
+    "model_pair": [
+      "builtin_toy_target",
+      "builtin_parallel_drafter"
+    ],
+    "prompt": "synthetic-test-standard_nonthinking-1",
+    "scale": "smoke",
+    "prompt_payload_hash": "4a278c7d5563195570f806b01bc533f3e54a0a6f760467eaf2ec55194cf2a8db",
+    "condition": "standard_nonthinking",
+    "seed": 2026,
+    "temperature": 0.0,
+    "sampling_name": "greedy",
+    "verification_rule": "greedy",
+    "proposal_mode": "target_only",
+    "checkpoint": {
+      "dense": "551a7a5907538169bf91ad2fb07c74d2c0549f6477fe7412fc7e505d47c59dce",
+      "dense_sparse": "3064fd63be5221bcae96a291b6247c50e6faee648ce6ad5562199675b2be6b54",
+      "projection": "synthetic-calibration-seed-2026",
+      "implementation": "d6e1b6ec966e29d03f1b86a173fdde28e948dcfce0f5af4231cda83ff90cdb6a"
+    },
+    "adapter_version": 0,
+    "model_revisions": [
+      "synthetic-v1",
+      "synthetic-v1"
+    ],
+    "mode": "greedy_target_only",
+    "sampling_warp_config": {
+      "top_k": 0,
+      "top_p": 1.0,
+      "min_p": 0.0
+    },
+    "setting": {},
+    "generation_cap": 32,
+    "generation_caps": {
+      "standard": 2048,
+      "long": 24576,
+      "smoke": 32
+    },
+    "timing_session": null,
+    "repeat": null,
+    "phase_profile": false,
+    "input_metadata": {
+      "input_token_ids_sha256": "b968b8117f0a33b3cb760404df844cf85b776b3fbb18a0454dea87b9bcecae80",
+      "input_token_count": 4,
+      "enable_thinking": false,
+      "requested_generation_cap": 32,
+      "effective_generation_cap": 32,
+      "generation_environment_sha256": "588e3c69b32771da3c9da7be36341e956acc5ee40a1a1e9bcae3ff7c745fdbb1"
+    }
+  }
+}

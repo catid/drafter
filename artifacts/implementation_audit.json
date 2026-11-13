@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "audit_type": "implementation_compliance",
-  "audited_at_utc": "2026-11-13T23:16:32.726184+00:00",
+  "audited_at_utc": "2026-11-13T23:41:18.231865+00:00",
   "scale": "reference",
   "status": "implementation_verified_reference_pending",
   "specification": {
@@ -9,7 +9,7 @@
     "sha256": "94bfb4ada4e4954084379a7f0e6194d73a8b85bd128f4fdeadcac63fff3fa295"
   },
   "scope": "Read-only source/test/artifact review of mandatory M0\u2013M4 implementation. This does not mark pending reference experiments complete and does not certify performance or quality gains.",
-  "project_git_commit": "afe3f16b11e3dfb081313a8ecd74288f54ba10e5",
+  "project_git_commit": "8caed94acda59f3c77c45910ea0565c9c8ad5427",
   "source_files_sha256": {
     "src/edraft/__init__.py": "23a9df4a3e6afe2c976090479dccaaaed2f9224c606b557ef8d73b001b6123b5",
     "src/edraft/adapter.py": "b8960babc3f3b126a11e1f990ef144b2a9be6331a181bdbeea3da2f4c0c5b9d5",
@@ -18,9 +18,9 @@
     "src/edraft/bench_grouped.py": "b2db348dd76a18e9920f10063f63fa0138fa1900c8a1b7f0852e41917317cc61",
     "src/edraft/collect.py": "e8c1d984c9a259f33769e0c87057b7773b89cacc24def3521d6c55ea4bf2df62",
     "src/edraft/dflash_loop.py": "06001ce2fd529475e1c31e3aa2bfae69d203e70d72ab2a09b41ad794d8fa60d2",
-    "src/edraft/diagnose.py": "4f3eb560b823cad5965fe2c2bf789e9f55ecb4a0e5ff0ce9c9e2e2a410ef0749",
+    "src/edraft/diagnose.py": "371dada16bf41510c02a99954c9f1e96c8b36370f0a5967f061a6dc19b06d013",
     "src/edraft/download.py": "013d796de195dd38858e5cdaee597443c1228835a07e6cc2cfd47847ef127977",
-    "src/edraft/eval_closed_loop.py": "dbef2371b86ec7050560cd98f1cb27e7240aaf3510518116299fe1fcd2f383f4",
+    "src/edraft/eval_closed_loop.py": "1032e04bf097ea623bd729f2a6e2cf4846366296e9f8795766f0b4312dde5b62",
     "src/edraft/features.py": "adfbfa21ab6622f730df33513142c65a7d3c5adc6079ddb7f444d6471e5a6bff",
     "src/edraft/investigate_m0.py": "ead0c8e6abff9932455d34186652e3ca787b7da6d01e36242ee36d6a8095bbb8",
     "src/edraft/launch.py": "9daaa032d00cc18a615c76184369028195f4b85c484e952536043b74d5f69233",
@@ -39,10 +39,12 @@
     "tests/conftest.py": "b562ac70cfda02abaa0f26db69d1b84c8378413631b5ffe19499dc746120f6a8",
     "tests/test_adapter.py": "be1daf6f84a8c2043db7c8253e376c5034b8af4617a1f6654571f71b24e9ad15",
     "tests/test_backend.py": "795516553aee37e6fdaeb127a4e7145ab93989da1b5c46a7e14a224d5579b34c",
+    "tests/test_baseline_reuse.py": "2fe4715660b5a67c9aeb7f1a04c3816780c718bafd39606e377544c1bde174e3",
     "tests/test_collect.py": "a74f73b62988afbb0cb7c4bd13cd05c5f2522e06e7ec8938db91135a580df7e6",
     "tests/test_diagnose.py": "b5582e4c18b0fe46ccbd409afb683a88aa626dea9e28f84cd107b268d934b66e",
-    "tests/test_diagnose_vectorized.py": "c6d22326786a5f772b941b8451e126150768b21774611fc51a2f4a89d1e29ba2",
+    "tests/test_diagnose_vectorized.py": "d3f1f605a08f5618cb0fa441290a587e38126dc7ce574bc2b7691255a6b1424e",
     "tests/test_eval_closed_loop.py": "8d237be418032b8e1b4aaf7daf64292dae3cf4804f26cfaa8ca24cac9968cb58",
+    "tests/test_greedy_output_report.py": "99dacd6013e54d66e2fd9878082ad7bd40ebb2044f0d93a475e8ffe3b3e67984",
     "tests/test_grouped_vectorized.py": "35595eb3ceab495d78f756d88a2541e4c3f293f6a1e6d3a9d3d198d3e505dfa5",
     "tests/test_lookahead_positive.py": "88ad13c05ba6ddc98a844098c541a1d8a37e6722b4c88b0fcd839fb3b9aee686",
     "tests/test_m4_feature_context.py": "bfb8aaa67260cc6dea38bf971709516ea692fa63657f0d0ee70faab8a31d7151",
@@ -54,10 +56,10 @@
     "tests/test_traces.py": "259d5222bff39f337384f2fd625f63399c61d3f355ee4fb36e19a611d435d2a2",
     "tests/test_train.py": "6b307f0c359aef2e69fa5303fbf82e0d6f35c482b479e8d62d629851ad20de75"
   },
-  "source_tree_sha256": "50dfd40e6ea3823927121d64776df84d141aa7fe867425db302e8f75aac6fb5b",
+  "source_tree_sha256": "4c8f3cceda98c78df26621b2286839e29ebb02c7cc0c6e8c44f63840eddcf12d",
   "verification_basis": {
-    "full_suite": "Independent CPU pytest passed180 tests,0 failures/errors/skips in18.54s; commands/source hashes captured in artifacts/final_smoke_pipeline/validation.json.",
-    "direct_work": "Inspected requirement equations, entrypoints, test definitions, source paths and artifacts; validated referenced paths/symbols. Full smoke M3/M4 entrypoints completed after both code owners declared ready.",
+    "full_suite": "Latest independent CPU pytest passed222 tests,0 failures/errors/skips in30.29s; source hashes and commands captured in artifacts/reuse_smoke_pipeline/validation.json.",
+    "direct_work": "Read-only independent implementation/test review plus complete fresh M3/M4 CPU all-mode runs after both code owners froze source. Checked source/result/manifest/settings checksums, reused outputs and absent reused costs, fresh M4 tune/timing/profile rows, target-only diagnostic reuse, paired greedy coverage, feature context and online norms/versions.",
     "core_modified_by_auditor": false,
     "gpu_work_by_auditor": false,
     "test_only_additions_by_auditor": [
@@ -67,14 +69,16 @@
       "README.md",
       "reports/SUMMARY.md"
     ],
-    "integration_validation": "artifacts/final_smoke_pipeline/validation.json",
+    "integration_validation": "artifacts/reuse_smoke_pipeline/validation.json",
+    "historical_integration_validation": "artifacts/final_smoke_pipeline/validation.json",
+    "historical_validation_artifacts_preserved": true,
     "isolation": {
       "CUDA_VISIBLE_DEVICES": "",
       "HF_HUB_OFFLINE": "1",
       "HF_DATASETS_OFFLINE": "1",
       "TRANSFORMERS_OFFLINE": "1",
       "OMP_NUM_THREADS": "1",
-      "output_directory": "artifacts/final_smoke_pipeline"
+      "output_directory": "artifacts/reuse_smoke_pipeline"
     },
     "source_unchanged_during_validation": true
   },
@@ -108,14 +112,18 @@
     },
     "M1a": {
       "status": "running",
-      "launcher_pid": 2555687,
+      "launcher_pid": 2719449,
       "physical_gpus": [
         2,
         3,
         4,
-        6
+        6,
+        0,
+        1,
+        5,
+        7
       ],
-      "world_size": 4,
+      "world_size": 8,
       "manifest": "artifacts/collection-processes.json",
       "primary_train_tokens": 501510,
       "primary_train_tokens_by_temperature": {
@@ -126,11 +134,37 @@
       "pure_temperature_diagnostic_generations": 192,
       "long_generations_required": 44,
       "current_partition": "long_thinking",
-      "progress_recorded_utc": "2026-11-13T23:15:23.810822+00:00"
+      "progress_recorded_utc": "2026-11-13T23:17:57.440943+00:00",
+      "completed_long_generations_at_expansion": 3,
+      "expansion_record": "artifacts/collection_expansion_20261113T231738Z/expansion_record.json",
+      "progress": {
+        "utc": "2026-11-13T23:40:19.202616+00:00",
+        "long_generations": 30,
+        "long_split_counts": {
+          "dev": 12,
+          "test": 18
+        },
+        "long_tokens": 360657,
+        "long_repetition_excluded": 0,
+        "long_over_8K": 27,
+        "long_over_16K": 4,
+        "long_capped": 2
+      }
     },
     "M1b": {
       "status": "not_run",
-      "next_gate": "M1a audit passed and final CPU integration validation complete"
+      "next_gate": "M1a audit passed and renewed final CPU integration validation complete",
+      "integration_validation": {
+        "status": "passed",
+        "pytest_tests": 180,
+        "m3_smoke_evaluated_requests": 32,
+        "m3_smoke_timed_requests": 96,
+        "m4_smoke_evaluated_requests": 40,
+        "m4_smoke_timed_requests": 120
+      },
+      "diagnostic_workers": 8,
+      "parallel_implementation_tests": 22,
+      "parallel_benchmark": "artifacts/diagnostic_parallel_benchmark.json"
     },
     "M2": {
       "status": "not_run",
@@ -148,7 +182,7 @@
     }
   },
   "artifact_sha256_at_audit": {
-    "artifacts/milestones.json": "c57c37217fc31109c5fdc45339701ffe302c62f01ad886bf662adecf4f85b3eb",
+    "artifacts/milestones.json": "5d1e88635f687d22b80f336317ad49635bec3c3794749dd1d56a63101150dc0d",
     "artifacts/m0.json": "417fc9a717229308e096876f7566e1e6a81dd1bfd371a372cd771505ff5b329e",
     "artifacts/m0_numerics.json": "1c47bd19d2251ad8113299bcf67888dc1761890ec72d15073cf221ec395107b4",
     "artifacts/calibration.json": "1fd5e35b6a68e7d54b36dbcc3b83d66a79f032a76e17dd8c51466ee5737721c7",
@@ -156,8 +190,8 @@
     "artifacts/m2_smoke.json": "a7373119cd9033f341fe7c7790a5ffa0b55b1cd797f5666784ace12c16d2df84",
     "artifacts/eval_smoke/m3/summary.json": "d121f48f12d1c69a51357f068f499e378e707474733595e8403f05d9526739a4",
     "artifacts/eval_smoke/m4/summary.json": "99ec58ab68f55efad3eaa4f138c69ae06b0732d13409affeaa07d962e66afa8e",
-    "README.md": "a682f3bed914569a8d78c7b3df23097778ee3cea897c164584f0800ad398bc6e",
-    "reports/SUMMARY.md": "dadad86416a6b772033d9bd0eb4d83b2a9eb316f4fa9c050553f01753f1174ca",
+    "README.md": "95ee19d1a754d4452ea9333328f502e845d4fe6f828d9489fe61113d1f4f6ffc",
+    "reports/SUMMARY.md": "f14cb73ada96f65dd0ec8479ba2a8a2d331526b53dc8e9851f0f6339f69d2eab",
     "artifacts/environment.json": "e95d2296761195e999fe92d9d66d42f95959beba2ea136f36c5b75bb72dfa8a4",
     "artifacts/m0_current_validation.json": "62d990799dd2917cb6c51c8a9a6df8f78b99ad84e29d322cc2266e3b928c7e91",
     "artifacts/final_smoke_pipeline/validation.json": "79b93eb70ab305996b8a29e6988818835413c523f43bd5afa510490dd9e92155",
@@ -167,7 +201,17 @@
     "artifacts/final_smoke_pipeline/m4/summary.json": "bfd5bbc014a3ed2b045009dd3a5421acf289a65f0d50d76e6081c0255a62ad24",
     "artifacts/final_smoke_pipeline/m4/timing.json": "0484b51f73c756361e4ace6a6dd567ce9b2faf99568bbf89832767634a70cfc6",
     "artifacts/final_smoke_pipeline/m4/feature_context.json": "f0fb88e937e89e14dc75b8827fcdd8711d8f855c2a7d588330b744408f619b88",
-    "artifacts/diagnostic_aggregation_benchmark.json": "f95ca6071cdf6c1aa07d41fb680614e6aac540613ad45c0650ea33917b276c07"
+    "artifacts/diagnostic_aggregation_benchmark.json": "f95ca6071cdf6c1aa07d41fb680614e6aac540613ad45c0650ea33917b276c07",
+    "artifacts/reuse_smoke_pipeline/validation.json": "aa65d7bb7f4e7f6bccd15be1bee1b880da0f7e38932d69a1135e448af747c10f",
+    "artifacts/reuse_smoke_pipeline/pytest.xml": "e0ae28c29bb0fd627b09fbbcdb93eb13fc7d9832fb7ea54be521015ce5a959f1",
+    "artifacts/reuse_smoke_pipeline/m3/summary.json": "4541de5df4170b7ba786d1fa185dbf2f401c0f6f03a934f64dab8b8d74cc2146",
+    "artifacts/reuse_smoke_pipeline/m3/timing.json": "2c927a317fcd36d5c7c3b6909c84ccd8a5b43f252952fca853ddf8ef965beb7c",
+    "artifacts/reuse_smoke_pipeline/m3/greedy_output_comparisons.json": "e9abef4d63bb4dc037815dd56cfcd8da32cf7d81e56dfc4f43b487090297e897",
+    "artifacts/reuse_smoke_pipeline/m4/summary.json": "6e067b24fb95e5e3606350412c7e61b6d0b920c11fcb6805099d031fec7a4825",
+    "artifacts/reuse_smoke_pipeline/m4/timing.json": "d50f358ccb7b22318243867504217664fdb6bdc47aadbb401509558244b62262",
+    "artifacts/reuse_smoke_pipeline/m4/greedy_output_comparisons.json": "f62ebc036e717c9505750cec522d0e0b2d509a325bd0238f55e5de82b5d42eed",
+    "artifacts/reuse_smoke_pipeline/m4/feature_context.json": "31d3b8623eb969a191c78fff2e231e103a8a2a91bc5ac85babedc17d3a5a3ca6",
+    "artifacts/diagnostic_parallel_benchmark.json": "50a8b768de0094e562140387603a5ba9276c323268a2d0c98cd04c69e43f0816"
   },
   "requirements": [
     {
@@ -321,12 +365,12 @@
         {
           "path": "src/edraft/eval_closed_loop.py",
           "symbol": "run_identity",
-          "line": 316
+          "line": 367
         },
         {
           "path": "src/edraft/eval_closed_loop.py",
           "symbol": "comparison_bundle",
-          "line": 365
+          "line": 546
         },
         {
           "path": "src/edraft/train.py",
@@ -386,7 +430,7 @@
         {
           "path": "src/edraft/eval_closed_loop.py",
           "symbol": "sampling_conditions",
-          "line": 62
+          "line": 64
         }
       ],
       "required_tests": [],
@@ -958,7 +1002,7 @@
         {
           "path": "src/edraft/diagnose.py",
           "symbol": "live_block_diagnostics",
-          "line": 30
+          "line": 33
         }
       ],
       "required_tests": [
@@ -1089,7 +1133,7 @@
         {
           "path": "src/edraft/eval_closed_loop.py",
           "symbol": "EvaluationRunner.run",
-          "line": 222
+          "line": 277
         }
       ],
       "required_tests": [
@@ -1173,7 +1217,7 @@
         {
           "path": "src/edraft/eval_closed_loop.py",
           "symbol": "summarize_rows",
-          "line": 474
+          "line": 656
         },
         {
           "path": "tests/test_online.py",
@@ -1186,7 +1230,8 @@
         "test_25"
       ],
       "artifact_evidence": [
-        "artifacts/final_smoke_pipeline/validation.json"
+        "artifacts/final_smoke_pipeline/validation.json",
+        "artifacts/reuse_smoke_pipeline/validation.json"
       ],
       "remaining_work": [],
       "notes": "Effective lazy-shrunk dS L2 norm now reported by pure active-bucket read; regression verifies norm after deferred shrinkage without mutating values/timestamps/snapshot. Bandwidth remains explicitly algorithmic estimated bytes divided by full update time, not hardware HBM bandwidth."
@@ -1316,7 +1361,7 @@
         "artifacts/milestones.json"
       ],
       "remaining_work": [
-        "Finish running four-rank collection and acceptance audit; do not credit pure-T1 or long tokens toward primary floor."
+        "Finish current reference collection workers and final acceptance audit; do not credit pure-T1 or long tokens toward the primary floor."
       ],
       "notes": "Quota code is implemented/tested; real completion is not yet evidence."
     },
@@ -1408,22 +1453,47 @@
         {
           "path": "src/edraft/diagnose.py",
           "symbol": "live_block_diagnostics",
-          "line": 30
+          "line": 33
         },
         {
           "path": "src/edraft/diagnose.py",
           "symbol": "DiagnosticAccumulator",
-          "line": 173
+          "line": 176
         },
         {
           "path": "src/edraft/diagnose.py",
           "symbol": "audited_trace_sources",
-          "line": 352
+          "line": 355
         },
         {
           "path": "tests/test_diagnose_vectorized.py",
           "symbol": "test_batched_accumulator_complete_report_matches_original_scalar",
           "line": 116
+        },
+        {
+          "path": "src/edraft/diagnose.py",
+          "symbol": "accumulate_trace_shards",
+          "line": 471
+        },
+        {
+          "path": "tests/test_diagnose_vectorized.py",
+          "symbol": "test_parallel_shard_reports_preserve_all_serial_statistics",
+          "line": 184
+        },
+        {
+          "path": "tests/test_diagnose_vectorized.py",
+          "symbol": "test_parallel_overlap_replays_before_any_partial_merge",
+          "line": 195
+        },
+        {
+          "path": "tests/test_diagnose_vectorized.py",
+          "symbol": "test_parallel_window_bounds_completed_unmerged_results",
+          "line": 230
+        },
+        {
+          "path": "tests/test_diagnose_vectorized.py",
+          "symbol": "test_parallel_workers_propagate_validation_errors",
+          "line": 211
         }
       ],
       "required_tests": [],
@@ -1433,7 +1503,7 @@
       "remaining_work": [
         "Aggregate completed authoritative reference traces."
       ],
-      "notes": "Batched FP64 feature accumulation preserves full scalar-oracle report within numerical tolerance; per-prompt scalar metric addition order is unchanged."
+      "notes": "Batched FP64 features and bounded spawned CPU workers preserve audited source order and report semantics; overlap fallback replays original blocks serially before merging. Source SHA and canonical schema checks remain mandatory; worker failures prevent publishing a partial result."
     },
     {
       "id": "m1_long_data",
@@ -1451,17 +1521,17 @@
         {
           "path": "src/edraft/diagnose.py",
           "symbol": "generation_diagnostics",
-          "line": 93
+          "line": 96
         },
         {
           "path": "src/edraft/diagnose.py",
           "symbol": "DiagnosticAccumulator",
-          "line": 173
+          "line": 176
         },
         {
           "path": "src/edraft/eval_closed_loop.py",
           "symbol": "summarize_rows",
-          "line": 474
+          "line": 656
         }
       ],
       "required_tests": [],
@@ -1482,22 +1552,22 @@
         {
           "path": "src/edraft/diagnose.py",
           "symbol": "DiagnosticAccumulator",
-          "line": 173
+          "line": 176
         },
         {
           "path": "src/edraft/eval_closed_loop.py",
           "symbol": "aggregate",
-          "line": 809
+          "line": 1147
         },
         {
           "path": "src/edraft/eval_closed_loop.py",
           "symbol": "audited_m4_feature_context",
-          "line": 696
+          "line": 1034
         },
         {
           "path": "src/edraft/eval_closed_loop.py",
           "symbol": "synthetic_m4_feature_context",
-          "line": 762
+          "line": 1100
         },
         {
           "path": "tests/test_m4_feature_context.py",
@@ -1517,7 +1587,8 @@
       ],
       "required_tests": [],
       "artifact_evidence": [
-        "artifacts/final_smoke_pipeline/m4/feature_context.json"
+        "artifacts/final_smoke_pipeline/m4/feature_context.json",
+        "artifacts/reuse_smoke_pipeline/m4/feature_context.json"
       ],
       "remaining_work": [
         "Populate reference M4 feature context when M1b and M4 experiments complete."
@@ -1609,17 +1680,17 @@
         {
           "path": "src/edraft/eval_closed_loop.py",
           "symbol": "arms_for",
-          "line": 54
+          "line": 56
         },
         {
           "path": "src/edraft/eval_closed_loop.py",
           "symbol": "evaluation_jobs",
-          "line": 98
+          "line": 100
         },
         {
           "path": "src/edraft/eval_closed_loop.py",
           "symbol": "EvaluationRunner",
-          "line": 151
+          "line": 155
         }
       ],
       "required_tests": [
@@ -1628,7 +1699,8 @@
       ],
       "artifact_evidence": [
         "artifacts/eval_smoke/m3/summary.json",
-        "artifacts/final_smoke_pipeline/m3/summary.json"
+        "artifacts/final_smoke_pipeline/m3/summary.json",
+        "artifacts/reuse_smoke_pipeline/m3/summary.json"
       ],
       "remaining_work": [
         "Execute all1920 reference test requests plus required matched timing."
@@ -1646,12 +1718,12 @@
         {
           "path": "src/edraft/eval_closed_loop.py",
           "symbol": "select_prompts",
-          "line": 72
+          "line": 74
         },
         {
           "path": "src/edraft/eval_closed_loop.py",
           "symbol": "evaluation_jobs",
-          "line": 98
+          "line": 100
         }
       ],
       "required_tests": [],
@@ -1671,17 +1743,17 @@
         {
           "path": "src/edraft/eval_closed_loop.py",
           "symbol": "candidate_settings",
-          "line": 112
+          "line": 114
         },
         {
           "path": "src/edraft/eval_closed_loop.py",
           "symbol": "tune",
-          "line": 399
+          "line": 580
         },
         {
           "path": "src/edraft/eval_closed_loop.py",
           "symbol": "validate_frozen_settings",
-          "line": 126
+          "line": 128
         }
       ],
       "required_tests": [
@@ -1704,17 +1776,17 @@
         {
           "path": "src/edraft/eval_closed_loop.py",
           "symbol": "summarize_rows",
-          "line": 474
+          "line": 656
         },
         {
           "path": "src/edraft/diagnose.py",
           "symbol": "prompt_bootstrap",
-          "line": 141
+          "line": 144
         },
         {
           "path": "src/edraft/eval_closed_loop.py",
           "symbol": "prompt_quantile_ci",
-          "line": 456
+          "line": 638
         }
       ],
       "required_tests": [],
@@ -1734,12 +1806,12 @@
         {
           "path": "src/edraft/eval_closed_loop.py",
           "symbol": "arms_for",
-          "line": 54
+          "line": 56
         },
         {
           "path": "src/edraft/eval_closed_loop.py",
           "symbol": "EvaluationRunner",
-          "line": 151
+          "line": 155
         }
       ],
       "required_tests": [
@@ -1749,7 +1821,8 @@
       ],
       "artifact_evidence": [
         "artifacts/eval_smoke/m4/summary.json",
-        "artifacts/final_smoke_pipeline/m4/summary.json"
+        "artifacts/final_smoke_pipeline/m4/summary.json",
+        "artifacts/reuse_smoke_pipeline/m4/summary.json"
       ],
       "remaining_work": [
         "Execute all2400 reference test requests plus required matched timing after complete M3."
@@ -1778,12 +1851,12 @@
         {
           "path": "src/edraft/eval_closed_loop.py",
           "symbol": "timing",
-          "line": 554
+          "line": 892
         },
         {
           "path": "src/edraft/eval_closed_loop.py",
           "symbol": "comparison_bundle",
-          "line": 365
+          "line": 546
         }
       ],
       "required_tests": [],
@@ -1873,7 +1946,7 @@
         {
           "path": "src/edraft/eval_closed_loop.py",
           "symbol": "evaluate",
-          "line": 536
+          "line": 868
         }
       ],
       "required_tests": [
@@ -1926,6 +1999,168 @@
       "artifact_evidence": [],
       "remaining_work": [],
       "notes": "Required standalone helper and exact-table lookup benchmark exist. No M5 research claims are made."
+    },
+    {
+      "id": "baseline_acceptance_reuse",
+      "specification_sections": [
+        "M3",
+        "M4"
+      ],
+      "requirement": "Reuse exact matching M3 baseline acceptance/output rows in M4 evaluation only; always measure M4 tuning/timing independently.",
+      "status": "implemented_verified",
+      "implementation_evidence": [
+        {
+          "path": "src/edraft/eval_closed_loop.py",
+          "symbol": "baseline_generation_identity",
+          "line": 389
+        },
+        {
+          "path": "src/edraft/eval_closed_loop.py",
+          "symbol": "m3_baseline_sources",
+          "line": 394
+        },
+        {
+          "path": "src/edraft/eval_closed_loop.py",
+          "symbol": "reuse_m3_baseline",
+          "line": 425
+        },
+        {
+          "path": "src/edraft/eval_closed_loop.py",
+          "symbol": "execute_job",
+          "line": 500
+        },
+        {
+          "path": "src/edraft/eval_closed_loop.py",
+          "symbol": "baseline_reuse_report",
+          "line": 721
+        },
+        {
+          "path": "tests/test_baseline_reuse.py",
+          "symbol": "test_exact_baseline_reuses_outputs_without_calling_runner_and_pins_sources",
+          "line": 83
+        },
+        {
+          "path": "tests/test_baseline_reuse.py",
+          "symbol": "test_mismatch_runs_fresh_with_reason_and_preserves_m4_settings",
+          "line": 107
+        },
+        {
+          "path": "tests/test_baseline_reuse.py",
+          "symbol": "test_unverified_source_cannot_be_reused",
+          "line": 135
+        },
+        {
+          "path": "tests/test_baseline_reuse.py",
+          "symbol": "test_changed_tokenizer_environment_prevents_baseline_reuse",
+          "line": 158
+        },
+        {
+          "path": "tests/test_baseline_reuse.py",
+          "symbol": "test_frozen_selection_rejects_changed_tokenizer_model_environment",
+          "line": 168
+        },
+        {
+          "path": "tests/test_baseline_reuse.py",
+          "symbol": "test_tune_timing_and_profiles_never_reuse_m3_baselines",
+          "line": 180
+        },
+        {
+          "path": "tests/test_baseline_reuse.py",
+          "symbol": "test_reused_and_mixed_rows_keep_acceptance_and_only_observed_latency",
+          "line": 191
+        },
+        {
+          "path": "tests/test_baseline_reuse.py",
+          "symbol": "test_m4_aggregate_acceptance_complete_with_reused_baselines_and_fresh_timing",
+          "line": 210
+        }
+      ],
+      "required_tests": [],
+      "artifact_evidence": [
+        "artifacts/reuse_smoke_pipeline/validation.json",
+        "artifacts/reuse_smoke_pipeline/m3/summary.json",
+        "artifacts/reuse_smoke_pipeline/m4/summary.json"
+      ],
+      "remaining_work": [
+        "Execute reference M3/M4 to produce real baseline reuse and per-arm comparison evidence."
+      ],
+      "notes": "Exact generation identity differs only in stage/all-arm frozen settings hash. Source settings, tokenizer/model generation environment, result/manifest bytes and complete outputs are validated. Reused rows null time/phase/bandwidth/memory fields; tuning and timing/profile never reuse."
+    },
+    {
+      "id": "m3_m4_greedy_comparisons",
+      "specification_sections": [
+        "M3",
+        "M4",
+        12
+      ],
+      "requirement": "Report paired greedy mismatch rates for each evaluated arm against plain DFlash and target-only generation with complete test-prompt coverage.",
+      "status": "implemented_verified",
+      "implementation_evidence": [
+        {
+          "path": "src/edraft/eval_closed_loop.py",
+          "symbol": "execute_target_only",
+          "line": 773
+        },
+        {
+          "path": "src/edraft/eval_closed_loop.py",
+          "symbol": "read_target_only",
+          "line": 754
+        },
+        {
+          "path": "src/edraft/eval_closed_loop.py",
+          "symbol": "target_only_identity",
+          "line": 736
+        },
+        {
+          "path": "src/edraft/eval_closed_loop.py",
+          "symbol": "greedy_output_report",
+          "line": 803
+        },
+        {
+          "path": "src/edraft/eval_closed_loop.py",
+          "symbol": "aggregate",
+          "line": 1147
+        },
+        {
+          "path": "tests/test_greedy_output_report.py",
+          "symbol": "test_target_only_runs_once_and_reuses_matching_diagnostic_across_stages",
+          "line": 35
+        },
+        {
+          "path": "tests/test_greedy_output_report.py",
+          "symbol": "test_target_only_identity_changes_require_fresh_generation",
+          "line": 52
+        },
+        {
+          "path": "tests/test_greedy_output_report.py",
+          "symbol": "test_paired_report_detects_adapter_mismatch_against_both_references",
+          "line": 86
+        },
+        {
+          "path": "tests/test_greedy_output_report.py",
+          "symbol": "test_missing_target_only_coverage_gates_aggregate_even_with_all_arm_outputs",
+          "line": 118
+        },
+        {
+          "path": "tests/test_greedy_output_report.py",
+          "symbol": "test_numerical_mismatch_is_reported_without_failing_completed_coverage",
+          "line": 136
+        }
+      ],
+      "required_tests": [
+        "test_15"
+      ],
+      "artifact_evidence": [
+        "artifacts/reuse_smoke_pipeline/validation.json",
+        "artifacts/reuse_smoke_pipeline/m3/summary.json",
+        "artifacts/reuse_smoke_pipeline/m4/summary.json",
+        "artifacts/reuse_smoke_pipeline/m3/greedy_output_comparisons.json",
+        "artifacts/reuse_smoke_pipeline/m4/greedy_output_comparisons.json"
+      ],
+      "remaining_work": [
+        "Execute reference M3/M4 to produce real baseline reuse and per-arm comparison evidence."
+      ],
+      "notes": "Every standard greedy test arm is paired to plain/target-only. Target-only files bind tokenized inputs, caps, environment and model/source identities with checksums; matching diagnostics are shared between stages. Coverage gates completeness; BF16 mismatches remain informational."
     }
   ],
   "required_tests": [
@@ -2221,13 +2456,38 @@
           "path": "tests/test_backend.py",
           "symbol": "test_installed_qwen_dflash_upstream_local_seeded_parity",
           "line": 31
+        },
+        {
+          "path": "tests/test_greedy_output_report.py",
+          "symbol": "test_paired_report_detects_adapter_mismatch_against_both_references",
+          "line": 86
+        },
+        {
+          "path": "tests/test_greedy_output_report.py",
+          "symbol": "test_missing_target_only_coverage_gates_aggregate_even_with_all_arm_outputs",
+          "line": 118
+        },
+        {
+          "path": "tests/test_greedy_output_report.py",
+          "symbol": "test_numerical_mismatch_is_reported_without_failing_completed_coverage",
+          "line": 136
+        },
+        {
+          "path": "tests/test_greedy_output_report.py",
+          "symbol": "test_target_only_runs_once_and_reuses_matching_diagnostic_across_stages",
+          "line": 35
         }
       ],
-      "remaining_work": [],
+      "remaining_work": [
+        "Reference M3/M4 per-arm comparisons are scheduled with those pending reference milestones."
+      ],
       "artifacts": [
         "artifacts/m0.json",
-        "artifacts/m0_numerics.json"
-      ]
+        "artifacts/m0_numerics.json",
+        "artifacts/reuse_smoke_pipeline/m3/greedy_output_comparisons.json",
+        "artifacts/reuse_smoke_pipeline/m4/greedy_output_comparisons.json"
+      ],
+      "direct_validation": "CPU smoke complete16 M3 and20 M4 paired arm-vs-plain/target comparisons;0 synthetic mismatches. Missing coverage and informational numerical mismatches separately regression-tested."
     },
     {
       "id": "test_16",
@@ -2451,12 +2711,12 @@
     {
       "milestone": "M3",
       "status": "not_run",
-      "action": "Dev tune then frozen4-arm reference evaluation and full isolated timing."
+      "action": "Dev tune, then frozen4-arm reference evaluation with paired greedy target/plain comparisons and full isolated timing."
     },
     {
       "milestone": "M4",
       "status": "not_run",
-      "action": "Dev tune then frozen5-arm reference evaluation and separate full isolated timing; include feature shift and norms."
+      "action": "Dev tune, then frozen5-arm reference evaluation with exact-identity M3 baseline output reuse, paired greedy comparisons and fresh isolated timing; include feature shift and norms."
     }
   ],
   "nonblocking_limitations": [
@@ -2489,50 +2749,66 @@
   "implementation_status": "implemented_verified",
   "integration_summary": {
     "pytest": {
-      "tests": 180,
+      "tests": 222,
       "failures": 0,
       "errors": 0,
       "skipped": 0
     },
-    "stages": {
+    "stage_reports": {
       "m3": {
         "status": "complete",
-        "requests": 32,
-        "timed_requests": 96,
-        "phase_profile_groups": 16,
-        "online_requests_with_finite_dS_norm_and_valid_versions": 0
+        "evaluation_requests": 32,
+        "fresh_timed_requests": 96,
+        "fresh_phase_profile_requests": 32,
+        "fresh_tune_requests": 28,
+        "greedy_paired_comparisons": 16,
+        "greedy_mismatches": 0,
+        "online_requests_with_valid_sparse_norms_and_versions": 0,
+        "timing_session": "f59eec9d1bbb4e6c865e6c1cd1e79838"
       },
       "m4": {
         "status": "complete",
-        "requests": 40,
-        "timed_requests": 120,
-        "phase_profile_groups": 20,
-        "online_requests_with_finite_dS_norm_and_valid_versions": 16
+        "evaluation_requests": 40,
+        "fresh_timed_requests": 120,
+        "fresh_phase_profile_requests": 40,
+        "fresh_tune_requests": 36,
+        "greedy_paired_comparisons": 20,
+        "greedy_mismatches": 0,
+        "online_requests_with_valid_sparse_norms_and_versions": 16,
+        "timing_session": "6e543072411b45f1b636d806128b18a5"
       }
     },
-    "cross_stage_comparisons": [
-      {
-        "m3_arm": "plain_dflash",
-        "m4_arm": "plain_dflash",
-        "matching_settings_or_greedy_requests": 8,
-        "identical_output_and_accepted_length": true,
-        "stochastic_requests_with_different_dev_selected_settings": 0
+    "baseline_reuse": {
+      "report": {
+        "policy": "M4 baseline acceptance/output only; exact M3 generation identities and source checksums; tune/timing/profile always execute",
+        "reused_requests": 8,
+        "fresh_baseline_requests": 8,
+        "fresh_reasons": {
+          "M3 generation identity differs; use the frozen M4 settings: setting": 8
+        }
       },
-      {
-        "m3_arm": "online_bigram",
-        "m4_arm": "online_bigram",
-        "matching_settings_or_greedy_requests": 2,
-        "identical_output_and_accepted_length": true,
-        "stochastic_requests_with_different_dev_selected_settings": 6
-      },
-      {
-        "m3_arm": "dense_sparse",
-        "m4_arm": "offline_static",
-        "matching_settings_or_greedy_requests": 2,
-        "identical_output_and_accepted_length": true,
-        "stochastic_requests_with_different_dev_selected_settings": 6
-      }
-    ],
-    "m4_feature_context_groups": 4
+      "plain_requests_reused": 8,
+      "bigram_settings_equal": false,
+      "bigram_requests_reused": 0,
+      "output_and_acceptance_fields_match_source": true,
+      "source_checksums_verified": true,
+      "reused_current_run_costs_unavailable": true
+    },
+    "target_only_reuse": {
+      "m3_generated": 2,
+      "m4_reused": 2,
+      "total_unique_diagnostics": 2,
+      "checksums_verified": true
+    },
+    "timing_isolation": {
+      "distinct_m3_m4_sessions": true,
+      "m4_tune_reused_requests": 0,
+      "m4_timing_reused_requests": 0,
+      "m4_phase_profile_reused_requests": 0
+    },
+    "m4_feature_context": {
+      "status": "complete",
+      "feature_group_count": 4
+    }
   }
 }

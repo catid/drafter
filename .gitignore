@@ -10,6 +10,8 @@ artifacts/*.pt
 artifacts/**/*.pt
 artifacts/**/*.parquet
 artifacts/m2_sparse_stats/
+# Detailed reference trajectories remain local alongside the large trace/checkpoint artifacts.
+artifacts/m[34]/*/rank*/
 artifacts/**/*.lock
 artifacts/*.lock
 *.tmp

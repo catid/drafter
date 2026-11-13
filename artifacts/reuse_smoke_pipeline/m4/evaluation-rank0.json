@@ -1,0 +1,3796 @@
+{
+  "scale": "smoke",
+  "stage": "m4",
+  "status": "rank_complete",
+  "rank": 0,
+  "world_size": 1,
+  "rows": 40,
+  "frozen_settings_hash": "7c292dc80196a5bdd1d039c403f7571fbd29c54e3fd34186daa8ffbb8381b365",
+  "baseline_reuse": {
+    "policy": "M4 baseline acceptance/output only; exact M3 generation identities and source checksums; tune/timing/profile always execute",
+    "reused_requests": 8,
+    "fresh_baseline_requests": 8,
+    "fresh_reasons": {
+      "M3 generation identity differs; use the frozen M4 settings: setting": 8
+    }
+  },
+  "greedy_target_only_diagnostics": [
+    {
+      "path": "/home/catid/drafter/artifacts/reuse_smoke_pipeline/greedy_target_only/e569a0c047c41217c91249295adc5f6928cd4e74436a752e8a56c7ce7e4d1171.json",
+      "sha256": "7f9d5284a345ed30e9562e1f0a7146c7c9a863e3716d27bfa36049aba96cc1a5",
+      "manifest_path": "/home/catid/drafter/artifacts/reuse_smoke_pipeline/greedy_target_only/e569a0c047c41217c91249295adc5f6928cd4e74436a752e8a56c7ce7e4d1171.manifest.json",
+      "manifest_sha256": "a6b0b79ded4e6bc0052170bf1eb7d875d1db93c7b39e5652544a80e6479f6d8c",
+      "status": "reused",
+      "prompt_id": "synthetic-test-standard_nonthinking-0",
+      "origin_stage": "m3"
+    },
+    {
+      "path": "/home/catid/drafter/artifacts/reuse_smoke_pipeline/greedy_target_only/0ee36b7901ac813aab544c7c7f911cff89522b4f66eac1095f4ecc0b830994fc.json",
+      "sha256": "ee6a4f55b8f4f15ac53f23b0a6efd24c2d2f87d118624720c710b1a6bcc453d2",
+      "manifest_path": "/home/catid/drafter/artifacts/reuse_smoke_pipeline/greedy_target_only/0ee36b7901ac813aab544c7c7f911cff89522b4f66eac1095f4ecc0b830994fc.manifest.json",
+      "manifest_sha256": "cfe1f61d35f87bf4dccfc9f68342d19dcaf4348134ee1a3556cf0091c05964ea",
+      "status": "reused",
+      "prompt_id": "synthetic-test-standard_nonthinking-1",
+      "origin_stage": "m3"
+    }
+  ],
+  "groups": [
+    {
+      "condition": "long_thinking",
+      "temperature": 0.6,
+      "sampling_warp_config": {
+        "min_p": 0.0,
+        "top_k": 20,
+        "top_p": 0.95
+      },
+      "arm": "offline_online_stride1",
+      "requests": 2,
+      "primary_requests": 2,
+      "repetition_excluded": 0,
+      "reused_acceptance_output_requests": 0,
+      "requests_with_latency": 2,
+      "requests_without_latency": 0,
+      "metrics": {
+        "mean_accepted_length": {
+          "n_prompts": 2,
+          "mean": 2.0,
+          "ci95": [
+            2.0,
+            2.0
+          ],
+          "seed_std_mean": 0.0,
+          "bootstrap_unit": "prompt_id",
+          "seed_aggregation": "arithmetic_mean_before_bootstrap"
+        },
+        "median_accepted_length": {
+          "n_prompts": 2,
+          "mean": 2.0,
+          "ci95": [
+            2.0,
+            2.0
+          ],
+          "seed_std_mean": 0.0,
+          "bootstrap_unit": "prompt_id",
+          "seed_aggregation": "arithmetic_mean_before_bootstrap"
+        },
+        "target_forwards_per_generated_token": {
+          "n_prompts": 2,
+          "mean": 0.34375,
+          "ci95": [
+            0.34375,
+            0.34375
+          ],
+          "seed_std_mean": 0.0,
+          "bootstrap_unit": "prompt_id",
+          "seed_aggregation": "arithmetic_mean_before_bootstrap"
+        }
+      },
+      "pooled_block_accepted_length_mean": 2,
+      "pooled_block_accepted_length_median": 2.0,
+      "metric_aggregation": "metrics are prompt-weighted after seed aggregation; median_accepted_length aggregates request medians; pooled block statistics are separate",
+      "acceptance_by_block_position": {
+        "0": {
+          "n_prompts": 2,
+          "mean": 1.0,
+          "ci95": [
+            1.0,
+            1.0
+          ],
+          "seed_std_mean": 0.0,
+          "bootstrap_unit": "prompt_id",
+          "seed_aggregation": "arithmetic_mean_before_bootstrap"
+        },
+        "1": {
+          "n_prompts": 2,
+          "mean": 0.5454545454545454,
+          "ci95": [
+            0.5454545454545454,
+            0.5454545454545454
+          ],
+          "seed_std_mean": 0.0,
+          "bootstrap_unit": "prompt_id",
+          "seed_aggregation": "arithmetic_mean_before_bootstrap"
+        },
+        "2": {
+          "n_prompts": 2,
+          "mean": 0.36363636363636365,
+          "ci95": [
+            0.36363636363636365,
+            0.36363636363636365
+          ],
+          "seed_std_mean": 0.0,
+          "bootstrap_unit": "prompt_id",
+          "seed_aggregation": "arithmetic_mean_before_bootstrap"
+        },
+        "3": {
+          "n_prompts": 2,
+          "mean": 0.1,
+          "ci95": [
+            0.1,
+            0.1
+          ],
+          "seed_std_mean": 0.0,
+          "bootstrap_unit": "prompt_id",
+          "seed_aggregation": "arithmetic_mean_before_bootstrap"
+        }
+      },
+      "acceptance_bins": [
+        {
+          "axis": "input_context_length",
+          "bin": "0-1024",
+          "n_prompts": 2,
+          "mean": 0.5116279069767442,
+          "ci95": [
+            0.5116279069767442,
+            0.5116279069767442
+          ],
+          "seed_std_mean": 0.0,
+          "bootstrap_unit": "prompt_id",
+          "seed_aggregation": "arithmetic_mean_before_bootstrap",
+          "accepted_length": {
+            "n_prompts": 2,
+            "mean": 2.0,
+            "ci95": [
+              2.0,
+              2.0
+            ],
+            "seed_std_mean": 0.0,
+            "bootstrap_unit": "prompt_id",
+            "seed_aggregation": "arithmetic_mean_before_bootstrap"
+          }
+        },
+        {
+          "axis": "output_offset",
+          "bin": "0-1K",
+          "n_prompts": 2,
+          "mean": 0.5116279069767442,
+          "ci95": [
+            0.5116279069767442,
+            0.5116279069767442
+          ],
+          "seed_std_mean": 0.0,
+          "bootstrap_unit": "prompt_id",
+          "seed_aggregation": "arithmetic_mean_before_bootstrap",
+          "accepted_length": {
+            "n_prompts": 2,
+            "mean": 2.0,
+            "ci95": [
+              2.0,
+              2.0
+            ],
+            "seed_std_mean": 0.0,
+            "bootstrap_unit": "prompt_id",
+            "seed_aggregation": "arithmetic_mean_before_bootstrap"
+          }
+        }
+      ],
+      "request_latency_p50_seconds": 0.04286241403315216,
+      "request_latency_p95_seconds": 0.04288362265797332,
+      "request_latency_p50_prompt_bootstrap": null,
+      "request_latency_p95_prompt_bootstrap": null,
+      "phase_ms_median": {},
+      "realized_output_length_mean": 32,
+      "realized_generations_above_8K": 0,
+      "realized_generations_above_16K": 0,
+      "peak_allocated_bytes": null,
+      "peak_reserved_bytes": null,
+      "online_final_state": [
+        {
+          "adapter_version": 11,
+          "u": 11,
+          "last_round": 11,
+          "loss_mode": "live_full",
+          "T_train": 1.0,
+          "beta_train": 1.0,
+          "dW_norm": 0.0018921373412013054,
+          "dA_norm": 0.002211327198892832,
+          "db_norm": 0.00026533048367127776,
+          "dS_norm": 0.00041603780118748546,
+          "dS_norm_definition": "L2 norm of effective lazy-shrunk request delta at current optimizer u; zero unrepresented buckets; pure read",
+          "db_exact_zero_fraction": 0.0,
+          "active_buckets": 108,
+          "active_buckets_min_over_updates": 44,
+          "active_buckets_max_over_updates": 108,
+          "state_bytes_estimate_by_operation": {
+            "dense_activation_clone": 8448,
+            "dense_optimizer": 21824,
+            "dense_snapshot": 12672,
+            "sparse_update": 18532,
+            "sparse_snapshot": 31560
+          },
+          "state_bytes_estimate_total": 93036,
+          "state_bytes_definition": "conceptual FP32 parameter/timestamp/index reads+writes for state clones, SGD/prox steps and snapshots; excludes E/logit/autograd activation traffic and is not hardware HBM traffic",
+          "sparse_capacity": 257,
+          "sparse_update_bytes_estimate": 1808,
+          "sparse_snapshot_bytes": 1776,
+          "dense_snapshot_bytes": 384,
+          "sparse_snapshot_strategy": "compact_active_bucket_copy",
+          "sparse_update_strategy": "dirty_lazy_catchup_and_active_list_compaction",
+          "last_full_loss": 0.6554895639419556
+        },
+        {
+          "adapter_version": 11,
+          "u": 11,
+          "last_round": 11,
+          "loss_mode": "live_full",
+          "T_train": 1.0,
+          "beta_train": 1.0,
+          "dW_norm": 0.002008468611165881,
+          "dA_norm": 0.0023171170614659786,
+          "db_norm": 0.000294590019620955,
+          "dS_norm": 0.0004143515834584832,
+          "dS_norm_definition": "L2 norm of effective lazy-shrunk request delta at current optimizer u; zero unrepresented buckets; pure read",
+          "db_exact_zero_fraction": 0.0,
+          "active_buckets": 101,
+          "active_buckets_min_over_updates": 54,
+          "active_buckets_max_over_updates": 101,
+          "state_bytes_estimate_by_operation": {
+            "dense_activation_clone": 8448,
+            "dense_optimizer": 21824,
+            "dense_snapshot": 12672,
+            "sparse_update": 18500,
+            "sparse_snapshot": 30664
+          },
+          "state_bytes_estimate_total": 92108,
+          "state_bytes_definition": "conceptual FP32 parameter/timestamp/index reads+writes for state clones, SGD/prox steps and snapshots; excludes E/logit/autograd activation traffic and is not hardware HBM traffic",
+          "sparse_capacity": 257,
+          "sparse_update_bytes_estimate": 1724,
+          "sparse_snapshot_bytes": 1664,
+          "dense_snapshot_bytes": 384,
+          "sparse_snapshot_strategy": "compact_active_bucket_copy",
+          "sparse_update_strategy": "dirty_lazy_catchup_and_active_list_compaction",
+          "last_full_loss": 0.6561665534973145
+        }
+      ]
+    },
+    {
+      "condition": "long_thinking",
+      "temperature": 0.6,
+      "sampling_warp_config": {
+        "min_p": 0.0,
+        "top_k": 20,
+        "top_p": 0.95
+      },
+      "arm": "offline_static",
+      "requests": 2,
+      "primary_requests": 2,
+      "repetition_excluded": 0,
+      "reused_acceptance_output_requests": 0,
+      "requests_with_latency": 2,
+      "requests_without_latency": 0,
+      "metrics": {
+        "mean_accepted_length": {
+          "n_prompts": 2,
+          "mean": 2.1045454545454545,
+          "ci95": [
+            1.9090909090909092,
+            2.3
+          ],
+          "seed_std_mean": 0.0,
+          "bootstrap_unit": "prompt_id",
+          "seed_aggregation": "arithmetic_mean_before_bootstrap"
+        },
+        "median_accepted_length": {
+          "n_prompts": 2,
+          "mean": 2.0,
+          "ci95": [
+            2.0,
+            2.0
+          ],
+          "seed_std_mean": 0.0,
+          "bootstrap_unit": "prompt_id",
+          "seed_aggregation": "arithmetic_mean_before_bootstrap"
+        },
+        "target_forwards_per_generated_token": {
+          "n_prompts": 2,
+          "mean": 0.328125,
+          "ci95": [
+            0.3125,
+            0.34375
+          ],
+          "seed_std_mean": 0.0,
+          "bootstrap_unit": "prompt_id",
+          "seed_aggregation": "arithmetic_mean_before_bootstrap"
+        }
+      },
+      "pooled_block_accepted_length_mean": 2.0952380952380953,
+      "pooled_block_accepted_length_median": 2,
+      "metric_aggregation": "metrics are prompt-weighted after seed aggregation; median_accepted_length aggregates request medians; pooled block statistics are separate",
+      "acceptance_by_block_position": {
+        "0": {
+          "n_prompts": 2,
+          "mean": 1.0,
+          "ci95": [
+            1.0,
+            1.0
+          ],
+          "seed_std_mean": 0.0,
+          "bootstrap_unit": "prompt_id",
+          "seed_aggregation": "arithmetic_mean_before_bootstrap"
+        },
+        "1": {
+          "n_prompts": 2,
+          "mean": 0.606060606060606,
+          "ci95": [
+            0.5454545454545454,
+            0.6666666666666666
+          ],
+          "seed_std_mean": 0.0,
+          "bootstrap_unit": "prompt_id",
+          "seed_aggregation": "arithmetic_mean_before_bootstrap"
+        },
+        "2": {
+          "n_prompts": 2,
+          "mean": 0.37222222222222223,
+          "ci95": [
+            0.3,
+            0.4444444444444444
+          ],
+          "seed_std_mean": 0.0,
+          "bootstrap_unit": "prompt_id",
+          "seed_aggregation": "arithmetic_mean_before_bootstrap"
+        },
+        "3": {
+          "n_prompts": 2,
+          "mean": 0.21666666666666667,
+          "ci95": [
+            0.1,
+            0.3333333333333333
+          ],
+          "seed_std_mean": 0.0,
+          "bootstrap_unit": "prompt_id",
+          "seed_aggregation": "arithmetic_mean_before_bootstrap"
+        }
+      },
+      "acceptance_bins": [
+        {
+          "axis": "input_context_length",
+          "bin": "0-1024",
+          "n_prompts": 2,
+          "mean": 0.5608108108108107,
+          "ci95": [
+            0.5,
+            0.6216216216216216
+          ],
+          "seed_std_mean": 0.0,
+          "bootstrap_unit": "prompt_id",
+          "seed_aggregation": "arithmetic_mean_before_bootstrap",
+          "accepted_length": {
+            "n_prompts": 2,
+            "mean": 2.1045454545454545,
+            "ci95": [
+              1.9090909090909092,
+              2.3
+            ],
+            "seed_std_mean": 0.0,
+            "bootstrap_unit": "prompt_id",
+            "seed_aggregation": "arithmetic_mean_before_bootstrap"
+          }
+        },
+        {
+          "axis": "output_offset",
+          "bin": "0-1K",
+          "n_prompts": 2,
+          "mean": 0.5608108108108107,
+          "ci95": [
+            0.5,
+            0.6216216216216216
+          ],
+          "seed_std_mean": 0.0,
+          "bootstrap_unit": "prompt_id",
+          "seed_aggregation": "arithmetic_mean_before_bootstrap",
+          "accepted_length": {
+            "n_prompts": 2,
+            "mean": 2.1045454545454545,
+            "ci95": [
+              1.9090909090909092,
+              2.3
+            ],
+            "seed_std_mean": 0.0,
+            "bootstrap_unit": "prompt_id",
+            "seed_aggregation": "arithmetic_mean_before_bootstrap"
+          }
+        }
+      ],
+      "request_latency_p50_seconds": 0.010792314074933529,
+      "request_latency_p95_seconds": 0.011336176795884967,
+      "request_latency_p50_prompt_bootstrap": null,
+      "request_latency_p95_prompt_bootstrap": null,
+      "phase_ms_median": {},
+      "realized_output_length_mean": 32,
+      "realized_generations_above_8K": 0,
+      "realized_generations_above_16K": 0,
+      "peak_allocated_bytes": null,
+      "peak_reserved_bytes": null,
+      "online_final_state": []
+    },
+    {
+      "condition": "long_thinking",
+      "temperature": 0.6,
+      "sampling_warp_config": {
+        "min_p": 0.0,
+        "top_k": 20,
+        "top_p": 0.95
+      },
+      "arm": "online_bigram",
+      "requests": 2,
+      "primary_requests": 2,
+      "repetition_excluded": 0,
+      "reused_acceptance_output_requests": 0,
+      "requests_with_latency": 2,
+      "requests_without_latency": 0,
+      "metrics": {
+        "mean_accepted_length": {
+          "n_prompts": 2,
+          "mean": 2.5555555555555554,
+          "ci95": [
+            2.5555555555555554,
+            2.5555555555555554
+          ],
+          "seed_std_mean": 0.0,
+          "bootstrap_unit": "prompt_id",
+          "seed_aggregation": "arithmetic_mean_before_bootstrap"
+        },
+        "median_accepted_length": {
+          "n_prompts": 2,
+          "mean": 3.0,
+          "ci95": [
+            3.0,
+            3.0
+          ],
+          "seed_std_mean": 0.0,
+          "bootstrap_unit": "prompt_id",
+          "seed_aggregation": "arithmetic_mean_before_bootstrap"
+        },
+        "target_forwards_per_generated_token": {
+          "n_prompts": 2,
+          "mean": 0.28125,
+          "ci95": [
+            0.28125,
+            0.28125
+          ],
+          "seed_std_mean": 0.0,
+          "bootstrap_unit": "prompt_id",
+          "seed_aggregation": "arithmetic_mean_before_bootstrap"
+        }
+      },
+      "pooled_block_accepted_length_mean": 2.5555555555555554,
+      "pooled_block_accepted_length_median": 3.0,
+      "metric_aggregation": "metrics are prompt-weighted after seed aggregation; median_accepted_length aggregates request medians; pooled block statistics are separate",
+      "acceptance_by_block_position": {
+        "0": {
+          "n_prompts": 2,
+          "mean": 1.0,
+          "ci95": [
+            1.0,
+            1.0
+          ],
+          "seed_std_mean": 0.0,
+          "bootstrap_unit": "prompt_id",
+          "seed_aggregation": "arithmetic_mean_before_bootstrap"
+        },
+        "1": {
+          "n_prompts": 2,
+          "mean": 0.7777777777777778,
+          "ci95": [
+            0.7777777777777778,
+            0.7777777777777778
+          ],
+          "seed_std_mean": 0.0,
+          "bootstrap_unit": "prompt_id",
+          "seed_aggregation": "arithmetic_mean_before_bootstrap"
+        },
+        "2": {
+          "n_prompts": 2,
+          "mean": 0.5555555555555556,
+          "ci95": [
+            0.5555555555555556,
+            0.5555555555555556
+          ],
+          "seed_std_mean": 0.0,
+          "bootstrap_unit": "prompt_id",
+          "seed_aggregation": "arithmetic_mean_before_bootstrap"
+        },
+        "3": {
+          "n_prompts": 2,
+          "mean": 0.25,
+          "ci95": [
+            0.25,
+            0.25
+          ],
+          "seed_std_mean": 0.0,
+          "bootstrap_unit": "prompt_id",
+          "seed_aggregation": "arithmetic_mean_before_bootstrap"
+        }
+      },
+      "acceptance_bins": [
+        {
+          "axis": "input_context_length",
+          "bin": "0-1024",
+          "n_prompts": 2,
+          "mean": 0.6571428571428571,
+          "ci95": [
+            0.6571428571428571,
+            0.6571428571428571
+          ],
+          "seed_std_mean": 0.0,
+          "bootstrap_unit": "prompt_id",
+          "seed_aggregation": "arithmetic_mean_before_bootstrap",
+          "accepted_length": {
+            "n_prompts": 2,
+            "mean": 2.5555555555555554,
+            "ci95": [
+              2.5555555555555554,
+              2.5555555555555554
+            ],
+            "seed_std_mean": 0.0,
+            "bootstrap_unit": "prompt_id",
+            "seed_aggregation": "arithmetic_mean_before_bootstrap"
+          }
+        },
+        {
+          "axis": "output_offset",
+          "bin": "0-1K",
+          "n_prompts": 2,
+          "mean": 0.6571428571428571,
+          "ci95": [
+            0.6571428571428571,
+            0.6571428571428571
+          ],
+          "seed_std_mean": 0.0,
+          "bootstrap_unit": "prompt_id",
+          "seed_aggregation": "arithmetic_mean_before_bootstrap",
+          "accepted_length": {
+            "n_prompts": 2,
+            "mean": 2.5555555555555554,
+            "ci95": [
+              2.5555555555555554,
+              2.5555555555555554
+            ],
+            "seed_std_mean": 0.0,
+            "bootstrap_unit": "prompt_id",
+            "seed_aggregation": "arithmetic_mean_before_bootstrap"
+          }
+        }
+      ],
+      "request_latency_p50_seconds": 0.005567745538428426,
+      "request_latency_p95_seconds": 0.00556844521779567,
+      "request_latency_p50_prompt_bootstrap": null,
+      "request_latency_p95_prompt_bootstrap": null,
+      "phase_ms_median": {},
+      "realized_output_length_mean": 32,
+      "realized_generations_above_8K": 0,
+      "realized_generations_above_16K": 0,
+      "peak_allocated_bytes": null,
+      "peak_reserved_bytes": null,
+      "online_final_state": []
+    },
+    {
+      "condition": "long_thinking",
+      "temperature": 0.6,
+      "sampling_warp_config": {
+        "min_p": 0.0,
+        "top_k": 20,
+        "top_p": 0.95
+      },
+      "arm": "online_dbS",
+      "requests": 2,
+      "primary_requests": 2,
+      "repetition_excluded": 0,
+      "reused_acceptance_output_requests": 0,
+      "requests_with_latency": 2,
+      "requests_without_latency": 0,
+      "metrics": {
+        "mean_accepted_length": {
+          "n_prompts": 2,
+          "mean": 2.0,
+          "ci95": [
+            2.0,
+            2.0
+          ],
+          "seed_std_mean": 0.0,
+          "bootstrap_unit": "prompt_id",
+          "seed_aggregation": "arithmetic_mean_before_bootstrap"
+        },
+        "median_accepted_length": {
+          "n_prompts": 2,
+          "mean": 2.0,
+          "ci95": [
+            2.0,
+            2.0
+          ],
+          "seed_std_mean": 0.0,
+          "bootstrap_unit": "prompt_id",
+          "seed_aggregation": "arithmetic_mean_before_bootstrap"
+        },
+        "target_forwards_per_generated_token": {
+          "n_prompts": 2,
+          "mean": 0.34375,
+          "ci95": [
+            0.34375,
+            0.34375
+          ],
+          "seed_std_mean": 0.0,
+          "bootstrap_unit": "prompt_id",
+          "seed_aggregation": "arithmetic_mean_before_bootstrap"
+        }
+      },
+      "pooled_block_accepted_length_mean": 2,
+      "pooled_block_accepted_length_median": 2.0,
+      "metric_aggregation": "metrics are prompt-weighted after seed aggregation; median_accepted_length aggregates request medians; pooled block statistics are separate",
+      "acceptance_by_block_position": {
+        "0": {
+          "n_prompts": 2,
+          "mean": 1.0,
+          "ci95": [
+            1.0,
+            1.0
+          ],
+          "seed_std_mean": 0.0,
+          "bootstrap_unit": "prompt_id",
+          "seed_aggregation": "arithmetic_mean_before_bootstrap"
+        },
+        "1": {
+          "n_prompts": 2,
+          "mean": 0.5454545454545454,
+          "ci95": [
+            0.5454545454545454,
+            0.5454545454545454
+          ],
+          "seed_std_mean": 0.0,
+          "bootstrap_unit": "prompt_id",
+          "seed_aggregation": "arithmetic_mean_before_bootstrap"
+        },
+        "2": {
+          "n_prompts": 2,
+          "mean": 0.36363636363636365,
+          "ci95": [
+            0.36363636363636365,
+            0.36363636363636365
+          ],
+          "seed_std_mean": 0.0,
+          "bootstrap_unit": "prompt_id",
+          "seed_aggregation": "arithmetic_mean_before_bootstrap"
+        },
+        "3": {
+          "n_prompts": 2,
+          "mean": 0.1,
+          "ci95": [
+            0.1,
+            0.1
+          ],
+          "seed_std_mean": 0.0,
+          "bootstrap_unit": "prompt_id",
+          "seed_aggregation": "arithmetic_mean_before_bootstrap"
+        }
+      },
+      "acceptance_bins": [
+        {
+          "axis": "input_context_length",
+          "bin": "0-1024",
+          "n_prompts": 2,
+          "mean": 0.5116279069767442,
+          "ci95": [
+            0.5116279069767442,
+            0.5116279069767442
+          ],
+          "seed_std_mean": 0.0,
+          "bootstrap_unit": "prompt_id",
+          "seed_aggregation": "arithmetic_mean_before_bootstrap",
+          "accepted_length": {
+            "n_prompts": 2,
+            "mean": 2.0,
+            "ci95": [
+              2.0,
+              2.0
+            ],
+            "seed_std_mean": 0.0,
+            "bootstrap_unit": "prompt_id",
+            "seed_aggregation": "arithmetic_mean_before_bootstrap"
+          }
+        },
+        {
+          "axis": "output_offset",
+          "bin": "0-1K",
+          "n_prompts": 2,
+          "mean": 0.5116279069767442,
+          "ci95": [
+            0.5116279069767442,
+            0.5116279069767442
+          ],
+          "seed_std_mean": 0.0,
+          "bootstrap_unit": "prompt_id",
+          "seed_aggregation": "arithmetic_mean_before_bootstrap",
+          "accepted_length": {
+            "n_prompts": 2,
+            "mean": 2.0,
+            "ci95": [
+              2.0,
+              2.0
+            ],
+            "seed_std_mean": 0.0,
+            "bootstrap_unit": "prompt_id",
+            "seed_aggregation": "arithmetic_mean_before_bootstrap"
+          }
+        }
+      ],
+      "request_latency_p50_seconds": 0.0392924320185557,
+      "request_latency_p95_seconds": 0.039361174835357816,
+      "request_latency_p50_prompt_bootstrap": null,
+      "request_latency_p95_prompt_bootstrap": null,
+      "phase_ms_median": {},
+      "realized_output_length_mean": 32,
+      "realized_generations_above_8K": 0,
+      "realized_generations_above_16K": 0,
+      "peak_allocated_bytes": null,
+      "peak_reserved_bytes": null,
+      "online_final_state": [
+        {
+          "adapter_version": 11,
+          "u": 11,
+          "last_round": 11,
+          "loss_mode": "live_full",
+          "T_train": 1.0,
+          "beta_train": 1.0,
+          "dW_norm": 0.0,
+          "dA_norm": 0.0,
+          "db_norm": 0.0026543780695647,
+          "dS_norm": 0.00416740495711565,
+          "dS_norm_definition": "L2 norm of effective lazy-shrunk request delta at current optimizer u; zero unrepresented buckets; pure read",
+          "db_exact_zero_fraction": 0.0,
+          "active_buckets": 108,
+          "active_buckets_min_over_updates": 44,
+          "active_buckets_max_over_updates": 108,
+          "state_bytes_estimate_by_operation": {
+            "dense_activation_clone": 8448,
+            "dense_optimizer": 2464,
+            "dense_snapshot": 12672,
+            "sparse_update": 18532,
+            "sparse_snapshot": 31560
+          },
+          "state_bytes_estimate_total": 73676,
+          "state_bytes_definition": "conceptual FP32 parameter/timestamp/index reads+writes for state clones, SGD/prox steps and snapshots; excludes E/logit/autograd activation traffic and is not hardware HBM traffic",
+          "sparse_capacity": 257,
+          "sparse_update_bytes_estimate": 1808,
+          "sparse_snapshot_bytes": 1776,
+          "dense_snapshot_bytes": 384,
+          "sparse_snapshot_strategy": "compact_active_bucket_copy",
+          "sparse_update_strategy": "dirty_lazy_catchup_and_active_list_compaction",
+          "last_full_loss": 0.6580045223236084
+        },
+        {
+          "adapter_version": 11,
+          "u": 11,
+          "last_round": 11,
+          "loss_mode": "live_full",
+          "T_train": 1.0,
+          "beta_train": 1.0,
+          "dW_norm": 0.0,
+          "dA_norm": 0.0,
+          "db_norm": 0.0029467912390828133,
+          "dS_norm": 0.004153627902269363,
+          "dS_norm_definition": "L2 norm of effective lazy-shrunk request delta at current optimizer u; zero unrepresented buckets; pure read",
+          "db_exact_zero_fraction": 0.0,
+          "active_buckets": 101,
+          "active_buckets_min_over_updates": 54,
+          "active_buckets_max_over_updates": 101,
+          "state_bytes_estimate_by_operation": {
+            "dense_activation_clone": 8448,
+            "dense_optimizer": 2464,
+            "dense_snapshot": 12672,
+            "sparse_update": 18500,
+            "sparse_snapshot": 30664
+          },
+          "state_bytes_estimate_total": 72748,
+          "state_bytes_definition": "conceptual FP32 parameter/timestamp/index reads+writes for state clones, SGD/prox steps and snapshots; excludes E/logit/autograd activation traffic and is not hardware HBM traffic",
+          "sparse_capacity": 257,
+          "sparse_update_bytes_estimate": 1724,
+          "sparse_snapshot_bytes": 1664,
+          "dense_snapshot_bytes": 384,
+          "sparse_snapshot_strategy": "compact_active_bucket_copy",
+          "sparse_update_strategy": "dirty_lazy_catchup_and_active_list_compaction",
+          "last_full_loss": 0.6582047343254089
+        }
+      ]
+    },
+    {
+      "condition": "long_thinking",
+      "temperature": 0.6,
+      "sampling_warp_config": {
+        "min_p": 0.0,
+        "top_k": 20,
+        "top_p": 0.95
+      },
+      "arm": "plain_dflash",
+      "requests": 2,
+      "primary_requests": 2,
+      "repetition_excluded": 0,
+      "reused_acceptance_output_requests": 2,
+      "requests_with_latency": 0,
+      "requests_without_latency": 2,
+      "metrics": {
+        "mean_accepted_length": {
+          "n_prompts": 2,
+          "mean": 2.3,
+          "ci95": [
+            2.3,
+            2.3
+          ],
+          "seed_std_mean": 0.0,
+          "bootstrap_unit": "prompt_id",
+          "seed_aggregation": "arithmetic_mean_before_bootstrap"
+        },
+        "median_accepted_length": {
+          "n_prompts": 2,
+          "mean": 2.5,
+          "ci95": [
+            2.5,
+            2.5
+          ],
+          "seed_std_mean": 0.0,
+          "bootstrap_unit": "prompt_id",
+          "seed_aggregation": "arithmetic_mean_before_bootstrap"
+        },
+        "target_forwards_per_generated_token": {
+          "n_prompts": 2,
+          "mean": 0.3125,
+          "ci95": [
+            0.3125,
+            0.3125
+          ],
+          "seed_std_mean": 0.0,
+          "bootstrap_unit": "prompt_id",
+          "seed_aggregation": "arithmetic_mean_before_bootstrap"
+        }
+      },
+      "pooled_block_accepted_length_mean": 2.3,
+      "pooled_block_accepted_length_median": 2.5,
+      "metric_aggregation": "metrics are prompt-weighted after seed aggregation; median_accepted_length aggregates request medians; pooled block statistics are separate",
+      "acceptance_by_block_position": {
+        "0": {
+          "n_prompts": 2,
+          "mean": 1.0,
+          "ci95": [
+            1.0,
+            1.0
+          ],
+          "seed_std_mean": 0.0,
+          "bootstrap_unit": "prompt_id",
+          "seed_aggregation": "arithmetic_mean_before_bootstrap"
+        },
+        "1": {
+          "n_prompts": 2,
+          "mean": 0.6,
+          "ci95": [
+            0.6,
+            0.6
+          ],
+          "seed_std_mean": 0.0,
+          "bootstrap_unit": "prompt_id",
+          "seed_aggregation": "arithmetic_mean_before_bootstrap"
+        },
+        "2": {
+          "n_prompts": 2,
+          "mean": 0.5,
+          "ci95": [
+            0.5,
+            0.5
+          ],
+          "seed_std_mean": 0.0,
+          "bootstrap_unit": "prompt_id",
+          "seed_aggregation": "arithmetic_mean_before_bootstrap"
+        },
+        "3": {
+          "n_prompts": 2,
+          "mean": 0.2222222222222222,
+          "ci95": [
+            0.2222222222222222,
+            0.2222222222222222
+          ],
+          "seed_std_mean": 0.0,
+          "bootstrap_unit": "prompt_id",
+          "seed_aggregation": "arithmetic_mean_before_bootstrap"
+        }
+      },
+      "acceptance_bins": [
+        {
+          "axis": "input_context_length",
+          "bin": "0-1024",
+          "n_prompts": 2,
+          "mean": 0.5897435897435898,
+          "ci95": [
+            0.5897435897435898,
+            0.5897435897435898
+          ],
+          "seed_std_mean": 0.0,
+          "bootstrap_unit": "prompt_id",
+          "seed_aggregation": "arithmetic_mean_before_bootstrap",
+          "accepted_length": {
+            "n_prompts": 2,
+            "mean": 2.3,
+            "ci95": [
+              2.3,
+              2.3
+            ],
+            "seed_std_mean": 0.0,
+            "bootstrap_unit": "prompt_id",
+            "seed_aggregation": "arithmetic_mean_before_bootstrap"
+          }
+        },
+        {
+          "axis": "output_offset",
+          "bin": "0-1K",
+          "n_prompts": 2,
+          "mean": 0.5897435897435898,
+          "ci95": [
+            0.5897435897435898,
+            0.5897435897435898
+          ],
+          "seed_std_mean": 0.0,
+          "bootstrap_unit": "prompt_id",
+          "seed_aggregation": "arithmetic_mean_before_bootstrap",
+          "accepted_length": {
+            "n_prompts": 2,
+            "mean": 2.3,
+            "ci95": [
+              2.3,
+              2.3
+            ],
+            "seed_std_mean": 0.0,
+            "bootstrap_unit": "prompt_id",
+            "seed_aggregation": "arithmetic_mean_before_bootstrap"
+          }
+        }
+      ],
+      "request_latency_p50_seconds": null,
+      "request_latency_p95_seconds": null,
+      "request_latency_p50_prompt_bootstrap": null,
+      "request_latency_p95_prompt_bootstrap": null,
+      "phase_ms_median": {},
+      "realized_output_length_mean": 32,
+      "realized_generations_above_8K": 0,
+      "realized_generations_above_16K": 0,
+      "peak_allocated_bytes": null,
+      "peak_reserved_bytes": null,
+      "online_final_state": []
+    },
+    {
+      "condition": "standard_nonthinking",
+      "temperature": 0.0,
+      "sampling_warp_config": {
+        "min_p": 0.0,
+        "top_k": 0,
+        "top_p": 1.0
+      },
+      "arm": "offline_online_stride1",
+      "requests": 2,
+      "primary_requests": 2,
+      "repetition_excluded": 0,
+      "reused_acceptance_output_requests": 0,
+      "requests_with_latency": 2,
+      "requests_without_latency": 0,
+      "metrics": {
+        "mean_accepted_length": {
+          "n_prompts": 2,
+          "mean": 3.419642857142857,
+          "ci95": [
+            3.125,
+            3.7142857142857144
+          ],
+          "seed_std_mean": 0.0,
+          "bootstrap_unit": "prompt_id",
+          "seed_aggregation": "arithmetic_mean_before_bootstrap"
+        },
+        "median_accepted_length": {
+          "n_prompts": 2,
+          "mean": 4.0,
+          "ci95": [
+            4.0,
+            4.0
+          ],
+          "seed_std_mean": 0.0,
+          "bootstrap_unit": "prompt_id",
+          "seed_aggregation": "arithmetic_mean_before_bootstrap"
+        },
+        "target_forwards_per_generated_token": {
+          "n_prompts": 2,
+          "mean": 0.234375,
+          "ci95": [
+            0.21875,
+            0.25
+          ],
+          "seed_std_mean": 0.0,
+          "bootstrap_unit": "prompt_id",
+          "seed_aggregation": "arithmetic_mean_before_bootstrap"
+        }
+      },
+      "pooled_block_accepted_length_mean": 3.4,
+      "pooled_block_accepted_length_median": 4,
+      "metric_aggregation": "metrics are prompt-weighted after seed aggregation; median_accepted_length aggregates request medians; pooled block statistics are separate",
+      "acceptance_by_block_position": {
+        "0": {
+          "n_prompts": 2,
+          "mean": 1.0,
+          "ci95": [
+            1.0,
+            1.0
+          ],
+          "seed_std_mean": 0.0,
+          "bootstrap_unit": "prompt_id",
+          "seed_aggregation": "arithmetic_mean_before_bootstrap"
+        },
+        "1": {
+          "n_prompts": 2,
+          "mean": 0.875,
+          "ci95": [
+            0.75,
+            1.0
+          ],
+          "seed_std_mean": 0.0,
+          "bootstrap_unit": "prompt_id",
+          "seed_aggregation": "arithmetic_mean_before_bootstrap"
+        },
+        "2": {
+          "n_prompts": 2,
+          "mean": 0.875,
+          "ci95": [
+            0.75,
+            1.0
+          ],
+          "seed_std_mean": 0.0,
+          "bootstrap_unit": "prompt_id",
+          "seed_aggregation": "arithmetic_mean_before_bootstrap"
+        },
+        "3": {
+          "n_prompts": 2,
+          "mean": 0.8571428571428572,
+          "ci95": [
+            0.7142857142857143,
+            1.0
+          ],
+          "seed_std_mean": 0.0,
+          "bootstrap_unit": "prompt_id",
+          "seed_aggregation": "arithmetic_mean_before_bootstrap"
+        }
+      },
+      "acceptance_bins": [
+        {
+          "axis": "input_context_length",
+          "bin": "0-1024",
+          "n_prompts": 2,
+          "mean": 0.9032258064516129,
+          "ci95": [
+            0.8064516129032258,
+            1.0
+          ],
+          "seed_std_mean": 0.0,
+          "bootstrap_unit": "prompt_id",
+          "seed_aggregation": "arithmetic_mean_before_bootstrap",
+          "accepted_length": {
+            "n_prompts": 2,
+            "mean": 3.419642857142857,
+            "ci95": [
+              3.125,
+              3.7142857142857144
+            ],
+            "seed_std_mean": 0.0,
+            "bootstrap_unit": "prompt_id",
+            "seed_aggregation": "arithmetic_mean_before_bootstrap"
+          }
+        },
+        {
+          "axis": "output_offset",
+          "bin": "0-1K",
+          "n_prompts": 2,
+          "mean": 0.9032258064516129,
+          "ci95": [
+            0.8064516129032258,
+            1.0
+          ],
+          "seed_std_mean": 0.0,
+          "bootstrap_unit": "prompt_id",
+          "seed_aggregation": "arithmetic_mean_before_bootstrap",
+          "accepted_length": {
+            "n_prompts": 2,
+            "mean": 3.419642857142857,
+            "ci95": [
+              3.125,
+              3.7142857142857144
+            ],
+            "seed_std_mean": 0.0,
+            "bootstrap_unit": "prompt_id",
+            "seed_aggregation": "arithmetic_mean_before_bootstrap"
+          }
+        }
+      ],
+      "request_latency_p50_seconds": 0.028573093586601317,
+      "request_latency_p95_seconds": 0.030446556548122318,
+      "request_latency_p50_prompt_bootstrap": null,
+      "request_latency_p95_prompt_bootstrap": null,
+      "phase_ms_median": {},
+      "realized_output_length_mean": 32,
+      "realized_generations_above_8K": 0,
+      "realized_generations_above_16K": 0,
+      "peak_allocated_bytes": null,
+      "peak_reserved_bytes": null,
+      "online_final_state": [
+        {
+          "adapter_version": 7,
+          "u": 7,
+          "last_round": 7,
+          "loss_mode": "live_full",
+          "T_train": 1.0,
+          "beta_train": 1.0,
+          "dW_norm": 0.0009195993188768625,
+          "dA_norm": 0.0014899997040629387,
+          "db_norm": 0.00016032488201744854,
+          "dS_norm": 0.0002781434450298548,
+          "dS_norm_definition": "L2 norm of effective lazy-shrunk request delta at current optimizer u; zero unrepresented buckets; pure read",
+          "db_exact_zero_fraction": 0.0,
+          "active_buckets": 44,
+          "active_buckets_min_over_updates": 41,
+          "active_buckets_max_over_updates": 44,
+          "state_bytes_estimate_by_operation": {
+            "dense_activation_clone": 5376,
+            "dense_optimizer": 13888,
+            "dense_snapshot": 8064,
+            "sparse_update": 6172,
+            "sparse_snapshot": 10040
+          },
+          "state_bytes_estimate_total": 43540,
+          "state_bytes_definition": "conceptual FP32 parameter/timestamp/index reads+writes for state clones, SGD/prox steps and snapshots; excludes E/logit/autograd activation traffic and is not hardware HBM traffic",
+          "sparse_capacity": 257,
+          "sparse_update_bytes_estimate": 784,
+          "sparse_snapshot_bytes": 736,
+          "dense_snapshot_bytes": 384,
+          "sparse_snapshot_strategy": "compact_active_bucket_copy",
+          "sparse_update_strategy": "dirty_lazy_catchup_and_active_list_compaction",
+          "last_full_loss": 0.012678045779466629
+        },
+        {
+          "adapter_version": 8,
+          "u": 8,
+          "last_round": 8,
+          "loss_mode": "live_full",
+          "T_train": 1.0,
+          "beta_train": 1.0,
+          "dW_norm": 0.001160978339612484,
+          "dA_norm": 0.001981107983738184,
+          "db_norm": 0.00011446131247794256,
+          "dS_norm": 0.0003397062246222049,
+          "dS_norm_definition": "L2 norm of effective lazy-shrunk request delta at current optimizer u; zero unrepresented buckets; pure read",
+          "db_exact_zero_fraction": 0.0,
+          "active_buckets": 79,
+          "active_buckets_min_over_updates": 42,
+          "active_buckets_max_over_updates": 79,
+          "state_bytes_estimate_by_operation": {
+            "dense_activation_clone": 6144,
+            "dense_optimizer": 15872,
+            "dense_snapshot": 9216,
+            "sparse_update": 10552,
+            "sparse_snapshot": 18976
+          },
+          "state_bytes_estimate_total": 60760,
+          "state_bytes_definition": "conceptual FP32 parameter/timestamp/index reads+writes for state clones, SGD/prox steps and snapshots; excludes E/logit/autograd activation traffic and is not hardware HBM traffic",
+          "sparse_capacity": 257,
+          "sparse_update_bytes_estimate": 1268,
+          "sparse_snapshot_bytes": 1300,
+          "dense_snapshot_bytes": 384,
+          "sparse_snapshot_strategy": "compact_active_bucket_copy",
+          "sparse_update_strategy": "dirty_lazy_catchup_and_active_list_compaction",
+          "last_full_loss": 0.029542267322540283
+        }
+      ]
+    },
+    {
+      "condition": "standard_nonthinking",
+      "temperature": 0.0,
+      "sampling_warp_config": {
+        "min_p": 0.0,
+        "top_k": 0,
+        "top_p": 1.0
+      },
+      "arm": "offline_static",
+      "requests": 2,
+      "primary_requests": 2,
+      "repetition_excluded": 0,
+      "reused_acceptance_output_requests": 0,
+      "requests_with_latency": 2,
+      "requests_without_latency": 0,
+      "metrics": {
+        "mean_accepted_length": {
+          "n_prompts": 2,
+          "mean": 3.419642857142857,
+          "ci95": [
+            3.125,
+            3.7142857142857144
+          ],
+          "seed_std_mean": 0.0,
+          "bootstrap_unit": "prompt_id",
+          "seed_aggregation": "arithmetic_mean_before_bootstrap"
+        },
+        "median_accepted_length": {
+          "n_prompts": 2,
+          "mean": 4.0,
+          "ci95": [
+            4.0,
+            4.0
+          ],
+          "seed_std_mean": 0.0,
+          "bootstrap_unit": "prompt_id",
+          "seed_aggregation": "arithmetic_mean_before_bootstrap"
+        },
+        "target_forwards_per_generated_token": {
+          "n_prompts": 2,
+          "mean": 0.234375,
+          "ci95": [
+            0.21875,
+            0.25
+          ],
+          "seed_std_mean": 0.0,
+          "bootstrap_unit": "prompt_id",
+          "seed_aggregation": "arithmetic_mean_before_bootstrap"
+        }
+      },
+      "pooled_block_accepted_length_mean": 3.4,
+      "pooled_block_accepted_length_median": 4,
+      "metric_aggregation": "metrics are prompt-weighted after seed aggregation; median_accepted_length aggregates request medians; pooled block statistics are separate",
+      "acceptance_by_block_position": {
+        "0": {
+          "n_prompts": 2,
+          "mean": 1.0,
+          "ci95": [
+            1.0,
+            1.0
+          ],
+          "seed_std_mean": 0.0,
+          "bootstrap_unit": "prompt_id",
+          "seed_aggregation": "arithmetic_mean_before_bootstrap"
+        },
+        "1": {
+          "n_prompts": 2,
+          "mean": 0.875,
+          "ci95": [
+            0.75,
+            1.0
+          ],
+          "seed_std_mean": 0.0,
+          "bootstrap_unit": "prompt_id",
+          "seed_aggregation": "arithmetic_mean_before_bootstrap"
+        },
+        "2": {
+          "n_prompts": 2,
+          "mean": 0.875,
+          "ci95": [
+            0.75,
+            1.0
+          ],
+          "seed_std_mean": 0.0,
+          "bootstrap_unit": "prompt_id",
+          "seed_aggregation": "arithmetic_mean_before_bootstrap"
+        },
+        "3": {
+          "n_prompts": 2,
+          "mean": 0.8571428571428572,
+          "ci95": [
+            0.7142857142857143,
+            1.0
+          ],
+          "seed_std_mean": 0.0,
+          "bootstrap_unit": "prompt_id",
+          "seed_aggregation": "arithmetic_mean_before_bootstrap"
+        }
+      },
+      "acceptance_bins": [
+        {
+          "axis": "input_context_length",
+          "bin": "0-1024",
+          "n_prompts": 2,
+          "mean": 0.9032258064516129,
+          "ci95": [
+            0.8064516129032258,
+            1.0
+          ],
+          "seed_std_mean": 0.0,
+          "bootstrap_unit": "prompt_id",
+          "seed_aggregation": "arithmetic_mean_before_bootstrap",
+          "accepted_length": {
+            "n_prompts": 2,
+            "mean": 3.419642857142857,
+            "ci95": [
+              3.125,
+              3.7142857142857144
+            ],
+            "seed_std_mean": 0.0,
+            "bootstrap_unit": "prompt_id",
+            "seed_aggregation": "arithmetic_mean_before_bootstrap"
+          }
+        },
+        {
+          "axis": "output_offset",
+          "bin": "0-1K",
+          "n_prompts": 2,
+          "mean": 0.9032258064516129,
+          "ci95": [
+            0.8064516129032258,
+            1.0
+          ],
+          "seed_std_mean": 0.0,
+          "bootstrap_unit": "prompt_id",
+          "seed_aggregation": "arithmetic_mean_before_bootstrap",
+          "accepted_length": {
+            "n_prompts": 2,
+            "mean": 3.419642857142857,
+            "ci95": [
+              3.125,
+              3.7142857142857144
+            ],
+            "seed_std_mean": 0.0,
+            "bootstrap_unit": "prompt_id",
+            "seed_aggregation": "arithmetic_mean_before_bootstrap"
+          }
+        }
+      ],
+      "request_latency_p50_seconds": 0.005935077555477619,
+      "request_latency_p95_seconds": 0.006196265202015638,
+      "request_latency_p50_prompt_bootstrap": null,
+      "request_latency_p95_prompt_bootstrap": null,
+      "phase_ms_median": {},
+      "realized_output_length_mean": 32,
+      "realized_generations_above_8K": 0,
+      "realized_generations_above_16K": 0,
+      "peak_allocated_bytes": null,
+      "peak_reserved_bytes": null,
+      "online_final_state": []
+    },
+    {
+      "condition": "standard_nonthinking",
+      "temperature": 0.0,
+      "sampling_warp_config": {
+        "min_p": 0.0,
+        "top_k": 0,
+        "top_p": 1.0
+      },
+      "arm": "online_bigram",
+      "requests": 2,
+      "primary_requests": 2,
+      "repetition_excluded": 0,
+      "reused_acceptance_output_requests": 0,
+      "requests_with_latency": 2,
+      "requests_without_latency": 0,
+      "metrics": {
+        "mean_accepted_length": {
+          "n_prompts": 2,
+          "mean": 3.419642857142857,
+          "ci95": [
+            3.125,
+            3.7142857142857144
+          ],
+          "seed_std_mean": 0.0,
+          "bootstrap_unit": "prompt_id",
+          "seed_aggregation": "arithmetic_mean_before_bootstrap"
+        },
+        "median_accepted_length": {
+          "n_prompts": 2,
+          "mean": 4.0,
+          "ci95": [
+            4.0,
+            4.0
+          ],
+          "seed_std_mean": 0.0,
+          "bootstrap_unit": "prompt_id",
+          "seed_aggregation": "arithmetic_mean_before_bootstrap"
+        },
+        "target_forwards_per_generated_token": {
+          "n_prompts": 2,
+          "mean": 0.234375,
+          "ci95": [
+            0.21875,
+            0.25
+          ],
+          "seed_std_mean": 0.0,
+          "bootstrap_unit": "prompt_id",
+          "seed_aggregation": "arithmetic_mean_before_bootstrap"
+        }
+      },
+      "pooled_block_accepted_length_mean": 3.4,
+      "pooled_block_accepted_length_median": 4,
+      "metric_aggregation": "metrics are prompt-weighted after seed aggregation; median_accepted_length aggregates request medians; pooled block statistics are separate",
+      "acceptance_by_block_position": {
+        "0": {
+          "n_prompts": 2,
+          "mean": 1.0,
+          "ci95": [
+            1.0,
+            1.0
+          ],
+          "seed_std_mean": 0.0,
+          "bootstrap_unit": "prompt_id",
+          "seed_aggregation": "arithmetic_mean_before_bootstrap"
+        },
+        "1": {
+          "n_prompts": 2,
+          "mean": 0.875,
+          "ci95": [
+            0.75,
+            1.0
+          ],
+          "seed_std_mean": 0.0,
+          "bootstrap_unit": "prompt_id",
+          "seed_aggregation": "arithmetic_mean_before_bootstrap"
+        },
+        "2": {
+          "n_prompts": 2,
+          "mean": 0.875,
+          "ci95": [
+            0.75,
+            1.0
+          ],
+          "seed_std_mean": 0.0,
+          "bootstrap_unit": "prompt_id",
+          "seed_aggregation": "arithmetic_mean_before_bootstrap"
+        },
+        "3": {
+          "n_prompts": 2,
+          "mean": 0.8571428571428572,
+          "ci95": [
+            0.7142857142857143,
+            1.0
+          ],
+          "seed_std_mean": 0.0,
+          "bootstrap_unit": "prompt_id",
+          "seed_aggregation": "arithmetic_mean_before_bootstrap"
+        }
+      },
+      "acceptance_bins": [
+        {
+          "axis": "input_context_length",
+          "bin": "0-1024",
+          "n_prompts": 2,
+          "mean": 0.9032258064516129,
+          "ci95": [
+            0.8064516129032258,
+            1.0
+          ],
+          "seed_std_mean": 0.0,
+          "bootstrap_unit": "prompt_id",
+          "seed_aggregation": "arithmetic_mean_before_bootstrap",
+          "accepted_length": {
+            "n_prompts": 2,
+            "mean": 3.419642857142857,
+            "ci95": [
+              3.125,
+              3.7142857142857144
+            ],
+            "seed_std_mean": 0.0,
+            "bootstrap_unit": "prompt_id",
+            "seed_aggregation": "arithmetic_mean_before_bootstrap"
+          }
+        },
+        {
+          "axis": "output_offset",
+          "bin": "0-1K",
+          "n_prompts": 2,
+          "mean": 0.9032258064516129,
+          "ci95": [
+            0.8064516129032258,
+            1.0
+          ],
+          "seed_std_mean": 0.0,
+          "bootstrap_unit": "prompt_id",
+          "seed_aggregation": "arithmetic_mean_before_bootstrap",
+          "accepted_length": {
+            "n_prompts": 2,
+            "mean": 3.419642857142857,
+            "ci95": [
+              3.125,
+              3.7142857142857144
+            ],
+            "seed_std_mean": 0.0,
+            "bootstrap_unit": "prompt_id",
+            "seed_aggregation": "arithmetic_mean_before_bootstrap"
+          }
+        }
+      ],
+      "request_latency_p50_seconds": 0.0028332230867818,
+      "request_latency_p95_seconds": 0.0028563486528582873,
+      "request_latency_p50_prompt_bootstrap": null,
+      "request_latency_p95_prompt_bootstrap": null,
+      "phase_ms_median": {},
+      "realized_output_length_mean": 32,
+      "realized_generations_above_8K": 0,
+      "realized_generations_above_16K": 0,
+      "peak_allocated_bytes": null,
+      "peak_reserved_bytes": null,
+      "online_final_state": []
+    },
+    {
+      "condition": "standard_nonthinking",
+      "temperature": 0.0,
+      "sampling_warp_config": {
+        "min_p": 0.0,
+        "top_k": 0,
+        "top_p": 1.0
+      },
+      "arm": "online_dbS",
+      "requests": 2,
+      "primary_requests": 2,
+      "repetition_excluded": 0,
+      "reused_acceptance_output_requests": 0,
+      "requests_with_latency": 2,
+      "requests_without_latency": 0,
+      "metrics": {
+        "mean_accepted_length": {
+          "n_prompts": 2,
+          "mean": 3.419642857142857,
+          "ci95": [
+            3.125,
+            3.7142857142857144
+          ],
+          "seed_std_mean": 0.0,
+          "bootstrap_unit": "prompt_id",
+          "seed_aggregation": "arithmetic_mean_before_bootstrap"
+        },
+        "median_accepted_length": {
+          "n_prompts": 2,
+          "mean": 4.0,
+          "ci95": [
+            4.0,
+            4.0
+          ],
+          "seed_std_mean": 0.0,
+          "bootstrap_unit": "prompt_id",
+          "seed_aggregation": "arithmetic_mean_before_bootstrap"
+        },
+        "target_forwards_per_generated_token": {
+          "n_prompts": 2,
+          "mean": 0.234375,
+          "ci95": [
+            0.21875,
+            0.25
+          ],
+          "seed_std_mean": 0.0,
+          "bootstrap_unit": "prompt_id",
+          "seed_aggregation": "arithmetic_mean_before_bootstrap"
+        }
+      },
+      "pooled_block_accepted_length_mean": 3.4,
+      "pooled_block_accepted_length_median": 4,
+      "metric_aggregation": "metrics are prompt-weighted after seed aggregation; median_accepted_length aggregates request medians; pooled block statistics are separate",
+      "acceptance_by_block_position": {
+        "0": {
+          "n_prompts": 2,
+          "mean": 1.0,
+          "ci95": [
+            1.0,
+            1.0
+          ],
+          "seed_std_mean": 0.0,
+          "bootstrap_unit": "prompt_id",
+          "seed_aggregation": "arithmetic_mean_before_bootstrap"
+        },
+        "1": {
+          "n_prompts": 2,
+          "mean": 0.875,
+          "ci95": [
+            0.75,
+            1.0
+          ],
+          "seed_std_mean": 0.0,
+          "bootstrap_unit": "prompt_id",
+          "seed_aggregation": "arithmetic_mean_before_bootstrap"
+        },
+        "2": {
+          "n_prompts": 2,
+          "mean": 0.875,
+          "ci95": [
+            0.75,
+            1.0
+          ],
+          "seed_std_mean": 0.0,
+          "bootstrap_unit": "prompt_id",
+          "seed_aggregation": "arithmetic_mean_before_bootstrap"
+        },
+        "3": {
+          "n_prompts": 2,
+          "mean": 0.8571428571428572,
+          "ci95": [
+            0.7142857142857143,
+            1.0
+          ],
+          "seed_std_mean": 0.0,
+          "bootstrap_unit": "prompt_id",
+          "seed_aggregation": "arithmetic_mean_before_bootstrap"
+        }
+      },
+      "acceptance_bins": [
+        {
+          "axis": "input_context_length",
+          "bin": "0-1024",
+          "n_prompts": 2,
+          "mean": 0.9032258064516129,
+          "ci95": [
+            0.8064516129032258,
+            1.0
+          ],
+          "seed_std_mean": 0.0,
+          "bootstrap_unit": "prompt_id",
+          "seed_aggregation": "arithmetic_mean_before_bootstrap",
+          "accepted_length": {
+            "n_prompts": 2,
+            "mean": 3.419642857142857,
+            "ci95": [
+              3.125,
+              3.7142857142857144
+            ],
+            "seed_std_mean": 0.0,
+            "bootstrap_unit": "prompt_id",
+            "seed_aggregation": "arithmetic_mean_before_bootstrap"
+          }
+        },
+        {
+          "axis": "output_offset",
+          "bin": "0-1K",
+          "n_prompts": 2,
+          "mean": 0.9032258064516129,
+          "ci95": [
+            0.8064516129032258,
+            1.0
+          ],
+          "seed_std_mean": 0.0,
+          "bootstrap_unit": "prompt_id",
+          "seed_aggregation": "arithmetic_mean_before_bootstrap",
+          "accepted_length": {
+            "n_prompts": 2,
+            "mean": 3.419642857142857,
+            "ci95": [
+              3.125,
+              3.7142857142857144
+            ],
+            "seed_std_mean": 0.0,
+            "bootstrap_unit": "prompt_id",
+            "seed_aggregation": "arithmetic_mean_before_bootstrap"
+          }
+        }
+      ],
+      "request_latency_p50_seconds": 0.025028894538991153,
+      "request_latency_p95_seconds": 0.026798740413505585,
+      "request_latency_p50_prompt_bootstrap": null,
+      "request_latency_p95_prompt_bootstrap": null,
+      "phase_ms_median": {},
+      "realized_output_length_mean": 32,
+      "realized_generations_above_8K": 0,
+      "realized_generations_above_16K": 0,
+      "peak_allocated_bytes": null,
+      "peak_reserved_bytes": null,
+      "online_final_state": [
+        {
+          "adapter_version": 7,
+          "u": 7,
+          "last_round": 7,
+          "loss_mode": "live_full",
+          "T_train": 1.0,
+          "beta_train": 1.0,
+          "dW_norm": 0.0,
+          "dA_norm": 0.0,
+          "db_norm": 0.0016386671923100948,
+          "dS_norm": 0.0028514249715954065,
+          "dS_norm_definition": "L2 norm of effective lazy-shrunk request delta at current optimizer u; zero unrepresented buckets; pure read",
+          "db_exact_zero_fraction": 0.0,
+          "active_buckets": 44,
+          "active_buckets_min_over_updates": 41,
+          "active_buckets_max_over_updates": 44,
+          "state_bytes_estimate_by_operation": {
+            "dense_activation_clone": 5376,
+            "dense_optimizer": 1568,
+            "dense_snapshot": 8064,
+            "sparse_update": 6172,
+            "sparse_snapshot": 10040
+          },
+          "state_bytes_estimate_total": 31220,
+          "state_bytes_definition": "conceptual FP32 parameter/timestamp/index reads+writes for state clones, SGD/prox steps and snapshots; excludes E/logit/autograd activation traffic and is not hardware HBM traffic",
+          "sparse_capacity": 257,
+          "sparse_update_bytes_estimate": 784,
+          "sparse_snapshot_bytes": 736,
+          "dense_snapshot_bytes": 384,
+          "sparse_snapshot_strategy": "compact_active_bucket_copy",
+          "sparse_update_strategy": "dirty_lazy_catchup_and_active_list_compaction",
+          "last_full_loss": 0.01391640491783619
+        },
+        {
+          "adapter_version": 8,
+          "u": 8,
+          "last_round": 8,
+          "loss_mode": "live_full",
+          "T_train": 1.0,
+          "beta_train": 1.0,
+          "dW_norm": 0.0,
+          "dA_norm": 0.0,
+          "db_norm": 0.001159458770416677,
+          "dS_norm": 0.0034640703815966845,
+          "dS_norm_definition": "L2 norm of effective lazy-shrunk request delta at current optimizer u; zero unrepresented buckets; pure read",
+          "db_exact_zero_fraction": 0.0,
+          "active_buckets": 79,
+          "active_buckets_min_over_updates": 42,
+          "active_buckets_max_over_updates": 79,
+          "state_bytes_estimate_by_operation": {
+            "dense_activation_clone": 6144,
+            "dense_optimizer": 1792,
+            "dense_snapshot": 9216,
+            "sparse_update": 10552,
+            "sparse_snapshot": 18976
+          },
+          "state_bytes_estimate_total": 46680,
+          "state_bytes_definition": "conceptual FP32 parameter/timestamp/index reads+writes for state clones, SGD/prox steps and snapshots; excludes E/logit/autograd activation traffic and is not hardware HBM traffic",
+          "sparse_capacity": 257,
+          "sparse_update_bytes_estimate": 1268,
+          "sparse_snapshot_bytes": 1300,
+          "dense_snapshot_bytes": 384,
+          "sparse_snapshot_strategy": "compact_active_bucket_copy",
+          "sparse_update_strategy": "dirty_lazy_catchup_and_active_list_compaction",
+          "last_full_loss": 0.031822629272937775
+        }
+      ]
+    },
+    {
+      "condition": "standard_nonthinking",
+      "temperature": 0.0,
+      "sampling_warp_config": {
+        "min_p": 0.0,
+        "top_k": 0,
+        "top_p": 1.0
+      },
+      "arm": "plain_dflash",
+      "requests": 2,
+      "primary_requests": 2,
+      "repetition_excluded": 0,
+      "reused_acceptance_output_requests": 2,
+      "requests_with_latency": 0,
+      "requests_without_latency": 2,
+      "metrics": {
+        "mean_accepted_length": {
+          "n_prompts": 2,
+          "mean": 3.419642857142857,
+          "ci95": [
+            3.125,
+            3.7142857142857144
+          ],
+          "seed_std_mean": 0.0,
+          "bootstrap_unit": "prompt_id",
+          "seed_aggregation": "arithmetic_mean_before_bootstrap"
+        },
+        "median_accepted_length": {
+          "n_prompts": 2,
+          "mean": 4.0,
+          "ci95": [
+            4.0,
+            4.0
+          ],
+          "seed_std_mean": 0.0,
+          "bootstrap_unit": "prompt_id",
+          "seed_aggregation": "arithmetic_mean_before_bootstrap"
+        },
+        "target_forwards_per_generated_token": {
+          "n_prompts": 2,
+          "mean": 0.234375,
+          "ci95": [
+            0.21875,
+            0.25
+          ],
+          "seed_std_mean": 0.0,
+          "bootstrap_unit": "prompt_id",
+          "seed_aggregation": "arithmetic_mean_before_bootstrap"
+        }
+      },
+      "pooled_block_accepted_length_mean": 3.4,
+      "pooled_block_accepted_length_median": 4,
+      "metric_aggregation": "metrics are prompt-weighted after seed aggregation; median_accepted_length aggregates request medians; pooled block statistics are separate",
+      "acceptance_by_block_position": {
+        "0": {
+          "n_prompts": 2,
+          "mean": 1.0,
+          "ci95": [
+            1.0,
+            1.0
+          ],
+          "seed_std_mean": 0.0,
+          "bootstrap_unit": "prompt_id",
+          "seed_aggregation": "arithmetic_mean_before_bootstrap"
+        },
+        "1": {
+          "n_prompts": 2,
+          "mean": 0.875,
+          "ci95": [
+            0.75,
+            1.0
+          ],
+          "seed_std_mean": 0.0,
+          "bootstrap_unit": "prompt_id",
+          "seed_aggregation": "arithmetic_mean_before_bootstrap"
+        },
+        "2": {
+          "n_prompts": 2,
+          "mean": 0.875,
+          "ci95": [
+            0.75,
+            1.0
+          ],
+          "seed_std_mean": 0.0,
+          "bootstrap_unit": "prompt_id",
+          "seed_aggregation": "arithmetic_mean_before_bootstrap"
+        },
+        "3": {
+          "n_prompts": 2,
+          "mean": 0.8571428571428572,
+          "ci95": [
+            0.7142857142857143,
+            1.0
+          ],
+          "seed_std_mean": 0.0,
+          "bootstrap_unit": "prompt_id",
+          "seed_aggregation": "arithmetic_mean_before_bootstrap"
+        }
+      },
+      "acceptance_bins": [
+        {
+          "axis": "input_context_length",
+          "bin": "0-1024",
+          "n_prompts": 2,
+          "mean": 0.9032258064516129,
+          "ci95": [
+            0.8064516129032258,
+            1.0
+          ],
+          "seed_std_mean": 0.0,
+          "bootstrap_unit": "prompt_id",
+          "seed_aggregation": "arithmetic_mean_before_bootstrap",
+          "accepted_length": {
+            "n_prompts": 2,
+            "mean": 3.419642857142857,
+            "ci95": [
+              3.125,
+              3.7142857142857144
+            ],
+            "seed_std_mean": 0.0,
+            "bootstrap_unit": "prompt_id",
+            "seed_aggregation": "arithmetic_mean_before_bootstrap"
+          }
+        },
+        {
+          "axis": "output_offset",
+          "bin": "0-1K",
+          "n_prompts": 2,
+          "mean": 0.9032258064516129,
+          "ci95": [
+            0.8064516129032258,
+            1.0
+          ],
+          "seed_std_mean": 0.0,
+          "bootstrap_unit": "prompt_id",
+          "seed_aggregation": "arithmetic_mean_before_bootstrap",
+          "accepted_length": {
+            "n_prompts": 2,
+            "mean": 3.419642857142857,
+            "ci95": [
+              3.125,
+              3.7142857142857144
+            ],
+            "seed_std_mean": 0.0,
+            "bootstrap_unit": "prompt_id",
+            "seed_aggregation": "arithmetic_mean_before_bootstrap"
+          }
+        }
+      ],
+      "request_latency_p50_seconds": null,
+      "request_latency_p95_seconds": null,
+      "request_latency_p50_prompt_bootstrap": null,
+      "request_latency_p95_prompt_bootstrap": null,
+      "phase_ms_median": {},
+      "realized_output_length_mean": 32,
+      "realized_generations_above_8K": 0,
+      "realized_generations_above_16K": 0,
+      "peak_allocated_bytes": null,
+      "peak_reserved_bytes": null,
+      "online_final_state": []
+    },
+    {
+      "condition": "standard_nonthinking",
+      "temperature": 0.7,
+      "sampling_warp_config": {
+        "min_p": 0.0,
+        "top_k": 20,
+        "top_p": 0.8
+      },
+      "arm": "offline_online_stride1",
+      "requests": 2,
+      "primary_requests": 2,
+      "repetition_excluded": 0,
+      "reused_acceptance_output_requests": 0,
+      "requests_with_latency": 2,
+      "requests_without_latency": 0,
+      "metrics": {
+        "mean_accepted_length": {
+          "n_prompts": 2,
+          "mean": 1.6853146853146854,
+          "ci95": [
+            1.4615384615384615,
+            1.9090909090909092
+          ],
+          "seed_std_mean": 0.0,
+          "bootstrap_unit": "prompt_id",
+          "seed_aggregation": "arithmetic_mean_before_bootstrap"
+        },
+        "median_accepted_length": {
+          "n_prompts": 2,
+          "mean": 1.5,
+          "ci95": [
+            1.0,
+            2.0
+          ],
+          "seed_std_mean": 0.0,
+          "bootstrap_unit": "prompt_id",
+          "seed_aggregation": "arithmetic_mean_before_bootstrap"
+        },
+        "target_forwards_per_generated_token": {
+          "n_prompts": 2,
+          "mean": 0.375,
+          "ci95": [
+            0.34375,
+            0.40625
+          ],
+          "seed_std_mean": 0.0,
+          "bootstrap_unit": "prompt_id",
+          "seed_aggregation": "arithmetic_mean_before_bootstrap"
+        }
+      },
+      "pooled_block_accepted_length_mean": 1.6666666666666667,
+      "pooled_block_accepted_length_median": 1.5,
+      "metric_aggregation": "metrics are prompt-weighted after seed aggregation; median_accepted_length aggregates request medians; pooled block statistics are separate",
+      "acceptance_by_block_position": {
+        "0": {
+          "n_prompts": 2,
+          "mean": 0.8706293706293706,
+          "ci95": [
+            0.8181818181818182,
+            0.9230769230769231
+          ],
+          "seed_std_mean": 0.0,
+          "bootstrap_unit": "prompt_id",
+          "seed_aggregation": "arithmetic_mean_before_bootstrap"
+        },
+        "1": {
+          "n_prompts": 2,
+          "mean": 0.5423076923076923,
+          "ci95": [
+            0.38461538461538464,
+            0.7
+          ],
+          "seed_std_mean": 0.0,
+          "bootstrap_unit": "prompt_id",
+          "seed_aggregation": "arithmetic_mean_before_bootstrap"
+        },
+        "2": {
+          "n_prompts": 2,
+          "mean": 0.2833333333333333,
+          "ci95": [
+            0.16666666666666666,
+            0.4
+          ],
+          "seed_std_mean": 0.0,
+          "bootstrap_unit": "prompt_id",
+          "seed_aggregation": "arithmetic_mean_before_bootstrap"
+        },
+        "3": {
+          "n_prompts": 2,
+          "mean": 0.05,
+          "ci95": [
+            0.0,
+            0.1
+          ],
+          "seed_std_mean": 0.0,
+          "bootstrap_unit": "prompt_id",
+          "seed_aggregation": "arithmetic_mean_before_bootstrap"
+        }
+      },
+      "acceptance_bins": [
+        {
+          "axis": "input_context_length",
+          "bin": "0-1024",
+          "n_prompts": 2,
+          "mean": 0.44609756097560976,
+          "ci95": [
+            0.38,
+            0.5121951219512195
+          ],
+          "seed_std_mean": 0.0,
+          "bootstrap_unit": "prompt_id",
+          "seed_aggregation": "arithmetic_mean_before_bootstrap",
+          "accepted_length": {
+            "n_prompts": 2,
+            "mean": 1.6853146853146854,
+            "ci95": [
+              1.4615384615384615,
+              1.9090909090909092
+            ],
+            "seed_std_mean": 0.0,
+            "bootstrap_unit": "prompt_id",
+            "seed_aggregation": "arithmetic_mean_before_bootstrap"
+          }
+        },
+        {
+          "axis": "output_offset",
+          "bin": "0-1K",
+          "n_prompts": 2,
+          "mean": 0.44609756097560976,
+          "ci95": [
+            0.38,
+            0.5121951219512195
+          ],
+          "seed_std_mean": 0.0,
+          "bootstrap_unit": "prompt_id",
+          "seed_aggregation": "arithmetic_mean_before_bootstrap",
+          "accepted_length": {
+            "n_prompts": 2,
+            "mean": 1.6853146853146854,
+            "ci95": [
+              1.4615384615384615,
+              1.9090909090909092
+            ],
+            "seed_std_mean": 0.0,
+            "bootstrap_unit": "prompt_id",
+            "seed_aggregation": "arithmetic_mean_before_bootstrap"
+          }
+        }
+      ],
+      "request_latency_p50_seconds": 0.0488232959760353,
+      "request_latency_p95_seconds": 0.055025790014769885,
+      "request_latency_p50_prompt_bootstrap": null,
+      "request_latency_p95_prompt_bootstrap": null,
+      "phase_ms_median": {},
+      "realized_output_length_mean": 32,
+      "realized_generations_above_8K": 0,
+      "realized_generations_above_16K": 0,
+      "peak_allocated_bytes": null,
+      "peak_reserved_bytes": null,
+      "online_final_state": [
+        {
+          "adapter_version": 13,
+          "u": 13,
+          "last_round": 13,
+          "loss_mode": "live_full",
+          "T_train": 1.0,
+          "beta_train": 1.0,
+          "dW_norm": 0.0028222843538969755,
+          "dA_norm": 0.002793423365801573,
+          "db_norm": 0.00023434664763044566,
+          "dS_norm": 0.0004907029215246439,
+          "dS_norm_definition": "L2 norm of effective lazy-shrunk request delta at current optimizer u; zero unrepresented buckets; pure read",
+          "db_exact_zero_fraction": 0.0,
+          "active_buckets": 124,
+          "active_buckets_min_over_updates": 44,
+          "active_buckets_max_over_updates": 124,
+          "state_bytes_estimate_by_operation": {
+            "dense_activation_clone": 9984,
+            "dense_optimizer": 25792,
+            "dense_snapshot": 14976,
+            "sparse_update": 24580,
+            "sparse_snapshot": 43040
+          },
+          "state_bytes_estimate_total": 118372,
+          "state_bytes_definition": "conceptual FP32 parameter/timestamp/index reads+writes for state clones, SGD/prox steps and snapshots; excludes E/logit/autograd activation traffic and is not hardware HBM traffic",
+          "sparse_capacity": 257,
+          "sparse_update_bytes_estimate": 1888,
+          "sparse_snapshot_bytes": 2040,
+          "dense_snapshot_bytes": 384,
+          "sparse_snapshot_strategy": "compact_active_bucket_copy",
+          "sparse_update_strategy": "dirty_lazy_catchup_and_active_list_compaction",
+          "last_full_loss": 0.2569209933280945
+        },
+        {
+          "adapter_version": 11,
+          "u": 11,
+          "last_round": 11,
+          "loss_mode": "live_full",
+          "T_train": 1.0,
+          "beta_train": 1.0,
+          "dW_norm": 0.0016955441096797585,
+          "dA_norm": 0.0020153617952018976,
+          "db_norm": 0.00024529610527679324,
+          "dS_norm": 0.00036285145324654877,
+          "dS_norm_definition": "L2 norm of effective lazy-shrunk request delta at current optimizer u; zero unrepresented buckets; pure read",
+          "db_exact_zero_fraction": 0.0,
+          "active_buckets": 107,
+          "active_buckets_min_over_updates": 45,
+          "active_buckets_max_over_updates": 107,
+          "state_bytes_estimate_by_operation": {
+            "dense_activation_clone": 8448,
+            "dense_optimizer": 21824,
+            "dense_snapshot": 12672,
+            "sparse_update": 19764,
+            "sparse_snapshot": 33736
+          },
+          "state_bytes_estimate_total": 96444,
+          "state_bytes_definition": "conceptual FP32 parameter/timestamp/index reads+writes for state clones, SGD/prox steps and snapshots; excludes E/logit/autograd activation traffic and is not hardware HBM traffic",
+          "sparse_capacity": 257,
+          "sparse_update_bytes_estimate": 1540,
+          "sparse_snapshot_bytes": 1760,
+          "dense_snapshot_bytes": 384,
+          "sparse_snapshot_strategy": "compact_active_bucket_copy",
+          "sparse_update_strategy": "dirty_lazy_catchup_and_active_list_compaction",
+          "last_full_loss": 0.028043776750564575
+        }
+      ]
+    },
+    {
+      "condition": "standard_nonthinking",
+      "temperature": 0.7,
+      "sampling_warp_config": {
+        "min_p": 0.0,
+        "top_k": 20,
+        "top_p": 0.8
+      },
+      "arm": "offline_static",
+      "requests": 2,
+      "primary_requests": 2,
+      "repetition_excluded": 0,
+      "reused_acceptance_output_requests": 0,
+      "requests_with_latency": 2,
+      "requests_without_latency": 0,
+      "metrics": {
+        "mean_accepted_length": {
+          "n_prompts": 2,
+          "mean": 2.25,
+          "ci95": [
+            2.2,
+            2.3
+          ],
+          "seed_std_mean": 0.0,
+          "bootstrap_unit": "prompt_id",
+          "seed_aggregation": "arithmetic_mean_before_bootstrap"
+        },
+        "median_accepted_length": {
+          "n_prompts": 2,
+          "mean": 2.0,
+          "ci95": [
+            2.0,
+            2.0
+          ],
+          "seed_std_mean": 0.0,
+          "bootstrap_unit": "prompt_id",
+          "seed_aggregation": "arithmetic_mean_before_bootstrap"
+        },
+        "target_forwards_per_generated_token": {
+          "n_prompts": 2,
+          "mean": 0.3125,
+          "ci95": [
+            0.3125,
+            0.3125
+          ],
+          "seed_std_mean": 0.0,
+          "bootstrap_unit": "prompt_id",
+          "seed_aggregation": "arithmetic_mean_before_bootstrap"
+        }
+      },
+      "pooled_block_accepted_length_mean": 2.25,
+      "pooled_block_accepted_length_median": 2.0,
+      "metric_aggregation": "metrics are prompt-weighted after seed aggregation; median_accepted_length aggregates request medians; pooled block statistics are separate",
+      "acceptance_by_block_position": {
+        "0": {
+          "n_prompts": 2,
+          "mean": 1.0,
+          "ci95": [
+            1.0,
+            1.0
+          ],
+          "seed_std_mean": 0.0,
+          "bootstrap_unit": "prompt_id",
+          "seed_aggregation": "arithmetic_mean_before_bootstrap"
+        },
+        "1": {
+          "n_prompts": 2,
+          "mean": 0.7,
+          "ci95": [
+            0.7,
+            0.7
+          ],
+          "seed_std_mean": 0.0,
+          "bootstrap_unit": "prompt_id",
+          "seed_aggregation": "arithmetic_mean_before_bootstrap"
+        },
+        "2": {
+          "n_prompts": 2,
+          "mean": 0.35,
+          "ci95": [
+            0.3,
+            0.4
+          ],
+          "seed_std_mean": 0.0,
+          "bootstrap_unit": "prompt_id",
+          "seed_aggregation": "arithmetic_mean_before_bootstrap"
+        },
+        "3": {
+          "n_prompts": 2,
+          "mean": 0.2222222222222222,
+          "ci95": [
+            0.2222222222222222,
+            0.2222222222222222
+          ],
+          "seed_std_mean": 0.0,
+          "bootstrap_unit": "prompt_id",
+          "seed_aggregation": "arithmetic_mean_before_bootstrap"
+        }
+      },
+      "acceptance_bins": [
+        {
+          "axis": "input_context_length",
+          "bin": "0-1024",
+          "n_prompts": 2,
+          "mean": 0.5769230769230769,
+          "ci95": [
+            0.5641025641025641,
+            0.5897435897435898
+          ],
+          "seed_std_mean": 0.0,
+          "bootstrap_unit": "prompt_id",
+          "seed_aggregation": "arithmetic_mean_before_bootstrap",
+          "accepted_length": {
+            "n_prompts": 2,
+            "mean": 2.25,
+            "ci95": [
+              2.2,
+              2.3
+            ],
+            "seed_std_mean": 0.0,
+            "bootstrap_unit": "prompt_id",
+            "seed_aggregation": "arithmetic_mean_before_bootstrap"
+          }
+        },
+        {
+          "axis": "output_offset",
+          "bin": "0-1K",
+          "n_prompts": 2,
+          "mean": 0.5769230769230769,
+          "ci95": [
+            0.5641025641025641,
+            0.5897435897435898
+          ],
+          "seed_std_mean": 0.0,
+          "bootstrap_unit": "prompt_id",
+          "seed_aggregation": "arithmetic_mean_before_bootstrap",
+          "accepted_length": {
+            "n_prompts": 2,
+            "mean": 2.25,
+            "ci95": [
+              2.2,
+              2.3
+            ],
+            "seed_std_mean": 0.0,
+            "bootstrap_unit": "prompt_id",
+            "seed_aggregation": "arithmetic_mean_before_bootstrap"
+          }
+        }
+      ],
+      "request_latency_p50_seconds": 0.010970009490847588,
+      "request_latency_p95_seconds": 0.011055121012032033,
+      "request_latency_p50_prompt_bootstrap": null,
+      "request_latency_p95_prompt_bootstrap": null,
+      "phase_ms_median": {},
+      "realized_output_length_mean": 32,
+      "realized_generations_above_8K": 0,
+      "realized_generations_above_16K": 0,
+      "peak_allocated_bytes": null,
+      "peak_reserved_bytes": null,
+      "online_final_state": []
+    },
+    {
+      "condition": "standard_nonthinking",
+      "temperature": 0.7,
+      "sampling_warp_config": {
+        "min_p": 0.0,
+        "top_k": 20,
+        "top_p": 0.8
+      },
+      "arm": "online_bigram",
+      "requests": 2,
+      "primary_requests": 2,
+      "repetition_excluded": 0,
+      "reused_acceptance_output_requests": 0,
+      "requests_with_latency": 2,
+      "requests_without_latency": 0,
+      "metrics": {
+        "mean_accepted_length": {
+          "n_prompts": 2,
+          "mean": 2.1666666666666665,
+          "ci95": [
+            1.6666666666666667,
+            2.6666666666666665
+          ],
+          "seed_std_mean": 0.0,
+          "bootstrap_unit": "prompt_id",
+          "seed_aggregation": "arithmetic_mean_before_bootstrap"
+        },
+        "median_accepted_length": {
+          "n_prompts": 2,
+          "mean": 2.0,
+          "ci95": [
+            1.0,
+            3.0
+          ],
+          "seed_std_mean": 0.0,
+          "bootstrap_unit": "prompt_id",
+          "seed_aggregation": "arithmetic_mean_before_bootstrap"
+        },
+        "target_forwards_per_generated_token": {
+          "n_prompts": 2,
+          "mean": 0.328125,
+          "ci95": [
+            0.28125,
+            0.375
+          ],
+          "seed_std_mean": 0.0,
+          "bootstrap_unit": "prompt_id",
+          "seed_aggregation": "arithmetic_mean_before_bootstrap"
+        }
+      },
+      "pooled_block_accepted_length_mean": 2.0952380952380953,
+      "pooled_block_accepted_length_median": 2,
+      "metric_aggregation": "metrics are prompt-weighted after seed aggregation; median_accepted_length aggregates request medians; pooled block statistics are separate",
+      "acceptance_by_block_position": {
+        "0": {
+          "n_prompts": 2,
+          "mean": 1.0,
+          "ci95": [
+            1.0,
+            1.0
+          ],
+          "seed_std_mean": 0.0,
+          "bootstrap_unit": "prompt_id",
+          "seed_aggregation": "arithmetic_mean_before_bootstrap"
+        },
+        "1": {
+          "n_prompts": 2,
+          "mean": 0.6458333333333334,
+          "ci95": [
+            0.4166666666666667,
+            0.875
+          ],
+          "seed_std_mean": 0.0,
+          "bootstrap_unit": "prompt_id",
+          "seed_aggregation": "arithmetic_mean_before_bootstrap"
+        },
+        "2": {
+          "n_prompts": 2,
+          "mean": 0.40340909090909094,
+          "ci95": [
+            0.18181818181818182,
+            0.625
+          ],
+          "seed_std_mean": 0.0,
+          "bootstrap_unit": "prompt_id",
+          "seed_aggregation": "arithmetic_mean_before_bootstrap"
+        },
+        "3": {
+          "n_prompts": 2,
+          "mean": 0.23295454545454547,
+          "ci95": [
+            0.09090909090909091,
+            0.375
+          ],
+          "seed_std_mean": 0.0,
+          "bootstrap_unit": "prompt_id",
+          "seed_aggregation": "arithmetic_mean_before_bootstrap"
+        }
+      },
+      "acceptance_bins": [
+        {
+          "axis": "input_context_length",
+          "bin": "0-1024",
+          "n_prompts": 2,
+          "mean": 0.5810276679841897,
+          "ci95": [
+            0.43478260869565216,
+            0.7272727272727273
+          ],
+          "seed_std_mean": 0.0,
+          "bootstrap_unit": "prompt_id",
+          "seed_aggregation": "arithmetic_mean_before_bootstrap",
+          "accepted_length": {
+            "n_prompts": 2,
+            "mean": 2.1666666666666665,
+            "ci95": [
+              1.6666666666666667,
+              2.6666666666666665
+            ],
+            "seed_std_mean": 0.0,
+            "bootstrap_unit": "prompt_id",
+            "seed_aggregation": "arithmetic_mean_before_bootstrap"
+          }
+        },
+        {
+          "axis": "output_offset",
+          "bin": "0-1K",
+          "n_prompts": 2,
+          "mean": 0.5810276679841897,
+          "ci95": [
+            0.43478260869565216,
+            0.7272727272727273
+          ],
+          "seed_std_mean": 0.0,
+          "bootstrap_unit": "prompt_id",
+          "seed_aggregation": "arithmetic_mean_before_bootstrap",
+          "accepted_length": {
+            "n_prompts": 2,
+            "mean": 2.1666666666666665,
+            "ci95": [
+              1.6666666666666667,
+              2.6666666666666665
+            ],
+            "seed_std_mean": 0.0,
+            "bootstrap_unit": "prompt_id",
+            "seed_aggregation": "arithmetic_mean_before_bootstrap"
+          }
+        }
+      ],
+      "request_latency_p50_seconds": 0.00709509348962456,
+      "request_latency_p95_seconds": 0.007646567083429545,
+      "request_latency_p50_prompt_bootstrap": null,
+      "request_latency_p95_prompt_bootstrap": null,
+      "phase_ms_median": {},
+      "realized_output_length_mean": 32,
+      "realized_generations_above_8K": 0,
+      "realized_generations_above_16K": 0,
+      "peak_allocated_bytes": null,
+      "peak_reserved_bytes": null,
+      "online_final_state": []
+    },
+    {
+      "condition": "standard_nonthinking",
+      "temperature": 0.7,
+      "sampling_warp_config": {
+        "min_p": 0.0,
+        "top_k": 20,
+        "top_p": 0.8
+      },
+      "arm": "online_dbS",
+      "requests": 2,
+      "primary_requests": 2,
+      "repetition_excluded": 0,
+      "reused_acceptance_output_requests": 0,
+      "requests_with_latency": 2,
+      "requests_without_latency": 0,
+      "metrics": {
+        "mean_accepted_length": {
+          "n_prompts": 2,
+          "mean": 1.6853146853146854,
+          "ci95": [
+            1.4615384615384615,
+            1.9090909090909092
+          ],
+          "seed_std_mean": 0.0,
+          "bootstrap_unit": "prompt_id",
+          "seed_aggregation": "arithmetic_mean_before_bootstrap"
+        },
+        "median_accepted_length": {
+          "n_prompts": 2,
+          "mean": 1.5,
+          "ci95": [
+            1.0,
+            2.0
+          ],
+          "seed_std_mean": 0.0,
+          "bootstrap_unit": "prompt_id",
+          "seed_aggregation": "arithmetic_mean_before_bootstrap"
+        },
+        "target_forwards_per_generated_token": {
+          "n_prompts": 2,
+          "mean": 0.375,
+          "ci95": [
+            0.34375,
+            0.40625
+          ],
+          "seed_std_mean": 0.0,
+          "bootstrap_unit": "prompt_id",
+          "seed_aggregation": "arithmetic_mean_before_bootstrap"
+        }
+      },
+      "pooled_block_accepted_length_mean": 1.6666666666666667,
+      "pooled_block_accepted_length_median": 1.5,
+      "metric_aggregation": "metrics are prompt-weighted after seed aggregation; median_accepted_length aggregates request medians; pooled block statistics are separate",
+      "acceptance_by_block_position": {
+        "0": {
+          "n_prompts": 2,
+          "mean": 0.8706293706293706,
+          "ci95": [
+            0.8181818181818182,
+            0.9230769230769231
+          ],
+          "seed_std_mean": 0.0,
+          "bootstrap_unit": "prompt_id",
+          "seed_aggregation": "arithmetic_mean_before_bootstrap"
+        },
+        "1": {
+          "n_prompts": 2,
+          "mean": 0.5423076923076923,
+          "ci95": [
+            0.38461538461538464,
+            0.7
+          ],
+          "seed_std_mean": 0.0,
+          "bootstrap_unit": "prompt_id",
+          "seed_aggregation": "arithmetic_mean_before_bootstrap"
+        },
+        "2": {
+          "n_prompts": 2,
+          "mean": 0.2833333333333333,
+          "ci95": [
+            0.16666666666666666,
+            0.4
+          ],
+          "seed_std_mean": 0.0,
+          "bootstrap_unit": "prompt_id",
+          "seed_aggregation": "arithmetic_mean_before_bootstrap"
+        },
+        "3": {
+          "n_prompts": 2,
+          "mean": 0.05,
+          "ci95": [
+            0.0,
+            0.1
+          ],
+          "seed_std_mean": 0.0,
+          "bootstrap_unit": "prompt_id",
+          "seed_aggregation": "arithmetic_mean_before_bootstrap"
+        }
+      },
+      "acceptance_bins": [
+        {
+          "axis": "input_context_length",
+          "bin": "0-1024",
+          "n_prompts": 2,
+          "mean": 0.44609756097560976,
+          "ci95": [
+            0.38,
+            0.5121951219512195
+          ],
+          "seed_std_mean": 0.0,
+          "bootstrap_unit": "prompt_id",
+          "seed_aggregation": "arithmetic_mean_before_bootstrap",
+          "accepted_length": {
+            "n_prompts": 2,
+            "mean": 1.6853146853146854,
+            "ci95": [
+              1.4615384615384615,
+              1.9090909090909092
+            ],
+            "seed_std_mean": 0.0,
+            "bootstrap_unit": "prompt_id",
+            "seed_aggregation": "arithmetic_mean_before_bootstrap"
+          }
+        },
+        {
+          "axis": "output_offset",
+          "bin": "0-1K",
+          "n_prompts": 2,
+          "mean": 0.44609756097560976,
+          "ci95": [
+            0.38,
+            0.5121951219512195
+          ],
+          "seed_std_mean": 0.0,
+          "bootstrap_unit": "prompt_id",
+          "seed_aggregation": "arithmetic_mean_before_bootstrap",
+          "accepted_length": {
+            "n_prompts": 2,
+            "mean": 1.6853146853146854,
+            "ci95": [
+              1.4615384615384615,
+              1.9090909090909092
+            ],
+            "seed_std_mean": 0.0,
+            "bootstrap_unit": "prompt_id",
+            "seed_aggregation": "arithmetic_mean_before_bootstrap"
+          }
+        }
+      ],
+      "request_latency_p50_seconds": 0.04368226940277964,
+      "request_latency_p95_seconds": 0.04859875737456605,
+      "request_latency_p50_prompt_bootstrap": null,
+      "request_latency_p95_prompt_bootstrap": null,
+      "phase_ms_median": {},
+      "realized_output_length_mean": 32,
+      "realized_generations_above_8K": 0,
+      "realized_generations_above_16K": 0,
+      "peak_allocated_bytes": null,
+      "peak_reserved_bytes": null,
+      "online_final_state": [
+        {
+          "adapter_version": 13,
+          "u": 13,
+          "last_round": 13,
+          "loss_mode": "live_full",
+          "T_train": 1.0,
+          "beta_train": 1.0,
+          "dW_norm": 0.0,
+          "dA_norm": 0.0,
+          "db_norm": 0.002353818854317069,
+          "dS_norm": 0.004923183936625719,
+          "dS_norm_definition": "L2 norm of effective lazy-shrunk request delta at current optimizer u; zero unrepresented buckets; pure read",
+          "db_exact_zero_fraction": 0.0,
+          "active_buckets": 124,
+          "active_buckets_min_over_updates": 44,
+          "active_buckets_max_over_updates": 124,
+          "state_bytes_estimate_by_operation": {
+            "dense_activation_clone": 9984,
+            "dense_optimizer": 2912,
+            "dense_snapshot": 14976,
+            "sparse_update": 24580,
+            "sparse_snapshot": 43040
+          },
+          "state_bytes_estimate_total": 95492,
+          "state_bytes_definition": "conceptual FP32 parameter/timestamp/index reads+writes for state clones, SGD/prox steps and snapshots; excludes E/logit/autograd activation traffic and is not hardware HBM traffic",
+          "sparse_capacity": 257,
+          "sparse_update_bytes_estimate": 1888,
+          "sparse_snapshot_bytes": 2040,
+          "dense_snapshot_bytes": 384,
+          "sparse_snapshot_strategy": "compact_active_bucket_copy",
+          "sparse_update_strategy": "dirty_lazy_catchup_and_active_list_compaction",
+          "last_full_loss": 0.2589898407459259
+        },
+        {
+          "adapter_version": 11,
+          "u": 11,
+          "last_round": 11,
+          "loss_mode": "live_full",
+          "T_train": 1.0,
+          "beta_train": 1.0,
+          "dW_norm": 0.0,
+          "dA_norm": 0.0,
+          "db_norm": 0.002461340744048357,
+          "dS_norm": 0.0036380873061716557,
+          "dS_norm_definition": "L2 norm of effective lazy-shrunk request delta at current optimizer u; zero unrepresented buckets; pure read",
+          "db_exact_zero_fraction": 0.0,
+          "active_buckets": 107,
+          "active_buckets_min_over_updates": 45,
+          "active_buckets_max_over_updates": 107,
+          "state_bytes_estimate_by_operation": {
+            "dense_activation_clone": 8448,
+            "dense_optimizer": 2464,
+            "dense_snapshot": 12672,
+            "sparse_update": 19824,
+            "sparse_snapshot": 33768
+          },
+          "state_bytes_estimate_total": 77176,
+          "state_bytes_definition": "conceptual FP32 parameter/timestamp/index reads+writes for state clones, SGD/prox steps and snapshots; excludes E/logit/autograd activation traffic and is not hardware HBM traffic",
+          "sparse_capacity": 257,
+          "sparse_update_bytes_estimate": 1540,
+          "sparse_snapshot_bytes": 1760,
+          "dense_snapshot_bytes": 384,
+          "sparse_snapshot_strategy": "compact_active_bucket_copy",
+          "sparse_update_strategy": "dirty_lazy_catchup_and_active_list_compaction",
+          "last_full_loss": 0.027831777930259705
+        }
+      ]
+    },
+    {
+      "condition": "standard_nonthinking",
+      "temperature": 0.7,
+      "sampling_warp_config": {
+        "min_p": 0.0,
+        "top_k": 20,
+        "top_p": 0.8
+      },
+      "arm": "plain_dflash",
+      "requests": 2,
+      "primary_requests": 2,
+      "repetition_excluded": 0,
+      "reused_acceptance_output_requests": 2,
+      "requests_with_latency": 0,
+      "requests_without_latency": 2,
+      "metrics": {
+        "mean_accepted_length": {
+          "n_prompts": 2,
+          "mean": 2.111111111111111,
+          "ci95": [
+            1.6666666666666667,
+            2.5555555555555554
+          ],
+          "seed_std_mean": 0.0,
+          "bootstrap_unit": "prompt_id",
+          "seed_aggregation": "arithmetic_mean_before_bootstrap"
+        },
+        "median_accepted_length": {
+          "n_prompts": 2,
+          "mean": 2.0,
+          "ci95": [
+            1.0,
+            3.0
+          ],
+          "seed_std_mean": 0.0,
+          "bootstrap_unit": "prompt_id",
+          "seed_aggregation": "arithmetic_mean_before_bootstrap"
+        },
+        "target_forwards_per_generated_token": {
+          "n_prompts": 2,
+          "mean": 0.328125,
+          "ci95": [
+            0.28125,
+            0.375
+          ],
+          "seed_std_mean": 0.0,
+          "bootstrap_unit": "prompt_id",
+          "seed_aggregation": "arithmetic_mean_before_bootstrap"
+        }
+      },
+      "pooled_block_accepted_length_mean": 2.0476190476190474,
+      "pooled_block_accepted_length_median": 2,
+      "metric_aggregation": "metrics are prompt-weighted after seed aggregation; median_accepted_length aggregates request medians; pooled block statistics are separate",
+      "acceptance_by_block_position": {
+        "0": {
+          "n_prompts": 2,
+          "mean": 1.0,
+          "ci95": [
+            1.0,
+            1.0
+          ],
+          "seed_std_mean": 0.0,
+          "bootstrap_unit": "prompt_id",
+          "seed_aggregation": "arithmetic_mean_before_bootstrap"
+        },
+        "1": {
+          "n_prompts": 2,
+          "mean": 0.5972222222222222,
+          "ci95": [
+            0.4166666666666667,
+            0.7777777777777778
+          ],
+          "seed_std_mean": 0.0,
+          "bootstrap_unit": "prompt_id",
+          "seed_aggregation": "arithmetic_mean_before_bootstrap"
+        },
+        "2": {
+          "n_prompts": 2,
+          "mean": 0.36868686868686873,
+          "ci95": [
+            0.18181818181818182,
+            0.5555555555555556
+          ],
+          "seed_std_mean": 0.0,
+          "bootstrap_unit": "prompt_id",
+          "seed_aggregation": "arithmetic_mean_before_bootstrap"
+        },
+        "3": {
+          "n_prompts": 2,
+          "mean": 0.15656565656565657,
+          "ci95": [
+            0.09090909090909091,
+            0.2222222222222222
+          ],
+          "seed_std_mean": 0.0,
+          "bootstrap_unit": "prompt_id",
+          "seed_aggregation": "arithmetic_mean_before_bootstrap"
+        }
+      },
+      "acceptance_bins": [
+        {
+          "axis": "input_context_length",
+          "bin": "0-1024",
+          "n_prompts": 2,
+          "mean": 0.5368357487922705,
+          "ci95": [
+            0.43478260869565216,
+            0.6388888888888888
+          ],
+          "seed_std_mean": 0.0,
+          "bootstrap_unit": "prompt_id",
+          "seed_aggregation": "arithmetic_mean_before_bootstrap",
+          "accepted_length": {
+            "n_prompts": 2,
+            "mean": 2.111111111111111,
+            "ci95": [
+              1.6666666666666667,
+              2.5555555555555554
+            ],
+            "seed_std_mean": 0.0,
+            "bootstrap_unit": "prompt_id",
+            "seed_aggregation": "arithmetic_mean_before_bootstrap"
+          }
+        },
+        {
+          "axis": "output_offset",
+          "bin": "0-1K",
+          "n_prompts": 2,
+          "mean": 0.5368357487922705,
+          "ci95": [
+            0.43478260869565216,
+            0.6388888888888888
+          ],
+          "seed_std_mean": 0.0,
+          "bootstrap_unit": "prompt_id",
+          "seed_aggregation": "arithmetic_mean_before_bootstrap",
+          "accepted_length": {
+            "n_prompts": 2,
+            "mean": 2.111111111111111,
+            "ci95": [
+              1.6666666666666667,
+              2.5555555555555554
+            ],
+            "seed_std_mean": 0.0,
+            "bootstrap_unit": "prompt_id",
+            "seed_aggregation": "arithmetic_mean_before_bootstrap"
+          }
+        }
+      ],
+      "request_latency_p50_seconds": null,
+      "request_latency_p95_seconds": null,
+      "request_latency_p50_prompt_bootstrap": null,
+      "request_latency_p95_prompt_bootstrap": null,
+      "phase_ms_median": {},
+      "realized_output_length_mean": 32,
+      "realized_generations_above_8K": 0,
+      "realized_generations_above_16K": 0,
+      "peak_allocated_bytes": null,
+      "peak_reserved_bytes": null,
+      "online_final_state": []
+    },
+    {
+      "condition": "standard_nonthinking",
+      "temperature": 1.0,
+      "sampling_warp_config": {
+        "min_p": 0.0,
+        "top_k": 0,
+        "top_p": 1.0
+      },
+      "arm": "offline_online_stride1",
+      "requests": 2,
+      "primary_requests": 2,
+      "repetition_excluded": 0,
+      "reused_acceptance_output_requests": 0,
+      "requests_with_latency": 2,
+      "requests_without_latency": 0,
+      "metrics": {
+        "mean_accepted_length": {
+          "n_prompts": 2,
+          "mean": 2.6666666666666665,
+          "ci95": [
+            2.6666666666666665,
+            2.6666666666666665
+          ],
+          "seed_std_mean": 0.0,
+          "bootstrap_unit": "prompt_id",
+          "seed_aggregation": "arithmetic_mean_before_bootstrap"
+        },
+        "median_accepted_length": {
+          "n_prompts": 2,
+          "mean": 2.0,
+          "ci95": [
+            2.0,
+            2.0
+          ],
+          "seed_std_mean": 0.0,
+          "bootstrap_unit": "prompt_id",
+          "seed_aggregation": "arithmetic_mean_before_bootstrap"
+        },
+        "target_forwards_per_generated_token": {
+          "n_prompts": 2,
+          "mean": 0.28125,
+          "ci95": [
+            0.28125,
+            0.28125
+          ],
+          "seed_std_mean": 0.0,
+          "bootstrap_unit": "prompt_id",
+          "seed_aggregation": "arithmetic_mean_before_bootstrap"
+        }
+      },
+      "pooled_block_accepted_length_mean": 2.6666666666666665,
+      "pooled_block_accepted_length_median": 2.0,
+      "metric_aggregation": "metrics are prompt-weighted after seed aggregation; median_accepted_length aggregates request medians; pooled block statistics are separate",
+      "acceptance_by_block_position": {
+        "0": {
+          "n_prompts": 2,
+          "mean": 1.0,
+          "ci95": [
+            1.0,
+            1.0
+          ],
+          "seed_std_mean": 0.0,
+          "bootstrap_unit": "prompt_id",
+          "seed_aggregation": "arithmetic_mean_before_bootstrap"
+        },
+        "1": {
+          "n_prompts": 2,
+          "mean": 0.7777777777777778,
+          "ci95": [
+            0.7777777777777778,
+            0.7777777777777778
+          ],
+          "seed_std_mean": 0.0,
+          "bootstrap_unit": "prompt_id",
+          "seed_aggregation": "arithmetic_mean_before_bootstrap"
+        },
+        "2": {
+          "n_prompts": 2,
+          "mean": 0.4444444444444444,
+          "ci95": [
+            0.4444444444444444,
+            0.4444444444444444
+          ],
+          "seed_std_mean": 0.0,
+          "bootstrap_unit": "prompt_id",
+          "seed_aggregation": "arithmetic_mean_before_bootstrap"
+        },
+        "3": {
+          "n_prompts": 2,
+          "mean": 0.4444444444444444,
+          "ci95": [
+            0.4444444444444444,
+            0.4444444444444444
+          ],
+          "seed_std_mean": 0.0,
+          "bootstrap_unit": "prompt_id",
+          "seed_aggregation": "arithmetic_mean_before_bootstrap"
+        }
+      },
+      "acceptance_bins": [
+        {
+          "axis": "input_context_length",
+          "bin": "0-1024",
+          "n_prompts": 2,
+          "mean": 0.6666666666666666,
+          "ci95": [
+            0.6666666666666666,
+            0.6666666666666666
+          ],
+          "seed_std_mean": 0.0,
+          "bootstrap_unit": "prompt_id",
+          "seed_aggregation": "arithmetic_mean_before_bootstrap",
+          "accepted_length": {
+            "n_prompts": 2,
+            "mean": 2.6666666666666665,
+            "ci95": [
+              2.6666666666666665,
+              2.6666666666666665
+            ],
+            "seed_std_mean": 0.0,
+            "bootstrap_unit": "prompt_id",
+            "seed_aggregation": "arithmetic_mean_before_bootstrap"
+          }
+        },
+        {
+          "axis": "output_offset",
+          "bin": "0-1K",
+          "n_prompts": 2,
+          "mean": 0.6666666666666666,
+          "ci95": [
+            0.6666666666666666,
+            0.6666666666666666
+          ],
+          "seed_std_mean": 0.0,
+          "bootstrap_unit": "prompt_id",
+          "seed_aggregation": "arithmetic_mean_before_bootstrap",
+          "accepted_length": {
+            "n_prompts": 2,
+            "mean": 2.6666666666666665,
+            "ci95": [
+              2.6666666666666665,
+              2.6666666666666665
+            ],
+            "seed_std_mean": 0.0,
+            "bootstrap_unit": "prompt_id",
+            "seed_aggregation": "arithmetic_mean_before_bootstrap"
+          }
+        }
+      ],
+      "request_latency_p50_seconds": 0.035598066984675825,
+      "request_latency_p95_seconds": 0.036676719749812035,
+      "request_latency_p50_prompt_bootstrap": null,
+      "request_latency_p95_prompt_bootstrap": null,
+      "phase_ms_median": {},
+      "realized_output_length_mean": 32,
+      "realized_generations_above_8K": 0,
+      "realized_generations_above_16K": 0,
+      "peak_allocated_bytes": null,
+      "peak_reserved_bytes": null,
+      "online_final_state": [
+        {
+          "adapter_version": 9,
+          "u": 9,
+          "last_round": 9,
+          "loss_mode": "live_full",
+          "T_train": 1.0,
+          "beta_train": 1.0,
+          "dW_norm": 0.0026806953828781843,
+          "dA_norm": 0.002291069133207202,
+          "db_norm": 0.0003115084255114198,
+          "dS_norm": 0.0003910597297362983,
+          "dS_norm_definition": "L2 norm of effective lazy-shrunk request delta at current optimizer u; zero unrepresented buckets; pure read",
+          "db_exact_zero_fraction": 0.0,
+          "active_buckets": 123,
+          "active_buckets_min_over_updates": 48,
+          "active_buckets_max_over_updates": 123,
+          "state_bytes_estimate_by_operation": {
+            "dense_activation_clone": 6912,
+            "dense_optimizer": 17856,
+            "dense_snapshot": 10368,
+            "sparse_update": 17160,
+            "sparse_snapshot": 28528
+          },
+          "state_bytes_estimate_total": 80824,
+          "state_bytes_definition": "conceptual FP32 parameter/timestamp/index reads+writes for state clones, SGD/prox steps and snapshots; excludes E/logit/autograd activation traffic and is not hardware HBM traffic",
+          "sparse_capacity": 257,
+          "sparse_update_bytes_estimate": 2116,
+          "sparse_snapshot_bytes": 2008,
+          "dense_snapshot_bytes": 384,
+          "sparse_snapshot_strategy": "compact_active_bucket_copy",
+          "sparse_update_strategy": "dirty_lazy_catchup_and_active_list_compaction",
+          "last_full_loss": 0.3739681839942932
+        },
+        {
+          "adapter_version": 9,
+          "u": 9,
+          "last_round": 9,
+          "loss_mode": "live_full",
+          "T_train": 1.0,
+          "beta_train": 1.0,
+          "dW_norm": 0.0021064484026283026,
+          "dA_norm": 0.001991960220038891,
+          "db_norm": 0.00025643216213211417,
+          "dS_norm": 0.0003286877472419292,
+          "dS_norm_definition": "L2 norm of effective lazy-shrunk request delta at current optimizer u; zero unrepresented buckets; pure read",
+          "db_exact_zero_fraction": 0.0,
+          "active_buckets": 123,
+          "active_buckets_min_over_updates": 45,
+          "active_buckets_max_over_updates": 123,
+          "state_bytes_estimate_by_operation": {
+            "dense_activation_clone": 6912,
+            "dense_optimizer": 17856,
+            "dense_snapshot": 10368,
+            "sparse_update": 17192,
+            "sparse_snapshot": 29296
+          },
+          "state_bytes_estimate_total": 81624,
+          "state_bytes_definition": "conceptual FP32 parameter/timestamp/index reads+writes for state clones, SGD/prox steps and snapshots; excludes E/logit/autograd activation traffic and is not hardware HBM traffic",
+          "sparse_capacity": 257,
+          "sparse_update_bytes_estimate": 2116,
+          "sparse_snapshot_bytes": 2008,
+          "dense_snapshot_bytes": 384,
+          "sparse_snapshot_strategy": "compact_active_bucket_copy",
+          "sparse_update_strategy": "dirty_lazy_catchup_and_active_list_compaction",
+          "last_full_loss": 0.3759814500808716
+        }
+      ]
+    },
+    {
+      "condition": "standard_nonthinking",
+      "temperature": 1.0,
+      "sampling_warp_config": {
+        "min_p": 0.0,
+        "top_k": 0,
+        "top_p": 1.0
+      },
+      "arm": "offline_static",
+      "requests": 2,
+      "primary_requests": 2,
+      "repetition_excluded": 0,
+      "reused_acceptance_output_requests": 0,
+      "requests_with_latency": 2,
+      "requests_without_latency": 0,
+      "metrics": {
+        "mean_accepted_length": {
+          "n_prompts": 2,
+          "mean": 2.7777777777777777,
+          "ci95": [
+            2.5555555555555554,
+            3.0
+          ],
+          "seed_std_mean": 0.0,
+          "bootstrap_unit": "prompt_id",
+          "seed_aggregation": "arithmetic_mean_before_bootstrap"
+        },
+        "median_accepted_length": {
+          "n_prompts": 2,
+          "mean": 3.0,
+          "ci95": [
+            3.0,
+            3.0
+          ],
+          "seed_std_mean": 0.0,
+          "bootstrap_unit": "prompt_id",
+          "seed_aggregation": "arithmetic_mean_before_bootstrap"
+        },
+        "target_forwards_per_generated_token": {
+          "n_prompts": 2,
+          "mean": 0.265625,
+          "ci95": [
+            0.25,
+            0.28125
+          ],
+          "seed_std_mean": 0.0,
+          "bootstrap_unit": "prompt_id",
+          "seed_aggregation": "arithmetic_mean_before_bootstrap"
+        }
+      },
+      "pooled_block_accepted_length_mean": 2.764705882352941,
+      "pooled_block_accepted_length_median": 3,
+      "metric_aggregation": "metrics are prompt-weighted after seed aggregation; median_accepted_length aggregates request medians; pooled block statistics are separate",
+      "acceptance_by_block_position": {
+        "0": {
+          "n_prompts": 2,
+          "mean": 1.0,
+          "ci95": [
+            1.0,
+            1.0
+          ],
+          "seed_std_mean": 0.0,
+          "bootstrap_unit": "prompt_id",
+          "seed_aggregation": "arithmetic_mean_before_bootstrap"
+        },
+        "1": {
+          "n_prompts": 2,
+          "mean": 0.8263888888888888,
+          "ci95": [
+            0.7777777777777778,
+            0.875
+          ],
+          "seed_std_mean": 0.0,
+          "bootstrap_unit": "prompt_id",
+          "seed_aggregation": "arithmetic_mean_before_bootstrap"
+        },
+        "2": {
+          "n_prompts": 2,
+          "mean": 0.6527777777777778,
+          "ci95": [
+            0.5555555555555556,
+            0.75
+          ],
+          "seed_std_mean": 0.0,
+          "bootstrap_unit": "prompt_id",
+          "seed_aggregation": "arithmetic_mean_before_bootstrap"
+        },
+        "3": {
+          "n_prompts": 2,
+          "mean": 0.3125,
+          "ci95": [
+            0.25,
+            0.375
+          ],
+          "seed_std_mean": 0.0,
+          "bootstrap_unit": "prompt_id",
+          "seed_aggregation": "arithmetic_mean_before_bootstrap"
+        }
+      },
+      "acceptance_bins": [
+        {
+          "axis": "input_context_length",
+          "bin": "0-1024",
+          "n_prompts": 2,
+          "mean": 0.7035714285714285,
+          "ci95": [
+            0.6571428571428571,
+            0.75
+          ],
+          "seed_std_mean": 0.0,
+          "bootstrap_unit": "prompt_id",
+          "seed_aggregation": "arithmetic_mean_before_bootstrap",
+          "accepted_length": {
+            "n_prompts": 2,
+            "mean": 2.7777777777777777,
+            "ci95": [
+              2.5555555555555554,
+              3.0
+            ],
+            "seed_std_mean": 0.0,
+            "bootstrap_unit": "prompt_id",
+            "seed_aggregation": "arithmetic_mean_before_bootstrap"
+          }
+        },
+        {
+          "axis": "output_offset",
+          "bin": "0-1K",
+          "n_prompts": 2,
+          "mean": 0.7035714285714285,
+          "ci95": [
+            0.6571428571428571,
+            0.75
+          ],
+          "seed_std_mean": 0.0,
+          "bootstrap_unit": "prompt_id",
+          "seed_aggregation": "arithmetic_mean_before_bootstrap",
+          "accepted_length": {
+            "n_prompts": 2,
+            "mean": 2.7777777777777777,
+            "ci95": [
+              2.5555555555555554,
+              3.0
+            ],
+            "seed_std_mean": 0.0,
+            "bootstrap_unit": "prompt_id",
+            "seed_aggregation": "arithmetic_mean_before_bootstrap"
+          }
+        }
+      ],
+      "request_latency_p50_seconds": 0.00843283743597567,
+      "request_latency_p95_seconds": 0.008803847711533308,
+      "request_latency_p50_prompt_bootstrap": null,
+      "request_latency_p95_prompt_bootstrap": null,
+      "phase_ms_median": {},
+      "realized_output_length_mean": 32,
+      "realized_generations_above_8K": 0,
+      "realized_generations_above_16K": 0,
+      "peak_allocated_bytes": null,
+      "peak_reserved_bytes": null,
+      "online_final_state": []
+    },
+    {
+      "condition": "standard_nonthinking",
+      "temperature": 1.0,
+      "sampling_warp_config": {
+        "min_p": 0.0,
+        "top_k": 0,
+        "top_p": 1.0
+      },
+      "arm": "online_bigram",
+      "requests": 2,
+      "primary_requests": 2,
+      "repetition_excluded": 0,
+      "reused_acceptance_output_requests": 0,
+      "requests_with_latency": 2,
+      "requests_without_latency": 0,
+      "metrics": {
+        "mean_accepted_length": {
+          "n_prompts": 2,
+          "mean": 2.5555555555555554,
+          "ci95": [
+            2.5555555555555554,
+            2.5555555555555554
+          ],
+          "seed_std_mean": 0.0,
+          "bootstrap_unit": "prompt_id",
+          "seed_aggregation": "arithmetic_mean_before_bootstrap"
+        },
+        "median_accepted_length": {
+          "n_prompts": 2,
+          "mean": 2.5,
+          "ci95": [
+            2.0,
+            3.0
+          ],
+          "seed_std_mean": 0.0,
+          "bootstrap_unit": "prompt_id",
+          "seed_aggregation": "arithmetic_mean_before_bootstrap"
+        },
+        "target_forwards_per_generated_token": {
+          "n_prompts": 2,
+          "mean": 0.28125,
+          "ci95": [
+            0.28125,
+            0.28125
+          ],
+          "seed_std_mean": 0.0,
+          "bootstrap_unit": "prompt_id",
+          "seed_aggregation": "arithmetic_mean_before_bootstrap"
+        }
+      },
+      "pooled_block_accepted_length_mean": 2.5555555555555554,
+      "pooled_block_accepted_length_median": 2.5,
+      "metric_aggregation": "metrics are prompt-weighted after seed aggregation; median_accepted_length aggregates request medians; pooled block statistics are separate",
+      "acceptance_by_block_position": {
+        "0": {
+          "n_prompts": 2,
+          "mean": 1.0,
+          "ci95": [
+            1.0,
+            1.0
+          ],
+          "seed_std_mean": 0.0,
+          "bootstrap_unit": "prompt_id",
+          "seed_aggregation": "arithmetic_mean_before_bootstrap"
+        },
+        "1": {
+          "n_prompts": 2,
+          "mean": 0.7777777777777778,
+          "ci95": [
+            0.7777777777777778,
+            0.7777777777777778
+          ],
+          "seed_std_mean": 0.0,
+          "bootstrap_unit": "prompt_id",
+          "seed_aggregation": "arithmetic_mean_before_bootstrap"
+        },
+        "2": {
+          "n_prompts": 2,
+          "mean": 0.5,
+          "ci95": [
+            0.4444444444444444,
+            0.5555555555555556
+          ],
+          "seed_std_mean": 0.0,
+          "bootstrap_unit": "prompt_id",
+          "seed_aggregation": "arithmetic_mean_before_bootstrap"
+        },
+        "3": {
+          "n_prompts": 2,
+          "mean": 0.3125,
+          "ci95": [
+            0.25,
+            0.375
+          ],
+          "seed_std_mean": 0.0,
+          "bootstrap_unit": "prompt_id",
+          "seed_aggregation": "arithmetic_mean_before_bootstrap"
+        }
+      },
+      "acceptance_bins": [
+        {
+          "axis": "input_context_length",
+          "bin": "0-1024",
+          "n_prompts": 2,
+          "mean": 0.6571428571428571,
+          "ci95": [
+            0.6571428571428571,
+            0.6571428571428571
+          ],
+          "seed_std_mean": 0.0,
+          "bootstrap_unit": "prompt_id",
+          "seed_aggregation": "arithmetic_mean_before_bootstrap",
+          "accepted_length": {
+            "n_prompts": 2,
+            "mean": 2.5555555555555554,
+            "ci95": [
+              2.5555555555555554,
+              2.5555555555555554
+            ],
+            "seed_std_mean": 0.0,
+            "bootstrap_unit": "prompt_id",
+            "seed_aggregation": "arithmetic_mean_before_bootstrap"
+          }
+        },
+        {
+          "axis": "output_offset",
+          "bin": "0-1K",
+          "n_prompts": 2,
+          "mean": 0.6571428571428571,
+          "ci95": [
+            0.6571428571428571,
+            0.6571428571428571
+          ],
+          "seed_std_mean": 0.0,
+          "bootstrap_unit": "prompt_id",
+          "seed_aggregation": "arithmetic_mean_before_bootstrap",
+          "accepted_length": {
+            "n_prompts": 2,
+            "mean": 2.5555555555555554,
+            "ci95": [
+              2.5555555555555554,
+              2.5555555555555554
+            ],
+            "seed_std_mean": 0.0,
+            "bootstrap_unit": "prompt_id",
+            "seed_aggregation": "arithmetic_mean_before_bootstrap"
+          }
+        }
+      ],
+      "request_latency_p50_seconds": 0.004839858040213585,
+      "request_latency_p95_seconds": 0.004952371469698846,
+      "request_latency_p50_prompt_bootstrap": null,
+      "request_latency_p95_prompt_bootstrap": null,
+      "phase_ms_median": {},
+      "realized_output_length_mean": 32,
+      "realized_generations_above_8K": 0,
+      "realized_generations_above_16K": 0,
+      "peak_allocated_bytes": null,
+      "peak_reserved_bytes": null,
+      "online_final_state": []
+    },
+    {
+      "condition": "standard_nonthinking",
+      "temperature": 1.0,
+      "sampling_warp_config": {
+        "min_p": 0.0,
+        "top_k": 0,
+        "top_p": 1.0
+      },
+      "arm": "online_dbS",
+      "requests": 2,
+      "primary_requests": 2,
+      "repetition_excluded": 0,
+      "reused_acceptance_output_requests": 0,
+      "requests_with_latency": 2,
+      "requests_without_latency": 0,
+      "metrics": {
+        "mean_accepted_length": {
+          "n_prompts": 2,
+          "mean": 2.6666666666666665,
+          "ci95": [
+            2.6666666666666665,
+            2.6666666666666665
+          ],
+          "seed_std_mean": 0.0,
+          "bootstrap_unit": "prompt_id",
+          "seed_aggregation": "arithmetic_mean_before_bootstrap"
+        },
+        "median_accepted_length": {
+          "n_prompts": 2,
+          "mean": 2.0,
+          "ci95": [
+            2.0,
+            2.0
+          ],
+          "seed_std_mean": 0.0,
+          "bootstrap_unit": "prompt_id",
+          "seed_aggregation": "arithmetic_mean_before_bootstrap"
+        },
+        "target_forwards_per_generated_token": {
+          "n_prompts": 2,
+          "mean": 0.28125,
+          "ci95": [
+            0.28125,
+            0.28125
+          ],
+          "seed_std_mean": 0.0,
+          "bootstrap_unit": "prompt_id",
+          "seed_aggregation": "arithmetic_mean_before_bootstrap"
+        }
+      },
+      "pooled_block_accepted_length_mean": 2.6666666666666665,
+      "pooled_block_accepted_length_median": 2.0,
+      "metric_aggregation": "metrics are prompt-weighted after seed aggregation; median_accepted_length aggregates request medians; pooled block statistics are separate",
+      "acceptance_by_block_position": {
+        "0": {
+          "n_prompts": 2,
+          "mean": 1.0,
+          "ci95": [
+            1.0,
+            1.0
+          ],
+          "seed_std_mean": 0.0,
+          "bootstrap_unit": "prompt_id",
+          "seed_aggregation": "arithmetic_mean_before_bootstrap"
+        },
+        "1": {
+          "n_prompts": 2,
+          "mean": 0.7777777777777778,
+          "ci95": [
+            0.7777777777777778,
+            0.7777777777777778
+          ],
+          "seed_std_mean": 0.0,
+          "bootstrap_unit": "prompt_id",
+          "seed_aggregation": "arithmetic_mean_before_bootstrap"
+        },
+        "2": {
+          "n_prompts": 2,
+          "mean": 0.4444444444444444,
+          "ci95": [
+            0.4444444444444444,
+            0.4444444444444444
+          ],
+          "seed_std_mean": 0.0,
+          "bootstrap_unit": "prompt_id",
+          "seed_aggregation": "arithmetic_mean_before_bootstrap"
+        },
+        "3": {
+          "n_prompts": 2,
+          "mean": 0.4444444444444444,
+          "ci95": [
+            0.4444444444444444,
+            0.4444444444444444
+          ],
+          "seed_std_mean": 0.0,
+          "bootstrap_unit": "prompt_id",
+          "seed_aggregation": "arithmetic_mean_before_bootstrap"
+        }
+      },
+      "acceptance_bins": [
+        {
+          "axis": "input_context_length",
+          "bin": "0-1024",
+          "n_prompts": 2,
+          "mean": 0.6666666666666666,
+          "ci95": [
+            0.6666666666666666,
+            0.6666666666666666
+          ],
+          "seed_std_mean": 0.0,
+          "bootstrap_unit": "prompt_id",
+          "seed_aggregation": "arithmetic_mean_before_bootstrap",
+          "accepted_length": {
+            "n_prompts": 2,
+            "mean": 2.6666666666666665,
+            "ci95": [
+              2.6666666666666665,
+              2.6666666666666665
+            ],
+            "seed_std_mean": 0.0,
+            "bootstrap_unit": "prompt_id",
+            "seed_aggregation": "arithmetic_mean_before_bootstrap"
+          }
+        },
+        {
+          "axis": "output_offset",
+          "bin": "0-1K",
+          "n_prompts": 2,
+          "mean": 0.6666666666666666,
+          "ci95": [
+            0.6666666666666666,
+            0.6666666666666666
+          ],
+          "seed_std_mean": 0.0,
+          "bootstrap_unit": "prompt_id",
+          "seed_aggregation": "arithmetic_mean_before_bootstrap",
+          "accepted_length": {
+            "n_prompts": 2,
+            "mean": 2.6666666666666665,
+            "ci95": [
+              2.6666666666666665,
+              2.6666666666666665
+            ],
+            "seed_std_mean": 0.0,
+            "bootstrap_unit": "prompt_id",
+            "seed_aggregation": "arithmetic_mean_before_bootstrap"
+          }
+        }
+      ],
+      "request_latency_p50_seconds": 0.032581213978119195,
+      "request_latency_p95_seconds": 0.03364618223858997,
+      "request_latency_p50_prompt_bootstrap": null,
+      "request_latency_p95_prompt_bootstrap": null,
+      "phase_ms_median": {},
+      "realized_output_length_mean": 32,
+      "realized_generations_above_8K": 0,
+      "realized_generations_above_16K": 0,
+      "peak_allocated_bytes": null,
+      "peak_reserved_bytes": null,
+      "online_final_state": [
+        {
+          "adapter_version": 9,
+          "u": 9,
+          "last_round": 9,
+          "loss_mode": "live_full",
+          "T_train": 1.0,
+          "beta_train": 1.0,
+          "dW_norm": 0.0,
+          "dA_norm": 0.0,
+          "db_norm": 0.003124442184343934,
+          "dS_norm": 0.003925802186131477,
+          "dS_norm_definition": "L2 norm of effective lazy-shrunk request delta at current optimizer u; zero unrepresented buckets; pure read",
+          "db_exact_zero_fraction": 0.0,
+          "active_buckets": 123,
+          "active_buckets_min_over_updates": 48,
+          "active_buckets_max_over_updates": 123,
+          "state_bytes_estimate_by_operation": {
+            "dense_activation_clone": 6912,
+            "dense_optimizer": 2016,
+            "dense_snapshot": 10368,
+            "sparse_update": 17160,
+            "sparse_snapshot": 28528
+          },
+          "state_bytes_estimate_total": 64984,
+          "state_bytes_definition": "conceptual FP32 parameter/timestamp/index reads+writes for state clones, SGD/prox steps and snapshots; excludes E/logit/autograd activation traffic and is not hardware HBM traffic",
+          "sparse_capacity": 257,
+          "sparse_update_bytes_estimate": 2116,
+          "sparse_snapshot_bytes": 2008,
+          "dense_snapshot_bytes": 384,
+          "sparse_snapshot_strategy": "compact_active_bucket_copy",
+          "sparse_update_strategy": "dirty_lazy_catchup_and_active_list_compaction",
+          "last_full_loss": 0.38254213333129883
+        },
+        {
+          "adapter_version": 9,
+          "u": 9,
+          "last_round": 9,
+          "loss_mode": "live_full",
+          "T_train": 1.0,
+          "beta_train": 1.0,
+          "dW_norm": 0.0,
+          "dA_norm": 0.0,
+          "db_norm": 0.0025696696247905493,
+          "dS_norm": 0.00329698552377522,
+          "dS_norm_definition": "L2 norm of effective lazy-shrunk request delta at current optimizer u; zero unrepresented buckets; pure read",
+          "db_exact_zero_fraction": 0.0,
+          "active_buckets": 123,
+          "active_buckets_min_over_updates": 45,
+          "active_buckets_max_over_updates": 123,
+          "state_bytes_estimate_by_operation": {
+            "dense_activation_clone": 6912,
+            "dense_optimizer": 2016,
+            "dense_snapshot": 10368,
+            "sparse_update": 17192,
+            "sparse_snapshot": 29296
+          },
+          "state_bytes_estimate_total": 65784,
+          "state_bytes_definition": "conceptual FP32 parameter/timestamp/index reads+writes for state clones, SGD/prox steps and snapshots; excludes E/logit/autograd activation traffic and is not hardware HBM traffic",
+          "sparse_capacity": 257,
+          "sparse_update_bytes_estimate": 2116,
+          "sparse_snapshot_bytes": 2008,
+          "dense_snapshot_bytes": 384,
+          "sparse_snapshot_strategy": "compact_active_bucket_copy",
+          "sparse_update_strategy": "dirty_lazy_catchup_and_active_list_compaction",
+          "last_full_loss": 0.38322460651397705
+        }
+      ]
+    },
+    {
+      "condition": "standard_nonthinking",
+      "temperature": 1.0,
+      "sampling_warp_config": {
+        "min_p": 0.0,
+        "top_k": 0,
+        "top_p": 1.0
+      },
+      "arm": "plain_dflash",
+      "requests": 2,
+      "primary_requests": 2,
+      "repetition_excluded": 0,
+      "reused_acceptance_output_requests": 2,
+      "requests_with_latency": 0,
+      "requests_without_latency": 2,
+      "metrics": {
+        "mean_accepted_length": {
+          "n_prompts": 2,
+          "mean": 2.5555555555555554,
+          "ci95": [
+            2.5555555555555554,
+            2.5555555555555554
+          ],
+          "seed_std_mean": 0.0,
+          "bootstrap_unit": "prompt_id",
+          "seed_aggregation": "arithmetic_mean_before_bootstrap"
+        },
+        "median_accepted_length": {
+          "n_prompts": 2,
+          "mean": 2.5,
+          "ci95": [
+            2.0,
+            3.0
+          ],
+          "seed_std_mean": 0.0,
+          "bootstrap_unit": "prompt_id",
+          "seed_aggregation": "arithmetic_mean_before_bootstrap"
+        },
+        "target_forwards_per_generated_token": {
+          "n_prompts": 2,
+          "mean": 0.28125,
+          "ci95": [
+            0.28125,
+            0.28125
+          ],
+          "seed_std_mean": 0.0,
+          "bootstrap_unit": "prompt_id",
+          "seed_aggregation": "arithmetic_mean_before_bootstrap"
+        }
+      },
+      "pooled_block_accepted_length_mean": 2.5555555555555554,
+      "pooled_block_accepted_length_median": 2.5,
+      "metric_aggregation": "metrics are prompt-weighted after seed aggregation; median_accepted_length aggregates request medians; pooled block statistics are separate",
+      "acceptance_by_block_position": {
+        "0": {
+          "n_prompts": 2,
+          "mean": 1.0,
+          "ci95": [
+            1.0,
+            1.0
+          ],
+          "seed_std_mean": 0.0,
+          "bootstrap_unit": "prompt_id",
+          "seed_aggregation": "arithmetic_mean_before_bootstrap"
+        },
+        "1": {
+          "n_prompts": 2,
+          "mean": 0.7777777777777778,
+          "ci95": [
+            0.7777777777777778,
+            0.7777777777777778
+          ],
+          "seed_std_mean": 0.0,
+          "bootstrap_unit": "prompt_id",
+          "seed_aggregation": "arithmetic_mean_before_bootstrap"
+        },
+        "2": {
+          "n_prompts": 2,
+          "mean": 0.5,
+          "ci95": [
+            0.4444444444444444,
+            0.5555555555555556
+          ],
+          "seed_std_mean": 0.0,
+          "bootstrap_unit": "prompt_id",
+          "seed_aggregation": "arithmetic_mean_before_bootstrap"
+        },
+        "3": {
+          "n_prompts": 2,
+          "mean": 0.3125,
+          "ci95": [
+            0.25,
+            0.375
+          ],
+          "seed_std_mean": 0.0,
+          "bootstrap_unit": "prompt_id",
+          "seed_aggregation": "arithmetic_mean_before_bootstrap"
+        }
+      },
+      "acceptance_bins": [
+        {
+          "axis": "input_context_length",
+          "bin": "0-1024",
+          "n_prompts": 2,
+          "mean": 0.6571428571428571,
+          "ci95": [
+            0.6571428571428571,
+            0.6571428571428571
+          ],
+          "seed_std_mean": 0.0,
+          "bootstrap_unit": "prompt_id",
+          "seed_aggregation": "arithmetic_mean_before_bootstrap",
+          "accepted_length": {
+            "n_prompts": 2,
+            "mean": 2.5555555555555554,
+            "ci95": [
+              2.5555555555555554,
+              2.5555555555555554
+            ],
+            "seed_std_mean": 0.0,
+            "bootstrap_unit": "prompt_id",
+            "seed_aggregation": "arithmetic_mean_before_bootstrap"
+          }
+        },
+        {
+          "axis": "output_offset",
+          "bin": "0-1K",
+          "n_prompts": 2,
+          "mean": 0.6571428571428571,
+          "ci95": [
+            0.6571428571428571,
+            0.6571428571428571
+          ],
+          "seed_std_mean": 0.0,
+          "bootstrap_unit": "prompt_id",
+          "seed_aggregation": "arithmetic_mean_before_bootstrap",
+          "accepted_length": {
+            "n_prompts": 2,
+            "mean": 2.5555555555555554,
+            "ci95": [
+              2.5555555555555554,
+              2.5555555555555554
+            ],
+            "seed_std_mean": 0.0,
+            "bootstrap_unit": "prompt_id",
+            "seed_aggregation": "arithmetic_mean_before_bootstrap"
+          }
+        }
+      ],
+      "request_latency_p50_seconds": null,
+      "request_latency_p95_seconds": null,
+      "request_latency_p50_prompt_bootstrap": null,
+      "request_latency_p95_prompt_bootstrap": null,
+      "phase_ms_median": {},
+      "realized_output_length_mean": 32,
+      "realized_generations_above_8K": 0,
+      "realized_generations_above_16K": 0,
+      "peak_allocated_bytes": null,
+      "peak_reserved_bytes": null,
+      "online_final_state": []
+    }
+  ],
+  "timing_warning": "Sharded evaluation timing is observational only; isolated timing session determines speed conclusions."
+}

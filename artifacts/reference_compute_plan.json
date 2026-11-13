@@ -1,0 +1,83 @@
+{
+  "label": "not_run",
+  "created_at_utc": "2026-11-13T23:25:28.812356+00:00",
+  "scope": "current reference implementation defaults; arithmetic scenarios, not runtime forecasts",
+  "M2": {
+    "primary_train_output_tokens": 501510,
+    "primary_train_generations": 1692,
+    "primary_train_blocks": 84310,
+    "primary_dev_blocks": 6865,
+    "primary_test_blocks": 6344,
+    "training_batches": 21078,
+    "evaluation_batches": 38291,
+    "total_batch_calls": 59369,
+    "timing_basis": "Must measure frozen-head reconstruction, scoring, sparse backward, deserialization and statistics; generation tokens/sec is inapplicable."
+  },
+  "M3": {
+    "dev_measured_requests": 140,
+    "dev_warmups": 14,
+    "evaluation_requests": 1920,
+    "timing_uninstrumented_requests": 5760,
+    "phase_profile_requests": 1920,
+    "timing_warmups": 8,
+    "total_requests": 9762
+  },
+  "M4": {
+    "dev_measured_requests": 180,
+    "dev_warmups": 18,
+    "evaluation_requests": 2400,
+    "timing_uninstrumented_requests": 7200,
+    "phase_profile_requests": 2400,
+    "timing_warmups": 10,
+    "total_requests": 12208
+  },
+  "scenario": {
+    "standard_mean_tokens": 300,
+    "standard_tokens_per_second": 100,
+    "long_mean_tokens": 10000,
+    "long_tokens_per_second": 35,
+    "all_requests": 21970,
+    "estimated_generated_tokens": 22410000,
+    "GPU_hours": 146.43,
+    "serial_dev_and_timing_hours": 120.21,
+    "ideal_wall_hours_with_8_evaluation_GPUs": 123.49,
+    "uncertainties": [
+      "collection includes diagnostics and serialization absent from evaluation",
+      "adapter correction and online backprop add per-arm costs",
+      "realized long lengths vary",
+      "phase profiling introduces instrumentation overhead"
+    ],
+    "not_a_forecast": true
+  },
+  "implementation_defaults_not_numeric_spec_requirements": [
+    "eight standard dev prompts",
+    "two candidate configurations per tuned arm",
+    "three uninstrumented timing repeats",
+    "separate full-suite phase profile pass",
+    "every test prompt on every isolated timing pass"
+  ],
+  "policy": "Retain required prompt/seed counts. Revisit runtime with actual trained-arm pilot evidence before expensive evaluation; no scope/settings changed by this planning artifact.",
+  "baseline_reuse_update": {
+    "status": "independently_validated_cpu",
+    "M4_logical_evaluation_requests": 2400,
+    "M4_fresh_evaluation_requests_if_both_baselines_match": 1440,
+    "M4_fresh_evaluation_requests_if_only_plain_matches": 1920,
+    "M4_fresh_evaluation_requests_if_neither_matches": 2400,
+    "combined_fresh_requests_range": [
+      21010,
+      21970
+    ],
+    "tuning_and_timing_requests": "unchanged; always remeasured",
+    "original_scenario_above": "before baseline reuse; keep as clearly labeled initial planning scenario"
+  },
+  "greedy_coverage_update": {
+    "added_shared_target_only_generations": 64,
+    "scope": "standard greedy test prompts only; reused across M3/M4 when identities match",
+    "outside_timing_suite": true,
+    "expected_output_tokens_at_scenario_mean": 19200,
+    "total_fresh_request_range_with_reuse_and_greedy": [
+      21074,
+      22034
+    ]
+  }
+}

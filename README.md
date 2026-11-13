@@ -104,7 +104,7 @@ by that audit.
 CUDA_VISIBLE_DEVICES="$EDRAFT_SINGLE_GPU" uv run --frozen python -m edraft.collect --scale reference --stage calibrate --device cuda:0
 uv run --frozen python -m edraft.launch --scale reference --task collect --gpus "$EDRAFT_SHARD_GPUS" --train_tokens_per_temperature 250000 --standard_max_new_tokens 1024 --long_max_new_tokens 24576
 uv run --frozen python -m edraft.collect --scale reference --stage audit --device cpu --train_tokens_per_temperature 250000 --standard_max_new_tokens 1024 --long_max_new_tokens 24576
-uv run --frozen python -m edraft.diagnose --scale reference --device cpu --trace_dir artifacts/traces --m1_audit artifacts/m1_audit.json
+uv run --frozen python -m edraft.diagnose --scale reference --device cpu --trace_dir artifacts/traces --m1_audit artifacts/m1_audit.json --workers 8
 ```
 
 M2 requires a passed `m1_audit.json`, at least 500,000 eligible train output tokens,
@@ -127,6 +127,12 @@ then measures every arm back-to-back on one idle GPU. The four arms are plain
 DFlash, online bigram, dense adapter, and dense plus sparse adapter. Reference
 evaluation uses 64 standard test prompts with three seeds at each positive
 temperature, plus 32 long test prompts with one seed: 480 requests per arm.
+Each standard greedy test prompt also receives one target-only diagnostic.
+`greedy_output_comparisons.json` reports every arm against both plain DFlash and
+that target-only output, with token/sequence mismatch rates and coverage. Matching
+target-only diagnostics are shared with M4; they are outside the timing suite.
+Finite-precision mismatches are reported without being conflated with missing
+comparison coverage or the mathematical exactness tests.
 
 ```bash
 CUDA_VISIBLE_DEVICES="$EDRAFT_SINGLE_GPU" uv run --frozen python -m edraft.eval_closed_loop --scale reference --stage m3 --mode tune --device cuda:0 --standard_dev_prompts 8 --long_dev_prompts 12
@@ -139,7 +145,11 @@ Proceed to M4 only when `artifacts/m3/summary.json` reports `complete`. M4 uses 
 same prompt/seed counts with five arms: plain DFlash, online bigram, offline static,
 offline plus all online deltas at stride 1, and online bias/sparse deltas only.
 It performs separate dev tuning and remeasures both baselines in its own timing
-session. Its summary also validates the matching M1b feature diagnostics and
+session. Matching M3 baseline output and acceptance records are reused only when
+their settings, generation identities, and checksums agree. Different M4 bigram
+settings trigger fresh generation. Reused records have unavailable timing and
+memory fields; all M4 timing and profile requests execute again. Its summary also
+validates the matching M1b feature diagnostics and
 writes `artifacts/m4/feature_context.json`; the default source is
 `artifacts/diagnostic_reference.json` (`--feature_diagnostic` overrides that path).
 Missing or mismatched feature evidence leaves M4 incomplete.
@@ -153,6 +163,8 @@ uv run --frozen python -m edraft.eval_closed_loop --scale reference --stage m4 -
 
 Each stage stores frozen `settings.json`, rank-local evaluation manifests, a
 `timing.json`, and `summary.json` under `artifacts/m3/` or `artifacts/m4/`.
+Large trace/checkpoint files and detailed reference request trajectories remain
+local in `artifacts/`; retain them with the manifests to resume an interrupted run.
 `--timing_prompts 0` means every required test prompt; a positive subset is a pilot
 and cannot complete the milestone. Timing includes request initialization,
 tokenization, proposals, verification, and online updates, with a separate CUDA

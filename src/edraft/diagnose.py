@@ -1,11 +1,14 @@
 """Exact live headroom diagnostics and separately grouped trace reports."""
 from __future__ import annotations
 
-from collections import Counter, defaultdict
+from collections import Counter, defaultdict, deque
+from concurrent.futures import ProcessPoolExecutor
 import bisect
 import hashlib
 import json
 import math
+import multiprocessing
+import os
 from pathlib import Path
 import statistics
 import torch
@@ -391,13 +394,124 @@ def audited_trace_sources(audit_path, scale, trace_dir=None):
                      'prompt_manifest_sha256': calibration['identity']['prompt_manifest_sha256']}
 
 
+def _accumulate_source(accumulator, source, scale):
+    from .traces import read_shard
+    path = Path(source['path'])
+    sidecar = json.loads(path.with_suffix('.pt.json').read_text())
+    if sidecar['sha256'] != source['sha256']:
+        raise RuntimeError(f'Audited trace checksum changed: {path}')
+    shard = read_shard(path)  # Retain full checksum and canonical-schema checks.
+    generation = shard['metadata'].get('generation')
+    if generation is None:
+        raise RuntimeError(f'{path}: generation metadata missing; realized length/repetition cannot be inferred from a cap')
+    if not generation.get('complete', False):
+        raise RuntimeError(f'{path}: generation is incomplete')
+    if 'repetition_dominated' not in generation:
+        if 'output_tokens' not in generation:
+            raise RuntimeError(f'{path}: repetition diagnostics and output tokens are both missing')
+        generation.update(generation_diagnostics(generation['output_tokens']))
+    accumulator.add_generation(generation)
+    for block in shard['blocks']:
+        if block['scale'] != scale:
+            raise RuntimeError(f'{path}: trace scale does not match requested scale')
+        accumulator.add_block(block, repetition_dominated=generation['repetition_dominated'])
+
+
+def _diagnostic_worker_init():
+    os.environ['CUDA_VISIBLE_DEVICES'] = ''
+    torch.set_num_threads(1)
+
+
+def _diagnostic_shard_worker(source, scale, context_edges, outlier_threshold, seed):
+    accumulator = DiagnosticAccumulator(context_edges, outlier_threshold, seed)
+    _accumulate_source(accumulator, source, scale)
+    # Avoid lambda defaultdicts and torch shared-memory/file-descriptor traffic.
+    groups = {}
+    for key, group in accumulator.groups.items():
+        groups[key] = {**group, 'rows': {name: dict(rows) for name, rows in group['rows'].items()},
+                       'acceptance_by_block_position': dict(group['acceptance_by_block_position']),
+                       'h_sum': group['h_sum'].tolist(), 'h_sq_sum': group['h_sq_sum'].tolist()}
+    return {'source': source, 'groups': groups, 'generations': accumulator.generations}
+
+
+def _merge_shard_result(accumulator, result, source, scale):
+    if result['source'] != source:
+        raise RuntimeError('Diagnostic worker returned a different audited source')
+    # Normally one complete generation owns each prompt/seed/condition shard.
+    # For overlapping input shards, replay the original blocks before merging
+    # anything: adding pre-summed metric totals would change floating-add order.
+    for key, group in result['groups'].items():
+        previous = accumulator.groups.get(key)
+        if previous is not None and any(
+                prompt_seed in previous['rows'].get(metric, {})
+                for metric, rows in group['rows'].items() for prompt_seed in rows):
+            _accumulate_source(accumulator, source, scale)
+            return
+    accumulator.generations.extend(result['generations'])
+    for key, incoming in result['groups'].items():
+        incoming['h_sum'] = torch.tensor(incoming['h_sum'], dtype=torch.float64)
+        incoming['h_sq_sum'] = torch.tensor(incoming['h_sq_sum'], dtype=torch.float64)
+        group = accumulator.groups.get(key)
+        if group is None:
+            incoming['rows'] = defaultdict(lambda: defaultdict(lambda: [0., 0]),
+                {metric: defaultdict(lambda: [0., 0], rows) for metric, rows in incoming['rows'].items()})
+            incoming['acceptance_by_block_position'] = defaultdict(list, incoming['acceptance_by_block_position'])
+            accumulator.groups[key] = incoming
+            continue
+        for field in ('n', 'h_sum', 'h_sq_sum', 'outlier_slots', 'outlier_coordinates'):
+            group[field] += incoming[field]
+        for field in ('h_norms', 'accepted_length', 'first_rejection'):
+            group[field].extend(incoming[field])
+        for metric, rows in incoming['rows'].items():
+            group['rows'][metric].update(rows)
+        for position, values in incoming['acceptance_by_block_position'].items():
+            group['acceptance_by_block_position'][position].extend(values)
+
+
+def accumulate_trace_shards(sources, scale, context_edges=DEFAULT_CONTEXT_EDGES,
+                            outlier_threshold=5., seed=2026, workers=1):
+    """Load only caller-selected sources, with at most `workers` pending shards.
+
+    Merge in source order and bootstrap once after all shards are merged. The
+    bounded submission window also bounds completed-but-not-yet-merged results.
+    """
+    if workers < 1:
+        raise ValueError('diagnostic workers must be positive')
+    accumulator = DiagnosticAccumulator(context_edges, outlier_threshold, seed)
+    if workers == 1:
+        for source in sources:
+            _accumulate_source(accumulator, source, scale)
+        return accumulator
+    remaining = iter(sources)
+    with ProcessPoolExecutor(max_workers=workers, mp_context=multiprocessing.get_context('spawn'),
+                             initializer=_diagnostic_worker_init) as pool:
+        pending = deque()
+        def submit_next():
+            source = next(remaining, None)
+            if source is not None:
+                future = pool.submit(_diagnostic_shard_worker, source, scale, context_edges, outlier_threshold, seed)
+                pending.append((source, future))
+        for _ in range(workers):
+            submit_next()
+        while pending:
+            source, future = pending.popleft()
+            result = future.result()  # Worker failures propagate; no partial report is published.
+            _merge_shard_result(accumulator, result, source, scale)
+            del result, future
+            submit_next()
+    return accumulator
+
+
 def main(argv=None):
     parser = common_parser(__doc__)
     parser.add_argument('--trace_dir', type=Path)
     parser.add_argument('--m1_audit', type=Path)
     parser.add_argument('--context_edges', type=int, nargs='+', default=list(DEFAULT_CONTEXT_EDGES))
     parser.add_argument('--outlier_threshold', type=float, default=5.)
+    parser.add_argument('--workers', type=int, default=1)
     args = parse_config(parser, argv)
+    if args.workers < 1:
+        parser.error('--workers must be positive')
     record = record_run(args, 'diagnose')
     torch.set_num_threads(1)
     if args.scale == 'smoke':
@@ -405,34 +519,15 @@ def main(argv=None):
         sources = []
         audit_provenance = None
     else:
-        from .traces import read_shard
         from .runtime import preflight
         if args.trace_dir is None:
             parser.error('Reference/full diagnosis requires --trace_dir from the completed M1a collection')
         accepted, audit_provenance = audited_trace_sources(
             args.m1_audit or args.output / 'm1_audit.json', args.scale, args.trace_dir)
-        paths = [Path(source['path']) for source in accepted]
         preflight(args, 0)
-        accumulator = DiagnosticAccumulator(args.context_edges, args.outlier_threshold, args.seed)
-        sources = []
-        for path in paths:
-            shard = read_shard(path)
-            generation = shard['metadata'].get('generation')
-            if generation is None:
-                raise RuntimeError(f'{path}: generation metadata missing; realized length/repetition cannot be inferred from a cap')
-            if not generation.get('complete', False):
-                raise RuntimeError(f'{path}: generation is incomplete')
-            if 'repetition_dominated' not in generation:
-                if 'output_tokens' not in generation:
-                    raise RuntimeError(f'{path}: repetition diagnostics and output tokens are both missing')
-                generation.update(generation_diagnostics(generation['output_tokens']))
-            accumulator.add_generation(generation)
-            for block in shard['blocks']:
-                if block['scale'] != args.scale:
-                    raise RuntimeError(f'{path}: trace scale does not match requested scale')
-                accumulator.add_block(block, repetition_dominated=generation['repetition_dominated'])
-            sidecar = json.loads(path.with_suffix(path.suffix + '.json').read_text())
-            sources.append({'path': str(path), 'sha256': sidecar['sha256']})
+        accumulator = accumulate_trace_shards(accepted, args.scale, args.context_edges,
+                                             args.outlier_threshold, args.seed, args.workers)
+        sources = [{'path': source['path'], 'sha256': source['sha256']} for source in accepted]
         report = accumulator.report()
     report.update({'label': 'synthetic' if args.scale == 'smoke' else args.scale, 'scale': args.scale,
                    'status': 'measured', 'run': record, 'source_shards': sources,

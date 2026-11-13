@@ -147,3 +147,123 @@ def test_missing_sampling_ce_keeps_metric_absent_until_finite_observation():
     for accumulator in (scalar, batched):
         accumulator.add_block(block)
     assert_reports_equal(batched.report(), scalar.report())
+
+
+@pytest.fixture
+def diagnostic_shards(tmp_path):
+    from edraft.traces import compact_block, write_shard
+    grouped = defaultdict(list)
+    for block, repetition in mixed_blocks(torch.float64):
+        key = (block['condition'], block['collection_temperature'], block['prompt_id'],
+               block['seed'], repetition)
+        K = len(block['draft_tokens'])
+        block.update({'loss_temperature': 1., 'h_raw_bf16': torch.zeros(K, 8, dtype=torch.bfloat16),
+                      'draft_lm_head': {'artifact_id': 'synthetic-head', 'revision': 'fixed',
+                                       'dtype': 'torch.bfloat16', 'bias': False, 'tied_weights': False,
+                                       'hook': 'synthetic', 'shape': [19, 8]},
+                      'verified_prefix_tail': [1, 2, 3, 4], 'adapter_version': 0,
+                      'verification_rule': 'greedy' if block['collection_temperature'] == 0 else 'ratio',
+                      'physical_to_logical': {'anchor_physical_index': 0, 'logical_to_physical': list(range(1, K + 1))}})
+        metadata = {name: block[name] for name in ('prompt_id', 'condition', 'seed', 'split')}
+        metadata.update(scale='smoke', model_pair=['toy-target', 'toy-draft'],
+                        projection_metadata={'frozen': True, 'calibration_split': 'train'})
+        grouped[key].append(compact_block(block, metadata))
+    sources = []
+    for index, (key, blocks) in enumerate(grouped.items()):
+        condition, temperature, prompt, seed, repetition = key
+        generation = {'prompt_id': prompt, 'condition': condition, 'temperature': temperature,
+                      'seed': seed, 'split': 'test', 'sampling_warp_config': blocks[0]['sampling_warp_config'],
+                      'complete': True, 'realized_length': 17000 + index,
+                      'repetition_dominated': repetition, 'eos_reached': True, 'capped': False}
+        path = tmp_path / f'shard-{index}.pt'
+        summary = write_shard(path, blocks, {'generation': generation})
+        sources.append({'path': str(path), 'sha256': summary['sha256']})
+    return sources
+
+
+def test_parallel_shard_reports_preserve_all_serial_statistics(diagnostic_shards):
+    from edraft.diagnose import accumulate_trace_shards
+    serial = accumulate_trace_shards(diagnostic_shards, 'smoke', workers=1)
+    parallel = accumulate_trace_shards(diagnostic_shards, 'smoke', workers=4)
+    assert parallel.generations == serial.generations
+    for key in serial.groups:
+        for field in ('rows', 'h_norms', 'first_rejection', 'acceptance_by_block_position'):
+            assert parallel.groups[key][field] == serial.groups[key][field]
+    assert_reports_equal(parallel.report(), serial.report())
+
+
+def test_parallel_overlap_replays_before_any_partial_merge(diagnostic_shards, monkeypatch):
+    import edraft.diagnose as diagnosis
+    sources = diagnostic_shards[:1] * 2
+    serial = diagnosis.accumulate_trace_shards(sources, 'smoke', workers=1)
+    original = diagnosis._accumulate_source
+    replays = []
+    def replay(accumulator, source, scale):
+        replays.append(source)
+        return original(accumulator, source, scale)
+    monkeypatch.setattr(diagnosis, '_accumulate_source', replay)
+    parallel = diagnosis.accumulate_trace_shards(sources, 'smoke', workers=2)
+    assert replays == sources[:1]
+    assert_reports_equal(parallel.report(), serial.report())
+
+
+@pytest.mark.parametrize('failure', ['checksum', 'scale', 'diagnostics'])
+def test_parallel_workers_propagate_validation_errors(diagnostic_shards, failure):
+    from edraft.diagnose import accumulate_trace_shards
+    from edraft.traces import read_shard, write_shard
+    source = dict(diagnostic_shards[0])
+    if failure == 'checksum':
+        payload = read_shard(source['path'])
+        payload['metadata']['generation']['realized_length'] += 1
+        write_shard(source['path'], payload['blocks'], payload['metadata'])
+    elif failure == 'diagnostics':
+        payload = read_shard(source['path'])
+        del payload['blocks'][0]['diagnostics']
+        updated = write_shard(source['path'], payload['blocks'], payload['metadata'])
+        source['sha256'] = updated['sha256']
+    with pytest.raises(ValueError if failure == 'diagnostics' else RuntimeError,
+                       match={'checksum': 'checksum changed', 'scale': 'scale does not match',
+                                          'diagnostics': 'diagnostics are missing'}[failure]):
+        accumulate_trace_shards([source], 'reference' if failure == 'scale' else 'smoke', workers=2)
+
+
+def test_parallel_window_bounds_completed_unmerged_results(monkeypatch):
+    import edraft.diagnose as diagnosis
+    submitted = merged = peak = 0
+    merge_order = []
+    class ReadyFuture:
+        def __init__(self, source):
+            self.source = source
+        def result(self):
+            return {'source': self.source, 'groups': {}, 'generations': []}
+    class ImmediatePool:
+        def __init__(self, **kwargs):
+            pass
+        def __enter__(self):
+            return self
+        def __exit__(self, *args):
+            pass
+        def submit(self, fn, source, *args):
+            nonlocal submitted, peak
+            submitted += 1
+            peak = max(peak, submitted - merged)
+            return ReadyFuture(source)
+    original = diagnosis._merge_shard_result
+    def merge(accumulator, result, source, scale):
+        nonlocal merged
+        merge_order.append(source['path'])
+        original(accumulator, result, source, scale)
+        merged += 1
+    monkeypatch.setattr(diagnosis, 'ProcessPoolExecutor', ImmediatePool)
+    monkeypatch.setattr(diagnosis, '_merge_shard_result', merge)
+    sources = [{'path': str(i), 'sha256': str(i)} for i in range(20)]
+    diagnosis.accumulate_trace_shards(sources, 'smoke', workers=3)
+    assert peak == 3
+    assert merge_order == [source['path'] for source in sources]
+
+
+def test_parallel_empty_sources_and_invalid_worker_count():
+    from edraft.diagnose import accumulate_trace_shards
+    assert accumulate_trace_shards([], 'smoke', workers=3).report() == DiagnosticAccumulator().report()
+    with pytest.raises(ValueError, match='workers must be positive'):
+        accumulate_trace_shards([], 'smoke', workers=0)
