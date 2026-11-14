@@ -98,7 +98,24 @@ def verify_block(
     decisions_all = (uniforms * q_selected < p_selected).tolist()
     for i, accepted in enumerate(decisions_all):
         if not accepted:
-            replacement = draw(residual_distribution(P[i], q[i]), generator)
+            pi, qi = P[i], q[i]
+            if not bool((pi - qi).clamp_min(0).sum() > 0):
+                p64 = pi.double()
+                q64 = qi.double()
+                p64_sum, q64_sum = p64.sum(), q64.sum()
+                if (bool(torch.isfinite(p64_sum)) and bool(torch.isfinite(q64_sum))
+                        and bool((p64 >= 0).all()) and bool((q64 >= 0).all())
+                        and abs(float(p64_sum) - 1.0) <= 1e-4 and abs(float(q64_sum) - 1.0) <= 1e-4):
+                    p64 = p64 / p64_sum
+                    q64 = q64 / q64_sum
+                    u64 = float(uniforms[i].item())
+                    if u64 * float(q64[tokens[i]].item()) < float(p64[tokens[i]].item()) or not bool((p64 - q64).clamp_min(0).sum() > 0):
+                        decisions_all[i] = True
+                        continue
+                    replacement = draw(residual_distribution(p64, q64).to(P.dtype), generator)
+                    return VerificationResult(tokens[:i] + [replacement], i, i, replacement, None,
+                                              decisions_all[:i + 1], proposal_token_probs, target_token_probs)
+            replacement = draw(residual_distribution(pi, qi), generator)
             return VerificationResult(tokens[:i] + [replacement], i, i, replacement, None,
                                       decisions_all[:i + 1], proposal_token_probs, target_token_probs)
     bonus = draw(P[K], generator)

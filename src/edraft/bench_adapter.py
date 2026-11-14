@@ -186,21 +186,28 @@ def benchmark(args):
                     for i in range(K)]
 
     def total_zero_sync(fastpath=None):
+        bf16_mode = bool(fastpath is not None and fastpath.bf16_gemm)
         unary = fastpath.unary(E, snapshot.W, snapshot.b, H) if fastpath is not None else snapshot.unary(H)
         probs_fn = fastpath.probabilities if fastpath is not None else None
         ctx_buf[:len(prefix)] = prefix_t
         for i in range(K):
             offs = slot_offsets[i]
             prev_ids = ctx_buf[len(prefix) + i - offs]
-            scores = snapshot.score_slot_tensor(l_unit[i], unary[i], offs, prev_ids, contiguous_offsets=True)
+            scores = snapshot.score_slot_tensor(
+                l_unit[i], unary[i], offs, prev_ids, contiguous_offsets=True, bf16_gemm=bf16_mode
+            )
             tok_t, _ = sample_token_tensor(scores, 1., warper, generator=sampler_rng, probs_fn=probs_fn)
             ctx_buf[len(prefix) + i] = tok_t
         return ctx_buf[len(prefix):].tolist()
 
     modes['batched_full_zero_sync'] = timing(total_zero_sync)
-    if getattr(args, 'compile', False) or getattr(args, 'cuda_graph', False):
+    if getattr(args, 'compile', False) or getattr(args, 'cuda_graph', False) or getattr(args, 'bf16_gemm', False):
         fastpath = FastPathRuntime(
-            FastPathConfig(compile=bool(args.compile), cuda_graph=bool(args.cuda_graph)),
+            FastPathConfig(
+                compile=bool(getattr(args, 'compile', False)),
+                cuda_graph=bool(getattr(args, 'cuda_graph', False)),
+                bf16_gemm=bool(getattr(args, 'bf16_gemm', False)),
+            ),
             static_block_length=K,
         )
         modes['batched_full_fastpath'] = timing(lambda: total_zero_sync(fastpath))
@@ -221,20 +228,40 @@ def benchmark(args):
 
     modes['dense_candidate_including_C0_construction'] = timing(candidate_end_to_end)
     precision = {'bf16_available': device.type == 'cuda' and torch.cuda.is_bf16_supported()}
-    if precision['bf16_available']:
+    U_bf16_check = snapshot.unary(H, bf16_gemm=True)
+    pair_fp32 = torch.stack([E @ msg for msg in messages])
+    E_bf16_check = snapshot._token_features_bf16()
+    pair_bf16 = torch.stack([(E_bf16_check @ msg.bfloat16()).float() for msg in messages])
+    corr_fp32 = adapter.correction(l_unit, H, prefix, fixed_tokens)
+    corr_bf16 = adapter.correction(l_unit, H, prefix, fixed_tokens, bf16_gemm=True)
+    unary_diff = U_bf16_check - U_full
+    pair_diff = pair_bf16 - pair_fp32
+    corr_diff = corr_bf16 - corr_fp32
+    q_fp32_all = torch.softmax(l_unit - U_full, -1)
+    q_bf16_all = torch.softmax(l_unit - U_bf16_check, -1)
+    bf16_audit = {
+        'unary_max_abs_error': float(unary_diff.abs().max()),
+        'unary_mean_abs_error': float(unary_diff.abs().mean()),
+        'pair_max_abs_error': float(pair_diff.abs().max()),
+        'pair_mean_abs_error': float(pair_diff.abs().mean()),
+        'full_correction_max_abs_error': float(corr_diff.abs().max()),
+        'full_correction_mean_abs_error': float(corr_diff.abs().mean()),
+        'proposal_probability_l1_mean': float((q_fp32_all - q_bf16_all).abs().sum(-1).mean()),
+        'unary_corrected_argmax_disagreement_rate': float(
+            ((l_unit - U_full).argmax(-1) != (l_unit - U_bf16_check).argmax(-1)).float().mean()
+        ),
+        'full_corrected_argmax_disagreement_rate': float(
+            ((l_unit - corr_fp32).argmax(-1) != (l_unit - corr_bf16).argmax(-1)).float().mean()
+        ),
+        'accumulation': 'PyTorch BF16 GEMM with FP32 accumulation, BF16 GEMM output then FP32 bias; no custom kernel',
+    }
+    precision['bf16_precision_audit'] = bf16_audit
+    if precision['bf16_available'] or getattr(args, 'bf16_gemm', False):
         H_bf16, W_bf16, E_bf16 = H.bfloat16(), snapshot.W.bfloat16(), E.bfloat16()
         def unary_bf16():
             return ((H_bf16 @ W_bf16.T) @ E_bf16.T).float() + snapshot.b
-        U_bf16 = unary_bf16()
-        difference = U_bf16 - U_full
-        q_fp32 = torch.softmax(l_unit - U_full, -1)
-        q_bf16 = torch.softmax(l_unit - U_bf16, -1)
-        precision.update({'unary_max_abs_error': float(difference.abs().max()),
-                          'unary_mean_abs_error': float(difference.abs().mean()),
-                          'proposal_probability_l1_mean': float((q_fp32 - q_bf16).abs().sum(-1).mean()),
-                          'unary_corrected_argmax_disagreement_rate': float(((l_unit - U_full).argmax(-1) != (l_unit - U_bf16).argmax(-1)).float().mean()),
-                          'bf16_forward_unary': timing(unary_bf16),
-                          'accumulation': 'PyTorch BF16 GEMM with FP32 accumulation, BF16 GEMM output then FP32 bias; no custom kernel'})
+        precision.update(bf16_audit)
+        precision['bf16_forward_unary'] = timing(unary_bf16)
     return {'label': 'synthetic', 'requested_scale': args.scale, 'shape_kind': 'tiny' if args.scale == 'smoke' else 'reference-shape',
             'status': 'measured', 'device': str(device), 'device_inventory': inventory,
             'dimensions': {'V': V, 'K': K, 'r': r, 'p': p, 'D': D, 'M_sparse': M},
@@ -260,6 +287,7 @@ def main(argv=None):
     parser.add_argument('--repeats', type=int, default=30)
     parser.add_argument('--compile', action='store_true', default=False)
     parser.add_argument('--cuda_graph', action='store_true', default=False)
+    parser.add_argument('--bf16_gemm', action='store_true', default=False)
     args = parse_config(parser, argv)
     tiny = args.scale == 'smoke'
     for key, value in {'vocab_size': 31 if tiny else 151936, 'block_length': 4 if tiny else 15,
@@ -284,7 +312,7 @@ def main(argv=None):
     path = args.output / f'adapter_benchmark_{args.scale}_{fingerprint(identity)[:12]}.json'
     if manifest.completed(identity):
         print(json.dumps({'status': 'already_measured', 'path': str(path)}))
-        return
+        return json.loads(path.read_text()) if path.exists() else None
     torch.set_num_threads(1)
     with torch.no_grad():
         result = benchmark(args)
@@ -295,6 +323,7 @@ def main(argv=None):
     manifest.finish(identity, path)
     print(json.dumps({'status': 'measured', 'label': result['label'], 'path': str(path),
                       'median_wall_ms': {key: value['synchronized_wall']['median_ms'] for key, value in result['modes'].items()}}))
+    return result
 
 
 if __name__ == '__main__':

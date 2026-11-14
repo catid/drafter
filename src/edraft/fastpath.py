@@ -15,8 +15,9 @@ from __future__ import annotations
 from dataclasses import dataclass
 import math
 import types
-from typing import Callable
+from typing import Any, Callable
 import torch
+from torch.nn import functional as F
 
 from .adapter import block_unary, full_kl
 from .sampler import SamplingWarper, probabilities as eager_probabilities, probability_dtype
@@ -28,14 +29,34 @@ class FastPathConfig:
     cuda_graph: bool = False
     compile_mode: str = "default"
     simulate_cpu_graph: bool = False
+    bf16_gemm: bool = False
+    compile_drafter: bool = False
+    compile_online: bool = False
 
     @property
     def enabled(self) -> bool:
-        return bool(self.compile or self.cuda_graph or self.simulate_cpu_graph)
+        return bool(
+            self.compile
+            or self.cuda_graph
+            or self.simulate_cpu_graph
+            or self.bf16_gemm
+            or self.compile_drafter
+            or self.compile_online
+        )
 
     def to_dict(self) -> dict:
-        return {"compile": bool(self.compile), "cuda_graph": bool(self.cuda_graph),
-                "compile_mode": self.compile_mode}
+        out: dict[str, Any] = {
+            "compile": bool(self.compile),
+            "cuda_graph": bool(self.cuda_graph),
+            "compile_mode": self.compile_mode,
+        }
+        if self.bf16_gemm:
+            out["bf16_gemm"] = True
+        if self.compile_drafter:
+            out["compile_drafter"] = True
+        if self.compile_online:
+            out["compile_online"] = True
+        return out
 
 
 class StaticGraphCallable:
@@ -112,15 +133,21 @@ class StaticGraphCallable:
         return entry["output"].clone()
 
 
-def _fresh_compile(fn: Callable, mode: str) -> Callable:
+def _fresh_compile(fn: Callable, mode: str, *, dynamic: bool = False) -> Callable:
     """Clone `fn.__code__` so each compiled specialization owns an isolated Dynamo guard cache."""
     isolated = types.FunctionType(
         fn.__code__.replace(), fn.__globals__, fn.__name__, fn.__defaults__, fn.__closure__
     )
-    return torch.compile(isolated, mode=mode, fullgraph=False)
+    return torch.compile(isolated, mode=mode, fullgraph=False, dynamic=dynamic)
 
 
-def _make_compiled_unary(mode: str) -> Callable:
+def _make_compiled_unary(mode: str, *, bf16_gemm: bool = False) -> Callable:
+    if bf16_gemm:
+        def _unary_bf16_impl(E_bf16: torch.Tensor, W: torch.Tensor, b: torch.Tensor, H: torch.Tensor) -> torch.Tensor:
+            return ((H.bfloat16() @ W.bfloat16().T) @ E_bf16.T).to(b.dtype) + b
+
+        return _fresh_compile(_unary_bf16_impl, mode)
+
     def _unary_impl(E: torch.Tensor, W: torch.Tensor, b: torch.Tensor, H: torch.Tensor) -> torch.Tensor:
         return (H.to(W.dtype) @ W.T) @ E.to(W.dtype).T + b
 
@@ -139,6 +166,39 @@ def _make_compiled_full_kl(mode: str) -> Callable:
         return (per_slot * weights).sum()
 
     return _fresh_compile(_full_kl_impl, mode)
+
+
+def _make_compiled_online_dense_step(mode: str, *, bias_only: bool = False) -> Callable:
+    if bias_only:
+        def _bias_step_impl(
+            db: torch.Tensor, gb: torch.Tensor, off_b: torch.Tensor, hyper: torch.Tensor,
+        ) -> tuple[torch.Tensor, torch.Tensor]:
+            shrink = hyper[0]
+            lr_val = hyper[1]
+            thresh = hyper[2]
+            cand_b = (db - lr_val * gb) / shrink
+            new_db = cand_b.sign() * (cand_b.abs() - thresh).clamp_min(0.0)
+            return new_db, off_b + new_db
+
+        return _fresh_compile(_bias_step_impl, mode)
+
+    def _dense_step_impl(
+        dW: torch.Tensor, gW: torch.Tensor,
+        dA: torch.Tensor, gA: torch.Tensor,
+        db: torch.Tensor, gb: torch.Tensor,
+        off_W: torch.Tensor, off_A: torch.Tensor, off_b: torch.Tensor,
+        hyper: torch.Tensor,
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+        shrink = hyper[0]
+        lr_val = hyper[1]
+        thresh = hyper[2]
+        new_dW = (dW - lr_val * gW) / shrink
+        new_dA = (dA - lr_val * gA) / shrink
+        cand_b = (db - lr_val * gb) / shrink
+        new_db = cand_b.sign() * (cand_b.abs() - thresh).clamp_min(0.0)
+        return new_dW, new_dA, new_db, off_W + new_dW, off_A + new_dA, off_b + new_db
+
+    return _fresh_compile(_dense_step_impl, mode)
 
 
 def _make_compiled_probs(temperature: float, warper: SamplingWarper, mode: str) -> Callable:
@@ -171,18 +231,176 @@ def _make_compiled_probs(temperature: float, warper: SamplingWarper, mode: str) 
     return _fresh_compile(_probs_impl, mode)
 
 
+def _rotate_half(x: torch.Tensor) -> torch.Tensor:
+    half = x.shape[-1] // 2
+    return torch.cat((-x[..., half:], x[..., :half]), dim=-1)
+
+
+class _CompiledDrafterRunner:
+    """Stateless compiled DFlash drafter subgraphs around eager DynamicCache updates.
+
+    Never patches `vendor/dflash` and never traces `DynamicCache.update` or
+    `crop_cache` inside Dynamo, eliminating KV-cache mutation hazards and
+    dynamic-prefix recompilation storms.
+    """
+
+    def __init__(self, backend: Any, mode: str) -> None:
+        from .backend import crop_cache
+
+        self._crop_cache = crop_cache
+        drafter = backend.drafter
+        embed_weight = backend.target.get_input_embeddings().weight
+        embed_scale = float(backend.input_embedding_scale)
+        lm_head = backend.draft_lm_head
+
+        can_decompose = (
+            all(hasattr(drafter, attr) for attr in ("layers", "fc", "hidden_norm", "rotary_emb", "norm"))
+            and all(
+                getattr(layer, "attention_conv", None) is None
+                and getattr(layer, "mlp_conv", None) is None
+                and not bool(getattr(layer.self_attn, "is_causal", False))
+                and getattr(layer.self_attn, "sliding_window", None) is None
+                for layer in drafter.layers
+            )
+        )
+        self.decomposed = can_decompose
+        if can_decompose:
+            from transformers.modeling_utils import ALL_ATTENTION_FUNCTIONS
+
+            sdpa_fn = ALL_ATTENTION_FUNCTIONS["sdpa"]
+
+            def _stem(canvas: torch.Tensor, target_hidden: torch.Tensor, position_ids: torch.Tensor):
+                noise = F.embedding(canvas, embed_weight) * embed_scale
+                t_proj = drafter.hidden_norm(drafter.fc(target_hidden))
+                cos, sin = drafter.rotary_emb(noise, position_ids)
+                return noise, t_proj, cos, sin
+
+            self._stem = _fresh_compile(_stem, mode, dynamic=True)
+            self._layers: list[tuple[Any, Callable, Callable]] = []
+            for layer in drafter.layers:
+                attn = layer.self_attn
+                in_ln = layer.input_layernorm
+                post_ln = layer.post_attention_layernorm
+                mlp = layer.mlp
+                head_dim = int(attn.head_dim)
+                scaling = float(attn.scaling)
+
+                def _make_layer_fns(attn_m=attn, in_ln_m=in_ln, post_ln_m=post_ln, mlp_m=mlp,
+                                    hd=head_dim, sc=scaling):
+                    def _pre(h_in: torch.Tensor, t_proj: torch.Tensor, cos: torch.Tensor, sin: torch.Tensor):
+                        h_norm = in_ln_m(h_in)
+                        bsz, q_len = h_norm.shape[:-1]
+                        ctx_len = t_proj.shape[1]
+                        q = attn_m.q_proj(h_norm).view(bsz, q_len, -1, hd)
+                        q = attn_m.q_norm(q).transpose(1, 2)
+                        k = torch.cat([attn_m.k_proj(t_proj), attn_m.k_proj(h_norm)], dim=1).view(
+                            bsz, ctx_len + q_len, -1, hd
+                        )
+                        v = torch.cat([attn_m.v_proj(t_proj), attn_m.v_proj(h_norm)], dim=1).view(
+                            bsz, ctx_len + q_len, -1, hd
+                        )
+                        k = attn_m.k_norm(k).transpose(1, 2)
+                        v = v.transpose(1, 2)
+                        cos_u = cos.unsqueeze(1)
+                        sin_u = sin.unsqueeze(1)
+                        q = (q * cos_u[..., -q_len:, :]) + (_rotate_half(q) * sin_u[..., -q_len:, :])
+                        k = (k * cos_u) + (_rotate_half(k) * sin_u)
+                        return q, k, v
+
+                    def _post(residual: torch.Tensor, q: torch.Tensor, k: torch.Tensor, v: torch.Tensor):
+                        bsz, _, q_len, _ = q.shape
+                        attn_out, _ = sdpa_fn(
+                            attn_m, q, k, v, None, dropout=0.0, scaling=sc, sliding_window=None
+                        )
+                        attn_out = attn_m.o_proj(attn_out.reshape(bsz, q_len, -1))
+                        h_mid = residual + attn_out
+                        return h_mid + mlp_m(post_ln_m(h_mid))
+
+                    return _fresh_compile(_pre, mode, dynamic=True), _fresh_compile(_post, mode, dynamic=True)
+
+                pre_fn, post_fn = _make_layer_fns()
+                self._layers.append((attn, pre_fn, post_fn))
+
+            def _head(hidden_states: torch.Tensor):
+                h_raw = drafter.norm(hidden_states)[0, 1:, :]
+                logits = drafter.compute_logits(h_raw[None], lm_head)[0]
+                return h_raw, logits
+
+            self._head = _fresh_compile(_head, mode, dynamic=True)
+        else:
+            self._drafter = drafter
+
+            def _noise_fn(canvas: torch.Tensor):
+                return F.embedding(canvas, embed_weight) * embed_scale
+
+            def _logits_fn(h_raw: torch.Tensor):
+                return drafter.compute_logits(h_raw[None], lm_head)[0]
+
+            self._noise_fn = _fresh_compile(_noise_fn, mode, dynamic=True)
+            self._logits_fn = _fresh_compile(_logits_fn, mode, dynamic=True)
+
+    def __call__(
+        self,
+        canvas: torch.Tensor,
+        target_hidden: torch.Tensor,
+        position_ids: torch.Tensor,
+        draft_cache: Any,
+        start: int,
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        with torch.no_grad():
+            if self.decomposed:
+                hidden, t_proj, cos, sin = self._stem(canvas, target_hidden, position_ids)
+                for attn, pre_fn, post_fn in self._layers:
+                    q, k, v = pre_fn(hidden, t_proj, cos, sin)
+                    if draft_cache is not None:
+                        k, v = draft_cache.update(
+                            k, v, attn.layer_idx, {"sin": sin, "cos": cos, "cache_position": None}
+                        )
+                    hidden = post_fn(hidden, q, k, v)
+                if draft_cache is not None:
+                    self._crop_cache(draft_cache, start)
+                return self._head(hidden)
+
+            noise = self._noise_fn(canvas)
+            h_raw = self._drafter(
+                target_hidden=target_hidden,
+                noise_embedding=noise,
+                position_ids=position_ids,
+                past_key_values=draft_cache,
+                use_cache=True,
+            )[0, 1:, :]
+            if draft_cache is not None:
+                self._crop_cache(draft_cache, start)
+            return h_raw, self._logits_fn(h_raw)
+
+
 class FastPathRuntime:
     """Symmetric optional fastpath dispatcher across plain, bigram, static, and online arms."""
     def __init__(self, config: FastPathConfig = FastPathConfig(), *, static_block_length: int | None = None):
         self.config = config
         self.static_block_length = static_block_length
-        self._unary_base = _make_compiled_unary(config.compile_mode) if config.compile else block_unary
-        self.full_kl_fn = _make_compiled_full_kl(config.compile_mode) if config.compile else full_kl
+        self.bf16_gemm = bool(config.bf16_gemm)
+        if config.compile:
+            self._unary_base = _make_compiled_unary(config.compile_mode, bf16_gemm=self.bf16_gemm)
+        elif self.bf16_gemm:
+            self._unary_base = lambda E_bf16, W, b, H: block_unary(E_bf16, W, b, H, bf16_gemm=True, E_bf16=E_bf16)
+        else:
+            self._unary_base = block_unary
+        self.full_kl_fn = _make_compiled_full_kl(config.compile_mode) if (config.compile or config.compile_online) else full_kl
+        compile_online_active = bool(config.compile or config.compile_online)
+        self._online_dense_step_fn = (
+            _make_compiled_online_dense_step(config.compile_mode, bias_only=False) if compile_online_active else None
+        )
+        self._online_bias_step_fn = (
+            _make_compiled_online_dense_step(config.compile_mode, bias_only=True) if compile_online_active else None
+        )
+        self._e_bf16_cache: dict[tuple, torch.Tensor] = {}
+        self._drafter_runners: dict[int, _CompiledDrafterRunner] = {}
         self._probs_compiled_cache: dict[tuple[int, float, SamplingWarper], Callable] = {}
         if config.cuda_graph or config.simulate_cpu_graph:
             allowed_unary = (static_block_length,) if static_block_length is not None else None
             self._unary_graph = StaticGraphCallable(
-                lambda E, W, b, H: self._unary_base(E, W, b, H),
+                lambda E_in, W, b, H: self._unary_base(E_in, W, b, H),
                 allowed_first_dims=allowed_unary,
                 simulate_cpu=config.simulate_cpu_graph,
             )
@@ -200,6 +418,18 @@ class FastPathRuntime:
     def enabled(self) -> bool:
         return self.config.enabled
 
+    def _cached_e_input(self, E: torch.Tensor) -> torch.Tensor:
+        if not self.bf16_gemm:
+            return E
+        if E.dtype == torch.bfloat16:
+            return E
+        key = (int(E.data_ptr()), tuple(E.shape), E.dtype, E.device, int(E._version))
+        cached = self._e_bf16_cache.get(key)
+        if cached is None:
+            cached = E.detach().bfloat16()
+            self._e_bf16_cache[key] = cached
+        return cached
+
     def _probs_callable_for(self, ndim: int, temperature: float, warper: SamplingWarper) -> Callable:
         if not self.config.compile:
             return lambda s: eager_probabilities(s, temperature, warper)
@@ -212,22 +442,23 @@ class FastPathRuntime:
 
     def unary(self, E: torch.Tensor, W: torch.Tensor, b: torch.Tensor, H: torch.Tensor) -> torch.Tensor:
         grad_needed = torch.is_grad_enabled() and any(x.requires_grad for x in (E, W, b, H))
+        e_in = self._cached_e_input(E)
         if self.static_block_length is not None and H.shape[0] != self.static_block_length:
             if self._unary_graph is not None:
                 self._unary_graph.eager_fallbacks += 1
             if grad_needed:
-                return block_unary(E, W, b, H)
+                return block_unary(E, W, b, H, bf16_gemm=self.bf16_gemm, E_bf16=e_in if self.bf16_gemm else None)
             with torch.no_grad():
-                return block_unary(E, W, b, H)
+                return block_unary(E, W, b, H, bf16_gemm=self.bf16_gemm, E_bf16=e_in if self.bf16_gemm else None)
         if self._unary_graph is not None:
             if (H.device.type == "cuda" or self.config.simulate_cpu_graph) and not grad_needed:
                 with torch.no_grad():
-                    return self._unary_bound_E(E, W, b, H)
+                    return self._unary_bound_E(e_in, W, b, H)
             self._unary_graph.eager_fallbacks += 1
         if grad_needed:
-            return self._unary_base(E, W, b, H)
+            return self._unary_base(e_in, W, b, H)
         with torch.no_grad():
-            return self._unary_base(E, W, b, H)
+            return self._unary_base(e_in, W, b, H)
 
     def _unary_bound_E(self, E: torch.Tensor, W: torch.Tensor, b: torch.Tensor, H: torch.Tensor) -> torch.Tensor:
         # Key by E's storage identity & version so E is never copied on every block replay.
@@ -249,11 +480,85 @@ class FastPathRuntime:
         _, graph_fn, allowed = cache[e_id]
         if allowed is not None and H.shape[0] not in allowed:
             self._unary_graph.eager_fallbacks += 1
-            return block_unary(E, W, b, H)
+            return block_unary(E, W, b, H, bf16_gemm=self.bf16_gemm, E_bf16=E if self.bf16_gemm else None)
         out = graph_fn(W, b, H)
         self._unary_graph.graph_captures = sum(g.graph_captures for _, g, _ in cache.values())
         self._unary_graph.graph_replays = sum(g.graph_replays for _, g, _ in cache.values())
         return out
+
+    def online_dense_step(
+        self,
+        dW: torch.Tensor,
+        gW: torch.Tensor | None,
+        dA: torch.Tensor,
+        gA: torch.Tensor | None,
+        db: torch.Tensor,
+        gb: torch.Tensor,
+        off_W: torch.Tensor,
+        off_A: torch.Tensor,
+        off_b: torch.Tensor,
+        *,
+        lr: float,
+        lambda_l2: float,
+        lambda_l1_b: float,
+        bias_sparse_only: bool = False,
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+        shrink = 1.0 + float(lr) * float(lambda_l2)
+        thresh = float(lr) * float(lambda_l1_b)
+        with torch.no_grad():
+            if bias_sparse_only:
+                if self._online_bias_step_fn is not None:
+                    hyper = torch.tensor([shrink, float(lr), thresh], dtype=torch.float32, device=db.device)
+                    new_db, snap_b = self._online_bias_step_fn(db, gb, off_b, hyper)
+                    return dW, dA, new_db, (off_W + dW).detach(), (off_A + dA).detach(), snap_b.detach()
+                cand_b = (db - lr * gb) / shrink
+                new_db = cand_b.sign() * (cand_b.abs() - thresh).clamp_min(0.0)
+                return dW, dA, new_db, (off_W + dW).detach(), (off_A + dA).detach(), (off_b + new_db).detach()
+            gW_eff = gW if gW is not None else torch.zeros_like(dW)
+            gA_eff = gA if gA is not None else torch.zeros_like(dA)
+            if self._online_dense_step_fn is not None:
+                hyper = torch.tensor([shrink, float(lr), thresh], dtype=torch.float32, device=db.device)
+                new_dW, new_dA, new_db, snap_W, snap_A, snap_b = self._online_dense_step_fn(
+                    dW, gW_eff, dA, gA_eff, db, gb, off_W, off_A, off_b, hyper
+                )
+                return new_dW, new_dA, new_db, snap_W.detach(), snap_A.detach(), snap_b.detach()
+            new_dW = (dW - lr * gW_eff) / shrink
+            new_dA = (dA - lr * gA_eff) / shrink
+            cand_b = (db - lr * gb) / shrink
+            new_db = cand_b.sign() * (cand_b.abs() - thresh).clamp_min(0.0)
+            return new_dW, new_dA, new_db, (off_W + new_dW).detach(), (off_A + new_dA).detach(), (off_b + new_db).detach()
+
+    def draft_block(
+        self,
+        backend: Any,
+        canvas: torch.Tensor,
+        target_hidden: torch.Tensor,
+        position_ids: torch.Tensor,
+        draft_cache: Any,
+        start: int,
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        if not self.config.compile_drafter:
+            from .backend import crop_cache
+
+            noise = F.embedding(canvas, backend.target.get_input_embeddings().weight) * backend.input_embedding_scale
+            h_raw = backend.drafter(
+                target_hidden=target_hidden,
+                noise_embedding=noise,
+                position_ids=position_ids,
+                past_key_values=draft_cache,
+                use_cache=True,
+            )[0, 1:, :]
+            if draft_cache is not None:
+                crop_cache(draft_cache, start)
+            draft_logits = backend.drafter.compute_logits(h_raw[None], backend.draft_lm_head)[0]
+            return h_raw, draft_logits
+
+        key = id(backend.drafter)
+        runner = self._drafter_runners.get(key)
+        if runner is None:
+            runner = _CompiledDrafterRunner(backend, self.config.compile_mode)
+            self._drafter_runners[key] = runner
+        return runner(canvas, target_hidden, position_ids, draft_cache, start)
 
     def probabilities(self, scores: torch.Tensor, temperature: float,
                       warper: SamplingWarper = SamplingWarper()) -> torch.Tensor:
@@ -274,6 +579,9 @@ class FastPathRuntime:
         return {
             "compile": bool(self.config.compile),
             "cuda_graph": bool(self.config.cuda_graph),
+            "bf16_gemm": bool(self.config.bf16_gemm),
+            "compile_drafter": bool(self.config.compile_drafter),
+            "compile_online": bool(self.config.compile_online),
             "unary_graph_captures": 0 if self._unary_graph is None else self._unary_graph.graph_captures,
             "unary_graph_replays": 0 if self._unary_graph is None else self._unary_graph.graph_replays,
             "unary_eager_fallbacks": 0 if self._unary_graph is None else self._unary_graph.eager_fallbacks,

@@ -46,8 +46,15 @@ def main(argv=None):
     parser.add_argument('--evaluation_max_new_tokens', type=int, default=2048)
     parser.add_argument('--batch_blocks', type=int, default=8)
     parser.add_argument('--microbatch_blocks', type=int)
+    parser.add_argument('--num_workers', type=int, default=0)
+    parser.add_argument('--pin_memory', action='store_true', default=False)
     parser.add_argument('--compile', action='store_true', default=False)
     parser.add_argument('--cuda_graph', action='store_true', default=False)
+    parser.add_argument('--bf16_gemm', action='store_true', default=False)
+    parser.add_argument('--compile_drafter', action='store_true', default=False)
+    parser.add_argument('--compile_online', action='store_true', default=False)
+    parser.add_argument('--optimizer', choices=['adamw', 'muon', 'pacemuon', 'anchormuon', 'adam_atan2'], default='adamw')
+    parser.add_argument('--lr_schedule', choices=['constant', 'wsd', 'cosine'], default='constant')
     args = parse_config(parser, argv)
     if args.train_tokens_per_temperature is None:
         args.train_tokens_per_temperature = 1000000 if args.scale == 'full' else 250000
@@ -87,6 +94,18 @@ def main(argv=None):
                            '--batch_blocks', str(args.batch_blocks)]
                 if args.microbatch_blocks is not None:
                     command.extend(['--microbatch_blocks', str(args.microbatch_blocks)])
+                if args.num_workers > 0:
+                    command.extend(['--num_workers', str(args.num_workers)])
+                if args.pin_memory:
+                    command.append('--pin_memory')
+                if args.bf16_gemm:
+                    command.append('--bf16_gemm')
+                if args.compile:
+                    command.append('--compile')
+                if args.optimizer != 'adamw':
+                    command.extend(['--optimizer', args.optimizer])
+                if args.lr_schedule != 'constant':
+                    command.extend(['--lr_schedule', args.lr_schedule])
             elif args.task == 'collect':
                 command = [sys.executable, '-m', 'edraft.collect', '--stage', 'collect', *base,
                            '--long_max_new_tokens', str(args.long_max_new_tokens),
@@ -108,6 +127,12 @@ def main(argv=None):
                     command.append('--compile')
                 if args.cuda_graph:
                     command.append('--cuda_graph')
+                if args.bf16_gemm:
+                    command.append('--bf16_gemm')
+                if args.compile_drafter:
+                    command.append('--compile_drafter')
+                if args.compile_online:
+                    command.append('--compile_online')
             if args.allow_large_run:
                 command.append('--allow_large_run')
             # Downloads must already be resolved once by the parent preparation step.

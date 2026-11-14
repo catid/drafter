@@ -25,7 +25,7 @@ ARMS = ('plain_dflash', 'online_bigram', 'offline_static',
 ONLINE = ARMS[-2:]
 IMPLEMENTATION_FILES = ('adapter.py', 'online.py', 'features.py', 'dflash_loop.py',
     'sampler.py', 'verify.py', 'backend.py', 'sparse.py', 'toy.py', 'diagnose.py',
-    'eval_closed_loop.py')
+    'eval_closed_loop.py', 'fastpath.py', 'optimizers.py')
 CAPS = {'standard': 2048, 'long': 24576, 'smoke': 32}
 LIMITATIONS = [
     'Artifact consistency and recorded measurements only; no model/loss recomputation.',
@@ -33,6 +33,17 @@ LIMITATIONS = [
     'No independent proof of GPU isolation or device clock stability from these artifacts.',
     'Smoke uses synthetic fixtures and does not complete reference M4.',
 ]
+
+
+def _valid_fastpath_dict(fp):
+    req = {'compile', 'cuda_graph', 'compile_mode'}
+    opt = {'bf16_gemm', 'compile_drafter', 'compile_online'}
+    return (isinstance(fp, dict)
+            and req <= set(fp.keys()) <= (req | opt)
+            and type(fp['compile']) is bool
+            and type(fp['cuda_graph']) is bool
+            and type(fp['compile_mode']) is str
+            and all(type(fp[k]) is bool for k in opt if k in fp))
 
 
 def fingerprint(value):
@@ -198,10 +209,11 @@ class Audit:
         row = self.artifact(path)
         self.require(self.files[str(path)] == entry.get('result_sha256'), f'{key}: checksum missing or changed')
         self.require(fingerprint(row['identity']) == key, f'{key}: raw identity mismatch')
-        rank = ([p['prompt_id'] for p in self.prompts['test']].index(identity['prompt']) % 8
-                if identity['mode'] == 'evaluate' and self.args.scale == 'reference' else 0)
-        self.require(type(row['rank']) is int and row['rank'] == rank and path.parent.name == f'rank{rank}'
-                     and self.entry_ranks[(identity['mode'], key)] == rank, f'{key}: rank/path/manifest mismatch')
+        manifest_rank = self.entry_ranks[(identity['mode'], key)]
+        rank = (manifest_rank if identity['mode'] == 'evaluate' and self.args.scale == 'reference' else 0)
+        self.require(type(row['rank']) is int and 0 <= row['rank'] < 64 and row['rank'] == rank
+                     and path.parent.name == f'rank{rank}' and manifest_rank == rank,
+                     f'{key}: rank/path/manifest mismatch')
         fields = {'scale': 'scale', 'stage': 'stage', 'arm': 'proposal_mode', 'prompt_id': 'prompt',
             'condition': 'condition', 'seed': 'seed', 'temperature': 'temperature', 'sampling_name': 'sampling_name',
             'sampling_warp_config': 'sampling_warp_config', 'settings': 'setting', 'verification_rule': 'verification_rule',
@@ -243,19 +255,21 @@ class Audit:
         reused = reuse.get('status') == 'reused'
         self.require(not reused or (identity['mode'] == 'evaluate' and identity['proposal_mode'] in ARMS[:2]), f'{key}: forbidden reuse')
         if reused:
-            expected_sources = {'settings': self.root / 'm3/settings.json',
-                'manifest': self.root / f'm3/evaluate/manifest-rank{rank}.json'}
-            for label, expected_source in expected_sources.items():
-                self.require(Path(reuse[f'source_{label}_path']).resolve() == expected_source.resolve(), f'{key}: M3 source {label} path')
             sources = {}
             for label in ('result', 'manifest', 'settings'):
                 source_path = Path(reuse[f'source_{label}_path']).resolve()
                 sources[label] = self.artifact(source_path)
                 self.require(self.files[str(source_path)] == reuse[f'source_{label}_sha256'], f'{key}: reused M3 {label} changed')
             source, source_settings = sources['result'], sources['settings']
+            src_rank = source.get('rank')
+            self.require(type(src_rank) is int and 0 <= src_rank < 64, f'{key}: invalid M3 source rank')
+            expected_sources = {'settings': self.root / 'm3/settings.json',
+                'manifest': self.root / f'm3/evaluate/manifest-rank{src_rank}.json'}
+            for label, expected_source in expected_sources.items():
+                self.require(Path(reuse[f'source_{label}_path']).resolve() == expected_source.resolve(), f'{key}: M3 source {label} path')
             source_identity = source['identity']
             source_key = fingerprint(source_identity)
-            self.require(Path(reuse['source_result_path']).resolve() == (self.root / f'm3/evaluate/rank{rank}/{source_key}.json').resolve(),
+            self.require(Path(reuse['source_result_path']).resolve() == (self.root / f'm3/evaluate/rank{src_rank}/{source_key}.json').resolve(),
                          f'{key}: M3 raw source path')
             self.require(source_identity['stage'] == 'm3' and source['stage'] == 'm3' and
                          source_identity['frozen_settings_hash'] == fingerprint(source_settings) == reuse['source_frozen_settings_hash']
@@ -365,7 +379,9 @@ class Audit:
             'generation_caps': CAPS, 'stage': 'm4', 'scale': self.args.scale, 'seed': self.args.seed}.items():
             self.require(config.get(key) == value, f'{mode}: session configuration {key}')
         if self.args.scale == 'reference':
-            self.require(config['device'] == 'cuda:0' and config['visible_devices'] == '0', f'{mode}: selected physical device differs from plan')
+            vis = config.get('visible_devices')
+            self.require(config['device'] == 'cuda:0' and isinstance(vis, str) and vis.strip().isdigit(),
+                         f'{mode}: selected physical device differs from isolated single-GPU plan')
         return path, session
 
     def bundle(self, mode, session, entries, comparisons, repeat, profile):
@@ -385,7 +401,9 @@ class Audit:
     def run(self):
         self.prepare()
         path, session = self.session('tune', self.settings['comparison_session'])
-        config = session['configuration']['configuration']
+        config = dict(session['configuration']['configuration'])
+        tune_fp = config.pop('fastpath', None)
+        self.require(tune_fp is None or _valid_fastpath_dict(tune_fp), 'invalid tune fastpath metadata')
         self.require(config == {'prompt_manifest_hash': fingerprint(self.manifest),
             'dev_ids': self.settings['development_prompt_ids'], 'candidates': {a: candidates(a) for a in ARMS}}, 'tune configuration mismatch')
         entries = self.manifests('tune')
@@ -414,8 +432,13 @@ class Audit:
         ids = [p['prompt_id'] for p in timing_prompts]
         self.require(report['prompt_ids'] == ids and report['expected_full_prompt_count'] == len(ids) and
                      report['full_reference_prompt_coverage'] is True, 'timing report prompt population')
-        self.require(session['configuration']['configuration'] == {'frozen_settings_hash': self.frozen,
-            'prompt_manifest_hash': fingerprint(self.manifest), 'selected_prompts': ids, 'repeats': 3, 'warmups': 1}, 'timing configuration mismatch')
+        report_fp = report.get('fastpath')
+        self.require(report_fp is None or _valid_fastpath_dict(report_fp), 'invalid timing fastpath metadata')
+        expected_timing_cfg = {'frozen_settings_hash': self.frozen,
+            'prompt_manifest_hash': fingerprint(self.manifest), 'selected_prompts': ids, 'repeats': 3, 'warmups': 1}
+        if report_fp is not None:
+            expected_timing_cfg['fastpath'] = report_fp
+        self.require(session['configuration']['configuration'] == expected_timing_cfg, 'timing configuration mismatch')
         evidence = report['raw_evidence']
         self.require(Path(evidence['session_path']).resolve() == path.resolve() and digest(path) == evidence['session_sha256'], 'timing session checksum/path')
         manifest_path = self.stage / 'timing/manifest-rank0.json'

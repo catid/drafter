@@ -37,7 +37,8 @@ def file_sha256(path):
 
 def implementation_hash():
     paths = [Path(__file__).parent / name for name in ('adapter.py', 'online.py', 'features.py', 'dflash_loop.py',
-             'sampler.py', 'verify.py', 'backend.py', 'sparse.py', 'toy.py', 'diagnose.py', 'eval_closed_loop.py')]
+             'sampler.py', 'verify.py', 'backend.py', 'sparse.py', 'toy.py', 'diagnose.py', 'eval_closed_loop.py',
+             'fastpath.py', 'optimizers.py')]
     digest = hashlib.sha256()
     for path in paths:
         digest.update(path.name.encode())
@@ -227,6 +228,9 @@ class EvaluationRunner:
             compile=bool(getattr(args, 'compile', False)),
             cuda_graph=bool(getattr(args, 'cuda_graph', False)),
             simulate_cpu_graph=bool(getattr(args, 'simulate_cpu_graph', False)),
+            bf16_gemm=bool(getattr(args, 'bf16_gemm', False)),
+            compile_drafter=bool(getattr(args, 'compile_drafter', False)),
+            compile_online=bool(getattr(args, 'compile_online', False)),
         )
         static_k = 4 if self.tiny else (self.backend.block_size - 1)
         self.fastpath = FastPathRuntime(fp_cfg, static_block_length=static_k) if fp_cfg.enabled else None
@@ -1061,11 +1065,14 @@ def audit_timing_evidence(runner, prompt_manifest, settings, report):
         report_fastpath = None
         if 'fastpath' in report:
             raw_fp = report['fastpath']
+            req_fp_keys = {'compile', 'cuda_graph', 'compile_mode'}
+            opt_fp_keys = {'bf16_gemm', 'compile_drafter', 'compile_online'}
             if (not isinstance(raw_fp, dict)
-                    or set(raw_fp.keys()) != {'compile', 'cuda_graph', 'compile_mode'}
+                    or not req_fp_keys <= set(raw_fp.keys()) <= (req_fp_keys | opt_fp_keys)
                     or type(raw_fp['compile']) is not bool
                     or type(raw_fp['cuda_graph']) is not bool
-                    or type(raw_fp['compile_mode']) is not str):
+                    or type(raw_fp['compile_mode']) is not str
+                    or any(type(raw_fp[k]) is not bool for k in opt_fp_keys if k in raw_fp)):
                 raise ValueError('invalid fastpath metadata in timing report')
             report_fastpath = raw_fp
         if hasattr(runner, 'fastpath'):
@@ -1074,11 +1081,15 @@ def audit_timing_evidence(runner, prompt_manifest, settings, report):
                 raise ValueError('timing session configuration mismatch')
             if expected_fp is not None:
                 expected_inner['fastpath'] = expected_fp
-        elif getattr(args, 'compile', False) or getattr(args, 'cuda_graph', False):
+        elif any(getattr(args, k, False) for k in ('compile', 'cuda_graph', 'bf16_gemm', 'compile_drafter', 'compile_online')):
             from .fastpath import FastPathConfig
             cli_fp = FastPathConfig(
                 compile=bool(getattr(args, 'compile', False)),
-                cuda_graph=bool(getattr(args, 'cuda_graph', False))).to_dict()
+                cuda_graph=bool(getattr(args, 'cuda_graph', False)),
+                bf16_gemm=bool(getattr(args, 'bf16_gemm', False)),
+                compile_drafter=bool(getattr(args, 'compile_drafter', False)),
+                compile_online=bool(getattr(args, 'compile_online', False)),
+            ).to_dict()
             if report_fastpath != cli_fp:
                 raise ValueError('timing session configuration mismatch')
             expected_inner['fastpath'] = cli_fp
@@ -1445,6 +1456,9 @@ def main(argv=None):
     parser.add_argument('--schedule', choices=['modulo', 'dynamic'], default='modulo')
     parser.add_argument('--compile', action='store_true', default=False)
     parser.add_argument('--cuda_graph', action='store_true', default=False)
+    parser.add_argument('--bf16_gemm', action='store_true', default=False)
+    parser.add_argument('--compile_drafter', action='store_true', default=False)
+    parser.add_argument('--compile_online', action='store_true', default=False)
     parser.add_argument('--prompts_manifest', type=Path, default=ROOT / 'artifacts/prompts.json')
     parser.add_argument('--dense_checkpoint', type=Path, default=ROOT / 'artifacts/m2/dense.pt')
     parser.add_argument('--sparse_checkpoint', type=Path, default=ROOT / 'artifacts/m2/dense_sparse.pt')

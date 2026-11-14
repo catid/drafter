@@ -6,6 +6,7 @@ never enter the primary optimizer. Real fitting requires the M1 audit gate.
 """
 from __future__ import annotations
 
+from collections import OrderedDict
 from dataclasses import dataclass
 import hashlib
 import json
@@ -18,15 +19,31 @@ import time
 import torch
 import torch.distributed as dist
 from torch.nn import functional as F
+from torch.utils.data import DataLoader, Dataset
 
-from .adapter import DenseAdapter, loss_weights, prev_token, union_rest_grouped
+from .adapter import (DenseAdapter, PrecollatedGroupedTargets, collate_grouped_targets,
+                      loss_weights, prev_token, union_rest_grouped, union_rest_grouped_precollated)
+from .fastpath import _fresh_compile
 from .features import HiddenProjection
+from .optimizers import AdamATan2, AnchorMuon, PaceMuon, compute_lr_multiplier
 from .runtime import ROOT, atomic_json, common_parser, fingerprint, git_commit, parse_config, preflight, record_run, resolved_config
 from .sparse import SignedHash, hash_keys
 from .sparse_stats import SparseAccessRecorder, pack_keys
 from .traces import read_shard
 
-TRANSIENT_CONFIG_KEYS = {'resume', 'rank', 'world_size', 'dist_backend', 'microbatch_blocks'}
+TRANSIENT_CONFIG_KEYS = {
+    'resume', 'rank', 'world_size', 'dist_backend', 'microbatch_blocks',
+    'num_workers', 'pin_memory', 'compile',
+}
+DEFAULT_OPTIONAL_CONFIG = {
+    'bf16_gemm': False,
+    'optimizer': 'adamw',
+    'lr_schedule': 'constant',
+    'ema_eval': None,
+    'pace_pullback': 0.05,
+    'anchor_soda': 0.05,
+    'block_shuffle_window': 0,
+}
 
 
 def _comm_device(device: torch.device) -> torch.device:
@@ -272,11 +289,181 @@ def load_frozen_head(metadata, device):
     return weight, bias
 
 
-def epoch_references(entries, split, seed=None):
+def epoch_references(entries, split, seed=None, *, block_shuffle_window: int = 0):
     chosen = [x for x in entries if x.split == split]
-    if seed is not None:
-        random.Random(seed).shuffle(chosen)
-    return [(shard, i) for shard in chosen for i in range(shard.blocks)]
+    rng = random.Random(seed) if seed is not None else None
+    if rng is not None:
+        rng.shuffle(chosen)
+    win = int(block_shuffle_window)
+    if win <= 0 or rng is None:
+        return [(shard, i) for shard in chosen for i in range(shard.blocks)]
+    refs = []
+    for start in range(0, len(chosen), win):
+        window_refs = [(shard, i) for shard in chosen[start:start + win] for i in range(shard.blocks)]
+        rng.shuffle(window_refs)
+        refs.extend(window_refs)
+    return refs
+
+
+@dataclass
+class _PreparedMicrobatch:
+    h_raw_bf16: torch.Tensor
+    H: torch.Tensor
+    valid_rows: torch.Tensor
+    valid_cols: torch.Tensor
+    prev_ids: torch.Tensor
+    targets: PrecollatedGroupedTargets
+
+    def pin_memory(self) -> '_PreparedMicrobatch':
+        return _PreparedMicrobatch(
+            h_raw_bf16=self.h_raw_bf16.pin_memory(),
+            H=self.H.pin_memory(),
+            valid_rows=self.valid_rows.pin_memory(),
+            valid_cols=self.valid_cols.pin_memory(),
+            prev_ids=self.prev_ids.pin_memory(),
+            targets=self.targets.pin_memory(),
+        )
+
+    def to(self, device: torch.device, *, non_blocking: bool = False) -> '_PreparedMicrobatch':
+        return _PreparedMicrobatch(
+            h_raw_bf16=self.h_raw_bf16.to(device=device, non_blocking=non_blocking),
+            H=self.H.to(device=device, dtype=torch.float32, non_blocking=non_blocking),
+            valid_rows=self.valid_rows.to(device=device, dtype=torch.long, non_blocking=non_blocking),
+            valid_cols=self.valid_cols.to(device=device, dtype=torch.long, non_blocking=non_blocking),
+            prev_ids=self.prev_ids.to(device=device, dtype=torch.long, non_blocking=non_blocking),
+            targets=self.targets.to(device=device, non_blocking=non_blocking),
+        )
+
+
+@dataclass
+class _PreparedBatch:
+    batch_index: int
+    weight_sum: torch.Tensor
+    microbatches: list[_PreparedMicrobatch]
+
+    def pin_memory(self) -> '_PreparedBatch':
+        return _PreparedBatch(
+            batch_index=self.batch_index,
+            weight_sum=self.weight_sum.pin_memory(),
+            microbatches=[mb.pin_memory() for mb in self.microbatches],
+        )
+
+
+def _prepare_microbatch(blocks: list[dict], history_depth: int, vocab_size: int) -> _PreparedMicrobatch:
+    h_raw_bf16 = torch.cat([b['h_raw_bf16'] for b in blocks]).contiguous()
+    H = torch.cat([b['h'] for b in blocks]).to(dtype=torch.float32).contiguous()
+    predecessors = []
+    ids, probabilities, rest, weights = [], [], [], []
+    cpu = torch.device('cpu')
+    for block in blocks:
+        prefix = block['verified_prefix_tail']
+        draft_tokens = block['draft_tokens']
+        K = block['block_length']
+        for i in range(K):
+            predecessors.append([prev_token(prefix, draft_tokens, i, d) for d in range(1, history_depth + 1)])
+        ids.extend(block['union_ids'])
+        probabilities.extend(block['target_probs_union'])
+        rest.extend(block['target_rest_mass'])
+        weights.append(loss_weights(K, cpu))
+    previous = torch.tensor([[x if x is not None else -1 for x in row] for row in predecessors], dtype=torch.long)
+    valid_rows, valid_cols = (previous >= 0).nonzero(as_tuple=True)
+    prev_ids = previous[valid_rows, valid_cols].contiguous() if valid_rows.numel() else torch.empty(0, dtype=torch.long)
+    targets = collate_grouped_targets(ids, probabilities, rest, torch.cat(weights), vocab_size=vocab_size, device=cpu)
+    return _PreparedMicrobatch(
+        h_raw_bf16=h_raw_bf16,
+        H=H,
+        valid_rows=valid_rows.contiguous(),
+        valid_cols=valid_cols.contiguous(),
+        prev_ids=prev_ids,
+        targets=targets,
+    )
+
+
+class _ShardBatchDataset(Dataset):
+    """Worker-safe dataset reading at most `max_cached_shards` verified compact shards at a time."""
+
+    def __init__(self, references, batch_blocks: int, *, start_batch: int = 0, head_metadata=None,
+                 rank: int = 0, world_size: int = 1, microbatch_blocks: int | None = None,
+                 history_depth: int = 4, vocab_size: int, max_cached_shards: int = 1):
+        self.references = references
+        self.batch_blocks = int(batch_blocks)
+        self.start_batch = int(start_batch)
+        self.total_batches = (len(references) + self.batch_blocks - 1) // self.batch_blocks
+        self.head_metadata = head_metadata
+        self.rank = int(rank)
+        self.world_size = int(world_size)
+        self.microbatch_blocks = int(microbatch_blocks) if microbatch_blocks is not None else None
+        self.history_depth = int(history_depth)
+        self.vocab_size = int(vocab_size)
+        self.max_cached_shards = max(1, int(max_cached_shards))
+        self._cache: OrderedDict[Path, dict] = OrderedDict()
+
+    def __len__(self) -> int:
+        return max(0, self.total_batches - self.start_batch)
+
+    def _load_block(self, shard: ShardInfo, index: int) -> dict:
+        payload = self._cache.get(shard.path)
+        if payload is not None:
+            self._cache.move_to_end(shard.path)
+        else:
+            if json.loads(shard.path.with_suffix('.pt.json').read_text())['sha256'] != shard.sha256:
+                raise ValueError('An indexed shard changed after the frozen training manifest was built')
+            payload = read_shard(shard.path)
+            if len(payload['blocks']) != shard.blocks:
+                raise ValueError('Shard block count differs from immutable sidecar')
+            self._cache[shard.path] = payload
+            while len(self._cache) > self.max_cached_shards:
+                self._cache.popitem(last=False)
+        block = payload['blocks'][index]
+        if block['split'] != shard.split or block['prompt_id'] != shard.prompt_id or not primary_eligible(block):
+            raise ValueError('Block metadata differs from eligible primary shard identity')
+        if self.head_metadata is not None and block['draft_lm_head'] != self.head_metadata:
+            raise ValueError('Mixed frozen head artifacts are forbidden in one fit')
+        return block
+
+    def __getitem__(self, item: int) -> _PreparedBatch:
+        batch_index = self.start_batch + int(item)
+        selected = self.references[batch_index * self.batch_blocks:(batch_index + 1) * self.batch_blocks]
+        if self.world_size > 1:
+            selected = selected[self.rank::self.world_size]
+        local_blocks = [self._load_block(shard, idx) for shard, idx in selected]
+        if not local_blocks:
+            return _PreparedBatch(batch_index=batch_index, weight_sum=torch.zeros((), dtype=torch.float32), microbatches=[])
+        mb_step = self.microbatch_blocks if self.microbatch_blocks is not None else max(1, len(local_blocks))
+        microbatches = [_prepare_microbatch(local_blocks[s:s + mb_step], self.history_depth, self.vocab_size)
+                        for s in range(0, len(local_blocks), mb_step)]
+        weight_sum = torch.stack([mb.targets.weights.sum() for mb in microbatches]).sum()
+        return _PreparedBatch(batch_index=batch_index, weight_sum=weight_sum, microbatches=microbatches)
+
+
+def iter_prepared_batches(references, batch_blocks: int, *, start_batch: int = 0, head_metadata=None,
+                          rank: int = 0, world_size: int = 1, microbatch_blocks: int | None = None,
+                          history_depth: int = 4, vocab_size: int, num_workers: int = 0,
+                          pin_memory: bool = False, loader_seed: int = 0, max_cached_shards: int = 1):
+    dataset = _ShardBatchDataset(
+        references, batch_blocks, start_batch=start_batch, head_metadata=head_metadata,
+        rank=rank, world_size=world_size, microbatch_blocks=microbatch_blocks,
+        history_depth=history_depth, vocab_size=vocab_size, max_cached_shards=max_cached_shards,
+    )
+    use_pin = bool(pin_memory and torch.cuda.is_available())
+    if int(num_workers) <= 0:
+        for i in range(len(dataset)):
+            item = dataset[i]
+            yield item.pin_memory() if use_pin else item
+        return
+    gen = torch.Generator()
+    gen.manual_seed(int(loader_seed))
+    loader = DataLoader(
+        dataset,
+        batch_size=None,
+        num_workers=int(num_workers),
+        pin_memory=use_pin,
+        prefetch_factor=2,
+        persistent_workers=False,
+        multiprocessing_context='spawn',
+        generator=gen,
+    )
+    yield from loader
 
 
 def batches(references, batch_blocks, *, start_batch=0, head_metadata=None, rank=0, world_size=1):
@@ -305,42 +492,84 @@ def batches(references, batch_blocks, *, start_batch=0, head_metadata=None, rank
 
 
 @torch.no_grad()
-def reconstruct_batch(blocks, weight, bias=None, *, vocab_chunk=8192, output_multiplier=1.):
-    h = torch.cat([b['h_raw_bf16'] for b in blocks]).to(weight.device, dtype=torch.float32)
-    logits = torch.cat([F.linear(h, weight[start:start + vocab_chunk].float(),
-                                None if bias is None else bias[start:start + vocab_chunk].float()) * output_multiplier
-                        for start in range(0, len(weight), vocab_chunk)], dim=-1)
+def _reconstruct_h_raw(h_raw_bf16: torch.Tensor, weight: torch.Tensor, bias: torch.Tensor | None = None,
+                       *, vocab_chunk: int = 8192, output_multiplier: float = 1., bf16_gemm: bool = False,
+                       non_blocking: bool = False) -> torch.Tensor:
+    device = weight.device
+    num_rows = int(h_raw_bf16.shape[0])
+    vocab_size = int(weight.shape[0])
+    if num_rows == 0:
+        return torch.empty((0, vocab_size), device=device, dtype=torch.float32)
+    logits = torch.empty((num_rows, vocab_size), device=device, dtype=torch.float32)
+    mult = float(output_multiplier)
+    if bf16_gemm:
+        h_bf16 = h_raw_bf16.to(device=device, dtype=torch.bfloat16, non_blocking=non_blocking)
+        for start in range(0, vocab_size, vocab_chunk):
+            end = min(start + vocab_chunk, vocab_size)
+            w_chunk = weight[start:end]
+            w_bf16 = w_chunk if w_chunk.dtype == torch.bfloat16 else w_chunk.to(torch.bfloat16)
+            out = F.linear(h_bf16, w_bf16).float()
+            if bias is not None:
+                out = out + bias[start:end].float()
+            if mult != 1.0:
+                out = out * mult
+            logits[:, start:end] = out
+    else:
+        h_fp32 = h_raw_bf16.to(device=device, dtype=torch.float32, non_blocking=non_blocking)
+        for start in range(0, vocab_size, vocab_chunk):
+            end = min(start + vocab_chunk, vocab_size)
+            b_chunk = None if bias is None else bias[start:end].float()
+            logits[:, start:end] = F.linear(h_fp32, weight[start:end].float(), b_chunk) * mult
     return logits.log_softmax(-1)
 
 
-def corrected_batch_scores(adapter, blocks, l_unit, *, return_sparse_keys=False, sparse_override=None):
-    """Batched teacher-forced dense features; sampled canvas IDs stay constants."""
-    H = torch.cat([b['h'] for b in blocks]).to(adapter.W.device, dtype=torch.float32)
-    predecessors = []
-    for block in blocks:
-        prefix = block['verified_prefix_tail']
-        for i in range(block['block_length']):
-            predecessors.append([prev_token(prefix, block['draft_tokens'], i, d)
-                                 for d in range(1, len(adapter.A) + 1)])
-    previous = torch.tensor([[x if x is not None else -1 for x in row] for row in predecessors],
-                            device=adapter.W.device, dtype=torch.long)
-    # Skip missing predecessors entirely, including sparse lookup below.
-    valid_rows, valid_cols = (previous >= 0).nonzero(as_tuple=True)
+@torch.no_grad()
+def reconstruct_batch(blocks, weight, bias=None, *, vocab_chunk=8192, output_multiplier=1., bf16_gemm=False):
+    if not blocks:
+        return torch.empty((0, len(weight)), device=weight.device, dtype=torch.float32)
+    h_raw_bf16 = torch.cat([b['h_raw_bf16'] for b in blocks])
+    return _reconstruct_h_raw(h_raw_bf16, weight, bias, vocab_chunk=vocab_chunk,
+                              output_multiplier=output_multiplier, bf16_gemm=bf16_gemm)
+
+
+def _dense_correction_tensor(W: torch.Tensor, A: torch.Tensor, b: torch.Tensor, E: torch.Tensor,
+                             E_bf16: torch.Tensor | None, H: torch.Tensor, valid_rows: torch.Tensor,
+                             valid_cols: torch.Tensor, prev_ids: torch.Tensor, *, bf16_gemm: bool = False) -> torch.Tensor:
+    if bf16_gemm:
+        assert E_bf16 is not None
+        proj_bf16 = (H.to(torch.bfloat16) @ W.to(torch.bfloat16).T)
+        unary = (proj_bf16 @ E_bf16.T).float() + b.float()
+        if valid_rows.numel():
+            E_prev = E_bf16.index_select(0, prev_ids)
+            A_sel = A.to(torch.bfloat16).index_select(0, valid_cols)
+            parts = torch.bmm(E_prev.unsqueeze(1), A_sel.transpose(1, 2)).squeeze(1).float()
+            pair = torch.zeros((H.shape[0], E.shape[1]), device=H.device, dtype=torch.float32).index_add(0, valid_rows, parts)
+            return unary + (pair.to(torch.bfloat16) @ E_bf16.T).float()
+        return unary
+    unary = (H.float() @ W.float().T) @ E.float().T + b.float()
     if valid_rows.numel():
-        prev_ids = previous[valid_rows, valid_cols]
-        E_prev = adapter.E.index_select(0, prev_ids).float()
-        parts = torch.bmm(E_prev.unsqueeze(1), adapter.A.index_select(0, valid_cols).transpose(1, 2)).squeeze(1)
-        pair = torch.zeros(len(H), adapter.E.shape[1], device=H.device, dtype=torch.float32).index_add(0, valid_rows, parts)
-        dense = adapter.unary(H) + pair @ adapter.E.float().T
-    else:
-        dense = adapter.unary(H)
+        E_prev = E.index_select(0, prev_ids).float()
+        parts = torch.bmm(E_prev.unsqueeze(1), A.index_select(0, valid_cols).transpose(1, 2)).squeeze(1)
+        pair = torch.zeros((H.shape[0], E.shape[1]), device=H.device, dtype=torch.float32).index_add(0, valid_rows, parts)
+        return unary + pair @ E.float().T
+    return unary
+
+
+def _corrected_prepared_scores(adapter: DenseAdapter, H: torch.Tensor, valid_rows: torch.Tensor,
+                               valid_cols: torch.Tensor, prev_ids: torch.Tensor, l_unit: torch.Tensor,
+                               *, return_sparse_keys: bool = False, sparse_override=None,
+                               bf16_gemm: bool = False, dense_fn=None):
+    E_bf16 = adapter._token_features_bf16() if bf16_gemm else None
+    fn = _dense_correction_tensor if dense_fn is None else dense_fn
+    dense = fn(adapter.W, adapter.A, adapter.b, adapter.E, E_bf16, H, valid_rows, valid_cols, prev_ids,
+               bf16_gemm=bf16_gemm)
     scores = l_unit - dense
     sparse_table = sparse_override if sparse_override is not None else adapter.sparse
     observed_keys = None
     if sparse_table is not None and valid_rows.numel():
         candidates = scores.topk(min(adapter.M_sparse, scores.shape[-1]), dim=-1).indices
         d_pair = (valid_cols + 1)[:, None]
-        prev_pair = previous[valid_rows, valid_cols][:, None]
+        prev_pair = prev_ids[:, None]
         cands_pair = candidates.index_select(0, valid_rows)
         corrections = sparse_table.lookup(d_pair, prev_pair, cands_pair)
         values = torch.zeros(len(scores), candidates.shape[1], device=scores.device, dtype=torch.float32).index_add(
@@ -355,6 +584,26 @@ def corrected_batch_scores(adapter, blocks, l_unit, *, return_sparse_keys=False,
     return scores
 
 
+def corrected_batch_scores(adapter, blocks, l_unit, *, return_sparse_keys=False, sparse_override=None, bf16_gemm=False):
+    """Batched teacher-forced dense features; sampled canvas IDs stay constants."""
+    H = torch.cat([b['h'] for b in blocks]).to(adapter.W.device, dtype=torch.float32)
+    predecessors = []
+    for block in blocks:
+        prefix = block['verified_prefix_tail']
+        for i in range(block['block_length']):
+            predecessors.append([prev_token(prefix, block['draft_tokens'], i, d)
+                                 for d in range(1, len(adapter.A) + 1)])
+    previous = torch.tensor([[x if x is not None else -1 for x in row] for row in predecessors],
+                            device=adapter.W.device, dtype=torch.long)
+    # Skip missing predecessors entirely, including sparse lookup below.
+    valid_rows, valid_cols = (previous >= 0).nonzero(as_tuple=True)
+    prev_ids = previous[valid_rows, valid_cols] if valid_rows.numel() else torch.empty(0, device=H.device, dtype=torch.long)
+    return _corrected_prepared_scores(
+        adapter, H, valid_rows, valid_cols, prev_ids, l_unit,
+        return_sparse_keys=return_sparse_keys, sparse_override=sparse_override, bf16_gemm=bf16_gemm,
+    )
+
+
 def batch_targets(blocks, device):
     ids, probabilities, rest, weights = [], [], [], []
     for block in blocks:
@@ -365,9 +614,9 @@ def batch_targets(blocks, device):
     return ids, probabilities, rest, torch.cat(weights)
 
 
-def batch_loss(adapter, blocks, l_unit, *, collect_sparse_keys=False, sparse_override=None):
+def batch_loss(adapter, blocks, l_unit, *, collect_sparse_keys=False, sparse_override=None, bf16_gemm=False):
     corrected = corrected_batch_scores(adapter, blocks, l_unit, return_sparse_keys=collect_sparse_keys,
-                                       sparse_override=sparse_override)
+                                       sparse_override=sparse_override, bf16_gemm=bf16_gemm)
     scores = corrected[0] if collect_sparse_keys else corrected
     ids, probabilities, rest, weights = batch_targets(blocks, scores.device)
     result = (union_rest_grouped(scores, ids, probabilities, rest, weights), weights.sum(), scores)
@@ -376,6 +625,7 @@ def batch_loss(adapter, blocks, l_unit, *, collect_sparse_keys=False, sparse_ove
 
 @torch.no_grad()
 def evaluate(adapter, references, head, bias, args, head_metadata, *, rank=0, world_size=1, use_dist=False):
+    bf16_gemm = bool(getattr(args, 'bf16_gemm', False))
     sums = dict(loss=0., weight=0., slots=0, union_overlap_lower=0., grouped_overlap_upper=0.,
                 full_overlap=0., full_top1=0., full_slots=0, full_loss=0., full_grouped_loss=0., full_weight=0.)
     for _, blocks in batches(references, args.batch_blocks, head_metadata=head_metadata,
@@ -383,8 +633,9 @@ def evaluate(adapter, references, head, bias, args, head_metadata, *, rank=0, wo
         if not blocks:
             continue
         l_unit = reconstruct_batch(blocks, head, bias, vocab_chunk=args.vocab_chunk,
-                                   output_multiplier=head_metadata.get('output_multiplier', 1.))
-        loss, weight, scores = batch_loss(adapter, blocks, l_unit)
+                                   output_multiplier=head_metadata.get('output_multiplier', 1.),
+                                   bf16_gemm=bf16_gemm)
+        loss, weight, scores = batch_loss(adapter, blocks, l_unit, bf16_gemm=bf16_gemm)
         q_log = scores.log_softmax(-1)
         q = q_log.exp()
         sums['loss'] += float(loss)
@@ -443,7 +694,25 @@ def optimizer_for(adapter, args, stage):
     groups = [{'params': [adapter.W, adapter.A], 'weight_decay': args.weight_decay}]
     if stage == 'dense_sparse':
         groups.append({'params': [adapter.b], 'weight_decay': args.bias_weight_decay})
-    dense = torch.optim.AdamW(groups, lr=args.learning_rate)
+    opt_name = str(getattr(args, 'optimizer', 'adamw'))
+    ema_cfg = getattr(args, 'ema_eval', None)
+    ema_active = bool(opt_name == 'pacemuon' if ema_cfg is None else ema_cfg)
+    if opt_name == 'adamw':
+        dense = torch.optim.AdamW(groups, lr=args.learning_rate)
+    elif opt_name == 'adam_atan2':
+        dense = AdamATan2(groups, lr=args.learning_rate)
+    elif opt_name == 'muon':
+        dense = PaceMuon(groups, lr=args.learning_rate, fallback_mode='adamw',
+                         ema_enabled=ema_active, pullback_c=0.0)
+    elif opt_name == 'pacemuon':
+        dense = PaceMuon(groups, lr=args.learning_rate, ema_enabled=True,
+                         pullback_c=float(getattr(args, 'pace_pullback', 0.05)))
+    elif opt_name == 'anchormuon':
+        dense = AnchorMuon(groups, lr=args.learning_rate,
+                           soda_lambda_scale=float(getattr(args, 'anchor_soda', 0.05)),
+                           ema_enabled=ema_active)
+    else:
+        raise ValueError(f'Unknown dense optimizer: {opt_name}')
     sparse = torch.optim.SGD([adapter.sparse.values], lr=args.sparse_learning_rate) if adapter.sparse is not None else None
     return dense, sparse
 
@@ -509,9 +778,17 @@ def fit(entries, index_report, E, head, bias, head_metadata, args, *, stop_after
         dist.barrier()
     latest = outdir / 'latest.pt'
     config = resolved_config(args)
-    implementation = {name: file_digest(Path(__file__).with_name(name)) for name in
-                      ['train.py', 'adapter.py', 'features.py', 'sparse.py', 'sparse_stats.py', 'traces.py']}
-    identity_config = {k: v for k, v in config.items() if k not in TRANSIENT_CONFIG_KEYS}
+    non_default_optional = any(
+        k in config and config[k] != default_val for k, default_val in DEFAULT_OPTIONAL_CONFIG.items()
+    )
+    impl_files = ['train.py', 'adapter.py', 'features.py', 'sparse.py', 'sparse_stats.py', 'traces.py']
+    if non_default_optional:
+        impl_files.append('optimizers.py')
+    implementation = {name: file_digest(Path(__file__).with_name(name)) for name in impl_files}
+    identity_config = {
+        k: v for k, v in config.items()
+        if k not in TRANSIENT_CONFIG_KEYS and (k not in DEFAULT_OPTIONAL_CONFIG or v != DEFAULT_OPTIONAL_CONFIG[k])
+    }
     identity = fingerprint({'config': identity_config, 'sources': index_report['source_fingerprint'], 'head': head_metadata,
                             'implementation_sha256': implementation,
                             'E_sha256': hashlib.sha256(E.detach().cpu().numpy().tobytes()).hexdigest()})
@@ -520,6 +797,29 @@ def fit(entries, index_report, E, head, bias, head_metadata, args, *, stop_after
     first = read_shard(entries[0].path)['blocks'][0]
     p = first['h'].shape[1]
     adapter = DenseAdapter(E, p, args.history_depth, M_sparse=args.M_sparse)
+    opt_name = str(getattr(args, 'optimizer', 'adamw'))
+    lr_schedule = str(getattr(args, 'lr_schedule', 'constant'))
+    ema_cfg = getattr(args, 'ema_eval', None)
+    ema_eval_active = bool(opt_name == 'pacemuon' if ema_cfg is None else ema_cfg)
+    bf16_gemm = bool(getattr(args, 'bf16_gemm', False))
+    num_workers = int(getattr(args, 'num_workers', 0))
+    pin_memory = bool(getattr(args, 'pin_memory', False))
+    use_compile = bool(getattr(args, 'compile', False))
+    block_shuffle_window = max(0, int(getattr(args, 'block_shuffle_window', 0)))
+    max_cached_shards = max(1, block_shuffle_window)
+    dense_fn = _fresh_compile(_dense_correction_tensor, mode='default', dynamic=True) if use_compile else _dense_correction_tensor
+    grouped_kl_fn = _fresh_compile(union_rest_grouped_precollated, mode='default', dynamic=True) if use_compile else union_rest_grouped_precollated
+    dense_label = {'adamw': 'AdamW', 'adam_atan2': 'AdamATan2', 'muon': 'Muon',
+                   'pacemuon': 'PaceMuon', 'anchormuon': 'AnchorMuon'}[opt_name]
+    optimizer_report = {'dense': dense_label, 'learning_rate': args.learning_rate, 'weight_decay_W_A': args.weight_decay,
+                        'weight_decay_b': args.bias_weight_decay, 'sparse': 'SGD+proximal_L1',
+                        'sparse_learning_rate': args.sparse_learning_rate, 'lambda_l1': args.lambda_l1}
+    if lr_schedule != 'constant':
+        optimizer_report['lr_schedule'] = lr_schedule
+    if ema_eval_active:
+        optimizer_report['ema_eval'] = True
+    if block_shuffle_window > 0:
+        optimizer_report['block_shuffle_window'] = block_shuffle_window
     report = {'scale': args.scale, 'data': 'synthetic' if args.scale == 'smoke' else args.scale,
               'identity': identity, 'trace_index': index_report, 'head_metadata': head_metadata,
               'model_pair': entries[0].identity['model_pair'],
@@ -527,9 +827,7 @@ def fit(entries, index_report, E, head, bias, head_metadata, args, *, stop_after
               'implementation_sha256': implementation,
               'frozen_artifacts': {'hidden_projection_sha256': entries[0].identity.get('projection_sha256'),
                                    'token_features_sha256': entries[0].identity.get('token_features_sha256')},
-              'optimizer': {'dense': 'AdamW', 'learning_rate': args.learning_rate, 'weight_decay_W_A': args.weight_decay,
-                            'weight_decay_b': args.bias_weight_decay, 'sparse': 'SGD+proximal_L1',
-                            'sparse_learning_rate': args.sparse_learning_rate, 'lambda_l1': args.lambda_l1},
+              'optimizer': optimizer_report,
               'training_distribution': 'standard_nonthinking, greedy or model-card T=.7 topk20 topp.8 minp0 contexts; unwarped T_train=beta_train=1',
               'post_rejection_canvas': 'off-policy teacher data retained with exp(-i/5) weights',
               'fixed_required_phases': ['dense', 'dense_sparse'], 'extra_tuning_or_sweeps': False, 'stages': {}}
@@ -572,16 +870,27 @@ def fit(entries, index_report, E, head, bias, head_metadata, args, *, stop_after
             if sparse_optimizer is not None:
                 sparse_optimizer.load_state_dict(resumed['sparse_optimizer'])
             start_epoch, start_batch = resumed['epoch'], resumed['next_batch']
+        if lr_schedule != 'constant':
+            for group in dense_optimizer.param_groups:
+                group.setdefault('base_lr', float(group['lr']))
+        batches_per_epoch = max(1, (len(references['train']) + args.batch_blocks - 1) // args.batch_blocks)
+        total_stage_steps = max(1, epochs * batches_per_epoch)
+        non_blocking_h2d = bool(pin_memory and E.is_cuda)
         for epoch in range(start_epoch, epochs):
-            train_refs = epoch_references(entries, 'train', seed=args.seed + 1000 * stage_index + epoch)
-            for batch_index, local_blocks in batches(train_refs, args.batch_blocks, start_batch=start_batch,
-                                                     head_metadata=head_metadata, rank=rank, world_size=world_size):
+            epoch_seed = args.seed + 1000 * stage_index + epoch
+            train_refs = epoch_references(entries, 'train', seed=epoch_seed,
+                                          block_shuffle_window=block_shuffle_window)
+            for prepared in iter_prepared_batches(
+                train_refs, args.batch_blocks, start_batch=start_batch, head_metadata=head_metadata,
+                rank=rank, world_size=world_size, microbatch_blocks=microbatch_blocks,
+                history_depth=args.history_depth, vocab_size=len(E), num_workers=num_workers,
+                pin_memory=pin_memory, loader_seed=epoch_seed + rank,
+                max_cached_shards=max_cached_shards,
+            ):
+                batch_index = prepared.batch_index
                 for param in dense_params:
                     param.grad = torch.zeros_like(param)
-                if local_blocks:
-                    local_weight = torch.cat([loss_weights(b['block_length'], E.device) for b in local_blocks]).sum()
-                else:
-                    local_weight = torch.zeros((), device=E.device, dtype=torch.float32)
+                local_weight = prepared.weight_sum.to(device=E.device, dtype=torch.float32, non_blocking=non_blocking_h2d)
                 if use_dist:
                     comm_dev = _comm_device(E.device)
                     w_comm = local_weight.to(comm_dev)
@@ -590,19 +899,22 @@ def fit(entries, index_report, E, head, bias, head_metadata, args, *, stop_after
                 else:
                     global_weight = local_weight
 
-                mb_step = int(microbatch_blocks) if microbatch_blocks is not None else max(1, len(local_blocks))
                 local_loss_sum = torch.zeros((), device=E.device, dtype=torch.float32)
                 local_sparse_pairs: list[tuple[torch.Tensor, torch.Tensor]] = []
                 local_observed_keys: list[torch.Tensor] = []
-                for mb_start in range(0, len(local_blocks), mb_step):
-                    mb_blocks = local_blocks[mb_start:mb_start + mb_step]
-                    l_unit = reconstruct_batch(mb_blocks, head, bias, vocab_chunk=args.vocab_chunk,
-                                               output_multiplier=head_metadata.get('output_multiplier', 1.))
+                out_mult = head_metadata.get('output_multiplier', 1.)
+                for mb in prepared.microbatches:
+                    mb_dev = mb.to(E.device, non_blocking=non_blocking_h2d)
+                    l_unit = _reconstruct_h_raw(mb_dev.h_raw_bf16, head, bias, vocab_chunk=args.vocab_chunk,
+                                                output_multiplier=out_mult, bf16_gemm=bf16_gemm)
                     compact_sparse = _CompactTrainSparse(adapter.sparse) if stage == 'dense_sparse' else None
-                    computed = batch_loss(adapter, mb_blocks, l_unit,
-                                          collect_sparse_keys=stage == 'dense_sparse',
-                                          sparse_override=compact_sparse)
-                    mb_loss = computed[0]
+                    corrected = _corrected_prepared_scores(
+                        adapter, mb_dev.H, mb_dev.valid_rows, mb_dev.valid_cols, mb_dev.prev_ids, l_unit,
+                        return_sparse_keys=stage == 'dense_sparse', sparse_override=compact_sparse,
+                        bf16_gemm=bf16_gemm, dense_fn=dense_fn,
+                    )
+                    mb_scores = corrected[0] if stage == 'dense_sparse' else corrected
+                    mb_loss = grouped_kl_fn(mb_scores, mb_dev.targets)
                     local_loss_sum = local_loss_sum + mb_loss.detach()
                     (mb_loss / global_weight).backward()
                     if stage == 'dense_sparse':
@@ -612,7 +924,7 @@ def fit(entries, index_report, E, head, bias, head_metadata, args, *, stop_after
                                 compact_sparse.unique_buckets,
                                 grad.detach() if grad is not None else torch.zeros_like(compact_sparse.touched_values),
                             ))
-                        local_observed_keys.append(computed[3])
+                        local_observed_keys.append(corrected[1])
 
                 if use_dist:
                     comm_dev = _comm_device(E.device)
@@ -634,6 +946,11 @@ def fit(entries, index_report, E, head, bias, head_metadata, args, *, stop_after
                         numel = param.numel()
                         param.grad.copy_(flat_grads[offset:offset + numel].view_as(param))
                         offset += numel
+                if lr_schedule != 'constant':
+                    step_one_based = epoch * batches_per_epoch + batch_index + 1
+                    lr_mult = compute_lr_multiplier(step_one_based, total_stage_steps, schedule=lr_schedule)
+                    for group in dense_optimizer.param_groups:
+                        group['lr'] = float(group['base_lr']) * lr_mult
                 dense_optimizer.step()
 
                 if sparse_optimizer is not None:
@@ -672,8 +989,13 @@ def fit(entries, index_report, E, head, bias, head_metadata, args, *, stop_after
                 if stop_after_steps == steps_this_run:
                     return {'status': 'interrupted_for_resume_test', 'checkpoint': str(latest)}
             start_batch = 0
-            dev = evaluate(adapter, references['dev'], head, bias, args, head_metadata,
-                           rank=rank, world_size=world_size, use_dist=use_dist)
+            if ema_eval_active and hasattr(dense_optimizer, 'use_ema_weights'):
+                with dense_optimizer.use_ema_weights():
+                    dev = evaluate(adapter, references['dev'], head, bias, args, head_metadata,
+                                   rank=rank, world_size=world_size, use_dist=use_dist)
+            else:
+                dev = evaluate(adapter, references['dev'], head, bias, args, head_metadata,
+                               rank=rank, world_size=world_size, use_dist=use_dist)
             base = report['baseline']['dev']['weighted_mean_kl']
             gain = (base - dev['weighted_mean_kl']) / max(base, 1e-12)
             report.setdefault('epoch_development', []).append({'stage': stage, 'epoch': epoch, 'dev': dev,
@@ -691,6 +1013,8 @@ def fit(entries, index_report, E, head, bias, head_metadata, args, *, stop_after
                 break
             if use_dist:
                 dist.barrier()
+        if ema_eval_active and hasattr(dense_optimizer, 'commit_ema'):
+            dense_optimizer.commit_ema()
         # Test is read only after each predeclared phase is finished; its metrics
         # never choose parameters, epochs, learning rates, or checkpoints.
         report['stages'][stage] = {split: evaluate(adapter, refs, head, bias, args, head_metadata,
@@ -822,6 +1146,17 @@ def main(argv=None):
     parser.add_argument('--epochs_dense', type=int, default=1)
     parser.add_argument('--epochs_sparse', type=int, default=1)
     parser.add_argument('--checkpoint_every', type=int, default=100)
+    parser.add_argument('--num_workers', type=int, default=0)
+    parser.add_argument('--pin_memory', action='store_true', default=False)
+    parser.add_argument('--bf16_gemm', action='store_true', default=False)
+    parser.add_argument('--compile', action='store_true', default=False)
+    parser.add_argument('--optimizer', choices=['adamw', 'muon', 'pacemuon', 'anchormuon', 'adam_atan2'], default='adamw')
+    parser.add_argument('--lr_schedule', choices=['constant', 'wsd', 'cosine'], default='constant')
+    parser.add_argument('--ema_eval', action='store_true', default=None)
+    parser.add_argument('--no_ema_eval', action='store_false', dest='ema_eval')
+    parser.add_argument('--pace_pullback', type=float, default=0.05)
+    parser.add_argument('--anchor_soda', type=float, default=0.05)
+    parser.add_argument('--block_shuffle_window', type=int, default=0)
     parser.add_argument('--stats_memory_limit', default='512MB')
     parser.add_argument('--stats_benchmark_entries', type=int, default=1_000_000)
     parser.add_argument('--resume', action='store_true', default=True)
@@ -831,6 +1166,8 @@ def main(argv=None):
         args.m1_diagnostic = args.output / f'diagnostic_{args.scale}.json'
     if min(args.batch_blocks, args.vocab_chunk, args.epochs_dense, args.epochs_sparse, args.checkpoint_every) < 1:
         raise ValueError('Training counts must be positive')
+    if args.num_workers < 0:
+        raise ValueError('num_workers must be nonnegative')
     if args.microbatch_blocks is not None and args.microbatch_blocks < 1:
         raise ValueError('microbatch_blocks must be positive')
     if args.world_size < 1 or not 0 <= args.rank < args.world_size:

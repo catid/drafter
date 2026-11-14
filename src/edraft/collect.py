@@ -356,8 +356,8 @@ def job_identity(args, job, backend, calibration_record):
             "split": job["row"]["split"], "prompt_text_sha256": hashlib.sha256(job["row"]["text"].encode()).hexdigest()}
 
 
-def _globally_completed_trace_keys(traces_dir: Path) -> set[str]:
-    done = set()
+def _globally_completed_trace_map(traces_dir: Path) -> dict[str, Path]:
+    done: dict[str, Path] = {}
     for manifest_path in sorted(Path(traces_dir).glob("manifest-rank*.json")):
         try:
             manifest = json.loads(manifest_path.read_text())
@@ -373,10 +373,14 @@ def _globally_completed_trace_keys(traces_dir: Path) -> set[str]:
             try:
                 sidecar = json.loads(sidecar_path.read_text())
                 if path.stat().st_size == sidecar["disk_bytes"] and sha256(path) == sidecar["sha256"]:
-                    done.add(fingerprint(item["identity"]))
+                    done[fingerprint(item["identity"])] = path
             except (OSError, ValueError, KeyError):
                 continue
     return done
+
+
+def _globally_completed_trace_keys(traces_dir: Path) -> set[str]:
+    return set(_globally_completed_trace_map(traces_dir).keys())
 
 
 def collect(args, prompts=None, backend=None):
@@ -412,34 +416,48 @@ def collect(args, prompts=None, backend=None):
         scan_jobs = jobs
     # Read completed jobs first so an interrupted rank stops at its real emitted
     # budget instead of recollecting or crediting expected/max-length tokens.
+    passed_head_checks: set[tuple[str, int]] = set()
+    for hpath in sorted(args.output.glob("head_reconstruction-rank*.json")):
+        try:
+            for item in json.loads(hpath.read_text()):
+                if item.get("status") == "passed" and "shard" in item and "round_idx" in item:
+                    passed_head_checks.add((str(Path(item["shard"]).resolve()), int(item["round_idx"])))
+        except (OSError, ValueError, TypeError):
+            continue
+    global_done_map = _globally_completed_trace_map(args.output / "traces") if dynamic else {}
     completed = {}
     for job in scan_jobs:
         identity = job_identity(args, job, backend, calibration_record)
-        if writer.completed(identity):
-            sidecar = json.loads(writer.path(identity).with_suffix(".pt.json").read_text())
+        key = writer.manifest.key(identity)
+        local_done = writer.completed(identity)
+        shard_path = writer.path(identity) if local_done else (global_done_map.get(key) if job["partition"] != "train_primary" else None)
+        if shard_path is not None:
+            sidecar = json.loads(shard_path.with_suffix(".pt.json").read_text())
             generation = sidecar["generation"]
-            completed[writer.manifest.key(identity)] = generation
-            if job["partition"] == "train_primary":
-                primary_tokens[job["temperature"]] += generation["realized_length"]
+            if local_done:
+                completed[key] = generation
+                if job["partition"] == "train_primary":
+                    primary_tokens[job["temperature"]] += generation["realized_length"]
             live_blocks_written[generation["split"]] += generation.get("live_full_blocks", 0)
-            # A crash after atomic shard publication but before the diagnostic
-            # record must resume the check, not silently credit an unchecked shard.
+            # A crash after atomic shard publication (on this rank or a crashed peer rank
+            # under --schedule dynamic) but before the diagnostic record must resume the
+            # check, not silently credit or skip an unchecked shard.
             if generation.get("live_full_blocks", 0):
-                restored = read_shard(writer.path(identity))
+                resolved_shard = str(shard_path.resolve())
+                restored = read_shard(shard_path)
                 for block in restored["blocks"]:
                     if "live_full" not in block:
                         continue
-                    path_text = str(writer.path(identity))
-                    previous = [check for check in diagnostics if check["shard"] == path_text
-                                and check["round_idx"] == block["round_idx"] and check["status"] == "passed"]
-                    if previous:
+                    round_key = (resolved_shard, int(block["round_idx"]))
+                    if round_key in passed_head_checks:
                         continue
                     check = reconstruction_diagnostic(block, backend.head)
-                    diagnostics.append({"shard": path_text, "prompt_id": block["prompt_id"],
+                    diagnostics.append({"shard": str(shard_path), "prompt_id": block["prompt_id"],
                                         "round_idx": block["round_idx"], **check})
                     atomic_json(diagnostics_path, diagnostics)
                     if check["status"] != "passed":
                         raise RuntimeError("blocked: resumed heldout shard failed head reconstruction")
+                    passed_head_checks.add(round_key)
 
     def execute_job(job, identity):
         if job["partition"] == "train_primary" and primary_tokens[job["temperature"]] >= quota:
@@ -615,8 +633,18 @@ def audit(args):
             shards.append(str(path))
             source_shards.append({"path": str(path.resolve()), "sha256": sidecar["sha256"],
                                   "identity_sha256": canonical_key})
-    for path in args.output.glob("head_reconstruction-rank*.json"):
-        head_checks.extend(row for row in json.loads(path.read_text()) if row["shard"] in shards)
+    resolved_shards = {str(Path(s).resolve()) for s in shards}
+    for path in sorted(args.output.glob("head_reconstruction-rank*.json")):
+        head_checks.extend(
+            row for row in json.loads(path.read_text())
+            if str(Path(row["shard"]).resolve()) in resolved_shards
+        )
+    expected_live_blocks = sum(int(g.get("live_full_blocks", 0)) for g in generations)
+    passed_live_keys = {
+        (str(Path(r["shard"]).resolve()), int(r["round_idx"]))
+        for r in head_checks
+        if r.get("status") == "passed"
+    }
     floors = {"train_tokens": 64 if args.scale == "smoke" else 500000 if args.scale == "reference" else 2000000,
               "standard_test_prompts": 2 if args.scale == "smoke" else 64,
               "long_dev_prompts": 1 if args.scale == "smoke" else 12 if args.scale == "reference" else 32,
@@ -626,7 +654,11 @@ def audit(args):
                     "standard_test_each_temperature": all(len(prompts[f"standard_nonthinking/test/T={T}"]) >= floors["standard_test_prompts"] for T in [0., .7, 1.]),
                     "standard_dev_present": all(len(prompts[f"standard_nonthinking/dev/T={T}"]) >= (2 if args.scale == "smoke" else 64) for T in [0., .7]),
                     "diagnostic_train_separate": bool(prompts["standard_nonthinking/train/T=1.0"]),
-                    "serialized_head_reconstruction": bool(head_checks) and all(row["status"] == "passed" for row in head_checks)}
+                    "serialized_head_reconstruction": (
+                        bool(head_checks)
+                        and all(row["status"] == "passed" for row in head_checks)
+                        and len(passed_live_keys) >= expected_live_blocks
+                    )}
     long_condition = "long_thinking" if any(g["condition"] == "long_thinking" for g in generations) else "long_nonthinking"
     long_T = .6 if long_condition == "long_thinking" else .7
     requirements["long_dev_generations"] = len(prompts[f"{long_condition}/dev/T={long_T}"]) >= floors["long_dev_prompts"]

@@ -182,11 +182,19 @@ def _pid_alive(pid: int) -> bool:
         return False
     try:
         os.kill(pid, 0)
-        return True
     except ProcessLookupError:
         return False
     except PermissionError:
         return True
+    stat_path = Path(f'/proc/{pid}/stat')
+    if stat_path.exists():
+        try:
+            state = stat_path.read_text().rsplit(')', 1)[1].split()[0]
+            if state in ('Z', 'X', 'x'):
+                return False
+        except (OSError, IndexError):
+            pass
+    return True
 
 
 class WorkQueue:

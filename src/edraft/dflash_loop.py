@@ -89,6 +89,7 @@ def _sample_proposal(draft_logits, h_raw, prefix, *, temperature, warper, genera
     K = len(draft_logits)
     probs_fn = None if fastpath is None else fastpath.probabilities
     unary_fn = None if fastpath is None else fastpath.unary
+    bf16_gemm = bool(fastpath is not None and fastpath.bf16_gemm)
     bigram_inactive = (bigram is None or bigram.lambda_tr == 0 or not bigram.counts)
     adapter_active = not _is_zero(snapshot)
     # Plain evaluation does not pay for adapter-only projection or training transforms.
@@ -114,7 +115,7 @@ def _sample_proposal(draft_logits, h_raw, prefix, *, temperature, warper, genera
     U = None
     if adapter_active:
         with timer.phase("dense_adapter_score"):
-            U = snapshot.unary(H, unary_fn=unary_fn)
+            U = snapshot.unary(H, unary_fn=unary_fn, bf16_gemm=bf16_gemm)
     if bigram is None and snapshot is not None and snapshot.C0 is None:
         D = len(snapshot.A)
         prefix_tail = prefix[-D:] if D > 0 else ()
@@ -129,7 +130,7 @@ def _sample_proposal(draft_logits, h_raw, prefix, *, temperature, warper, genera
             prev_ids = ctx_buf[L_ctx + i - offsets_all[:avail]]
             score = snapshot.score_slot_tensor(
                 l_unit[i], U[i] if U is not None else None, offsets_all[:avail, None], prev_ids,
-                beta=beta, timer=timer, contiguous_offsets=True)
+                beta=beta, timer=timer, contiguous_offsets=True, bf16_gemm=bf16_gemm)
             with timer.phase("sequential_sampling"):
                 tok_t, q_i = sample_token_tensor(score, temperature, warper, generator, probs_fn=probs_fn)
                 ctx_buf[L_ctx + i] = tok_t
@@ -139,7 +140,8 @@ def _sample_proposal(draft_logits, h_raw, prefix, *, temperature, warper, genera
         return (token_tensor if _return_token_tensor else token_tensor.tolist()), (torch.stack(qs) if qs else None), l_unit, H
     tokens, qs = [], []
     for i in range(K):
-        score = (snapshot.score_slot(l_unit[i], U[i] if U is not None else None, prefix, tokens, i, beta=beta, timer=timer)
+        score = (snapshot.score_slot(l_unit[i], U[i] if U is not None else None, prefix, tokens, i, beta=beta,
+                                     timer=timer, bf16_gemm=bf16_gemm)
                  if snapshot is not None else l_unit[i])
         if bigram is not None:
             with timer.phase("bigram_score"):
@@ -274,14 +276,20 @@ def generate_reference(
         history_depth = max(4, len(snapshot.A) if snapshot is not None else 1)
         prefix = list(committed_history) if full_prefix_needed else committed_history[-history_depth:]
         with torch.no_grad(), timer.phase("dflash_draft"):
-            noise = F.embedding(canvas, backend.target.get_input_embeddings().weight) * backend.input_embedding_scale
-            h_raw = backend.drafter(
-                target_hidden=target_hidden, noise_embedding=noise,
-                position_ids=positions[:, start - target_hidden.shape[1]:start + verify_size],
-                past_key_values=draft_cache, use_cache=True,
-            )[0, 1:, :]
-            crop_cache(draft_cache, start)
-            draft_logits = backend.drafter.compute_logits(h_raw[None], backend.draft_lm_head)[0]
+            pos_slice = positions[:, start - target_hidden.shape[1]:start + verify_size]
+            if fastpath is not None and fastpath.config.compile_drafter:
+                h_raw, draft_logits = fastpath.draft_block(
+                    backend, canvas, target_hidden, pos_slice, draft_cache, start
+                )
+            else:
+                noise = F.embedding(canvas, backend.target.get_input_embeddings().weight) * backend.input_embedding_scale
+                h_raw = backend.drafter(
+                    target_hidden=target_hidden, noise_embedding=noise,
+                    position_ids=pos_slice,
+                    past_key_values=draft_cache, use_cache=True,
+                )[0, 1:, :]
+                crop_cache(draft_cache, start)
+                draft_logits = backend.drafter.compute_logits(h_raw[None], backend.draft_lm_head)[0]
         with torch.no_grad():
             token_tensor, q, l_unit, H = _sample_proposal(
                 draft_logits, h_raw, prefix, temperature=temperature, warper=warper,

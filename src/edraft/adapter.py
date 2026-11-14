@@ -26,7 +26,10 @@ def top_candidates(scores: torch.Tensor, count: int) -> torch.Tensor:
     return torch.topk(scores, min(count, scores.shape[-1]), dim=-1).indices
 
 
-def block_unary(E, W, b, H):
+def block_unary(E, W, b, H, *, bf16_gemm: bool = False, E_bf16: torch.Tensor | None = None):
+    if bf16_gemm:
+        e_bf = E.bfloat16() if E_bf16 is None else E_bf16
+        return ((H.bfloat16() @ W.bfloat16().T) @ e_bf.T).to(b.dtype) + b
     return (H.to(W.dtype) @ W.T) @ E.to(W.dtype).T + b
 
 
@@ -51,7 +54,7 @@ def _pair_message(E: torch.Tensor, A: torch.Tensor, predecessors: list[tuple[int
 
 
 def slot_correction(E, A, U_i, l_unit_i, prefix, realized, i, sparse=None, M_sparse=256, beta=1.0, timer=None,
-                    *, pair_matrix=None):
+                    *, pair_matrix=None, bf16_gemm: bool = False, E_bf16: torch.Tensor | None = None):
     with _phase(timer, 'dense_pair_score'):
         predecessors = []
         for d in range(1, len(A) + 1):
@@ -60,7 +63,11 @@ def slot_correction(E, A, U_i, l_unit_i, prefix, realized, i, sparse=None, M_spa
                 predecessors.append((d, previous))
         if predecessors:
             message = _pair_message(E, A, predecessors, pair_matrix=pair_matrix)
-            dense = U_i + E.to(A.dtype) @ message
+            if bf16_gemm:
+                e_bf = E.bfloat16() if E_bf16 is None else E_bf16
+                dense = U_i + (e_bf @ message.bfloat16()).to(U_i.dtype)
+            else:
+                dense = U_i + E.to(A.dtype) @ message
         else:
             dense = U_i
     if sparse is None or not predecessors:
@@ -90,7 +97,8 @@ def block_predecessor_pairs(prefix: Sequence[int], tokens: Sequence[int], K: int
     return packed[:, 0], packed[:, 1], packed[:, 2]
 
 
-def block_correction(E, A, U, l_unit, prefix, tokens, sparse=None, M_sparse=256, beta=1.0):
+def block_correction(E, A, U, l_unit, prefix, tokens, sparse=None, M_sparse=256, beta=1.0,
+                     *, bf16_gemm: bool = False, E_bf16: torch.Tensor | None = None):
     """Vectorized [K, V] causal correction across all slots and offsets 1..D."""
     K = len(U)
     valid_slots, valid_d0, valid_prev = block_predecessor_pairs(prefix, tokens, K, len(A), A.device)
@@ -100,7 +108,11 @@ def block_correction(E, A, U, l_unit, prefix, tokens, sparse=None, M_sparse=256,
     E_prev = E_cast.index_select(0, valid_prev)
     msgs = torch.bmm(A.index_select(0, valid_d0), E_prev.unsqueeze(-1)).squeeze(-1)
     slot_msgs = torch.zeros(K, E.shape[1], dtype=A.dtype, device=A.device).index_add(0, valid_slots, msgs)
-    dense = U + slot_msgs @ E_cast.T
+    if bf16_gemm:
+        e_bf = E.bfloat16() if E_bf16 is None else E_bf16
+        dense = U + (slot_msgs.bfloat16() @ e_bf.T).to(U.dtype)
+    else:
+        dense = U + slot_msgs @ E_cast.T
     if sparse is None:
         return dense
     candidates = top_candidates(l_unit - beta * dense, M_sparse)
@@ -122,6 +134,7 @@ class ProposalSnapshot:
     C0: tuple[torch.Tensor, ...] | None = None
     is_zero: bool = False
     _A_flat: torch.Tensor | None = field(default=None, init=False, repr=False, compare=False)
+    _E_bf16: torch.Tensor | None = field(default=None, repr=False, compare=False, kw_only=True)
 
     def _pair_matrix(self) -> torch.Tensor:
         cached = self._A_flat
@@ -129,6 +142,13 @@ class ProposalSnapshot:
             D, r, _ = self.A.shape
             cached = self.A.permute(1, 0, 2).contiguous().view(r, D * r)
             object.__setattr__(self, '_A_flat', cached)
+        return cached
+
+    def _token_features_bf16(self) -> torch.Tensor:
+        cached = self._E_bf16
+        if cached is None or cached.device != self.E.device:
+            cached = self.E.bfloat16()
+            object.__setattr__(self, '_E_bf16', cached)
         return cached
 
     @property
@@ -139,9 +159,15 @@ class ProposalSnapshot:
     def adapter_version(self):
         return self.version
 
-    def unary(self, H, proposal_mode='dense_full', *, unary_fn=None):
+    def unary(self, H, proposal_mode='dense_full', *, unary_fn=None, bf16_gemm: bool = False):
         if proposal_mode == 'dense_full':
-            return (block_unary if unary_fn is None else unary_fn)(self.E, self.W, self.b, H)
+            if unary_fn is not None:
+                return unary_fn(self.E, self.W, self.b, H)
+            return block_unary(
+                self.E, self.W, self.b, H,
+                bf16_gemm=bf16_gemm,
+                E_bf16=self._token_features_bf16() if bf16_gemm else None,
+            )
         if proposal_mode != 'dense_candidate' or self.C0 is None:
             raise ValueError('candidate unary requires frozen C0')
         hidden = H.to(self.W.dtype) @ self.W.T
@@ -149,7 +175,8 @@ class ProposalSnapshot:
         return [self.E[ids].to(self.W.dtype) @ hidden[i] + self.b[ids]
                 for i, ids in enumerate(self.C0)]
 
-    def score_slot(self, l_unit_i, U_i, prefix, realized, i, beta=1.0, proposal_mode='dense_full', timer=None):
+    def score_slot(self, l_unit_i, U_i, prefix, realized, i, beta=1.0, proposal_mode='dense_full', timer=None,
+                   *, bf16_gemm: bool = False):
         if proposal_mode == 'dense_candidate':
             if self.C0 is None:
                 raise ValueError('dense_candidate requires the frozen C0 matched-support snapshot')
@@ -182,14 +209,18 @@ class ProposalSnapshot:
             raise ValueError('unknown proposal mode')
         if beta == 0 or self.is_zero:
             return l_unit_i
-        correction = slot_correction(self.E, self.A, U_i, l_unit_i, prefix, realized, i,
-                                     self.sparse, self.M_sparse, beta, timer=timer,
-                                     pair_matrix=self._pair_matrix())
+        correction = slot_correction(
+            self.E, self.A, U_i, l_unit_i, prefix, realized, i,
+            self.sparse, self.M_sparse, beta, timer=timer,
+            pair_matrix=self._pair_matrix(),
+            bf16_gemm=bf16_gemm,
+            E_bf16=self._token_features_bf16() if bf16_gemm else None,
+        )
         return l_unit_i - beta * correction
 
     def score_slot_tensor(self, l_unit_i, U_i, offsets: torch.Tensor, prev_ids: torch.Tensor,
                           beta=1.0, proposal_mode='dense_full', timer=None, *,
-                          contiguous_offsets: bool = False):
+                          contiguous_offsets: bool = False, bf16_gemm: bool = False):
         """Sync-free causal slot scoring when offsets [avail] or [avail, 1] and prev_ids [avail] reside on device."""
         if proposal_mode != 'dense_full':
             raise ValueError('score_slot_tensor requires dense_full proposal mode')
@@ -210,7 +241,10 @@ class ProposalSnapshot:
                 else:
                     A_sel = self.A.index_select(0, offs_1d - 1)
                     message = torch.bmm(A_sel, E_prev_2d.unsqueeze(-1)).squeeze(-1).sum(0)
-                dense = U_i + self.E.to(self.A.dtype) @ message
+                if bf16_gemm:
+                    dense = U_i + (self._token_features_bf16() @ message.bfloat16()).to(U_i.dtype)
+                else:
+                    dense = U_i + self.E.to(self.A.dtype) @ message
             else:
                 dense = U_i
         if self.sparse is None or avail == 0:
@@ -225,7 +259,8 @@ class ProposalSnapshot:
 
     def with_candidates(self, C0):
         return ProposalSnapshot(self.E, self.W, self.A, self.b, self.version, self.sparse,
-                                self.M_sparse, tuple(c.detach().clone() for c in C0), self.is_zero)
+                                self.M_sparse, tuple(c.detach().clone() for c in C0), self.is_zero,
+                                _E_bf16=self._E_bf16)
 
 
 class DenseAdapter(nn.Module):
@@ -240,14 +275,28 @@ class DenseAdapter(nn.Module):
         self.b = nn.Parameter(torch.zeros(V, device=E.device, dtype=torch.float32))
         self.sparse = sparse
         self.M_sparse = M_sparse
+        self._cached_E_bf16: torch.Tensor | None = None
 
-    def unary(self, H):
-        return block_unary(self.E, self.W, self.b, H)
+    def _token_features_bf16(self) -> torch.Tensor:
+        if self._cached_E_bf16 is None or self._cached_E_bf16.device != self.E.device:
+            self._cached_E_bf16 = self.E.detach().bfloat16()
+        return self._cached_E_bf16
 
-    def correction(self, l_unit, H, prefix, tokens, beta=1.0):
-        U = self.unary(H)
-        return block_correction(self.E, self.A, U, l_unit, prefix, tokens,
-                                self.sparse, self.M_sparse, beta)
+    def unary(self, H, *, bf16_gemm: bool = False):
+        return block_unary(
+            self.E, self.W, self.b, H,
+            bf16_gemm=bf16_gemm,
+            E_bf16=self._token_features_bf16() if bf16_gemm else None,
+        )
+
+    def correction(self, l_unit, H, prefix, tokens, beta=1.0, *, bf16_gemm: bool = False):
+        U = self.unary(H, bf16_gemm=bf16_gemm)
+        return block_correction(
+            self.E, self.A, U, l_unit, prefix, tokens,
+            self.sparse, self.M_sparse, beta,
+            bf16_gemm=bf16_gemm,
+            E_bf16=self._token_features_bf16() if bf16_gemm else None,
+        )
 
     def training_distributions(self, l_unit, target_logits, H, prefix, tokens):
         # No inference temperature, beta, or warper parameter exists on this API.
@@ -265,7 +314,8 @@ class DenseAdapter(nn.Module):
             is_zero = is_zero and not bool(torch.count_nonzero(self.sparse.values))
         return ProposalSnapshot(self.E.detach(), self.W.detach().clone(), self.A.detach().clone(),
                                 self.b.detach().clone(), version, sparse, self.M_sparse,
-                                None if C0 is None else tuple(c.detach().clone() for c in C0), is_zero)
+                                None if C0 is None else tuple(c.detach().clone() for c in C0), is_zero,
+                                _E_bf16=self._cached_E_bf16)
 
 
 def loss_weights(K, device=None, mode='exponential', gamma=5., first_rejection=None):
@@ -283,54 +333,360 @@ def loss_weights(K, device=None, mode='exponential', gamma=5., first_rejection=N
     raise ValueError('unknown weighting mode')
 
 
+def _non_inference(x: torch.Tensor) -> torch.Tensor:
+    return x.clone() if x.is_inference() else x
+
+
+class _FullKLFunction(torch.autograd.Function):
+    """LSE-replay full-vocabulary KL avoiding [N, V] probability buffers saved for backward."""
+
+    @staticmethod
+    def forward(ctx, scores: torch.Tensor, target_logits: torch.Tensor, weights: torch.Tensor) -> torch.Tensor:
+        t_det = _non_inference(target_logits.detach())
+        w_f = _non_inference(torch.as_tensor(weights, device=scores.device, dtype=torch.float32).detach())
+        p_log = torch.log_softmax(t_det.float(), dim=-1)
+        q_log = torch.log_softmax(scores.detach().float(), dim=-1)
+        per_slot = (p_log.exp() * (p_log - q_log)).sum(dim=-1)
+        ctx.save_for_backward(scores, t_det, w_f)
+        return (per_slot * w_f).sum()
+
+    @staticmethod
+    def backward(ctx, grad_out: torch.Tensor):
+        scores, target_logits, w_f = ctx.saved_tensors
+        gw = grad_out.float() * w_f
+        scale = gw.reshape(-1, 1) if w_f.ndim > 0 else gw
+        if torch.is_grad_enabled():
+            grad_s = scale * (torch.softmax(scores.float(), dim=-1) - torch.softmax(target_logits.float(), dim=-1))
+        else:
+            grad_s = torch.softmax(scores.float(), dim=-1)
+            grad_s.sub_(torch.softmax(target_logits.float(), dim=-1))
+            grad_s.mul_(scale)
+        return grad_s.to(scores.dtype), None, None
+
+
 def full_kl(scores, target_logits, weights=None):
+    if weights is None:
+        weights = loss_weights(len(scores), scores.device)
+    if (
+        torch.is_grad_enabled()
+        and scores.requires_grad
+        and scores.ndim == 2
+        and not getattr(weights, 'requires_grad', False)
+        and not torch.compiler.is_compiling()
+    ):
+        return _FullKLFunction.apply(scores, target_logits, weights)
     p_log = torch.log_softmax(target_logits.float().detach(), -1)
     q_log = torch.log_softmax(scores.float(), -1)
     per_slot = (p_log.exp() * (p_log - q_log)).sum(-1)
-    if weights is None:
-        weights = loss_weights(len(scores), scores.device)
     return (per_slot * weights).sum()
+
+
+@dataclass(frozen=True)
+class PrecollatedGroupedTargets:
+    """Pre-packed ragged union/complement targets for zero-loop grouped-KL steps."""
+    rows: int
+    vocab_size: int
+    ids: torch.Tensor
+    p: torch.Tensor
+    lengths: torch.Tensor
+    row: torch.Tensor
+    rest_p: torch.Tensor
+    full_rows: torch.Tensor
+    weights: torch.Tensor
+
+    def pin_memory(self) -> "PrecollatedGroupedTargets":
+        return PrecollatedGroupedTargets(
+            rows=self.rows,
+            vocab_size=self.vocab_size,
+            ids=self.ids.pin_memory(),
+            p=self.p.pin_memory(),
+            lengths=self.lengths.pin_memory(),
+            row=self.row.pin_memory(),
+            rest_p=self.rest_p.pin_memory(),
+            full_rows=self.full_rows.pin_memory(),
+            weights=self.weights.pin_memory(),
+        )
+
+    def to(self, device, *, non_blocking: bool = False) -> "PrecollatedGroupedTargets":
+        target_dev = torch.device(device)
+        if self.ids.device == target_dev:
+            return self
+        return PrecollatedGroupedTargets(
+            rows=self.rows,
+            vocab_size=self.vocab_size,
+            ids=self.ids.to(target_dev, non_blocking=non_blocking),
+            p=self.p.to(target_dev, non_blocking=non_blocking),
+            lengths=self.lengths.to(target_dev, non_blocking=non_blocking),
+            row=self.row.to(target_dev, non_blocking=non_blocking),
+            rest_p=self.rest_p.to(target_dev, non_blocking=non_blocking),
+            full_rows=self.full_rows.to(target_dev, non_blocking=non_blocking),
+            weights=self.weights.to(target_dev, non_blocking=non_blocking),
+        )
+
+
+def collate_grouped_targets(
+    union_ids,
+    target_union_probabilities,
+    target_rest_mass,
+    weights=None,
+    *,
+    vocab_size: int,
+    device=None,
+) -> PrecollatedGroupedTargets:
+    N = len(union_ids)
+    V = int(vocab_size)
+    if len(target_union_probabilities) != N:
+        raise ValueError('scores and union rows must have consistent [N,V] dimensions')
+    lengths = [len(ids) for ids in union_ids]
+    if any(n > V or len(prob) != n for n, prob in zip(lengths, target_union_probabilities)):
+        raise ValueError('union ID and target-probability lengths differ or exceed vocabulary')
+    target_dev = (
+        torch.device(device)
+        if device is not None
+        else (union_ids[0].device if N and isinstance(union_ids[0], torch.Tensor) else torch.device('cpu'))
+    )
+    total_len = sum(lengths)
+    lengths_tensor = torch.tensor(lengths, device=target_dev, dtype=torch.long)
+    if total_len:
+        ids = torch.cat([x.detach().to(device=target_dev, dtype=torch.long) for x in union_ids])
+        p = torch.cat([x.detach().to(device=target_dev, dtype=torch.float32) for x in target_union_probabilities])
+        row = torch.repeat_interleave(
+            torch.arange(N, device=target_dev, dtype=torch.long),
+            lengths_tensor,
+            output_size=total_len,
+        )
+    else:
+        ids = torch.empty(0, device=target_dev, dtype=torch.long)
+        p = torch.empty(0, device=target_dev, dtype=torch.float32)
+        row = torch.empty(0, device=target_dev, dtype=torch.long)
+    rest_p = (
+        target_rest_mass.detach().to(device=target_dev, dtype=torch.float32)
+        if isinstance(target_rest_mass, torch.Tensor)
+        else torch.stack(
+            [torch.as_tensor(x, device=target_dev, dtype=torch.float32).detach() for x in target_rest_mass]
+        )
+        if N
+        else torch.empty(0, device=target_dev, dtype=torch.float32)
+    )
+    if rest_p.shape != (N,):
+        raise ValueError('target rest mass must have one scalar per score row')
+    full_list = [i for i, n in enumerate(lengths) if n == V]
+    if full_list:
+        full_rows = torch.tensor(full_list, device=target_dev, dtype=torch.long)
+        if bool((rest_p.index_select(0, full_rows) > 2e-6).any()):
+            raise ValueError('nonzero target rest mass is inconsistent with a full-vocabulary union')
+        rest_p = rest_p.index_fill(0, full_rows, 0.)
+    else:
+        full_rows = torch.empty(0, device=target_dev, dtype=torch.long)
+    eff_weights = (
+        loss_weights(N, target_dev)
+        if weights is None
+        else weights.detach().to(device=target_dev, dtype=torch.float32)
+    )
+    return PrecollatedGroupedTargets(
+        rows=N,
+        vocab_size=V,
+        ids=ids,
+        p=p,
+        lengths=lengths_tensor,
+        row=row,
+        rest_p=rest_p,
+        full_rows=full_rows,
+        weights=eff_weights,
+    )
+
+
+class _GroupedKLFunction(torch.autograd.Function):
+    """Exact full-V grouped KL saving zero [N, V] probability/mask buffers for backward."""
+
+    @staticmethod
+    def forward(
+        ctx,
+        scores: torch.Tensor,
+        ids: torch.Tensor,
+        p: torch.Tensor,
+        lengths: torch.Tensor,
+        row: torch.Tensor,
+        rest_p: torch.Tensor,
+        full_rows: torch.Tensor,
+        weights: torch.Tensor,
+    ) -> torch.Tensor:
+        q_log = torch.log_softmax(scores.detach().float(), dim=-1)
+        if ids.numel():
+            union_terms = torch.xlogy(p, p) - p * q_log[row, ids]
+            union_loss = torch.segment_reduce(union_terms, 'sum', lengths=lengths)
+            q_log.index_put_((row, ids), q_log.new_full((ids.numel(),), -torch.inf))
+        else:
+            union_loss = q_log.new_zeros(scores.shape[0])
+        if full_rows.numel():
+            q_log.index_put_((full_rows, torch.zeros_like(full_rows)), q_log.new_zeros(full_rows.numel()))
+        log_q_rest = torch.logsumexp(q_log, dim=-1)
+        rest_loss = torch.where(
+            rest_p > 0,
+            torch.xlogy(rest_p, rest_p) - rest_p * log_q_rest,
+            torch.zeros_like(rest_p),
+        )
+        ctx.save_for_backward(
+            scores,
+            _non_inference(ids),
+            _non_inference(p),
+            _non_inference(lengths),
+            _non_inference(row),
+            _non_inference(rest_p),
+            _non_inference(full_rows),
+            _non_inference(weights),
+            _non_inference(log_q_rest),
+        )
+        return ((union_loss + rest_loss) * weights).sum()
+
+    @staticmethod
+    def backward(ctx, grad_out: torch.Tensor):
+        scores, ids, p, lengths, row, rest_p, full_rows, weights, log_q_rest = ctx.saved_tensors
+        s = scores.float()
+        gw = grad_out.float() * weights
+        c_rest = (-gw * rest_p)[:, None]
+        lse_tail = torch.where(torch.isfinite(log_q_rest), log_q_rest, torch.zeros_like(log_q_rest))[:, None]
+
+        if torch.is_grad_enabled():
+            q_log = torch.log_softmax(s, dim=-1)
+            q = q_log.exp()
+            dy_tail = (
+                q_log.index_put((row, ids), q_log.new_full((ids.numel(),), -torch.inf))
+                if ids.numel()
+                else q_log
+            )
+            if full_rows.numel():
+                dy_tail = dy_tail.index_put((full_rows, torch.zeros_like(full_rows)), q_log.new_zeros(full_rows.numel()))
+            dy = torch.exp(dy_tail - lse_tail) * c_rest
+            if ids.numel():
+                dy = dy.index_put((row, ids), -gw.index_select(0, row) * p, accumulate=True)
+            grad = dy - q * dy.sum(dim=-1, keepdim=True)
+        else:
+            dy = torch.log_softmax(s, dim=-1)
+            q = dy.exp()
+            if ids.numel():
+                dy.index_put_((row, ids), dy.new_full((ids.numel(),), -torch.inf))
+            if full_rows.numel():
+                dy.index_put_((full_rows, torch.zeros_like(full_rows)), dy.new_zeros(full_rows.numel()))
+            dy.sub_(lse_tail).exp_().mul_(c_rest)
+            if ids.numel():
+                dy.index_put_((row, ids), -gw.index_select(0, row) * p, accumulate=True)
+            dy_sum = dy.sum(dim=-1, keepdim=True)
+            q.mul_(dy_sum)
+            dy.sub_(q)
+            grad = dy
+        return grad.to(scores.dtype), None, None, None, None, None, None, None
+
+
+def _grouped_kl_compile_friendly(scores: torch.Tensor, pre: PrecollatedGroupedTargets) -> torch.Tensor:
+    q_log = torch.log_softmax(scores.float(), dim=-1)
+    if pre.ids.numel():
+        union_terms = torch.xlogy(pre.p, pre.p) - pre.p * q_log[pre.row, pre.ids]
+        union_loss = torch.segment_reduce(union_terms, 'sum', lengths=pre.lengths)
+        tail_scores = q_log.index_put((pre.row, pre.ids), q_log.new_full((pre.ids.numel(),), -torch.inf))
+    else:
+        union_loss = q_log.new_zeros(scores.shape[0])
+        tail_scores = q_log
+    if pre.full_rows.numel():
+        tail_scores = tail_scores.index_put(
+            (pre.full_rows, torch.zeros_like(pre.full_rows)),
+            q_log.new_zeros(pre.full_rows.numel()),
+        )
+    safe_tail = torch.where((pre.rest_p <= 0)[:, None], torch.zeros_like(tail_scores), tail_scores)
+    log_q_rest = torch.logsumexp(safe_tail, dim=-1)
+    rest_loss = torch.where(
+        pre.rest_p > 0,
+        torch.xlogy(pre.rest_p, pre.rest_p) - pre.rest_p * log_q_rest,
+        torch.zeros_like(pre.rest_p),
+    )
+    return ((union_loss + rest_loss) * pre.weights).sum()
+
+
+def union_rest_grouped_precollated(scores: torch.Tensor, pre: PrecollatedGroupedTargets) -> torch.Tensor:
+    """Exact full-V grouped KL on pre-collated ragged targets."""
+    if scores.ndim != 2 or scores.shape != (pre.rows, pre.vocab_size):
+        raise ValueError('scores and union rows must have consistent [N,V] dimensions')
+    target_pre = pre.to(scores.device)
+    if (
+        torch.is_grad_enabled()
+        and scores.requires_grad
+        and not target_pre.weights.requires_grad
+        and not torch.compiler.is_compiling()
+    ):
+        return _GroupedKLFunction.apply(
+            scores,
+            target_pre.ids,
+            target_pre.p,
+            target_pre.lengths,
+            target_pre.row,
+            target_pre.rest_p,
+            target_pre.full_rows,
+            target_pre.weights,
+        )
+    return _grouped_kl_compile_friendly(scores, target_pre)
 
 
 def union_rest_grouped(scores, union_ids, target_union_probabilities, target_rest_mass, weights=None):
     """Exact full-V normalization and one batched masked-tail logsumexp."""
     if scores.ndim != 2 or len(union_ids) != len(scores) or len(target_union_probabilities) != len(scores):
         raise ValueError('scores and union rows must have consistent [N,V] dimensions')
-    q_log = torch.log_softmax(scores.float(), -1)
-    N, V = q_log.shape
-    lengths = [len(ids) for ids in union_ids]
-    if any(n > V or len(p) != n for n, p in zip(lengths, target_union_probabilities)):
-        raise ValueError('union ID and target-probability lengths differ or exceed vocabulary')
-    # Canonical unions are sorted unique ID sets. Ragged rows are concatenated
-    # rather than padding to the largest union or launching one kernel per row.
-    ids = torch.cat([x.to(device=scores.device, dtype=torch.long) for x in union_ids])
-    p = torch.cat([x.detach().to(device=scores.device, dtype=torch.float32) for x in target_union_probabilities])
-    lengths_tensor = torch.tensor(lengths, device=scores.device)
-    row = torch.repeat_interleave(torch.arange(N, device=scores.device),
-                                  lengths_tensor, output_size=sum(lengths))
-    union_terms = torch.xlogy(p, p) - p * q_log[row, ids]
-    union_loss = torch.segment_reduce(union_terms, 'sum', lengths=lengths_tensor)
-    rest_p = (target_rest_mass.detach().to(device=scores.device, dtype=torch.float32)
-              if isinstance(target_rest_mass, torch.Tensor) else
-              torch.stack([torch.as_tensor(x, device=scores.device, dtype=torch.float32).detach()
-                           for x in target_rest_mass]))
-    if rest_p.shape != (N,):
-        raise ValueError('target rest mass must have one scalar per score row')
-    full_rows = [i for i, n in enumerate(lengths) if n == V]
-    tail_scores = q_log.index_put((row, ids), q_log.new_full((len(ids),), -torch.inf))
-    if full_rows:
-        full = torch.tensor(full_rows, device=scores.device)
-        if bool((rest_p[full] > 2e-6).any()):
-            raise ValueError('nonzero target rest mass is inconsistent with a full-vocabulary union')
-        rest_p = rest_p.index_fill(0, full, 0.)
-        # logsumexp(-inf,...,-inf) has undefined backward even if multiplied
-        # by zero. A constant sentinel gives these zero-mass rows finite math.
-        tail_scores = tail_scores.index_put((full, torch.zeros_like(full)), q_log.new_zeros(len(full)))
-    log_q_rest = torch.logsumexp(tail_scores, -1)
-    rest_loss = torch.xlogy(rest_p, rest_p) - rest_p * log_q_rest
-    if weights is None:
-        weights = loss_weights(N, scores.device)
-    return ((union_loss + rest_loss) * weights).sum()
+    N, V = scores.shape
+    weights_t = None if weights is None else weights
+    pre = collate_grouped_targets(
+        union_ids,
+        target_union_probabilities,
+        target_rest_mass,
+        weights_t if (weights_t is None or not getattr(weights_t, 'requires_grad', False)) else None,
+        vocab_size=V,
+        device=scores.device,
+    )
+    if weights_t is not None and getattr(weights_t, 'requires_grad', False):
+        q_log = torch.log_softmax(scores.float(), -1)
+        union_terms = torch.xlogy(pre.p, pre.p) - pre.p * q_log[pre.row, pre.ids]
+        union_loss = torch.segment_reduce(union_terms, 'sum', lengths=pre.lengths)
+        tail_scores = q_log.index_put((pre.row, pre.ids), q_log.new_full((pre.ids.numel(),), -torch.inf))
+        if pre.full_rows.numel():
+            tail_scores = tail_scores.index_put(
+                (pre.full_rows, torch.zeros_like(pre.full_rows)),
+                q_log.new_zeros(pre.full_rows.numel()),
+            )
+        safe_tail = torch.where((pre.rest_p <= 0)[:, None], torch.zeros_like(tail_scores), tail_scores)
+        log_q_rest = torch.logsumexp(safe_tail, -1)
+        rest_loss = torch.where(
+            pre.rest_p > 0,
+            torch.xlogy(pre.rest_p, pre.rest_p) - pre.rest_p * log_q_rest,
+            torch.zeros_like(pre.rest_p),
+        )
+        return ((union_loss + rest_loss) * weights_t).sum()
+    return union_rest_grouped_precollated(scores, pre)
+
+
+def fused_head_grouped_kl(
+    h_raw_bf16: torch.Tensor,
+    head_weight: torch.Tensor,
+    head_bias: torch.Tensor | None,
+    dense_correction: torch.Tensor,
+    pre: PrecollatedGroupedTargets,
+    *,
+    output_multiplier: float = 1.0,
+    bf16_gemm: bool = False,
+) -> torch.Tensor:
+    """Shift-invariant fused `h_raw_bf16 @ draft_lm_head.T - dense_correction` -> grouped KL."""
+    with torch.no_grad():
+        if bf16_gemm:
+            w_bf = head_weight if head_weight.dtype == torch.bfloat16 else head_weight.bfloat16()
+            raw_logits = torch.nn.functional.linear(h_raw_bf16.bfloat16(), w_bf).float()
+            if head_bias is not None:
+                raw_logits.add_(head_bias.float())
+        else:
+            raw_logits = torch.nn.functional.linear(
+                h_raw_bf16.float(),
+                head_weight.float(),
+                None if head_bias is None else head_bias.float(),
+            )
+        if output_multiplier != 1.0:
+            raw_logits.mul_(float(output_multiplier))
+    return union_rest_grouped_precollated(raw_logits - dense_correction, pre)
 
 
 @dataclass
