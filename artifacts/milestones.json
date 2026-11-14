@@ -140,7 +140,7 @@
     "ready_for_M2": true
   },
   "M2": {
-    "status": "recovering",
+    "status": "passed",
     "physical_gpu": 0,
     "source_commit": "0cb50a8",
     "log": "artifacts/m2-reference.log",
@@ -182,7 +182,7 @@
     },
     "first_status_recorded_at_utc": "2026-11-14T00:04:21.743103+00:00",
     "run_record": "artifacts/runs/train-23b97943b68176e4-rank0.json",
-    "current_phase": "finalization-only recovery",
+    "current_phase": "complete",
     "original_process_exit_code": 1,
     "sparse_epoch_dev": {
       "weighted_mean_kl": 2.060249472521257,
@@ -211,11 +211,57 @@
       "archive": "artifacts/m2_finalize_recovery/failed_latest.pt",
       "effective_accounting_memory_limit": "32GB",
       "optimizer_updates": "forbidden by guards; no tuning or training restart",
-      "source_fit_identity": "unchanged original a68a4d614bc2a4960f2d8ce292c3611b2ce2328b2bbd81428b697372a31eed6e"
+      "source_fit_identity": "unchanged original a68a4d614bc2a4960f2d8ce292c3611b2ce2328b2bbd81428b697372a31eed6e",
+      "status": "passed",
+      "terminal_exit_code": 0,
+      "completed_utc": "2026-11-14T01:34:08.251594+00:00",
+      "guards": {
+        "optimizer_step_attempts": 0,
+        "proximal_step_attempts": 0,
+        "chunk_write_attempts": 0,
+        "finalizer_calls": 1,
+        "checkpoint_saves": 2
+      },
+      "recovery_seconds": 889.0793893299997
+    },
+    "completed_utc": "2026-11-14T01:34:08.251594+00:00",
+    "result": "negative; all grouped train/dev/test losses worsened",
+    "evidence": [
+      "artifacts/m2.json",
+      "artifacts/m2_validation_reference.json",
+      "artifacts/m2_recovery_validation_reference.json",
+      "artifacts/m2_finalize_recovery/execution.json"
+    ],
+    "relative_dev_improvement": -0.7632283681353831,
+    "under_one_percent_stop_tuning": true,
+    "losses": {
+      "train": {
+        "zero": 1.1652534761328495,
+        "dense": 1.9282377928090635,
+        "dense_sparse": 1.959287769930688
+      },
+      "dev": {
+        "zero": 1.168452997781549,
+        "dense": 2.018092362937402,
+        "dense_sparse": 2.060249472521257
+      },
+      "test": {
+        "zero": 1.2170184435730338,
+        "dense": 2.858797020816987,
+        "dense_sparse": 3.0154879521523266
+      }
     }
   },
   "M3": {
-    "status": "not_run"
+    "status": "running",
+    "current_phase": "development selection and runtime checks",
+    "driver_pid": 2921664,
+    "exec_session_id": 51502,
+    "started_at_utc": "2026-11-14T01:35:09.965258+00:00",
+    "continuation_state": "artifacts/reference_continuation_state.json",
+    "required_evaluation_requests": 1920,
+    "required_timing_requests": 5760,
+    "required_profile_requests": 1920
   },
   "M4": {
     "status": "not_run"

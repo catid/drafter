@@ -1,9 +1,10 @@
 # Research status
 
-As of 2026-11-14, reference M0, M1-pre, M1a, and M1b have **passed**. Reference M2
-offline fitting is **incomplete pending finalization recovery**; reference M3 and M4 are **not_run**. The completed
-dense epoch worsened offline dev loss; final fitting results, closed-loop quality,
-online adaptation, and end-to-end speed are still pending.
+As of 2026-11-14, reference M0, M1-pre, M1a, M1b, and the M2 protocol have **passed**.
+M2 produced a **negative offline quality result**: dense and dense+bias+sparse
+fitting worsened grouped KL on train, dev, and test. M3 development selection is
+**running**; its test evaluation and isolated timing are pending. M4 is **not_run**.
+Closed-loop quality, online adaptation, and end-to-end speed conclusions remain pending.
 Synthetic tests and smoke results do not satisfy the real reference gates.
 
 | Milestone | Reference status | Evidence or remaining work |
@@ -12,8 +13,8 @@ Synthetic tests and smoke results do not satisfy the real reference gates.
 | M1-pre | passed | 64 train calibration prompts; 22,377 hidden vectors; frozen hidden and token features |
 | M1a | passed | 2,184 checksummed shards; 256,836 blocks; all 12 audit requirements pass |
 | M1b | passed | 106 diagnostic groups from all 2,184 audited shards; source and calibration provenance validated |
-| M2 | incomplete | Both training epochs finished; recovering exact sparse statistics after a memory-limit failure |
-| M3 | not_run | Dev selection, four-arm test evaluation, and isolated timing pending |
+| M2 | passed (protocol); negative quality | Both epochs, complete split evaluation, sparse accounting, and two validators complete |
+| M3 | in_progress | Dev selection running; four-arm test evaluation and isolated timing pending |
 | M4 | not_run | Dev selection, five-arm online evaluation, and separate isolated timing pending |
 
 The authoritative status snapshot is
@@ -22,8 +23,9 @@ The authoritative status snapshot is
 and test coverage from incomplete reference experiments. Exact commands and stage
 gates are in [README](../README.md#reference-execution-m0m4).
 
-The reference pair is Qwen/Qwen3-8B and z-lab/Qwen3-8B-DFlash-b16. Sampling conditions
-come from the pinned checkpoint files. The mandatory ratio verifier was used for
+The reference pair is Qwen/Qwen3-8B and z-lab/Qwen3-8B-DFlash-b16. Standard
+non-thinking sampling defaults come from the target model card; thinking defaults
+come from the pinned `generation_config.json`. The mandatory ratio verifier was used for
 stochastic comparisons. Upstream and local matched on all 20 prompts at each of
 greedy, warped T=0.7 and pure T=1: 0/7,128 mismatched output-token positions.
 Both differed from target-only greedy on 8/20 sequences and 607/2,388 token
@@ -101,26 +103,136 @@ settings, so their feature and acceptance differences do not isolate a causal
 effect of thinking or output length. Long-thinking feature shift does not appear
 as a higher standardized outlier rate in these measurements.
 
-M2 used only the primary standard train traces for fitting; long-thinking traces
-remain reserved for evaluation. After the single predeclared dense epoch, dev
-weighted grouped KL rose from **1.16845 to 2.01809**, a **72.7% deterioration**.
-Values remain finite. This negative intermediate result triggered the under-1%
-rule stopping extra dense epochs. Completed dense evaluation also worsened train
-KL from 1.16525 to 1.92824 and test KL from 1.21702 to 2.85880. The negative result
-therefore spans all three splits. Final accounting for the bias/sparse phase remains pending;
-no settings or optimizer state were changed in response. The
-[dense phase record](../artifacts/m2_dense_interim.json) includes the checkpoint
-checksum, parameter statistics, and separate live-full diagnostics from 120 dev
-and 120 test slots. The bias/sparse epoch also worsened dev KL to 2.06025
-(76.3% above baseline), so extra tuning stopped. Final sparse statistics exceeded
-DuckDB's 512 MB memory limit after split evaluation. The saved checkpoint preserves
-the completed training state; recovery will recompute evaluation and statistics
-with a larger, explicitly recorded accounting limit and no optimizer updates.
-Final fitting results remain pending.
-Progress is recorded in [NOTES.md](../NOTES.md); the process log is
-[m2-reference.log](../artifacts/m2-reference.log). Closed-loop quality and speed
-results are pending. The planned M3/M4 timing retains full held-out prompt coverage
-and fresh matched baseline measurements.
+M2 completed one predeclared dense epoch followed by one dense+bias+sparse epoch.
+Only primary standard train traces were fitted: 501,510 generated tokens from
+853 prompts and 1,692 shards. Long-thinking and pure-temperature diagnostic traces
+were excluded. Targets and proposals used unwarped unit temperature with
+`T_train=beta_train=1`; teacher-forced post-rejection positions retained
+`exp(-i/5)` weights. AdamW used learning rate 0.001, W/A weight decay 0.0001,
+and no bias decay; sparse SGD used learning rate 0.01 and proximal L1 0.00001.
+The final epoch checkpoint of each phase was retained; test results did not select
+checkpoints. The under-1% development-improvement rule stopped additional epochs
+and sweeps in both phases.
+
+The complete eligible split results are below. Loss is weight-pooled grouped KL;
+overlap is slot-pooled, with a union lower bound and grouped upper bound. These
+bounds are not confidence intervals, and this aggregation differs from M1's
+prompt-level bootstrap. Train, dev, and test contain 1,264,587, 102,975, and 95,160
+logical slots, respectively, for every stage.
+
+| Stage | Split | Weighted grouped KL | Union overlap lower bound | Grouped overlap upper bound |
+| --- | --- | ---: | ---: | ---: |
+| Zero adapter | Train | 1.165253 | 0.490937 | 0.492508 |
+| Zero adapter | Dev | 1.168453 | 0.485760 | 0.487724 |
+| Zero adapter | Test | 1.217018 | 0.481057 | 0.482343 |
+| Dense | Train | 1.928238 | 0.490868 | 0.492709 |
+| Dense | Dev | 2.018092 | 0.478438 | 0.480757 |
+| Dense | Test | 2.858797 | 0.373201 | 0.374998 |
+| Dense+bias+sparse | Train | 1.959288 | 0.496668 | 0.498334 |
+| Dense+bias+sparse | Dev | 2.060249 | 0.482248 | 0.484323 |
+| Dense+bias+sparse | Test | 3.015488 | 0.353714 | 0.355530 |
+
+Dense dev KL is **72.7% worse** than the zero-adapter baseline; dense+bias+sparse
+dev KL is **76.3% worse**. Both fitted stages worsen KL on all three splits.
+Dense+bias+sparse modestly improves train overlap, so the negative loss result
+does not mean every metric deteriorated. The cause of the adverse fit remains
+unproven; passing protocol and consistency checks does not establish an improvement.
+
+Full-vocabulary diagnostics cover only **120 dev slots and 120 test slots** per
+stage, with no train slots. The following are subset measurements, not whole-split
+full KL or top-1 estimates. Full and grouped KL use the same reconstructed
+full-vocabulary proposal `q` on those slots and remain weighted means; overlap
+and top-1 agreement are slot means.
+
+| Stage | Split | Full KL | Grouped KL on same subset | Full−grouped KL | Full overlap | Top-1 agreement |
+| --- | --- | ---: | ---: | ---: | ---: | ---: |
+| Zero adapter | Dev | 1.421697 | 1.420899 | 0.000797 | 0.368720 | 0.416667 |
+| Zero adapter | Test | 1.214361 | 1.214064 | 0.000298 | 0.372951 | 0.416667 |
+| Dense | Dev | 1.688588 | 1.686864 | 0.001724 | 0.432503 | 0.450000 |
+| Dense | Test | 4.076081 | 4.075018 | 0.001063 | 0.163167 | 0.166667 |
+| Dense+bias+sparse | Dev | 2.190846 | 2.188882 | 0.001963 | 0.432736 | 0.450000 |
+| Dense+bias+sparse | Test | 4.098733 | 4.097775 | 0.000958 | 0.202592 | 0.200000 |
+
+Parameters are FP32. W has shape `[64,256]`, A `[4,64,64]`, b `[151936]`, and
+the sparse table S `[16777216]`. Frozen token features remain unchanged; all
+learned corrections are zero in the zero-adapter baseline.
+
+| Stage | Parameter | L2 norm | Exact-zero fraction |
+| --- | --- | ---: | ---: |
+| Dense | W | 1.964834 | 0 |
+| Dense | A | 2.332288 | 0 |
+| Dense | b | 0 | 1 |
+| Dense | S | Absent | — |
+| Dense+bias+sparse | W | 2.030185 | 0 |
+| Dense+bias+sparse | A | 2.466178 | 0 |
+| Dense+bias+sparse | b | 218.121948 | 0 |
+| Dense+bias+sparse | S | 0.468677 | 0.991036 |
+
+Exact sparse accounting covers every lookup in all **10,539** sparse-stage
+optimizer batches. A collision counts each additional distinct key sharing a
+bucket; frequency-weighted collisions count all lookup events in buckets with
+more than one distinct key.
+
+| Sparse accounting quantity | Measured value |
+| --- | ---: |
+| Capacity | 16,777,216 buckets |
+| Unique observed keys | 105,410,034 |
+| Lookup events | 1,294,937,088 |
+| Load factor | 6.282928 unique keys/bucket |
+| Occupied buckets | 16,743,575 (99.799484%) |
+| Collision count | 88,666,459 |
+| Distinct keys in collided buckets | 105,204,151 |
+| Frequency-weighted collision count | 1,292,522,353 |
+| Final nonzero parameter buckets | 150,394 |
+| Allocated sparse parameter bytes | 67,108,864 (64 MiB) |
+| Nonzero value bytes only | 601,576 |
+| Exact-accounting database bytes | 656,158,720 |
+| Accounting chunk disk bytes | 3,242,960,898 |
+
+Observed bucket occupancy and final nonzero parameters measure different things:
+99.799% of buckets were accessed, while 99.104% of final parameters are exactly
+zero after proximal shrinkage. The nonzero-value byte count excludes key and
+index overhead and does not replace the allocated 64 MiB table.
+
+The lookup diagnostic used GPU 0 (`cuda:0`), 4,096 queries per repeat, 3 warmups,
+and 15 measured repeats. A deterministic hash sample selected 1,000,000 global
+distinct keys, with frequency-weighted queries within that sample. The sorted
+exact sampled table occupies 12,000,000 bytes and materializes the fitted
+signed-hash value for each sampled key; returned values were bitwise equal.
+
+| Lookup | Synchronized wall median ms | Wall p95 ms | Median bootstrap 95% CI ms | CUDA-event median ms |
+| --- | ---: | ---: | --- | ---: |
+| Signed feature hash | 0.213684 | 0.284236 | [0.210767, 0.218860] | 0.190848 |
+| Sorted exact observed pairs (sample) | 0.043211 | 0.063135 | [0.043013, 0.043777] | 0.022624 |
+
+The sampled exact lookup was faster in this diagnostic. It is not a separately
+trained collision-free model or a table of all 105 million observed keys, and
+this microbenchmark establishes no end-to-end speedup or quality benefit.
+
+The original fit completed both optimizer epochs, then failed exact aggregation
+at DuckDB's 512 MB accounting limit. Recovery repeated sparse train/dev/test
+evaluation and accounting with a 32 GB finalizer limit, preserving the original
+fit configuration, identity, six source hashes, parameters, optimizer state, RNG,
+and committed chunks. Guards recorded **zero optimizer, proximal, or chunk-write
+updates**. The reported 889.08 seconds covers this recovery evaluation/accounting
+invocation only, not the original fitting runtime.
+
+The [complete M2 report](../artifacts/m2.json),
+[recovery execution record](../artifacts/m2_finalize_recovery/execution.json),
+[main validator](../artifacts/m2_validation_reference.json), and
+[independent recovery validator](../artifacts/m2_recovery_validation_reference.json)
+record the evidence. Both validators passed: the main validator checked tensor
+health, parameter statistics, provenance, split coverage, metric algebra, and
+chunk checksums; the recovery validator checked exact state preservation and
+independently aggregated existing database tables. They did not independently
+rerun model losses, regroup raw chunks, or prove every key-to-bucket assignment
+and key's uniqueness. These offline teacher-forced results establish neither
+closed-loop acceptance nor speed.
+
+M3 development selection is running; test evaluation and timing remain pending.
+M4 has not run. Planned M3/M4 timing retains all held-out prompts, three timing
+repeats, a separate full phase-profile pass, and fresh matched baseline measurements.
+Progress is recorded in [NOTES.md](../NOTES.md).
 
 All 243 CPU tests pass. Complete M3 and M4 smoke runs also pass, including verified
 baseline reuse, direct greedy comparisons, fresh isolated timing, sparse norms,
@@ -128,8 +240,8 @@ version boundaries, feature-context linkage, and parallel diagnostic parity;
 see [validation.json](../artifacts/integrity_smoke_pipeline/validation.json).
 The [fresh prompt audit](../artifacts/prompt_followup_audit.json) found and fixed
 a timing-resume integrity gap: completion now requires checksummed raw bundles
-covering every expected timing and phase-profile request. The active M2 fitting
-sources remain unchanged.
+covering every expected timing and phase-profile request. The six fit-hashed M2
+modules remained unchanged through fitting and recovery.
 CPU smoke paths exercise collection, compact grouped-loss fitting, all required
 evaluation arms, and synchronous request-local online updates. Synthetic fitting
 and reference-sized random-tensor microbenchmarks are implementation checks;

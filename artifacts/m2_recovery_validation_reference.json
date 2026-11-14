@@ -1,0 +1,130 @@
+{
+  "status": "passed",
+  "scale": "reference",
+  "label": "reference_artifact_validation",
+  "validation_kind": "independent_recovery_state_and_existing_database_audit",
+  "started_at_utc": "2026-11-14T01:34:26.027023+00:00",
+  "evidence": {
+    "/home/catid/drafter/artifacts/m2_recovery_validation_source.txt": {
+      "sha256": "b920b62ccc11e59a9441f54d1d7421734a39784ffc3ca19abb2aae32db09eca6",
+      "bytes": 20042
+    },
+    "/home/catid/drafter/artifacts/m2_finalize_recovery/execution.json": {
+      "sha256": "98a7616246f3fe6307c8f464061b3ce564a7843406fcc22b985167246490b052",
+      "bytes": 5738
+    },
+    "/home/catid/drafter/artifacts/m2_finalize_recovery/preparation.json": {
+      "sha256": "d768fa4f2f167a7663b37b8e4655f54f6d3abebfe83b985a9976ea4e45ce78d1",
+      "bytes": 4459
+    },
+    "/home/catid/drafter/artifacts/m2_finalize_recovery_source.txt": {
+      "sha256": "a3b8ffdac8b2686095724c0ca04bbe9cbbb288d91b467fc0668ac95fef013af1",
+      "bytes": 19267
+    },
+    "/home/catid/drafter/artifacts/runs/train-23b97943b68176e4-rank0.json": {
+      "sha256": "19bd015eed73bd3cdfa070de979f2afaa677365c3dfd6122ac2692bb54c9bd3a",
+      "bytes": 3878
+    },
+    "/home/catid/drafter/artifacts/m2_finalize_recovery/failed_latest.pt": {
+      "sha256": "71e7084b2c72c6a9c4a3aa4039bb0e6213c1305232931ffd52685febdbfd06a1",
+      "bytes": 111139763
+    },
+    "/home/catid/drafter/artifacts/m2_finalize_recovery/failed_m2-reference.log": {
+      "sha256": "786f1c5d81dd31e52fe03eff886f417ac30e9438944aa5a3275fe072f3b7c441",
+      "bytes": 1257
+    },
+    "/home/catid/drafter/artifacts/m2_finalize_recovery/original_train_run.json": {
+      "sha256": "19bd015eed73bd3cdfa070de979f2afaa677365c3dfd6122ac2692bb54c9bd3a",
+      "bytes": 3878
+    },
+    "/home/catid/drafter/artifacts/m2-reference.log": {
+      "sha256": "786f1c5d81dd31e52fe03eff886f417ac30e9438944aa5a3275fe072f3b7c441",
+      "bytes": 1257
+    },
+    "/home/catid/drafter/artifacts/m2/dense.pt": {
+      "sha256": "53ed0f23458bceb44842d2598a51b78604897347915df5be01c6f1a16a8229da",
+      "bytes": 39916415
+    },
+    "/home/catid/drafter/src/edraft/train.py": {
+      "sha256": "a859ba54cf2410c659b45ceb97c08364353a1cce1949d35bb70339342bf9526e",
+      "bytes": 40384
+    },
+    "/home/catid/drafter/src/edraft/adapter.py": {
+      "sha256": "b8960babc3f3b126a11e1f990ef144b2a9be6331a181bdbeea3da2f4c0c5b9d5",
+      "bytes": 18001
+    },
+    "/home/catid/drafter/src/edraft/features.py": {
+      "sha256": "adfbfa21ab6622f730df33513142c65a7d3c5adc6079ddb7f444d6471e5a6bff",
+      "bytes": 4934
+    },
+    "/home/catid/drafter/src/edraft/sparse.py": {
+      "sha256": "66beee3396ade7a6104729086a6a68c0180b5dd2e89909448cf3430344747864",
+      "bytes": 7235
+    },
+    "/home/catid/drafter/src/edraft/sparse_stats.py": {
+      "sha256": "62c8a36b8c707a38a8944a2882134893eed9f0ab8d50fd7ab737eeeef358c92c",
+      "bytes": 9654
+    },
+    "/home/catid/drafter/src/edraft/traces.py": {
+      "sha256": "cf7aec2d2d3ebdaeb0896a2da86193f87ee07e51a7a0eba1016f31da705b83d8",
+      "bytes": 20507
+    },
+    "/home/catid/drafter/artifacts/m2.json": {
+      "sha256": "679defa79a48bbea31df67792c39668df8a45e384942affe47cc3cfabbc6dcfa",
+      "bytes": 3731086
+    },
+    "/home/catid/drafter/artifacts/m2/dense_sparse.pt": {
+      "sha256": "926d143079658508c5d406e3416c413468339b19584e5a4b4c26165e86f90758",
+      "bytes": 111177971
+    },
+    "/home/catid/drafter/artifacts/m2/latest.pt": {
+      "sha256": "0a8882cd9356a81d44ca875088474c3bde252c6cd8b156c93eb3f132593679a8",
+      "bytes": 109697425
+    },
+    "/home/catid/drafter/artifacts/m2_sparse_stats/a68a4d614bc2a4960f2d8ce292c3611b2ce2328b2bbd81428b697372a31eed6e/exact_key_counts.duckdb": {
+      "sha256": "efbb546cce5f426a88beb64cf986a6ebe67a04762be9b8c58c465a2a25398276",
+      "bytes": 656158720
+    }
+  },
+  "limitations": [
+    "Does not recompute train/dev/test losses, gradients, inference, or quality claims.",
+    "Does not rehash or regroup raw sparse chunks; the separate M2 validator checks chunk checksums.",
+    "Database queries aggregate existing tables; they do not independently rederive each key-to-bucket assignment or prove key uniqueness.",
+    "Does not prove every unobserved bucket is zero by bucket membership; compares complete sparse tensors exactly and checks nonzero count versus occupancy.",
+    "New sparse train/test evaluation has no failed-attempt saved counterpart; dense reports and sparse epoch-dev metrics are preserved exactly."
+  ],
+  "checkpoint_checks": {
+    "dense_sparse": {
+      "model_config_rng_prior_reports_exact": true,
+      "optimizer_state": "exactly preserved",
+      "stage_epoch_and_version_valid": true
+    },
+    "complete": {
+      "model_config_rng_prior_reports_exact": true,
+      "optimizer_state": "intentionally absent in final latest",
+      "stage_epoch_and_version_valid": true
+    }
+  },
+  "sparse_parameters": {
+    "capacity": 16777216,
+    "nonzero_buckets": 150394,
+    "exact_zero_fraction": 0.9910358190536499,
+    "committed_chunks": 10539
+  },
+  "database_checks": {
+    "unique_observed_keys": 105410034,
+    "observed_lookup_events": 1294937088,
+    "occupied_buckets": 16743575,
+    "collision_count": 88666459,
+    "distinct_keys_in_collided_buckets": 105204151,
+    "frequency_weighted_collision_count": 1292522353,
+    "database_sha256": "efbb546cce5f426a88beb64cf986a6ebe67a04762be9b8c58c465a2a25398276",
+    "duckdb_version": "1.4.4",
+    "connection": "read_only",
+    "memory_limit": "1GB",
+    "threads": 1,
+    "query_scope": "global reductions over existing exact_key_counts and bucket_counts; no raw chunk regrouping"
+  },
+  "cuda_initialized": false,
+  "elapsed_seconds": 3.9169702269136906
+}

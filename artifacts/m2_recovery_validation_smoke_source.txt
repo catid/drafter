@@ -1,0 +1,101 @@
+"""CPU-only synthetic checks for independent recovery audit helpers.
+
+No reference artifacts are opened and validate()/main() are never invoked.
+"""
+import copy
+import hashlib
+import importlib.machinery
+import importlib.util
+import json
+import os
+from pathlib import Path
+import tempfile
+
+os.environ['CUDA_VISIBLE_DEVICES'] = ''
+import duckdb
+import torch
+
+ROOT = Path(__file__).resolve().parent.parent
+source = ROOT / 'artifacts/m2_recovery_validation_source.txt'
+loader = importlib.machinery.SourceFileLoader('independent_recovery_audit_helpers', str(source))
+spec = importlib.util.spec_from_loader(loader.name, loader)
+audit = importlib.util.module_from_spec(spec)
+loader.exec_module(audit)
+torch.set_num_threads(1)
+
+equal = {'parameter': torch.tensor([1., 2.]), 'optimizer': {0: {'step': torch.tensor(1.)}},
+         'rng': (3, (1, 2, 3), None), 'config': {'enabled': True, 'lr': .001}}
+audit.exact_tree(copy.deepcopy(equal), equal, 'synthetic')
+rejected = []
+for name in ('tensor_value', 'tensor_dtype', 'scalar_type', 'missing_key'):
+    changed = copy.deepcopy(equal)
+    if name == 'tensor_value':
+        changed['parameter'][1] = 7.
+    elif name == 'tensor_dtype':
+        changed['parameter'] = changed['parameter'].double()
+    elif name == 'scalar_type':
+        changed['config']['enabled'] = 1
+    else:
+        del changed['optimizer']
+    try:
+        audit.exact_tree(changed, equal, 'synthetic')
+    except ValueError:
+        rejected.append(name)
+    else:
+        raise AssertionError(name + ' was accepted')
+
+prior = {'identity': 'synthetic', 'stages': {'dense': {'dev': {'loss': 2.}}},
+    'epoch_development': [{'stage': 'dense_sparse', 'epoch': 0, 'dev': {'loss': 1.5}}],
+    'sparse_statistics_chunks': [{'epoch': 0, 'batch': 0}]}
+after = copy.deepcopy(prior)
+after['stages']['dense_sparse'] = {'dev': {'loss': 1.5}, 'train': {'loss': 1.4}, 'test': {'loss': 1.6}}
+audit.check_prior_report(after, prior)
+changed = copy.deepcopy(after)
+changed['stages']['dense_sparse']['dev']['loss'] += 1
+try:
+    audit.check_prior_report(changed, prior)
+except ValueError:
+    rejected.append('changed_prior_sparse_dev')
+else:
+    raise AssertionError('changed sparse epoch-dev metrics accepted')
+
+with tempfile.TemporaryDirectory(prefix='edraft-independent-db-audit-') as directory:
+    database = Path(directory) / 'counts.duckdb'
+    with duckdb.connect(str(database)) as connection:
+        connection.execute('CREATE TABLE exact_key_counts(packed_key BIGINT, frequency UBIGINT)')
+        connection.execute('INSERT INTO exact_key_counts VALUES (1,1),(2,3),(3,7),(4,2),(5,11)')
+        connection.execute('CREATE TABLE bucket_counts(bucket BIGINT, distinct_keys UBIGINT, frequency UBIGINT)')
+        connection.execute('INSERT INTO bucket_counts VALUES (0,2,4),(2,1,7),(3,2,13)')
+    stats = {'database': str(database), 'database_bytes': database.stat().st_size,
+        'unique_observed_keys': 5, 'observed_lookup_events': 24, 'occupied_buckets': 3,
+        'collision_count': 2, 'distinct_keys_in_collided_buckets': 4,
+        'frequency_weighted_collision_count': 17,
+        'load_factor_unique_keys_per_bucket': 5 / 8, 'occupancy_fraction': 3 / 8}
+    original_sha = hashlib.sha256(database.read_bytes()).hexdigest()
+    evidence = {}
+    result = audit.verify_database(stats, 8, evidence)
+    assert result['database_sha256'] == original_sha
+    assert hashlib.sha256(database.read_bytes()).hexdigest() == original_sha
+    for field in ('unique_observed_keys', 'observed_lookup_events', 'occupied_buckets', 'collision_count',
+                  'distinct_keys_in_collided_buckets', 'frequency_weighted_collision_count'):
+        changed = dict(stats)
+        changed[field] += 1
+        try:
+            audit.verify_database(changed, 8, {})
+        except ValueError:
+            rejected.append(field)
+        else:
+            raise AssertionError(field + ' mismatch accepted')
+assert not torch.cuda.is_initialized()
+report = {'status': 'passed', 'scale': 'smoke', 'label': 'synthetic',
+    'scope': 'Independent comparison/report/database helpers only; no reference artifacts loaded or audited.',
+    'audit_source_sha256': hashlib.sha256(source.read_bytes()).hexdigest(),
+    'test_source_sha256': hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
+    'exact_tree_positive_case': True, 'prior_report_addition_positive_case': True,
+    'mismatches_rejected': rejected, 'database': result, 'database_unchanged': True,
+    'cuda_initialized': False}
+output = ROOT / 'artifacts/m2_recovery_validation_smoke.json'
+with output.open('w') as stream:
+    json.dump(report, stream, indent=2)
+    stream.write('\n')
+print(json.dumps(report, indent=2))

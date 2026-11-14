@@ -3,9 +3,11 @@
 This repository tests whether a small learned energy correction improves a parallel
 DFlash drafter after its scoring, sampling, verification, and update costs. The full
 experiment specification is [prompt.md](prompt.md). M0 and all three M1 stages
-have passed at reference scale. Both M2 training epochs finished, but final
-statistics exceeded their memory limit; finalization recovery is in progress.
-M3 and M4 have not run.
+have passed at reference scale. M2 fitting and independent artifact validation
+are complete: both fitted adapters worsened grouped KL on train, dev, and test.
+The final dense+sparse dev loss is 76.3% above zero-weight DFlash; extra fitting
+stopped under the specified rule. M3 development selection is running; its test
+evaluation and timing, and the M4 experiments, remain pending.
 No adapter improvement or end-to-end speedup claim is established. See
 [the research summary](reports/SUMMARY.md) and
 [milestone status](artifacts/milestones.json) for the recorded evidence.

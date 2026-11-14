@@ -1,0 +1,321 @@
+"""Independent CPU audit after reference M2 accounting recovery has terminated.
+
+  CUDA_VISIBLE_DEVICES='' .venv/bin/python artifacts/m2_recovery_validation_source.txt \
+    --scale reference --output artifacts/m2_recovery_validation_reference.json
+
+Reads existing checkpoints, JSON and finalized DuckDB tables. It never imports
+production/recovery comparison functions, fits a model, initializes CUDA, changes
+database tables, or regroups raw sparse chunks. Only the requested JSON is written.
+"""
+from __future__ import annotations
+
+import argparse
+from datetime import datetime, timezone
+import hashlib
+import json
+import math
+import os
+from pathlib import Path
+import tempfile
+import time
+
+os.environ['CUDA_VISIBLE_DEVICES'] = ''
+import torch
+
+ROOT = Path(__file__).resolve().parent.parent
+ARTIFACTS = ROOT / 'artifacts'
+ARCHIVE = ARTIFACTS / 'm2_finalize_recovery'
+ORIGINAL_SHA256 = '71e7084b2c72c6a9c4a3aa4039bb0e6213c1305232931ffd52685febdbfd06a1'
+FIT_IDENTITY = 'a68a4d614bc2a4960f2d8ce292c3611b2ce2328b2bbd81428b697372a31eed6e'
+FIT_MODULES = {'train.py', 'adapter.py', 'features.py', 'sparse.py', 'sparse_stats.py', 'traces.py'}
+FINAL_REPORT_ADDITIONS = {'status', 'relative_dev_improvement', 'under_one_percent_stop_tuning',
+    'fit_elapsed_seconds_this_invocation', 'checkpoints', 'checkpoint_selection', 'scope'}
+
+
+def require(condition, message):
+    if not condition:
+        raise ValueError(message)
+
+
+def fingerprint(value):
+    return hashlib.sha256(json.dumps(value, sort_keys=True, separators=(',', ':')).encode()).hexdigest()
+
+
+def hash_stream(stream):
+    digest = hashlib.sha256()
+    while chunk := stream.read(8 * 1024 * 1024):
+        digest.update(chunk)
+    return digest.hexdigest()
+
+
+def record_file(path, evidence, expected=None):
+    path = Path(path).resolve()
+    with path.open('rb') as stream:
+        checksum = hash_stream(stream)
+        size = os.fstat(stream.fileno()).st_size
+    require(expected is None or checksum == expected, f'Artifact checksum mismatch: {path}')
+    evidence[str(path)] = {'sha256': checksum, 'bytes': size}
+    return checksum
+
+
+def read_json(path, evidence, expected=None):
+    path = Path(path).resolve()
+    payload = path.read_bytes()
+    checksum = hashlib.sha256(payload).hexdigest()
+    require(expected is None or checksum == expected, f'JSON checksum mismatch: {path}')
+    evidence[str(path)] = {'sha256': checksum, 'bytes': len(payload)}
+    return json.loads(payload)
+
+
+def load_checkpoint(path, evidence, expected=None):
+    # Hash and load from the same opened inode without a second full byte copy.
+    path = Path(path).resolve()
+    with path.open('rb') as stream:
+        checksum = hash_stream(stream)
+        require(expected is None or checksum == expected, f'Checkpoint checksum mismatch: {path}')
+        size = os.fstat(stream.fileno()).st_size
+        stream.seek(0)
+        value = torch.load(stream, map_location='cpu', weights_only=True)
+    evidence[str(path)] = {'sha256': checksum, 'bytes': size}
+    return value
+
+
+def exact_tree(actual, expected, location):
+    """Independent exact typed tree comparison; no numerical tolerance."""
+    if isinstance(expected, torch.Tensor):
+        require(isinstance(actual, torch.Tensor), location + ': missing tensor')
+        require(actual.device.type == expected.device.type == 'cpu', location + ': tensor is not on CPU')
+        require(actual.dtype == expected.dtype and actual.shape == expected.shape
+                and actual.layout == expected.layout, location + ': tensor metadata mismatch')
+        require(torch.equal(actual, expected), location + ': tensor values changed')
+    elif isinstance(expected, dict):
+        require(type(actual) is dict and actual.keys() == expected.keys(), location + ': dictionary keys changed')
+        for key, value in expected.items():
+            exact_tree(actual[key], value, location + '.' + str(key))
+    elif isinstance(expected, (tuple, list)):
+        require(type(actual) is type(expected) and len(actual) == len(expected), location + ': sequence changed')
+        for index, value in enumerate(expected):
+            exact_tree(actual[index], value, location + '.' + str(index))
+    else:
+        require(type(actual) is type(expected), location + ': scalar type changed')
+        if isinstance(expected, float):
+            require(math.isfinite(actual) and math.isfinite(expected), location + ': nonfinite scalar')
+        require(actual == expected, location + ': scalar value changed')
+
+
+def check_prior_report(current, prior):
+    require(set(prior['stages']) == {'dense'} and set(current['stages']) == {'dense', 'dense_sparse'},
+            'Recovery must add exactly the completed sparse-stage report')
+    for key, value in prior.items():
+        if key == 'stages':
+            exact_tree(current['stages']['dense'], value['dense'], 'prior dense report')
+        else:
+            require(key in current, 'Missing prior report field: ' + key)
+            exact_tree(current[key], value, 'prior report.' + key)
+    history = [item for item in prior['epoch_development'] if item['stage'] == 'dense_sparse']
+    require(len(history) == 1 and history[0]['epoch'] == 0, 'Unexpected sparse epoch history')
+    exact_tree(current['stages']['dense_sparse']['dev'], history[0]['dev'], 'recomputed sparse dev metrics')
+
+
+def verify_database(stats, capacity, evidence):
+    import duckdb
+    database = Path(stats['database'])
+    if not database.is_absolute():
+        database = ROOT / database
+    database = database.resolve()
+    before = database.stat()
+    require(before.st_size == stats['database_bytes'], 'Finalized sparse database size mismatch')
+    # Every query is a streaming global reduction, without sorting, joins, GROUP
+    # BY, or COUNT(DISTINCT). Memory remains bounded independently of key count.
+    with duckdb.connect(str(database), read_only=True) as connection:
+        connection.execute("SET memory_limit = '1GB'")
+        connection.execute('SET threads = 1')
+        keys = connection.execute('SELECT COUNT(*), COALESCE(SUM(frequency),0), '
+            'COUNT(*) FILTER (WHERE packed_key IS NULL OR packed_key < 0 OR frequency IS NULL OR frequency < 1) '
+            'FROM exact_key_counts').fetchone()
+        buckets = connection.execute('SELECT COUNT(*), COALESCE(SUM(distinct_keys),0), COALESCE(SUM(frequency),0), '
+            'COALESCE(SUM(distinct_keys-1),0), '
+            'COALESCE(SUM(CASE WHEN distinct_keys>1 THEN distinct_keys ELSE 0 END),0), '
+            'COALESCE(SUM(CASE WHEN distinct_keys>1 THEN frequency ELSE 0 END),0), '
+            'COUNT(*) FILTER (WHERE bucket IS NULL OR bucket < 0 OR bucket >= ? OR distinct_keys IS NULL '
+            'OR distinct_keys < 1 OR frequency IS NULL OR frequency < distinct_keys) '
+            'FROM bucket_counts', [capacity]).fetchone()
+    unique, events, invalid_keys = map(int, keys)
+    occupied, bucket_keys, bucket_events, collisions, collided_keys, weighted, invalid_buckets = map(int, buckets)
+    require(invalid_keys == invalid_buckets == 0, 'Invalid values in finalized sparse tables')
+    require(unique == bucket_keys and events == bucket_events, 'Exact-key and bucket table totals disagree')
+    expected = {'unique_observed_keys': unique, 'observed_lookup_events': events, 'occupied_buckets': occupied,
+        'collision_count': collisions, 'distinct_keys_in_collided_buckets': collided_keys,
+        'frequency_weighted_collision_count': weighted}
+    for name, value in expected.items():
+        require(type(stats[name]) is int and stats[name] == value, 'Sparse table/report mismatch: ' + name)
+    require(0 < occupied <= min(unique, capacity) and unique <= events and collisions == unique - occupied,
+            'Invalid unique/occupancy/collision algebra')
+    require(0 <= collided_keys <= unique and collided_keys <= weighted <= events,
+            'Invalid collided-key/frequency-weighted totals')
+    if collisions:
+        require(collisions + 1 <= collided_keys <= min(2 * collisions, unique), 'Invalid collided-key bounds')
+    else:
+        require(collided_keys == weighted == 0, 'Collision-free table has collided keys/events')
+    require(events - weighted >= unique - collided_keys, 'Singleton-key frequency totals are inconsistent')
+    require(math.isclose(stats['load_factor_unique_keys_per_bucket'], unique / capacity, rel_tol=1e-12, abs_tol=1e-12)
+            and math.isclose(stats['occupancy_fraction'], occupied / capacity, rel_tol=1e-12, abs_tol=1e-12),
+            'Sparse load/occupancy ratio mismatch')
+    after = database.stat()
+    require((before.st_size, before.st_mtime_ns) == (after.st_size, after.st_mtime_ns), 'Database changed during read-only audit')
+    checksum = record_file(database, evidence)
+    final = database.stat()
+    require((before.st_size, before.st_mtime_ns) == (final.st_size, final.st_mtime_ns), 'Database changed during checksum read')
+    return {**expected, 'database_sha256': checksum, 'duckdb_version': duckdb.__version__,
+        'connection': 'read_only', 'memory_limit': '1GB', 'threads': 1,
+        'query_scope': 'global reductions over existing exact_key_counts and bucket_counts; no raw chunk regrouping'}
+
+
+def validate(result):
+    evidence = result['evidence']
+    execution = read_json(ARCHIVE / 'execution.json', evidence)
+    require(execution['status'] == 'passed' and execution['scale'] == 'reference', 'Terminal passed recovery execution required')
+    require(execution['guards'] == {'optimizer_step_attempts': 0, 'proximal_step_attempts': 0,
+        'chunk_write_attempts': 0, 'finalizer_calls': 1, 'checkpoint_saves': 2}, 'Recovery guard counters mismatch')
+    # A passed marker is written immediately before process exit; refuse overlap.
+    proc = Path('/proc') / str(execution['pid'])
+    if proc.exists():
+        command = (proc / 'cmdline').read_bytes()
+        require(b'm2_finalize_recovery_source.txt' not in command, 'Recovery process is still alive; wait for terminal confirmation')
+    preparation = read_json(ARCHIVE / 'preparation.json', evidence)
+    # Execution repeats the read-only preflight, so its observation timestamp is
+    # newer; every identity/config/archive field must remain unchanged.
+    exact_tree({key: value for key, value in execution['preparation'].items() if key != 'checked_at_utc'},
+               {key: value for key, value in preparation.items() if key != 'checked_at_utc'},
+               'execution/preparation')
+    require(preparation['original_checkpoint_sha256'] == ORIGINAL_SHA256 and preparation['fit_identity'] == FIT_IDENTITY,
+            'Unexpected original checkpoint/fit identity')
+    source = ARTIFACTS / 'm2_finalize_recovery_source.txt'
+    record_file(source, evidence, execution['wrapper_source_sha256'])
+    require(preparation['wrapper_source_sha256'] == execution['wrapper_source_sha256'], 'Prepared/executed wrapper source mismatch')
+    original_record = read_json(ARTIFACTS / 'runs/train-23b97943b68176e4-rank0.json', evidence,
+                                preparation['original_run_record_sha256'])
+    for item in preparation['archived_inputs'].values():
+        record_file(item['path'], evidence, item['sha256'])
+    record_file(ARTIFACTS / 'm2-reference.log', evidence, preparation['failure_log_sha256'])
+    record_file(ARTIFACTS / 'm2/dense.pt', evidence, preparation['dense_checkpoint_sha256'])
+    old = load_checkpoint(ARCHIVE / 'failed_latest.pt', evidence, ORIGINAL_SHA256)
+    require(old['stage'] == 'dense_sparse' and old['epoch'] == 1 and old['next_batch'] == 0,
+            'Archived checkpoint is not the completed sparse optimizer epoch')
+    require(old['identity'] == FIT_IDENTITY and old['scale'] == 'reference', 'Archived checkpoint identity mismatch')
+    require(old['resolved_config'] == original_record['config'] == preparation['original_resolved_config'], 'Original resolved config mismatch')
+    require(old['resolved_config']['stats_memory_limit'] == '512MB', 'Original accounting config was modified')
+    hashes = old['report']['implementation_sha256']
+    require(set(hashes) == FIT_MODULES, 'Unexpected fit source manifest')
+    for name, checksum in hashes.items():
+        record_file(ROOT / 'src/edraft' / name, evidence, checksum)
+    paths = {'dense_sparse': ARTIFACTS / 'm2/dense_sparse.pt', 'complete': ARTIFACTS / 'm2/latest.pt'}
+    report_path = ARTIFACTS / 'm2.json'
+    report = read_json(report_path, evidence, execution['artifacts'][str(report_path)])
+    require(report['status'] == 'passed' and report['scale'] == 'reference', 'Final M2 report is incomplete')
+    check_prior_report(report, old['report'])
+    require(set(report) == set(old['report']) | FINAL_REPORT_ADDITIONS, 'Unexpected final report field additions/removals')
+    result['checkpoint_checks'] = {}
+    for stage, path in paths.items():
+        current = load_checkpoint(path, evidence, execution['artifacts'][str(path)])
+        for field in ('schema_version', 'scale', 'identity', 'resolved_config', 'adapter_config',
+                      'adapter_state', 'torch_rng', 'python_rng', 'cuda_rng', 'next_batch'):
+            exact_tree(current[field], old[field], stage + '.' + field)
+        require(current['stage'] == stage and current['epoch'] == (1 if stage == 'dense_sparse' else 0), 'Final checkpoint stage/epoch mismatch')
+        version = fingerprint({'identity': FIT_IDENTITY, 'stage': stage, 'epoch': current['epoch'], 'next_batch': 0})
+        require(current['adapter_version'] == version, 'Final adapter version mismatch')
+        check_prior_report(current['report'], old['report'])
+        if stage == 'dense_sparse':
+            for name in ('dense_optimizer', 'sparse_optimizer'):
+                exact_tree(current[name], old[name], name)
+            require(set(current['report']) == set(old['report']), 'Sparse checkpoint prematurely includes final report additions')
+            for name, value in current['report'].items():
+                exact_tree(report[name], value, 'published sparse report.' + name)
+        else:
+            require(current['dense_optimizer'] is None and current['sparse_optimizer'] is None,
+                    'Final latest checkpoint must intentionally clear optimizer payloads')
+            exact_tree(current['report'], report, 'latest embedded report')
+        result['checkpoint_checks'][stage] = {'model_config_rng_prior_reports_exact': True,
+            'optimizer_state': 'exactly preserved' if stage == 'dense_sparse' else 'intentionally absent in final latest',
+            'stage_epoch_and_version_valid': True}
+        del current
+    stats = report['stages']['dense_sparse']['sparse_collision_statistics']
+    recovery = stats['accounting_recovery']
+    require(stats['status'] == 'measured' and stats['memory_limit'] == '32GB', 'Accounting result memory/status mismatch')
+    for name, expected in {'original_memory_limit': '512MB', 'effective_memory_limit': '32GB',
+        'original_checkpoint_sha256': ORIGINAL_SHA256, 'original_fit_identity': FIT_IDENTITY,
+        'wrapper_source_sha256': execution['wrapper_source_sha256'], 'optimizer_updates_executed': 0,
+        'failure_log_sha256': preparation['failure_log_sha256'],
+        'original_run_record_sha256': preparation['original_run_record_sha256'],
+        'fit_config_unchanged': True, 'fit_source_hashes_unchanged': True}.items():
+        require(recovery[name] == expected, 'Recovery provenance mismatch: ' + name)
+    require(recovery['archived_inputs'] == preparation['archived_inputs'], 'Embedded recovery archive links changed')
+    chunks = old['report']['sparse_statistics_chunks']
+    require(len(chunks) == stats['committed_chunks'] == 10539 and len({item['path'] for item in chunks}) == len(chunks),
+            'Committed sparse chunk coverage mismatch')
+    require({(item['epoch'], item['batch']) for item in chunks} == {(0, batch) for batch in range(10539)},
+            'Committed sparse batch identities changed')
+    require(sum(item['events'] for item in chunks) == stats['observed_lookup_events'], 'Committed chunk event total mismatch')
+    values = old['adapter_state']['sparse.values']
+    capacity, nonzero = values.numel(), int(values.count_nonzero())
+    require(capacity == stats['capacity'] == 2**24 and values.dtype == torch.float32, 'Sparse capacity/dtype mismatch')
+    require(nonzero <= stats['occupied_buckets'] and stats['raw_parameter_bytes'] == capacity * 4
+            and stats['nonzero_parameter_value_bytes'] == nonzero * 4, 'Sparse occupancy/byte mismatch')
+    parameters = report['stages']['dense_sparse']['parameters']['S']
+    require(parameters['nonzero_buckets'] == nonzero and parameters['capacity'] == capacity, 'Sparse parameter count mismatch')
+    require(math.isclose(parameters['exact_zero_fraction'], 1 - nonzero / capacity, rel_tol=0, abs_tol=1e-7), 'Sparse zero fraction mismatch')
+    result['sparse_parameters'] = {'capacity': capacity, 'nonzero_buckets': nonzero,
+        'exact_zero_fraction': 1 - nonzero / capacity, 'committed_chunks': len(chunks)}
+    del old, values
+    result['database_checks'] = verify_database(stats, capacity, evidence)
+    result['status'] = 'passed'
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--scale', choices=['reference'], default='reference')
+    parser.add_argument('--output', type=Path, required=True)
+    args = parser.parse_args()
+    output = args.output.resolve()
+    protected = {path.resolve() for path in [ARTIFACTS / 'm2.json', ARCHIVE / 'execution.json', ARCHIVE / 'preparation.json',
+        ARTIFACTS / 'runs/train-23b97943b68176e4-rank0.json', ARCHIVE / 'original_train_run.json',
+        ARCHIVE / 'guard_validation.json', Path(__file__)]}
+    require(output.suffix == '.json' and output not in protected, 'Choose a separate validation JSON output path')
+    torch.set_num_threads(1)
+    started = time.monotonic()
+    result = {'status': 'failed', 'scale': 'reference', 'label': 'reference_artifact_validation',
+        'validation_kind': 'independent_recovery_state_and_existing_database_audit',
+        'started_at_utc': datetime.now(timezone.utc).isoformat(), 'evidence': {},
+        'limitations': ['Does not recompute train/dev/test losses, gradients, inference, or quality claims.',
+            'Does not rehash or regroup raw sparse chunks; the separate M2 validator checks chunk checksums.',
+            'Database queries aggregate existing tables; they do not independently rederive each key-to-bucket assignment or prove key uniqueness.',
+            'Does not prove every unobserved bucket is zero by bucket membership; compares complete sparse tensors exactly and checks nonzero count versus occupancy.',
+            'New sparse train/test evaluation has no failed-attempt saved counterpart; dense reports and sparse epoch-dev metrics are preserved exactly.']}
+    record_file(Path(__file__), result['evidence'])
+    try:
+        require(not torch.cuda.is_initialized(), 'CUDA was initialized before audit')
+        validate(result)
+    except Exception as error:
+        result.update(status='failed', error=f'{type(error).__name__}: {error}')
+    result.update(cuda_initialized=torch.cuda.is_initialized(), elapsed_seconds=time.monotonic() - started)
+    if result['cuda_initialized']:
+        result.update(status='failed', error='Audit unexpectedly initialized CUDA')
+    output.parent.mkdir(parents=True, exist_ok=True)
+    descriptor, temporary = tempfile.mkstemp(prefix=output.name + '.', dir=output.parent)
+    try:
+        with os.fdopen(descriptor, 'w') as stream:
+            json.dump(result, stream, indent=2, allow_nan=False)
+            stream.write('\n')
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.replace(temporary, output)
+    finally:
+        if os.path.exists(temporary):
+            os.unlink(temporary)
+    print(json.dumps({'status': result['status'], 'output': str(output), 'error': result.get('error')}))
+    if result['status'] != 'passed':
+        raise SystemExit(1)
+
+
+if __name__ == '__main__':
+    main()

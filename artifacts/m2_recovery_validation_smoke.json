@@ -1,0 +1,39 @@
+{
+  "status": "passed",
+  "scale": "smoke",
+  "label": "synthetic",
+  "scope": "Independent comparison/report/database helpers only; no reference artifacts loaded or audited.",
+  "audit_source_sha256": "b920b62ccc11e59a9441f54d1d7421734a39784ffc3ca19abb2aae32db09eca6",
+  "test_source_sha256": "47ccd520764177aa1c2c8e8b7b3b84d1c37dca7b42feccdf7e043e56bd4101c4",
+  "exact_tree_positive_case": true,
+  "prior_report_addition_positive_case": true,
+  "mismatches_rejected": [
+    "tensor_value",
+    "tensor_dtype",
+    "scalar_type",
+    "missing_key",
+    "changed_prior_sparse_dev",
+    "unique_observed_keys",
+    "observed_lookup_events",
+    "occupied_buckets",
+    "collision_count",
+    "distinct_keys_in_collided_buckets",
+    "frequency_weighted_collision_count"
+  ],
+  "database": {
+    "unique_observed_keys": 5,
+    "observed_lookup_events": 24,
+    "occupied_buckets": 3,
+    "collision_count": 2,
+    "distinct_keys_in_collided_buckets": 4,
+    "frequency_weighted_collision_count": 17,
+    "database_sha256": "a42633be7ec5358b4c5c5d4b491d159dc10ed3b335b8ed8a0ead4df284942239",
+    "duckdb_version": "1.4.4",
+    "connection": "read_only",
+    "memory_limit": "1GB",
+    "threads": 1,
+    "query_scope": "global reductions over existing exact_key_counts and bucket_counts; no raw chunk regrouping"
+  },
+  "database_unchanged": true,
+  "cuda_initialized": false
+}

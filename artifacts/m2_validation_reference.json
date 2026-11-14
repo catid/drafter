@@ -1,0 +1,123 @@
+{
+  "status": "passed",
+  "scale": "reference",
+  "label": "reference_artifact_validation",
+  "validation_kind": "read_only_CPU_artifact_checks",
+  "report_path": "/home/catid/drafter/artifacts/m2.json",
+  "validator_source_path": "/home/catid/drafter/artifacts/m2_validation_source.txt",
+  "validator_source_sha256": "d112e6f50edbe70623892c645468992c8a9c68ce1726a1dbc02c4ece4ee27a1c",
+  "started_at_unix": 1794620056.652548,
+  "checks_completed": [
+    "final_report_schema_and_finite_numbers",
+    "final_checkpoints_tensor_health_identity_sources_and_parameter_reports",
+    "trace_metadata_coverage_and_all_report_metric_algebra",
+    "sparse_parameter_statistics_chunk_checksums_and_coverage"
+  ],
+  "evidence": {
+    "/home/catid/drafter/artifacts/m2/dense.pt": {
+      "sha256": "53ed0f23458bceb44842d2598a51b78604897347915df5be01c6f1a16a8229da",
+      "bytes": 39916415
+    },
+    "/home/catid/drafter/artifacts/m2/dense_sparse.pt": {
+      "sha256": "926d143079658508c5d406e3416c413468339b19584e5a4b4c26165e86f90758",
+      "bytes": 111177971
+    },
+    "/home/catid/drafter/artifacts/m2/latest.pt": {
+      "sha256": "0a8882cd9356a81d44ca875088474c3bde252c6cd8b156c93eb3f132593679a8",
+      "bytes": 109697425
+    },
+    "/home/catid/drafter/artifacts/h_proj.pt": {
+      "sha256": "4614a3a5384d49563d485083e9386ca30e93500144cf346b2dba714cc476dd8a"
+    },
+    "/home/catid/drafter/artifacts/token_features.pt": {
+      "sha256": "d0646fd668917bb1878164b5f07216d5ea9412d16d4689438854647380981377"
+    },
+    "/home/catid/drafter/artifacts/m1_audit.json": {
+      "sha256": "f5bbaa23b13db411069f29d19185d7a481b63007fde5183d4ab3bea3204c5279"
+    },
+    "/home/catid/drafter/artifacts/calibration.json": {
+      "sha256": "1fd5e35b6a68e7d54b36dbcc3b83d66a79f032a76e17dd8c51466ee5737721c7"
+    },
+    "/home/catid/drafter/artifacts/prompts.json": {
+      "sha256": "1f4789116c53beaea8460020659f695f9d4d6e09bd60470f9cd7dd056e622182"
+    },
+    "/home/catid/drafter/artifacts/diagnostic_reference.json": {
+      "sha256": "5830c3b2d936240b0a2ee320cb8db9b47701221fe7f851356f96b8b406f8b950"
+    },
+    "sparse_chunks": {
+      "count": 10539,
+      "all_sha256_verified": true,
+      "total_bytes": 3242960898
+    }
+  },
+  "tolerances": {
+    "algebra_rtol": 1e-10,
+    "algebra_atol": 1e-12,
+    "cpu_fp64_vs_reported_fp32_norm_rtol": 2e-05,
+    "norm_atol": 1e-07,
+    "zero_fraction_atol": 1e-07,
+    "FP32_KL_and_probability_bound_slack": 1e-06
+  },
+  "limitations": [
+    "No loss/gradient/inference recomputation or claim of downstream acceptance/throughput improvement.",
+    "A norm-tolerance failure is a validation discrepancy requiring measurement of CPU FP64 versus recorded GPU FP32 reduction error; it is not automatically a model failure.",
+    "Trace slot totals come from report-linked sidecars bound to accepted audit identity/SHA metadata; trace payload bytes are not rehashed or loaded.",
+    "Live-full subset sizes are checked for positive held-out coverage and cross-stage consistency, not recomputed from trace tensors.",
+    "Sparse chunks are checksummed and reported algebra checked; the existing DuckDB tables are not reaggregated or benchmarked.",
+    "Historical validation requires the recorded production source versions; commit IDs alone are not used as a source-equality gate.",
+    "A passed smoke validation is synthetic evidence and does not validate the reference branch or real model quality."
+  ],
+  "report_sha256": "679defa79a48bbea31df67792c39668df8a45e384942affe47cc3cfabbc6dcfa",
+  "parameter_checks": {
+    "dense": {
+      "W": {
+        "cpu_fp64_norm": 1.9648338329368262,
+        "reported_norm": 1.9648338556289673,
+        "exact_zero_fraction": 0.0
+      },
+      "A": {
+        "cpu_fp64_norm": 2.3322875143571014,
+        "reported_norm": 2.332287549972534,
+        "exact_zero_fraction": 0.0
+      },
+      "b": {
+        "cpu_fp64_norm": 0.0,
+        "reported_norm": 0.0,
+        "exact_zero_fraction": 1.0
+      }
+    },
+    "dense_sparse": {
+      "W": {
+        "cpu_fp64_norm": 2.030185311736473,
+        "reported_norm": 2.0301854610443115,
+        "exact_zero_fraction": 0.0
+      },
+      "A": {
+        "cpu_fp64_norm": 2.466178115448032,
+        "reported_norm": 2.4661781787872314,
+        "exact_zero_fraction": 0.0
+      },
+      "b": {
+        "cpu_fp64_norm": 218.12194867439763,
+        "reported_norm": 218.1219482421875,
+        "exact_zero_fraction": 0.0
+      },
+      "S": {
+        "cpu_fp64_norm": 0.4686770415434932,
+        "reported_norm": 0.4686770439147949,
+        "nonzero_buckets": 150394,
+        "capacity": 16777216
+      }
+    }
+  },
+  "calibration_binding": "audited reference/full calibration file hashes, model revisions, prompt hash and bitwise frozen E verified",
+  "expected_logical_slots_from_trace_sidecars": {
+    "train": 1264587,
+    "test": 95160,
+    "dev": 102975
+  },
+  "relative_dev_improvement": -0.7632283681353831,
+  "identity": "a68a4d614bc2a4960f2d8ce292c3611b2ce2328b2bbd81428b697372a31eed6e",
+  "cuda_initialized": false,
+  "elapsed_seconds": 4.47393012046814
+}
