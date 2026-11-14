@@ -222,6 +222,14 @@ class EvaluationRunner:
             self.model_pair = [args.target, args.drafter]
         self.dense.eval()
         self.dense_sparse.eval()
+        from .fastpath import FastPathConfig, FastPathRuntime
+        fp_cfg = FastPathConfig(
+            compile=bool(getattr(args, 'compile', False)),
+            cuda_graph=bool(getattr(args, 'cuda_graph', False)),
+            simulate_cpu_graph=bool(getattr(args, 'simulate_cpu_graph', False)),
+        )
+        static_k = 4 if self.tiny else (self.backend.block_size - 1)
+        self.fastpath = FastPathRuntime(fp_cfg, static_block_length=static_k) if fp_cfg.enabled else None
         if self.tiny:
             self.generation_environment = {'target_state_sha256': adapter_tensor_hash(self.target),
                 'tokenizer': {'kind': 'synthetic prompt-ID prefix', 'vocabulary_size': self.target.embedding.shape[0]},
@@ -297,19 +305,19 @@ class EvaluationRunner:
                 offline = DenseAdapter(self.dense.E, self.dense.W.shape[1], len(self.dense.A), M_sparse=self.dense.M_sparse)
             kwargs = {k: v for k, v in setting.items() if k != 'beta'}
             online = OnlineState(offline, enable_sparse=True, sparse_capacity=257 if self.tiny else 2**20,
-                                 bias_sparse_only=arm == 'online_dbS', **kwargs)
+                                 bias_sparse_only=arm == 'online_dbS', fastpath=self.fastpath, **kwargs)
         inputs, max_tokens, input_metadata = self.prepare_inputs(prompt, job.get('max_new_tokens_override'))
         generator = torch.Generator(device=self.device).manual_seed(job['seed'])
         if self.tiny:
             prefix = inputs
             result = generate_toy(self.target, self.drafter, prefix, max_tokens, temperature=temperature, warper=warper,
                 generator=generator, adapter=adapter, online_state=online, projection=self.projection if adapter is not None or online is not None else None,
-                bigram=bigram, beta=beta, measure_phases=profile)
+                bigram=bigram, beta=beta, measure_phases=profile, fastpath=self.fastpath)
             eos = False
         else:
             result = generate_reference(self.backend, inputs, max_tokens, temperature=temperature, warper=warper,
                 generator=generator, adapter=adapter, online_state=online, projection=self.projection if adapter is not None or online is not None else None,
-                bigram=bigram, beta=beta, measure_phases=profile)
+                bigram=bigram, beta=beta, measure_phases=profile, fastpath=self.fastpath)
             eos = bool(result.output_tokens and result.output_tokens[-1] in self.backend.stop_token_ids)
         request_elapsed = time.perf_counter() - request_started
         if self.tiny and temperature == 0:
@@ -528,6 +536,8 @@ def generation_caps(args):
 
 def comparison_session(runner, mode, configuration):
     args = runner.args
+    if getattr(runner, 'fastpath', None) is not None:
+        configuration = dict(configuration, fastpath=runner.fastpath.config.to_dict())
     config = {'configuration': configuration, 'checkpoint_hashes': runner.checkpoint_hashes,
               'model_pair': runner.model_pair, 'model_revisions': runner.model_revisions,
               'generation_environment': getattr(runner, 'generation_environment', None),
@@ -928,17 +938,72 @@ def evaluate(runner, prompt_manifest, settings):
     args = runner.args
     prompts = select_prompts(prompt_manifest, 'test', args.scale)
     jobs = evaluation_jobs(prompts, args.stage, args.scale, args.seed)
-    prompt_rank = {p['prompt_id']: i % args.world_size for i, p in enumerate(prompts)}
     frozen_hash = fingerprint(settings)
-    rows = []
-    for job in jobs:
-        if prompt_rank[job['prompt']['prompt_id']] != args.rank:
-            continue
-        rows.append(execute_job(runner, job, settings['selected'][job['arm']], 'evaluate', frozen_hash))
-    target_diagnostics = [execute_target_only(runner, job) for job in jobs
-                          if job['temperature'] == 0 and job['arm'] == 'plain_dflash'
-                          and job['prompt']['condition'] == 'standard_nonthinking'
-                          and prompt_rank[job['prompt']['prompt_id']] == args.rank]
+    schedule = getattr(args, 'schedule', 'modulo')
+    rows, target_diagnostics = [], []
+    if schedule == 'dynamic' and args.world_size > 1:
+        from .runtime import WorkQueue
+        directory = args.output / args.stage / 'evaluate'
+        directory.mkdir(parents=True, exist_ok=True)
+        def _scan_done_across_ranks():
+            done = {}
+            for mpath in sorted(directory.glob('manifest-rank*.json')):
+                try:
+                    entries = Manifest(mpath).data.get('jobs', {})
+                except (OSError, ValueError):
+                    continue
+                for key, entry in entries.items():
+                    rpath = Path(entry.get('result_path', ''))
+                    if entry.get('status') == 'complete' and rpath.is_file():
+                        sha = entry.get('result_sha256')
+                        if not sha or sha == file_sha256(rpath):
+                            done[key] = str(rpath)
+            return done
+
+        done_across_ranks = _scan_done_across_ranks()
+        jobs_by_prompt = defaultdict(list)
+        for job in jobs:
+            jobs_by_prompt[job['prompt']['prompt_id']].append(job)
+        # Schedule long conditions first so 24K-token generations never straggle at the tail.
+        ordered_prompts = sorted(prompts, key=lambda p: (0 if p['condition'].startswith('long_') else 1))
+        ordered_ids = [p['prompt_id'] for p in ordered_prompts]
+        precompleted = set()
+        for pid in ordered_ids:
+            pjobs = jobs_by_prompt[pid]
+            if all(fingerprint(run_identity(runner, j, settings['selected'][j['arm']], 'evaluate', frozen_hash)) in done_across_ranks
+                   for j in pjobs):
+                td_jobs = [j for j in pjobs if j['temperature'] == 0 and j['arm'] == 'plain_dflash'
+                           and j['prompt']['condition'] == 'standard_nonthinking']
+                if all(read_target_only(args.output, target_only_identity(
+                        run_identity(runner, j, {}, 'evaluate'), runner.prepare_inputs(j['prompt'])[2]))[0] is not None
+                       for j in td_jobs):
+                    precompleted.add(pid)
+        queue = WorkQueue(directory / f'work_queue-{frozen_hash[:16]}.json', ordered_ids, precompleted=precompleted)
+        while (claimed_id := queue.claim(args.rank)) is not None:
+            done_across_ranks = _scan_done_across_ranks()
+            for job in jobs_by_prompt[claimed_id]:
+                identity = run_identity(runner, job, settings['selected'][job['arm']], 'evaluate', frozen_hash)
+                ident_key = fingerprint(identity)
+                # Recheck cross-rank manifest in case a previous worker finished some arms before crashing.
+                existing_path = done_across_ranks.get(ident_key)
+                if existing_path and Path(existing_path).is_file():
+                    rows.append(json.loads(Path(existing_path).read_text()))
+                else:
+                    rows.append(execute_job(runner, job, settings['selected'][job['arm']], 'evaluate', frozen_hash))
+                if (job['temperature'] == 0 and job['arm'] == 'plain_dflash'
+                        and job['prompt']['condition'] == 'standard_nonthinking'):
+                    target_diagnostics.append(execute_target_only(runner, job))
+            queue.complete(claimed_id)
+    else:
+        prompt_rank = {p['prompt_id']: i % args.world_size for i, p in enumerate(prompts)}
+        for job in jobs:
+            if prompt_rank[job['prompt']['prompt_id']] != args.rank:
+                continue
+            rows.append(execute_job(runner, job, settings['selected'][job['arm']], 'evaluate', frozen_hash))
+        target_diagnostics = [execute_target_only(runner, job) for job in jobs
+                              if job['temperature'] == 0 and job['arm'] == 'plain_dflash'
+                              and job['prompt']['condition'] == 'standard_nonthinking'
+                              and prompt_rank[job['prompt']['prompt_id']] == args.rank]
     report = {'scale': args.scale, 'stage': args.stage, 'status': 'rank_complete', 'rank': args.rank,
               'world_size': args.world_size, 'rows': len(rows), 'frozen_settings_hash': frozen_hash,
               'baseline_reuse': baseline_reuse_report(rows),
@@ -990,9 +1055,18 @@ def audit_timing_evidence(runner, prompt_manifest, settings, report):
         expected_path = args.output / args.stage / 'timing' / 'sessions' / f'{fingerprint(config)}.json'
         if session_path.resolve() != expected_path.resolve() or session['logical_session'] != report['timing_session']:
             raise ValueError('timing session path/identity mismatch')
-        expected_config = {'configuration': {'frozen_settings_hash': frozen_hash,
+        expected_inner = {'frozen_settings_hash': frozen_hash,
             'prompt_manifest_hash': fingerprint(prompt_manifest), 'selected_prompts': report['prompt_ids'],
-            'repeats': repeats, 'warmups': warmups}, 'checkpoint_hashes': runner.checkpoint_hashes,
+            'repeats': repeats, 'warmups': warmups}
+        if getattr(runner, 'fastpath', None) is not None:
+            expected_inner['fastpath'] = runner.fastpath.config.to_dict()
+        elif isinstance(config.get('configuration'), dict) and 'fastpath' in config['configuration'] and (
+                getattr(args, 'compile', False) or getattr(args, 'cuda_graph', False)):
+            from .fastpath import FastPathConfig
+            expected_inner['fastpath'] = FastPathConfig(
+                compile=bool(getattr(args, 'compile', False)),
+                cuda_graph=bool(getattr(args, 'cuda_graph', False))).to_dict()
+        expected_config = {'configuration': expected_inner, 'checkpoint_hashes': runner.checkpoint_hashes,
             'model_pair': runner.model_pair, 'model_revisions': runner.model_revisions,
             'generation_environment': getattr(runner, 'generation_environment', None),
             'generation_caps': generation_caps(args), 'stage': args.stage, 'scale': args.scale,
@@ -1348,6 +1422,9 @@ def main(argv=None):
     parser.add_argument('--fresh_session', action='store_true', help='start new dev/timing measurements instead of resuming complete comparison bundles')
     parser.add_argument('--rank', type=int, default=0)
     parser.add_argument('--world_size', type=int, default=1)
+    parser.add_argument('--schedule', choices=['modulo', 'dynamic'], default='modulo')
+    parser.add_argument('--compile', action='store_true', default=False)
+    parser.add_argument('--cuda_graph', action='store_true', default=False)
     parser.add_argument('--prompts_manifest', type=Path, default=ROOT / 'artifacts/prompts.json')
     parser.add_argument('--dense_checkpoint', type=Path, default=ROOT / 'artifacts/m2/dense.pt')
     parser.add_argument('--sparse_checkpoint', type=Path, default=ROOT / 'artifacts/m2/dense_sparse.pt')

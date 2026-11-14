@@ -23,9 +23,9 @@ OUTPUT_LABELS = ('0-1K', '1K-4K', '4K-8K', '8K-16K', '16K+')
 DEFAULT_CONTEXT_EDGES = (1024, 4096, 8192, 16384, 32768)
 
 
-def token_rank(scores, token_ids):
+def token_rank(scores, token_ids, *, _vocab_ids=None):
     """One-based full-vocabulary rank with deterministic lowest-ID tie break."""
-    ids = torch.arange(scores.shape[-1], device=scores.device)
+    ids = torch.arange(scores.shape[-1], device=scores.device) if _vocab_ids is None else _vocab_ids
     selected = scores.gather(-1, token_ids[:, None])
     return 1 + ((scores > selected) | ((scores == selected) & (ids[None, :] < token_ids[:, None]))).sum(-1)
 
@@ -55,8 +55,10 @@ def live_block_diagnostics(record: dict, seed: int) -> dict:
     target_ids = target.argmax(-1)
     sampled_ids = torch.multinomial(P, 1, generator=generator)[:, 0]
     sampled_train_ids = torch.multinomial(p_train, 1, generator=generator)[:, 0]
-    ranks = token_rank(l_unit, target_ids)
-    sampled_ranks = token_rank(l_unit, sampled_ids)
+    vocab_ids = torch.arange(V, device=l_unit.device)
+    ranks = token_rank(l_unit, target_ids, _vocab_ids=vocab_ids)
+    sampled_ranks = token_rank(l_unit, sampled_ids, _vocab_ids=vocab_ids)
+    sampled_unwarped_ranks = token_rank(l_unit, sampled_train_ids, _vocab_ids=vocab_ids)
     zero_mass = (P * (q == 0)).sum(-1)
     ce = -(P * q.clamp_min(torch.finfo(q.dtype).tiny).log()).sum(-1)
     infinite = zero_mass > 0
@@ -75,7 +77,9 @@ def live_block_diagnostics(record: dict, seed: int) -> dict:
         replacement = record.get('replacement_token')
         replacement_rank = None
         if replacement is not None:
-            replacement_rank = int(token_rank(l_unit[first:first + 1], torch.tensor([replacement], device=l_unit.device))[0])
+            replacement_rank = int(token_rank(l_unit[first:first + 1],
+                                              torch.tensor([replacement], device=l_unit.device),
+                                              _vocab_ids=vocab_ids)[0])
         target_rank = int(ranks[first])
         rejection = {'slot': first, 'target_top1_rank': target_rank, 'replacement_token_rank': replacement_rank,
                      'recoverability_target_top1': {str(m): target_rank <= m for m in TOP_M},
@@ -83,7 +87,7 @@ def live_block_diagnostics(record: dict, seed: int) -> dict:
     return {'definition': 'plain_DFlash_full_vocabulary_live_diagnostics', 'diagnostic_rng_seed': seed,
             'sampled_target_distribution': 'condition_sampling_distribution',
             'target_rank': ranks.cpu().tolist(), 'sampled_target_rank': sampled_ranks.cpu().tolist(),
-            'sampled_target_rank_unwarped': token_rank(l_unit, sampled_train_ids).cpu().tolist(),
+            'sampled_target_rank_unwarped': sampled_unwarped_ranks.cpu().tolist(),
             'overlap_sampling': torch.minimum(P, q).sum(-1).cpu().tolist(),
             'overlap_unwarped': torch.minimum(p_train, q_train).sum(-1).cpu().tolist(),
             'cross_entropy_unwarped': (-(p_train * l_unit).sum(-1)).cpu().tolist(),
@@ -121,6 +125,8 @@ def _longest_periodic_run(tokens):
         best_length = span
         best = {'start': start, 'end': start + span, 'period': period,
                 'complete_cycles': span // period}
+        if best_length == len(values):
+            break
     return best_length, best
 
 

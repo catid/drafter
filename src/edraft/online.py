@@ -3,11 +3,12 @@ from __future__ import annotations
 
 from collections import Counter, defaultdict
 from dataclasses import dataclass
+import math
 from typing import Callable
 import torch
 
-from .adapter import (ProposalSnapshot, block_unary, slot_correction, top_candidates,
-                      prev_token, full_kl, loss_weights)
+from .adapter import (ProposalSnapshot, block_predecessor_pairs, block_unary,
+                      slot_correction, top_candidates, prev_token, full_kl, loss_weights)
 from .sparse import LazySignedHash, SumSparse, hash_keys, proximal_l1
 
 
@@ -27,6 +28,7 @@ class OnlineBigram:
         self.vocab_size, self.alpha, self.lambda_tr, self.k_ret = vocab_size, alpha, lambda_tr, k_ret
         self.counts = defaultdict(Counter)
         self.version = 0
+        self._cache: dict[int, dict] = {}
 
     def update(self, prefix_tail, committed_tokens):
         previous = int(prefix_tail[-1]) if len(prefix_tail) else None
@@ -38,32 +40,66 @@ class OnlineBigram:
                 if not 0 <= previous < self.vocab_size:
                     raise ValueError('previous token outside vocabulary')
                 self.counts[previous][token] += 1
+                self._cache.pop(previous, None)
             previous = token
         if len(committed_tokens):
             self.version += 1
 
-    def prior(self, previous: int | None, device=None, dtype=torch.float32):
-        if previous is None:
-            return torch.zeros(self.vocab_size, device=device, dtype=dtype)
-        if not self.counts.get(int(previous)):
-            return torch.full((self.vocab_size,), -torch.log(torch.tensor(float(self.vocab_size))).item(), device=device, dtype=dtype)
-        counts = self.counts[int(previous)]
+    def _prior_parts(self, prev_int: int, counts: Counter, device, dtype):
+        target_device = torch.device('cpu') if device is None else torch.device(device)
+        cache_key = (self.alpha, self.k_ret, target_device, dtype)
+        bucket = self._cache.get(prev_int)
         total = sum(counts.values())
+        if bucket is not None:
+            cached = bucket.get(cache_key)
+            if cached is not None and cached[0] == total and cached[1] == len(counts):
+                return cached[2], cached[3], cached[4]
+        else:
+            bucket = {}
+            self._cache[prev_int] = bucket
         retained = sorted(counts.items(), key=lambda pair: (-pair[1], pair[0]))
         if self.k_ret is not None:
             retained = retained[:self.k_ret]
         evicted = total - sum(count for _, count in retained)
         absent = self.vocab_size - len(retained)
-        effective = torch.full((self.vocab_size,), evicted / absent if absent else 0., device=device, dtype=dtype)
+        denom = total + self.alpha * self.vocab_size
+        base_val = torch.tensor(evicted / absent if absent else 0., device=target_device, dtype=dtype)
+        base_lp = torch.log((base_val + self.alpha) / denom)
         if retained:
-            ids = torch.tensor([key for key, _ in retained], device=device, dtype=torch.long)
-            effective[ids] = torch.tensor([count for _, count in retained], device=device, dtype=dtype)
-        return torch.log((effective + self.alpha) / (total + self.alpha * self.vocab_size))
+            ids_t = torch.tensor([key for key, _ in retained], device=target_device, dtype=torch.long)
+            ret_counts = torch.tensor([count for _, count in retained], device=target_device, dtype=dtype)
+            ret_lp = torch.log((ret_counts + self.alpha) / denom)
+        else:
+            ids_t = torch.empty(0, device=target_device, dtype=torch.long)
+            ret_lp = torch.empty(0, device=target_device, dtype=dtype)
+        bucket[cache_key] = (total, len(counts), base_lp, ids_t, ret_lp)
+        return base_lp, ids_t, ret_lp
+
+    def prior(self, previous: int | None, device=None, dtype=torch.float32):
+        if previous is None:
+            return torch.zeros(self.vocab_size, device=device, dtype=dtype)
+        prev_int = int(previous)
+        counts = self.counts.get(prev_int)
+        if not counts:
+            return torch.full((self.vocab_size,), -math.log(float(self.vocab_size)), device=device, dtype=dtype)
+        base_lp, ids_t, ret_lp = self._prior_parts(prev_int, counts, device, dtype)
+        out = base_lp.expand(self.vocab_size).clone()
+        if ids_t.numel():
+            out[ids_t] = ret_lp
+        return out
 
     def score(self, l_unit, previous: int | None):
-        if previous is None or self.lambda_tr == 0 or not self.counts.get(int(previous)):
+        if previous is None or self.lambda_tr == 0:
             return l_unit
-        return l_unit + self.lambda_tr * self.prior(previous, device=l_unit.device, dtype=l_unit.dtype)
+        prev_int = int(previous)
+        counts = self.counts.get(prev_int)
+        if not counts:
+            return l_unit
+        base_lp, ids_t, ret_lp = self._prior_parts(prev_int, counts, l_unit.device, l_unit.dtype)
+        out = l_unit + self.lambda_tr * base_lp
+        if ids_t.numel():
+            out[ids_t] = l_unit.index_select(0, ids_t) + self.lambda_tr * ret_lp
+        return out
 
     def metrics(self):
         retained = sum(min(len(c), self.k_ret) if self.k_ret is not None else len(c) for c in self.counts.values())
@@ -97,7 +133,8 @@ class OnlineState:
                  update_stride: int = 1, lambda_l2: float = 0., lambda_l1_b: float = 0.,
                  lambda_l1_s: float = 0., sparse_capacity: int = 2**20,
                  enable_sparse: bool | None = None, bias_sparse_only: bool = False,
-                 weighting_mode: str = 'exponential', gamma: float = 5.):
+                 weighting_mode: str = 'exponential', gamma: float = 5.,
+                 fastpath=None):
         if update_stride < 1 or min(lambda_l2, lambda_l1_b, lambda_l1_s) < 0:
             raise ValueError('invalid online stride or regularization')
         if not callable(lr) and lr < 0:
@@ -109,6 +146,7 @@ class OnlineState:
             raise ValueError('invalid online weighting mode or gamma')
         self.weighting_mode, self.gamma = weighting_mode, gamma
         self.bias_sparse_only = bias_sparse_only
+        self.fastpath = fastpath
         self.dW = torch.zeros_like(self.offline.W, dtype=torch.float32)
         self.dA = torch.zeros_like(self.offline.A, dtype=torch.float32)
         self.db = torch.zeros_like(self.offline.b, dtype=torch.float32)
@@ -117,12 +155,22 @@ class OnlineState:
         self.u = 0
         self.version = 0
         self.last_round = 0
-        self.last_loss = None
+        self._last_loss_tensor: torch.Tensor | float | None = None
         self.state_bytes_estimate = {'dense_activation_clone': 0, 'dense_optimizer': 0, 'dense_snapshot': 0,
                                      'sparse_update': 0, 'sparse_snapshot': 0}
         self.active_bucket_min = None
         self.active_bucket_max = 0
         self._snapshot = self._make_snapshot()
+
+    @property
+    def last_loss(self) -> float | None:
+        if self._last_loss_tensor is None:
+            return None
+        return float(self._last_loss_tensor)
+
+    @last_loss.setter
+    def last_loss(self, value: torch.Tensor | float | None):
+        self._last_loss_tensor = value
 
     def _make_snapshot(self):
         terms = []
@@ -132,9 +180,14 @@ class OnlineState:
             terms.append(self.dS.snapshot())
         sparse = SumSparse(tuple(terms)) if terms else None
         W, A, b = (self.offline.W + self.dW).detach(), (self.offline.A + self.dA).detach(), (self.offline.b + self.db).detach()
-        is_zero = self.offline.is_zero and all(not bool(torch.count_nonzero(x)) for x in (self.dW, self.dA, self.db))
-        if self.dS is not None:
-            is_zero = is_zero and len(self.dS.active) == 0
+        if not self.offline.is_zero:
+            is_zero = False
+        elif self.u == 0:
+            is_zero = self.dS is None or len(self.dS.active) == 0
+        else:
+            is_zero = (self.dS is None or len(self.dS.active) == 0) and not bool(
+                torch.count_nonzero(self.db) or torch.count_nonzero(self.dW) or torch.count_nonzero(self.dA)
+            )
         return ProposalSnapshot(self.offline.E, W, A, b, self.version, sparse, self.offline.M_sparse, None, is_zero)
 
     def snapshot(self, C0=None):
@@ -164,24 +217,47 @@ class OnlineState:
         db = self.db.detach().clone().requires_grad_(True)
         W, A, b = self.offline.W + dW, self.offline.A + dA, self.offline.b + db
         E = self.offline.E
+        K = len(H)
         U = block_unary(E, W, b, H)
-        sparse = self.offline.sparse
+        valid_slots, valid_d0, valid_prev = block_predecessor_pairs(prefix, tokens, K, len(A), E.device)
+        if valid_slots.numel():
+            E_cast = E.to(A.dtype)
+            E_prev = E_cast.index_select(0, valid_prev)
+            msgs = torch.bmm(A.index_select(0, valid_d0), E_prev.unsqueeze(-1)).squeeze(-1)
+            slot_msgs = torch.zeros(K, E.shape[1], dtype=A.dtype, device=A.device).index_add(0, valid_slots, msgs)
+            dense = U + slot_msgs @ E_cast.T
+        else:
+            dense = U
         dirty = sparse_values = None
         if self.dS is not None:
-            accesses = []
-            for i in range(len(H)):
-                dense = slot_correction(E, A, U[i], l_unit[i], prefix, tokens, i)
-                candidates = top_candidates(l_unit[i] - dense, self.offline.M_sparse)
-                for d in range(1, len(A) + 1):
-                    previous = prev_token(prefix, tokens, i, d)
-                    if previous is not None:
-                        accesses.append(hash_keys(d, previous, candidates, self.dS.capacity, E.device)[0])
-            dirty = torch.unique(torch.cat(accesses), sorted=True) if accesses else torch.empty(0, device=E.device, dtype=torch.long)
-            sparse_values = self.dS.read(dirty).detach().clone().requires_grad_(True)
-            sparse = _TrainingSparse(self.offline.sparse, dirty, sparse_values, self.dS.capacity)
-        correction = torch.stack([slot_correction(E, A, U[i], l_unit[i], prefix, tokens, i,
-                                                 sparse, self.offline.M_sparse) for i in range(len(H))])
-        loss = full_kl(l_unit - correction, target_logits, weights)
+            if valid_slots.numel():
+                candidates = top_candidates(l_unit - dense, self.offline.M_sparse)
+                cands_pair = candidates.index_select(0, valid_slots)
+                d_pair = (valid_d0 + 1)[:, None]
+                prev_pair = valid_prev[:, None]
+                buckets, signs = hash_keys(d_pair, prev_pair, cands_pair, self.dS.capacity, E.device)
+                dirty, inverse = torch.unique(buckets.reshape(-1), sorted=True, return_inverse=True)
+                sparse_values = self.dS.read(dirty).detach().clone().requires_grad_(True)
+                pair_vals = sparse_values[inverse].reshape(buckets.shape) * signs
+                if self.offline.sparse is not None:
+                    pair_vals = pair_vals + self.offline.sparse.lookup(d_pair, prev_pair, cands_pair)
+                slot_vals = torch.zeros(K, candidates.shape[1], dtype=dense.dtype, device=dense.device).index_add(
+                    0, valid_slots, pair_vals.to(dense.dtype))
+                correction = dense.scatter_add(1, candidates, slot_vals)
+            else:
+                dirty = torch.empty(0, device=E.device, dtype=torch.long)
+                correction = dense
+        elif self.offline.sparse is not None and valid_slots.numel():
+            candidates = top_candidates(l_unit - dense, self.offline.M_sparse)
+            cands_pair = candidates.index_select(0, valid_slots)
+            pair_vals = self.offline.sparse.lookup((valid_d0 + 1)[:, None], valid_prev[:, None], cands_pair).to(dense.dtype)
+            slot_vals = torch.zeros(K, candidates.shape[1], dtype=dense.dtype, device=dense.device).index_add(
+                0, valid_slots, pair_vals)
+            correction = dense.scatter_add(1, candidates, slot_vals)
+        else:
+            correction = dense
+        kl_fn = full_kl if self.fastpath is None else self.fastpath.full_kl_fn
+        loss = kl_fn(l_unit - correction, target_logits, weights)
         loss.backward()
         with torch.no_grad():
             shrink = 1 + lr * self.lambda_l2
@@ -190,11 +266,14 @@ class OnlineState:
                 self.dA = (dA - lr * (dA.grad if dA.grad is not None else torch.zeros_like(dA))) / shrink
             self.db = proximal_l1((db - lr * db.grad) / shrink, lr * self.lambda_l1_b)
             if self.dS is not None:
-                gradient = sparse_values.grad if sparse_values.grad is not None else torch.zeros_like(sparse_values)
-                self.dS.step(dirty, gradient, lr, self.lambda_l1_s)
+                if sparse_values is not None:
+                    gradient = sparse_values.grad if sparse_values.grad is not None else torch.zeros_like(sparse_values)
+                else:
+                    gradient = torch.empty(0, device=E.device, dtype=torch.float32)
+                self.dS.step_unique(dirty, gradient, lr, self.lambda_l1_s)
             self.u += 1
             self.version += 1
-            self.last_loss = float(loss.detach())
+            self._last_loss_tensor = loss.detach()
             self._snapshot = self._make_snapshot()
             dense_bytes = sum(x.numel() * x.element_size() for x in (self.dW, self.dA, self.db))
             optimized_bytes = self.db.numel() * self.db.element_size() if self.bias_sparse_only else dense_bytes

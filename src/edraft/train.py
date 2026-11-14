@@ -16,14 +16,74 @@ import tempfile
 import time
 
 import torch
+import torch.distributed as dist
 from torch.nn import functional as F
 
 from .adapter import DenseAdapter, loss_weights, prev_token, union_rest_grouped
 from .features import HiddenProjection
 from .runtime import ROOT, atomic_json, common_parser, fingerprint, git_commit, parse_config, preflight, record_run, resolved_config
-from .sparse import SignedHash
+from .sparse import SignedHash, hash_keys
 from .sparse_stats import SparseAccessRecorder, pack_keys
 from .traces import read_shard
+
+TRANSIENT_CONFIG_KEYS = {'resume', 'rank', 'world_size', 'dist_backend', 'microbatch_blocks'}
+
+
+def _comm_device(device: torch.device) -> torch.device:
+    if dist.is_available() and dist.is_initialized() and dist.get_backend() == 'nccl':
+        return device
+    return torch.device('cpu')
+
+
+def _all_gather_1d(tensor: torch.Tensor, world_size: int, device: torch.device) -> list[torch.Tensor]:
+    comm_dev = _comm_device(device)
+    local = tensor.to(comm_dev).reshape(-1)
+    local_len = torch.tensor([local.numel()], dtype=torch.int64, device=comm_dev)
+    lengths = [torch.zeros(1, dtype=torch.int64, device=comm_dev) for _ in range(world_size)]
+    dist.all_gather(lengths, local_len)
+    counts = [int(x.item()) for x in lengths]
+    max_len = max(counts, default=0)
+    if max_len == 0:
+        return [torch.empty(0, dtype=tensor.dtype, device=device) for _ in range(world_size)]
+    padded = torch.zeros(max_len, dtype=local.dtype, device=comm_dev)
+    if local.numel():
+        padded[:local.numel()] = local
+    gathered = [torch.zeros(max_len, dtype=local.dtype, device=comm_dev) for _ in range(world_size)]
+    dist.all_gather(gathered, padded)
+    return [buf[:n].to(device) for buf, n in zip(gathered, counts)]
+
+
+class _CompactTrainSparse:
+    """Differentiate only unique touched buckets per microbatch instead of 2**24 floats."""
+    def __init__(self, base: SignedHash):
+        self.base = base
+        self.capacity = base.capacity
+        self.unique_buckets: torch.Tensor | None = None
+        self.touched_values: torch.Tensor | None = None
+
+    def lookup(self, d, previous, current):
+        buckets, signs = hash_keys(d, previous, current, self.capacity, self.base.values.device)
+        unique, inverse = torch.unique(buckets.reshape(-1), sorted=True, return_inverse=True)
+        touched = self.base.values.index_select(0, unique).detach().requires_grad_(True)
+        self.unique_buckets = unique
+        self.touched_values = touched
+        return touched[inverse].reshape(buckets.shape) * signs
+
+
+def _reduce_sparse_pairs(pairs: list[tuple[torch.Tensor, torch.Tensor]], device: torch.device):
+    if not pairs:
+        return (torch.empty(0, dtype=torch.int64, device=device),
+                torch.empty(0, dtype=torch.float32, device=device))
+    if len(pairs) == 1:
+        return pairs[0][0].to(device=device, dtype=torch.int64), pairs[0][1].to(device=device, dtype=torch.float32)
+    all_idx = torch.cat([idx.to(device=device, dtype=torch.int64).reshape(-1) for idx, _ in pairs])
+    all_grad = torch.cat([grad.to(device=device, dtype=torch.float32).reshape(-1) for _, grad in pairs])
+    if all_idx.numel() == 0:
+        return all_idx, all_grad
+    unique, inverse = torch.unique(all_idx, sorted=True, return_inverse=True)
+    summed = torch.zeros(len(unique), dtype=torch.float32, device=device)
+    summed.scatter_add_(0, inverse, all_grad)
+    return unique, summed
 
 
 def primary_eligible(record, *, split=None):
@@ -219,11 +279,13 @@ def epoch_references(entries, split, seed=None):
     return [(shard, i) for shard in chosen for i in range(shard.blocks)]
 
 
-def batches(references, batch_blocks, *, start_batch=0, head_metadata=None):
+def batches(references, batch_blocks, *, start_batch=0, head_metadata=None, rank=0, world_size=1):
     """Only one compact shard and one block batch are resident at a time."""
     cached_path, payload = None, None
     for batch_index in range(start_batch, (len(references) + batch_blocks - 1) // batch_blocks):
         selected = references[batch_index * batch_blocks:(batch_index + 1) * batch_blocks]
+        if world_size > 1:
+            selected = selected[rank::world_size]
         result = []
         for shard, index in selected:
             if shard.path != cached_path:
@@ -251,7 +313,7 @@ def reconstruct_batch(blocks, weight, bias=None, *, vocab_chunk=8192, output_mul
     return logits.log_softmax(-1)
 
 
-def corrected_batch_scores(adapter, blocks, l_unit, *, return_sparse_keys=False):
+def corrected_batch_scores(adapter, blocks, l_unit, *, return_sparse_keys=False, sparse_override=None):
     """Batched teacher-forced dense features; sampled canvas IDs stay constants."""
     H = torch.cat([b['h'] for b in blocks]).to(adapter.W.device, dtype=torch.float32)
     predecessors = []
@@ -262,31 +324,34 @@ def corrected_batch_scores(adapter, blocks, l_unit, *, return_sparse_keys=False)
                                  for d in range(1, len(adapter.A) + 1)])
     previous = torch.tensor([[x if x is not None else -1 for x in row] for row in predecessors],
                             device=adapter.W.device, dtype=torch.long)
-    pair = torch.zeros(len(H), adapter.E.shape[1], device=H.device, dtype=torch.float32)
-    for d in range(len(adapter.A)):
-        valid = previous[:, d] >= 0
-        # Skip missing predecessors entirely, including sparse lookup below.
-        rows = valid.nonzero(as_tuple=True)[0]
-        if len(rows):
-            part = adapter.E[previous[rows, d]].float() @ adapter.A[d].T
-            pair = pair.index_add(0, rows, part)
-    dense = adapter.unary(H) + pair @ adapter.E.float().T
+    # Skip missing predecessors entirely, including sparse lookup below.
+    valid_rows, valid_cols = (previous >= 0).nonzero(as_tuple=True)
+    if valid_rows.numel():
+        prev_ids = previous[valid_rows, valid_cols]
+        E_prev = adapter.E.index_select(0, prev_ids).float()
+        parts = torch.bmm(E_prev.unsqueeze(1), adapter.A.index_select(0, valid_cols).transpose(1, 2)).squeeze(1)
+        pair = torch.zeros(len(H), adapter.E.shape[1], device=H.device, dtype=torch.float32).index_add(0, valid_rows, parts)
+        dense = adapter.unary(H) + pair @ adapter.E.float().T
+    else:
+        dense = adapter.unary(H)
     scores = l_unit - dense
-    observed_keys = []
-    if adapter.sparse is not None:
+    sparse_table = sparse_override if sparse_override is not None else adapter.sparse
+    observed_keys = None
+    if sparse_table is not None and valid_rows.numel():
         candidates = scores.topk(min(adapter.M_sparse, scores.shape[-1]), dim=-1).indices
-        values = torch.zeros_like(candidates, dtype=torch.float32)
-        for d in range(len(adapter.A)):
-            rows = (previous[:, d] >= 0).nonzero(as_tuple=True)[0]
-            if len(rows):
-                corrections = adapter.sparse.lookup(d + 1, previous[rows, d, None], candidates[rows])
-                values = values.index_add(0, rows, corrections)
-                if return_sparse_keys:
-                    observed_keys.append(pack_keys(d + 1, previous[rows, d, None], candidates[rows],
-                                                   adapter.E.shape[0]).reshape(-1))
-        scores = scores - torch.zeros_like(scores).scatter(1, candidates, values)
+        d_pair = (valid_cols + 1)[:, None]
+        prev_pair = previous[valid_rows, valid_cols][:, None]
+        cands_pair = candidates.index_select(0, valid_rows)
+        corrections = sparse_table.lookup(d_pair, prev_pair, cands_pair)
+        values = torch.zeros(len(scores), candidates.shape[1], device=scores.device, dtype=torch.float32).index_add(
+            0, valid_rows, corrections)
+        scores = scores.scatter_add(1, candidates, -values)
+        if return_sparse_keys:
+            observed_keys = pack_keys(d_pair, prev_pair, cands_pair, adapter.E.shape[0]).reshape(-1)
     if return_sparse_keys:
-        return scores, torch.cat(observed_keys) if observed_keys else torch.empty(0, dtype=torch.long, device=scores.device)
+        if observed_keys is None:
+            observed_keys = torch.empty(0, dtype=torch.long, device=scores.device)
+        return scores, observed_keys
     return scores
 
 
@@ -300,8 +365,9 @@ def batch_targets(blocks, device):
     return ids, probabilities, rest, torch.cat(weights)
 
 
-def batch_loss(adapter, blocks, l_unit, *, collect_sparse_keys=False):
-    corrected = corrected_batch_scores(adapter, blocks, l_unit, return_sparse_keys=collect_sparse_keys)
+def batch_loss(adapter, blocks, l_unit, *, collect_sparse_keys=False, sparse_override=None):
+    corrected = corrected_batch_scores(adapter, blocks, l_unit, return_sparse_keys=collect_sparse_keys,
+                                       sparse_override=sparse_override)
     scores = corrected[0] if collect_sparse_keys else corrected
     ids, probabilities, rest, weights = batch_targets(blocks, scores.device)
     result = (union_rest_grouped(scores, ids, probabilities, rest, weights), weights.sum(), scores)
@@ -309,10 +375,13 @@ def batch_loss(adapter, blocks, l_unit, *, collect_sparse_keys=False):
 
 
 @torch.no_grad()
-def evaluate(adapter, references, head, bias, args, head_metadata):
+def evaluate(adapter, references, head, bias, args, head_metadata, *, rank=0, world_size=1, use_dist=False):
     sums = dict(loss=0., weight=0., slots=0, union_overlap_lower=0., grouped_overlap_upper=0.,
                 full_overlap=0., full_top1=0., full_slots=0, full_loss=0., full_grouped_loss=0., full_weight=0.)
-    for _, blocks in batches(references, args.batch_blocks, head_metadata=head_metadata):
+    for _, blocks in batches(references, args.batch_blocks, head_metadata=head_metadata,
+                             rank=rank, world_size=world_size):
+        if not blocks:
+            continue
         l_unit = reconstruct_batch(blocks, head, bias, vocab_chunk=args.vocab_chunk,
                                    output_multiplier=head_metadata.get('output_multiplier', 1.))
         loss, weight, scores = batch_loss(adapter, blocks, l_unit)
@@ -345,6 +414,15 @@ def evaluate(adapter, references, head, bias, args, head_metadata):
                 sums['full_slots'] += K
             sums['slots'] += K
             cursor += K
+    if use_dist and world_size > 1:
+        keys = ('loss', 'weight', 'slots', 'union_overlap_lower', 'grouped_overlap_upper',
+                'full_overlap', 'full_top1', 'full_slots', 'full_loss', 'full_grouped_loss', 'full_weight')
+        comm_dev = _comm_device(adapter.E.device)
+        vec = torch.tensor([float(sums[k]) for k in keys], dtype=torch.float64, device=comm_dev)
+        dist.all_reduce(vec, op=dist.ReduceOp.SUM)
+        reduced = vec.cpu().tolist()
+        for k, val in zip(keys, reduced):
+            sums[k] = int(round(val)) if k in ('slots', 'full_slots', 'full_top1') else float(val)
     full = sums['full_slots']
     return {'loss_mode': 'union_rest_grouped', 'weighted_mean_kl': sums['loss'] / sums['weight'],
             'weighted_kl_sum': sums['loss'], 'weight_sum': sums['weight'], 'logical_slots': sums['slots'],
@@ -412,17 +490,32 @@ def load_adapter_checkpoint(path, device='cpu'):
 
 def fit(entries, index_report, E, head, bias, head_metadata, args, *, stop_after_steps=None):
     """Two predeclared fit phases. Optional stop hook tests exact resumption."""
+    rank = int(getattr(args, 'rank', 0))
+    world_size = int(getattr(args, 'world_size', 1))
+    if world_size < 1 or not 0 <= rank < world_size:
+        raise ValueError('rank must satisfy 0 <= rank < world_size')
+    microbatch_blocks = getattr(args, 'microbatch_blocks', None)
+    if microbatch_blocks is not None and int(microbatch_blocks) < 1:
+        raise ValueError('microbatch_blocks must be positive when specified')
+    use_dist = world_size > 1 and dist.is_available() and dist.is_initialized()
+    if world_size > 1 and not use_dist:
+        raise RuntimeError('world_size > 1 requires an initialized torch.distributed process group')
+    is_main = rank == 0
+
     outdir = args.output / ('m2_smoke' if args.scale == 'smoke' else 'm2')
-    outdir.mkdir(parents=True, exist_ok=True)
+    if is_main:
+        outdir.mkdir(parents=True, exist_ok=True)
+    if use_dist:
+        dist.barrier()
     latest = outdir / 'latest.pt'
     config = resolved_config(args)
     implementation = {name: file_digest(Path(__file__).with_name(name)) for name in
                       ['train.py', 'adapter.py', 'features.py', 'sparse.py', 'sparse_stats.py', 'traces.py']}
-    identity_config = {k: v for k, v in config.items() if k != 'resume'}
+    identity_config = {k: v for k, v in config.items() if k not in TRANSIENT_CONFIG_KEYS}
     identity = fingerprint({'config': identity_config, 'sources': index_report['source_fingerprint'], 'head': head_metadata,
                             'implementation_sha256': implementation,
                             'E_sha256': hashlib.sha256(E.detach().cpu().numpy().tobytes()).hexdigest()})
-    stats_recorder = SparseAccessRecorder(args.output / 'm2_sparse_stats', identity, len(E))
+    stats_recorder = SparseAccessRecorder(args.output / 'm2_sparse_stats', identity, len(E)) if is_main else None
     references = {split: epoch_references(entries, split) for split in ['train', 'dev', 'test']}
     first = read_shard(entries[0].path)['blocks'][0]
     p = first['h'].shape[1]
@@ -451,11 +544,16 @@ def fit(entries, index_report, E, head, bias, head_metadata, args, *, stop_after
         random.setstate(resumed['python_rng'])
         if E.is_cuda:
             torch.cuda.set_rng_state(resumed['cuda_rng'], E.device)
+        if use_dist:
+            dist.barrier()
         if resumed['stage'] == 'complete':
-            atomic_json(args.output / ('m2_smoke.json' if args.scale == 'smoke' else 'm2.json'), report)
+            if is_main:
+                atomic_json(args.output / ('m2_smoke.json' if args.scale == 'smoke' else 'm2.json'), report)
             return report
     if not report.get('baseline'):
-        report['baseline'] = {split: evaluate(adapter, refs, head, bias, args, head_metadata) for split, refs in references.items()}
+        report['baseline'] = {split: evaluate(adapter, refs, head, bias, args, head_metadata,
+                                              rank=rank, world_size=world_size, use_dist=use_dist)
+                              for split, refs in references.items()}
     if any(report['baseline'][s]['live_full_diagnostic']['logical_slots'] == 0 for s in ['dev', 'test']):
         raise RuntimeError('Held-out dev/test live_full shards are required before fitting to report exact metrics')
     steps_this_run = 0
@@ -467,6 +565,7 @@ def fit(entries, index_report, E, head, bias, head_metadata, args, *, stop_after
         if stage == 'dense_sparse' and adapter.sparse is None:
             adapter.sparse = SignedHash(args.sparse_capacity, device=E.device)
         dense_optimizer, sparse_optimizer = optimizer_for(adapter, args, stage)
+        dense_params = [adapter.W, adapter.A] + ([adapter.b] if stage == 'dense_sparse' else [])
         start_epoch, start_batch = 0, 0
         if resumed is not None and resumed['stage'] == stage:
             dense_optimizer.load_state_dict(resumed['dense_optimizer'])
@@ -475,56 +574,139 @@ def fit(entries, index_report, E, head, bias, head_metadata, args, *, stop_after
             start_epoch, start_batch = resumed['epoch'], resumed['next_batch']
         for epoch in range(start_epoch, epochs):
             train_refs = epoch_references(entries, 'train', seed=args.seed + 1000 * stage_index + epoch)
-            for batch_index, blocks in batches(train_refs, args.batch_blocks, start_batch=start_batch,
-                                                head_metadata=head_metadata):
-                l_unit = reconstruct_batch(blocks, head, bias, vocab_chunk=args.vocab_chunk,
-                                           output_multiplier=head_metadata.get('output_multiplier', 1.))
-                dense_optimizer.zero_grad(set_to_none=True)
-                if sparse_optimizer is not None:
-                    sparse_optimizer.zero_grad(set_to_none=True)
-                computed = batch_loss(adapter, blocks, l_unit, collect_sparse_keys=stage == 'dense_sparse')
-                loss, weight = computed[:2]
-                normalized = loss / weight
-                if not bool(torch.isfinite(normalized)):
+            for batch_index, local_blocks in batches(train_refs, args.batch_blocks, start_batch=start_batch,
+                                                     head_metadata=head_metadata, rank=rank, world_size=world_size):
+                for param in dense_params:
+                    param.grad = torch.zeros_like(param)
+                if local_blocks:
+                    local_weight = torch.cat([loss_weights(b['block_length'], E.device) for b in local_blocks]).sum()
+                else:
+                    local_weight = torch.zeros((), device=E.device, dtype=torch.float32)
+                if use_dist:
+                    comm_dev = _comm_device(E.device)
+                    w_comm = local_weight.to(comm_dev)
+                    dist.all_reduce(w_comm, op=dist.ReduceOp.SUM)
+                    global_weight = w_comm.to(E.device)
+                else:
+                    global_weight = local_weight
+
+                mb_step = int(microbatch_blocks) if microbatch_blocks is not None else max(1, len(local_blocks))
+                local_loss_sum = torch.zeros((), device=E.device, dtype=torch.float32)
+                local_sparse_pairs: list[tuple[torch.Tensor, torch.Tensor]] = []
+                local_observed_keys: list[torch.Tensor] = []
+                for mb_start in range(0, len(local_blocks), mb_step):
+                    mb_blocks = local_blocks[mb_start:mb_start + mb_step]
+                    l_unit = reconstruct_batch(mb_blocks, head, bias, vocab_chunk=args.vocab_chunk,
+                                               output_multiplier=head_metadata.get('output_multiplier', 1.))
+                    compact_sparse = _CompactTrainSparse(adapter.sparse) if stage == 'dense_sparse' else None
+                    computed = batch_loss(adapter, mb_blocks, l_unit,
+                                          collect_sparse_keys=stage == 'dense_sparse',
+                                          sparse_override=compact_sparse)
+                    mb_loss = computed[0]
+                    local_loss_sum = local_loss_sum + mb_loss.detach()
+                    (mb_loss / global_weight).backward()
+                    if stage == 'dense_sparse':
+                        if compact_sparse.unique_buckets is not None and compact_sparse.unique_buckets.numel():
+                            grad = compact_sparse.touched_values.grad
+                            local_sparse_pairs.append((
+                                compact_sparse.unique_buckets,
+                                grad.detach() if grad is not None else torch.zeros_like(compact_sparse.touched_values),
+                            ))
+                        local_observed_keys.append(computed[3])
+
+                if use_dist:
+                    comm_dev = _comm_device(E.device)
+                    loss_comm = local_loss_sum.to(comm_dev)
+                    dist.all_reduce(loss_comm, op=dist.ReduceOp.SUM)
+                    global_loss = loss_comm.to(E.device)
+                else:
+                    global_loss = local_loss_sum
+                if not bool(torch.isfinite(global_loss / global_weight)):
                     raise FloatingPointError('Nonfinite training loss')
-                normalized.backward()
+
+                if use_dist:
+                    comm_dev = _comm_device(E.device)
+                    flat_grads = torch.cat([param.grad.reshape(-1) for param in dense_params]).to(comm_dev)
+                    dist.all_reduce(flat_grads, op=dist.ReduceOp.SUM)
+                    flat_grads = flat_grads.to(E.device)
+                    offset = 0
+                    for param in dense_params:
+                        numel = param.numel()
+                        param.grad.copy_(flat_grads[offset:offset + numel].view_as(param))
+                        offset += numel
                 dense_optimizer.step()
+
                 if sparse_optimizer is not None:
-                    sparse_optimizer.step()
-                    adapter.sparse.proximal_step(args.sparse_learning_rate, args.lambda_l1)
-                    chunk = stats_recorder.write_batch(computed[3], epoch, batch_index)
-                    report.setdefault('sparse_statistics_chunks', []).append(chunk)
+                    rank_buckets, rank_grads = _reduce_sparse_pairs(local_sparse_pairs, E.device)
+                    if use_dist:
+                        gathered_b = _all_gather_1d(rank_buckets, world_size, E.device)
+                        gathered_g = _all_gather_1d(rank_grads, world_size, E.device)
+                        global_buckets, global_grads = _reduce_sparse_pairs(
+                            list(zip(gathered_b, gathered_g)), E.device)
+                    else:
+                        global_buckets, global_grads = rank_buckets, rank_grads
+                    with torch.no_grad():
+                        if global_buckets.numel():
+                            adapter.sparse.values.index_add_(
+                                0, global_buckets, global_grads, alpha=-args.sparse_learning_rate)
+                        adapter.sparse.proximal_step(args.sparse_learning_rate, args.lambda_l1)
+
+                    rank_keys = (torch.cat(local_observed_keys) if local_observed_keys
+                                 else torch.empty(0, dtype=torch.long, device=E.device))
+                    if use_dist:
+                        gathered_keys = _all_gather_1d(rank_keys, world_size, torch.device('cpu'))
+                        global_keys = torch.cat(gathered_keys) if gathered_keys else torch.empty(0, dtype=torch.long)
+                    else:
+                        global_keys = rank_keys
+                    if is_main:
+                        chunk = stats_recorder.write_batch(global_keys, epoch, batch_index)
+                        report.setdefault('sparse_statistics_chunks', []).append(chunk)
+
                 steps_this_run += 1
                 if steps_this_run % args.checkpoint_every == 0 or stop_after_steps == steps_this_run:
-                    atomic_torch_save(latest, checkpoint_payload(adapter, args, identity, stage, epoch, batch_index + 1,
-                                                                 dense_optimizer, sparse_optimizer, report))
+                    if is_main:
+                        atomic_torch_save(latest, checkpoint_payload(adapter, args, identity, stage, epoch, batch_index + 1,
+                                                                     dense_optimizer, sparse_optimizer, report))
+                    if use_dist:
+                        dist.barrier()
                 if stop_after_steps == steps_this_run:
                     return {'status': 'interrupted_for_resume_test', 'checkpoint': str(latest)}
             start_batch = 0
-            dev = evaluate(adapter, references['dev'], head, bias, args, head_metadata)
+            dev = evaluate(adapter, references['dev'], head, bias, args, head_metadata,
+                           rank=rank, world_size=world_size, use_dist=use_dist)
             base = report['baseline']['dev']['weighted_mean_kl']
             gain = (base - dev['weighted_mean_kl']) / max(base, 1e-12)
             report.setdefault('epoch_development', []).append({'stage': stage, 'epoch': epoch, 'dev': dev,
                                                                'relative_improvement_over_zero': gain})
-            atomic_torch_save(latest, checkpoint_payload(adapter, args, identity, stage, epoch + 1, 0,
-                                                         dense_optimizer, sparse_optimizer, report))
+            if is_main:
+                atomic_torch_save(latest, checkpoint_payload(adapter, args, identity, stage, epoch + 1, 0,
+                                                             dense_optimizer, sparse_optimizer, report))
             if gain < .01:
                 report.setdefault('stopped_additional_epochs', []).append(stage)
-                atomic_torch_save(latest, checkpoint_payload(adapter, args, identity, stage, epochs, 0,
-                                                             dense_optimizer, sparse_optimizer, report))
+                if is_main:
+                    atomic_torch_save(latest, checkpoint_payload(adapter, args, identity, stage, epochs, 0,
+                                                                 dense_optimizer, sparse_optimizer, report))
+                if use_dist:
+                    dist.barrier()
                 break
+            if use_dist:
+                dist.barrier()
         # Test is read only after each predeclared phase is finished; its metrics
         # never choose parameters, epochs, learning rates, or checkpoints.
-        report['stages'][stage] = {split: evaluate(adapter, refs, head, bias, args, head_metadata)
+        report['stages'][stage] = {split: evaluate(adapter, refs, head, bias, args, head_metadata,
+                                                   rank=rank, world_size=world_size, use_dist=use_dist)
                                     for split, refs in references.items()}
         report['stages'][stage]['parameters'] = parameter_report(adapter)
-        if stage == 'dense_sparse':
+        if stage == 'dense_sparse' and is_main:
             report['stages'][stage]['sparse_collision_statistics'] = stats_recorder.finalize(
-                report['sparse_statistics_chunks'], adapter.sparse,
+                report.get('sparse_statistics_chunks', []), adapter.sparse,
                 memory_limit=getattr(args, 'stats_memory_limit', '512MB'),
                 benchmark_entries=getattr(args, 'stats_benchmark_entries', 1_000_000), seed=args.seed)
-        atomic_torch_save(outdir / f'{stage}.pt', checkpoint_payload(adapter, args, identity, stage, epochs, 0,
-                                                                    dense_optimizer, sparse_optimizer, report))
+        if is_main:
+            atomic_torch_save(outdir / f'{stage}.pt', checkpoint_payload(adapter, args, identity, stage, epochs, 0,
+                                                                        dense_optimizer, sparse_optimizer, report))
+        if use_dist:
+            dist.barrier()
         resumed = None
     final_gain = ((report['baseline']['dev']['weighted_mean_kl'] - report['stages']['dense_sparse']['dev']['weighted_mean_kl'])
                   / max(report['baseline']['dev']['weighted_mean_kl'], 1e-12))
@@ -536,8 +718,11 @@ def fit(entries, index_report, E, head, bias, head_metadata, args, *, stop_after
                    'scope': 'complete eligible train/dev/test shard sets; no long/pure-temperature fitting'})
     if any(report['stages']['dense_sparse'][s]['live_full_diagnostic']['logical_slots'] == 0 for s in ['dev', 'test']):
         raise RuntimeError('Held-out live_full shards are required to report grouped loss gap and exact overlap')
-    atomic_torch_save(latest, checkpoint_payload(adapter, args, identity, 'complete', 0, 0, None, None, report))
-    atomic_json(args.output / ('m2_smoke.json' if args.scale == 'smoke' else 'm2.json'), report)
+    if is_main:
+        atomic_torch_save(latest, checkpoint_payload(adapter, args, identity, 'complete', 0, 0, None, None, report))
+        atomic_json(args.output / ('m2_smoke.json' if args.scale == 'smoke' else 'm2.json'), report)
+    if use_dist:
+        dist.barrier()
     return report
 
 
@@ -602,6 +787,10 @@ def main():
     parser.add_argument('--M_sparse', type=int, default=256)
     parser.add_argument('--history_depth', type=int, default=4)
     parser.add_argument('--batch_blocks', type=int, default=8)
+    parser.add_argument('--microbatch_blocks', type=int)
+    parser.add_argument('--rank', type=int, default=int(os.environ.get('RANK', 0)))
+    parser.add_argument('--world_size', type=int, default=int(os.environ.get('WORLD_SIZE', 1)))
+    parser.add_argument('--dist_backend', choices=['nccl', 'gloo'])
     parser.add_argument('--vocab_chunk', type=int, default=8192)
     parser.add_argument('--epochs_dense', type=int, default=1)
     parser.add_argument('--epochs_sparse', type=int, default=1)
@@ -615,35 +804,58 @@ def main():
         args.m1_diagnostic = args.output / f'diagnostic_{args.scale}.json'
     if min(args.batch_blocks, args.vocab_chunk, args.epochs_dense, args.epochs_sparse, args.checkpoint_every) < 1:
         raise ValueError('Training counts must be positive')
+    if args.microbatch_blocks is not None and args.microbatch_blocks < 1:
+        raise ValueError('microbatch_blocks must be positive')
+    if args.world_size < 1 or not 0 <= args.rank < args.world_size:
+        raise ValueError('rank must satisfy 0 <= rank < world_size')
     if min(args.learning_rate, args.sparse_learning_rate) <= 0 or min(args.weight_decay, args.bias_weight_decay, args.lambda_l1) < 0:
         raise ValueError('Learning rates must be positive and regularization nonnegative')
-    torch.manual_seed(args.seed)
-    random.seed(args.seed)
-    if args.scale == 'smoke':
-        torch.set_num_threads(1)
-        args.sparse_capacity = min(args.sparse_capacity, 256)
-        args.M_sparse = min(args.M_sparse, 4)
-        args.trace_dir, E, head, bias, head_metadata = smoke_bundle(args)
-        entries, index_report = trace_index(args.trace_dir)
-    else:
-        preflight(args, 500_000)
-        audit = json.loads(Path(args.m1_audit).read_text())
-        if audit.get('status') != 'passed':
-            raise RuntimeError('blocked: M1 audit has not passed')
-        entries, index_report = trace_index(args.trace_dir, accepted_paths=audit['shards'])
-        feature = torch.load(args.features, map_location='cpu', weights_only=True)
-        projection = HiddenProjection.load(args.projection)
-        validate_reference_gate(args, index_report, entries, projection, feature['metadata'])
-        E = feature['E'].to(args.device, dtype=torch.float32)
-        first = read_shard(entries[0].path)['blocks'][0]
-        head_metadata = first['draft_lm_head']
-        head, bias = load_frozen_head(head_metadata, args.device)
-    record_run(args, 'train')
-    report = fit(entries, index_report, E, head, bias, head_metadata, args)
-    print(json.dumps({'scale': args.scale, 'status': report['status'],
-                      'relative_dev_improvement': report['relative_dev_improvement'],
-                      'under_one_percent_stop_tuning': report['under_one_percent_stop_tuning'],
-                      'checkpoints': report['checkpoints']}, indent=2))
+    os.environ['RANK'] = str(args.rank)
+    initialized_dist = False
+    if args.world_size > 1 and not dist.is_initialized():
+        backend = args.dist_backend or ('nccl' if str(args.device).startswith('cuda') else 'gloo')
+        dist.init_process_group(backend=backend, rank=args.rank, world_size=args.world_size)
+        initialized_dist = True
+    try:
+        torch.manual_seed(args.seed)
+        random.seed(args.seed)
+        if args.scale == 'smoke':
+            torch.set_num_threads(1)
+            args.sparse_capacity = min(args.sparse_capacity, 256)
+            args.M_sparse = min(args.M_sparse, 4)
+            if args.rank == 0:
+                args.trace_dir, E, head, bias, head_metadata = smoke_bundle(args)
+            if args.world_size > 1:
+                dist.barrier()
+            if args.rank != 0:
+                args.trace_dir, E, head, bias, head_metadata = smoke_bundle(args)
+            entries, index_report = trace_index(args.trace_dir)
+        else:
+            if args.rank == 0:
+                preflight(args, 500_000)
+            if args.world_size > 1:
+                dist.barrier()
+            audit = json.loads(Path(args.m1_audit).read_text())
+            if audit.get('status') != 'passed':
+                raise RuntimeError('blocked: M1 audit has not passed')
+            entries, index_report = trace_index(args.trace_dir, accepted_paths=audit['shards'])
+            feature = torch.load(args.features, map_location='cpu', weights_only=True)
+            projection = HiddenProjection.load(args.projection)
+            validate_reference_gate(args, index_report, entries, projection, feature['metadata'])
+            E = feature['E'].to(args.device, dtype=torch.float32)
+            first = read_shard(entries[0].path)['blocks'][0]
+            head_metadata = first['draft_lm_head']
+            head, bias = load_frozen_head(head_metadata, args.device)
+        record_run(args, 'train')
+        report = fit(entries, index_report, E, head, bias, head_metadata, args)
+        if args.rank == 0:
+            print(json.dumps({'scale': args.scale, 'status': report['status'],
+                              'relative_dev_improvement': report['relative_dev_improvement'],
+                              'under_one_percent_stop_tuning': report['under_one_percent_stop_tuning'],
+                              'checkpoints': report['checkpoints']}, indent=2))
+    finally:
+        if initialized_dist and dist.is_initialized():
+            dist.destroy_process_group()
 
 
 if __name__ == '__main__':

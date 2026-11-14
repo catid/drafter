@@ -11,9 +11,11 @@ import time
 import torch
 
 from .adapter import DenseAdapter, prev_token, top_candidates
+from .fastpath import FastPathConfig, FastPathRuntime
+from .online import OnlineBigram, OnlineState
 from .runtime import (common_parser, parse_config, record_run, resolved_config,
                       atomic_json, preflight, Manifest, fingerprint)
-from .sampler import SamplingWarper, sample_token
+from .sampler import SamplingWarper, sample_token, sample_token_tensor
 from .sparse import SignedHash
 
 
@@ -160,8 +162,56 @@ def benchmark(args):
               'sparse_lookup': timing(sparse_lookup),
               'sparse_top_m_selection': timing(lambda: top_candidates(l_unit - dense, M)),
               'sequential_sampling': timing(sampling)}
+    target_logits = torch.randn(K, V, device=device, generator=generator)
+    online_state = OnlineState(snapshot, lr=.001, lambda_l2=1e-4, lambda_l1_b=1e-5,
+                               lambda_l1_s=1e-5, sparse_capacity=min(args.hash_capacity, 2**20), enable_sparse=True)
+    online_round = [0]
+    def online_step():
+        online_round[0] += 1
+        online_state.update(online_round[0], l_unit, target_logits, H, prefix, fixed_tokens)
+    phases['online_update_step'] = timing(online_step)
+
+    bigram = OnlineBigram(vocab_size=V, alpha=1., lambda_tr=.1, k_ret=min(32, V))
+    bigram.update(prefix, fixed_tokens)
+    phases['online_bigram_score'] = timing(
+        lambda: [bigram.score(l_unit[i], fixed_tokens[i - 1] if i > 0 else prefix[-1]) for i in range(K)]
+    )
+
     modes = {mode: timing(lambda mode=mode: total(mode))
              for mode in ('batched_full', 'sequential_full', 'dense_candidate')}
+
+    prefix_t = torch.tensor(prefix, dtype=torch.long, device=device)
+    ctx_buf = torch.empty(len(prefix) + K, dtype=torch.long, device=device)
+    slot_offsets = [torch.arange(1, min(D, len(prefix) + i) + 1, dtype=torch.long, device=device)
+                    for i in range(K)]
+
+    def total_zero_sync(fastpath=None):
+        unary = fastpath.unary(E, snapshot.W, snapshot.b, H) if fastpath is not None else snapshot.unary(H)
+        probs_fn = fastpath.probabilities if fastpath is not None else None
+        ctx_buf[:len(prefix)] = prefix_t
+        for i in range(K):
+            offs = slot_offsets[i]
+            prev_ids = ctx_buf[len(prefix) + i - offs]
+            scores = snapshot.score_slot_tensor(l_unit[i], unary[i], offs, prev_ids)
+            tok_t, _ = sample_token_tensor(scores, 1., warper, generator=sampler_rng, probs_fn=probs_fn)
+            ctx_buf[len(prefix) + i] = tok_t
+        return ctx_buf[len(prefix):].tolist()
+
+    modes['batched_full_zero_sync'] = timing(total_zero_sync)
+    if getattr(args, 'compile', False) or getattr(args, 'cuda_graph', False):
+        fastpath = FastPathRuntime(
+            FastPathConfig(compile=bool(args.compile), cuda_graph=bool(args.cuda_graph)),
+            static_block_length=K,
+        )
+        modes['batched_full_fastpath'] = timing(lambda: total_zero_sync(fastpath))
+        online_fast = OnlineState(snapshot, lr=.001, lambda_l2=1e-4, lambda_l1_b=1e-5,
+                                  lambda_l1_s=1e-5, sparse_capacity=min(args.hash_capacity, 2**20),
+                                  enable_sparse=True, fastpath=fastpath)
+        online_fast_round = [0]
+        def online_fast_step():
+            online_fast_round[0] += 1
+            online_fast.update(online_fast_round[0], l_unit, target_logits, H, prefix, fixed_tokens)
+        phases['online_update_step_fastpath'] = timing(online_fast_step)
 
     def candidate_end_to_end():
         # Immutable C0 construction itself incurs one full unary pass; charge it.
@@ -208,6 +258,8 @@ def main(argv=None):
     parser.add_argument('--hash_capacity', type=int)
     parser.add_argument('--warmups', type=int, default=5)
     parser.add_argument('--repeats', type=int, default=30)
+    parser.add_argument('--compile', action='store_true', default=False)
+    parser.add_argument('--cuda_graph', action='store_true', default=False)
     args = parse_config(parser, argv)
     tiny = args.scale == 'smoke'
     for key, value in {'vocab_size': 31 if tiny else 151936, 'block_length': 4 if tiny else 15,
@@ -223,7 +275,7 @@ def main(argv=None):
         run_smoke(args)
     if not tiny:
         preflight(args, args.block_length * args.repeats * 4)
-    source_hash = hashlib.sha256(b''.join((Path(__file__).parent / name).read_bytes() for name in ('bench_adapter.py', 'adapter.py', 'sparse.py', 'sampler.py'))).hexdigest()
+    source_hash = hashlib.sha256(b''.join((Path(__file__).parent / name).read_bytes() for name in ('bench_adapter.py', 'adapter.py', 'sparse.py', 'sampler.py', 'online.py', 'fastpath.py'))).hexdigest()
     identity = {'model_pair': [args.target, args.drafter], 'prompt': 'random_tensor_microbenchmark',
                 'condition': 'synthetic', 'seed': args.seed, 'temperature': 1.,
                 'verification_rule': 'not_applicable', 'proposal_mode': 'all_measured_modes',

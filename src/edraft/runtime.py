@@ -177,6 +177,64 @@ class Manifest:
         atomic_json(self.path, self.data)
 
 
+def _pid_alive(pid: int) -> bool:
+    if pid <= 0:
+        return False
+    try:
+        os.kill(pid, 0)
+        return True
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+
+
+class WorkQueue:
+    """File-locked dynamic work queue for load-balanced multi-worker execution.
+
+    Items are claimed in `ordered_keys` priority order (e.g. long generations
+    first so tail latency never leaves other GPUs idle). Claims held by a dead
+    process are automatically reclaimed on subsequent claims or resumed runs.
+    """
+    def __init__(self, path, ordered_keys: list[str], precompleted: set[str] | None = None):
+        self.path = Path(path)
+        self.ordered_keys = list(dict.fromkeys(ordered_keys))
+        with locked_json(self.path) as state:
+            existing = state.get('ordered_keys')
+            if existing is None or set(existing) != set(self.ordered_keys):
+                prior_done = set(state.get('completed', []))
+                state.clear()
+                state['ordered_keys'] = self.ordered_keys
+                state['completed'] = sorted((prior_done | set(precompleted or ())) & set(self.ordered_keys))
+                state['claimed'] = {}
+            elif precompleted:
+                done = set(state.get('completed', [])) | (set(precompleted) & set(self.ordered_keys))
+                state['completed'] = sorted(done)
+                for key in precompleted:
+                    state.get('claimed', {}).pop(key, None)
+
+    def claim(self, rank: int = 0, pid: int | None = None) -> str | None:
+        owner_pid = os.getpid() if pid is None else int(pid)
+        with locked_json(self.path) as state:
+            completed = set(state.setdefault('completed', []))
+            claimed = state.setdefault('claimed', {})
+            for key, info in list(claimed.items()):
+                if key in completed or not _pid_alive(int(info.get('pid', -1))):
+                    claimed.pop(key, None)
+            for key in state.get('ordered_keys', self.ordered_keys):
+                if key not in completed and key not in claimed:
+                    claimed[key] = {'rank': int(rank), 'pid': owner_pid, 'claimed_at_unix': time.time()}
+                    return key
+            return None
+
+    def complete(self, key: str):
+        with locked_json(self.path) as state:
+            completed = set(state.setdefault('completed', []))
+            completed.add(key)
+            state['completed'] = sorted(completed)
+            state.setdefault('claimed', {}).pop(key, None)
+
+
 def preflight(args, expected_tokens):
     """Require current smoke evidence and record explicitly rough CPU-based estimate."""
     path = ROOT / 'artifacts/smoke.json'

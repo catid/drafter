@@ -1,7 +1,7 @@
 """Causal energy correction and standalone synchronous lookahead mathematics."""
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from contextlib import nullcontext
 from typing import Sequence
 import torch
@@ -34,26 +34,80 @@ def _phase(timer, name):
     return nullcontext() if timer is None else timer.phase(name)
 
 
-def slot_correction(E, A, U_i, l_unit_i, prefix, realized, i, sparse=None, M_sparse=256, beta=1.0, timer=None):
+def _pair_message(E: torch.Tensor, A: torch.Tensor, predecessors: list[tuple[int, int]],
+                  pair_matrix: torch.Tensor | None = None) -> torch.Tensor:
+    r = E.shape[1]
+    avail = len(predecessors)
+    prev_ids = torch.tensor([p for _, p in predecessors], device=A.device, dtype=torch.long)
+    E_prev = E.index_select(0, prev_ids).to(A.dtype)
+    if pair_matrix is not None and all(d == idx + 1 for idx, (d, _) in enumerate(predecessors)):
+        return pair_matrix[:, :avail * r] @ E_prev.reshape(-1)
+    if all(d == idx + 1 for idx, (d, _) in enumerate(predecessors)):
+        A_sel = A[:avail]
+    else:
+        d_idx = torch.tensor([d - 1 for d, _ in predecessors], device=A.device, dtype=torch.long)
+        A_sel = A.index_select(0, d_idx)
+    return torch.bmm(A_sel, E_prev.unsqueeze(-1)).squeeze(-1).sum(0)
+
+
+def slot_correction(E, A, U_i, l_unit_i, prefix, realized, i, sparse=None, M_sparse=256, beta=1.0, timer=None,
+                    *, pair_matrix=None):
     with _phase(timer, 'dense_pair_score'):
-        message = torch.zeros(E.shape[1], dtype=A.dtype, device=A.device)
         predecessors = []
         for d in range(1, len(A) + 1):
             previous = prev_token(prefix, realized, i, d)
             if previous is not None:
-                message = message + A[d - 1] @ E[previous].to(A.dtype)
                 predecessors.append((d, previous))
-        dense = U_i + E.to(A.dtype) @ message
+        if predecessors:
+            message = _pair_message(E, A, predecessors, pair_matrix=pair_matrix)
+            dense = U_i + E.to(A.dtype) @ message
+        else:
+            dense = U_i
     if sparse is None or not predecessors:
         return dense
     with _phase(timer, 'sparse_lookup'):
         candidates = top_candidates(l_unit_i - beta * dense, M_sparse)
         # All logical offsets share one vectorized hash invocation for this slot.
-        offsets = torch.tensor([d for d, _ in predecessors], device=dense.device)[:, None]
-        previous = torch.tensor([p for _, p in predecessors], device=dense.device)[:, None]
+        offsets = torch.tensor([d for d, _ in predecessors], device=dense.device, dtype=torch.long)[:, None]
+        previous = torch.tensor([p for _, p in predecessors], device=dense.device, dtype=torch.long)[:, None]
         values = sparse.lookup(offsets, previous, candidates[None, :]).to(dense.dtype).sum(0)
-        correction = dense + torch.zeros_like(dense).scatter(0, candidates, values)
+        correction = dense.scatter_add(0, candidates, values)
     return correction
+
+
+def block_predecessor_pairs(prefix: Sequence[int], tokens: Sequence[int], K: int, D: int, device):
+    """Build valid (slot_idx, d_zero_based, prev_token_id) 1D int64 tensors in one host-to-device copy."""
+    pairs = []
+    for i in range(K):
+        for d in range(1, D + 1):
+            previous = prev_token(prefix, tokens, i, d)
+            if previous is not None:
+                pairs.append((i, d - 1, previous))
+    if not pairs:
+        empty = torch.empty(0, device=device, dtype=torch.long)
+        return empty, empty, empty
+    packed = torch.tensor(pairs, device=device, dtype=torch.long)
+    return packed[:, 0], packed[:, 1], packed[:, 2]
+
+
+def block_correction(E, A, U, l_unit, prefix, tokens, sparse=None, M_sparse=256, beta=1.0):
+    """Vectorized [K, V] causal correction across all slots and offsets 1..D."""
+    K = len(U)
+    valid_slots, valid_d0, valid_prev = block_predecessor_pairs(prefix, tokens, K, len(A), A.device)
+    if valid_slots.numel() == 0:
+        return U
+    E_cast = E.to(A.dtype)
+    E_prev = E_cast.index_select(0, valid_prev)
+    msgs = torch.bmm(A.index_select(0, valid_d0), E_prev.unsqueeze(-1)).squeeze(-1)
+    slot_msgs = torch.zeros(K, E.shape[1], dtype=A.dtype, device=A.device).index_add(0, valid_slots, msgs)
+    dense = U + slot_msgs @ E_cast.T
+    if sparse is None:
+        return dense
+    candidates = top_candidates(l_unit - beta * dense, M_sparse)
+    cands_pair = candidates.index_select(0, valid_slots)
+    values_pair = sparse.lookup((valid_d0 + 1)[:, None], valid_prev[:, None], cands_pair).to(dense.dtype)
+    slot_values = torch.zeros(K, candidates.shape[1], dtype=dense.dtype, device=dense.device).index_add(0, valid_slots, values_pair)
+    return dense.scatter_add(1, candidates, slot_values)
 
 
 @dataclass(frozen=True)
@@ -67,6 +121,15 @@ class ProposalSnapshot:
     M_sparse: int = 256
     C0: tuple[torch.Tensor, ...] | None = None
     is_zero: bool = False
+    _A_flat: torch.Tensor | None = field(default=None, init=False, repr=False, compare=False)
+
+    def _pair_matrix(self) -> torch.Tensor:
+        cached = self._A_flat
+        if cached is None:
+            D, r, _ = self.A.shape
+            cached = self.A.permute(1, 0, 2).contiguous().view(r, D * r)
+            object.__setattr__(self, '_A_flat', cached)
+        return cached
 
     @property
     def D(self):
@@ -76,9 +139,9 @@ class ProposalSnapshot:
     def adapter_version(self):
         return self.version
 
-    def unary(self, H, proposal_mode='dense_full'):
+    def unary(self, H, proposal_mode='dense_full', *, unary_fn=None):
         if proposal_mode == 'dense_full':
-            return block_unary(self.E, self.W, self.b, H)
+            return (block_unary if unary_fn is None else unary_fn)(self.E, self.W, self.b, H)
         if proposal_mode != 'dense_candidate' or self.C0 is None:
             raise ValueError('candidate unary requires frozen C0')
         hidden = H.to(self.W.dtype) @ self.W.T
@@ -98,18 +161,20 @@ class ProposalSnapshot:
                     raise ValueError('candidate scoring requires candidate unary rows; call unary(..., proposal_mode=dense_candidate)')
                 unary = U_i
                 with _phase(timer, 'dense_pair_score'):
-                    message = torch.zeros(self.E.shape[1], dtype=self.A.dtype, device=self.A.device)
                     predecessors = []
                     for d in range(1, len(self.A) + 1):
                         previous = prev_token(prefix, realized, i, d)
                         if previous is not None:
-                            message = message + self.A[d - 1] @ self.E[previous]
                             predecessors.append((d, previous))
-                    correction = unary + self.E[ids] @ message
+                    if predecessors:
+                        message = _pair_message(self.E, self.A, predecessors, pair_matrix=self._pair_matrix())
+                        correction = unary + self.E[ids].to(self.A.dtype) @ message
+                    else:
+                        correction = unary
                 if self.sparse is not None and predecessors:
                     with _phase(timer, 'sparse_lookup'):
-                        offsets = torch.tensor([d for d, _ in predecessors], device=ids.device)[:, None]
-                        previous_ids = torch.tensor([p for _, p in predecessors], device=ids.device)[:, None]
+                        offsets = torch.tensor([d for d, _ in predecessors], device=ids.device, dtype=torch.long)[:, None]
+                        previous_ids = torch.tensor([p for _, p in predecessors], device=ids.device, dtype=torch.long)[:, None]
                         correction = correction + self.sparse.lookup(offsets, previous_ids, ids[None, :]).sum(0)
                 selected = l_unit_i[ids] - beta * correction
             return torch.full_like(l_unit_i, -torch.inf).scatter(0, ids, selected)
@@ -118,7 +183,34 @@ class ProposalSnapshot:
         if beta == 0 or self.is_zero:
             return l_unit_i
         correction = slot_correction(self.E, self.A, U_i, l_unit_i, prefix, realized, i,
-                                     self.sparse, self.M_sparse, beta, timer=timer)
+                                     self.sparse, self.M_sparse, beta, timer=timer,
+                                     pair_matrix=self._pair_matrix())
+        return l_unit_i - beta * correction
+
+    def score_slot_tensor(self, l_unit_i, U_i, offsets: torch.Tensor, prev_ids: torch.Tensor, i: int = 0,
+                          beta=1.0, proposal_mode='dense_full', timer=None):
+        """Sync-free causal slot scoring when offsets [avail] or [avail, 1] and prev_ids [avail] reside on device."""
+        if proposal_mode != 'dense_full':
+            raise ValueError('score_slot_tensor requires dense_full proposal mode')
+        if beta == 0 or self.is_zero:
+            return l_unit_i
+        avail = prev_ids.numel()
+        with _phase(timer, 'dense_pair_score'):
+            if avail:
+                r = self.E.shape[1]
+                E_prev = self.E.index_select(0, prev_ids).to(self.A.dtype).reshape(-1)
+                message = self._pair_matrix()[:, :avail * r] @ E_prev
+                dense = U_i + self.E.to(self.A.dtype) @ message
+            else:
+                dense = U_i
+        if self.sparse is None or avail == 0:
+            correction = dense
+        else:
+            with _phase(timer, 'sparse_lookup'):
+                candidates = top_candidates(l_unit_i - beta * dense, self.M_sparse)
+                offs_2d = offsets[:, None] if offsets.ndim == 1 else offsets
+                values = self.sparse.lookup(offs_2d, prev_ids[:, None], candidates[None, :]).to(dense.dtype).sum(0)
+                correction = dense.scatter_add(0, candidates, values)
         return l_unit_i - beta * correction
 
     def with_candidates(self, C0):
@@ -144,8 +236,8 @@ class DenseAdapter(nn.Module):
 
     def correction(self, l_unit, H, prefix, tokens, beta=1.0):
         U = self.unary(H)
-        return torch.stack([slot_correction(self.E, self.A, U[i], l_unit[i], prefix, tokens, i,
-                                           self.sparse, self.M_sparse, beta) for i in range(len(H))])
+        return block_correction(self.E, self.A, U, l_unit, prefix, tokens,
+                                self.sparse, self.M_sparse, beta)
 
     def training_distributions(self, l_unit, target_logits, H, prefix, tokens):
         # No inference temperature, beta, or warper parameter exists on this API.

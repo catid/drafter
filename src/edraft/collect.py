@@ -15,7 +15,7 @@ from types import SimpleNamespace
 import torch
 
 from .features import HiddenProjection, fit_hidden_projection, fit_token_features
-from .runtime import (ROOT, Manifest, atomic_json, common_parser, fingerprint, git_commit,
+from .runtime import (ROOT, Manifest, WorkQueue, atomic_json, common_parser, fingerprint, git_commit,
                       parse_config, preflight, record_run, resolved_config)
 from .sampler import SamplingWarper
 from .traces import TraceShardWriter, compact_block, read_shard, reconstruction_diagnostic
@@ -44,6 +44,7 @@ def parser():
     p.add_argument("--embedding_source", choices=["target_input", "target_output"], default="target_input")
     p.add_argument("--diagnostic_train_prompts", type=int, default=64)
     p.add_argument("--live_full_blocks", type=int, default=2)
+    p.add_argument("--schedule", choices=["modulo", "dynamic"], default="modulo")
     return p
 
 
@@ -355,6 +356,29 @@ def job_identity(args, job, backend, calibration_record):
             "split": job["row"]["split"], "prompt_text_sha256": hashlib.sha256(job["row"]["text"].encode()).hexdigest()}
 
 
+def _globally_completed_trace_keys(traces_dir: Path) -> set[str]:
+    done = set()
+    for manifest_path in sorted(Path(traces_dir).glob("manifest-rank*.json")):
+        try:
+            manifest = json.loads(manifest_path.read_text())
+        except (OSError, ValueError):
+            continue
+        for item in manifest.get("jobs", {}).values():
+            if item.get("status") != "complete":
+                continue
+            path = Path(item.get("result_path", ""))
+            sidecar_path = path.with_suffix(path.suffix + ".json")
+            if not path.is_file() or not sidecar_path.is_file():
+                continue
+            try:
+                sidecar = json.loads(sidecar_path.read_text())
+                if path.stat().st_size == sidecar["disk_bytes"] and sha256(path) == sidecar["sha256"]:
+                    done.add(fingerprint(item["identity"]))
+            except (OSError, ValueError, KeyError):
+                continue
+    return done
+
+
 def collect(args, prompts=None, backend=None):
     check_reference_gates(args)
     prompts = load_prompt_manifest(args) if prompts is None else prompts
@@ -369,11 +393,27 @@ def collect(args, prompts=None, backend=None):
     rows, live_blocks_written = [], Counter()
     diagnostics_path = args.output / f"head_reconstruction-rank{args.rank}.json"
     diagnostics = json.loads(diagnostics_path.read_text()) if diagnostics_path.exists() else []
-    jobs = list(planned_jobs(args, prompts))
+    dynamic = getattr(args, "schedule", "modulo") == "dynamic" and args.world_size > 1
+    if dynamic:
+        primary_args = copy.copy(args)
+        primary_args.partitions = [p for p in args.partitions if p == "train_primary"]
+        primary_jobs = list(planned_jobs(primary_args, prompts)) if primary_args.partitions else []
+        other_partitions = [p for p in args.partitions if p != "train_primary"]
+        if other_partitions:
+            all_other_args = copy.copy(args)
+            all_other_args.rank, all_other_args.world_size, all_other_args.partitions = 0, 1, other_partitions
+            dynamic_jobs = list(planned_jobs(all_other_args, prompts))
+            dynamic_jobs.sort(key=lambda j: 0 if j["partition"] == "long" else 1)
+        else:
+            dynamic_jobs = []
+        scan_jobs = primary_jobs + dynamic_jobs
+    else:
+        jobs = list(planned_jobs(args, prompts))
+        scan_jobs = jobs
     # Read completed jobs first so an interrupted rank stops at its real emitted
     # budget instead of recollecting or crediting expected/max-length tokens.
     completed = {}
-    for job in jobs:
+    for job in scan_jobs:
         identity = job_identity(args, job, backend, calibration_record)
         if writer.completed(identity):
             sidecar = json.loads(writer.path(identity).with_suffix(".pt.json").read_text())
@@ -400,14 +440,10 @@ def collect(args, prompts=None, backend=None):
                     atomic_json(diagnostics_path, diagnostics)
                     if check["status"] != "passed":
                         raise RuntimeError("blocked: resumed heldout shard failed head reconstruction")
-    for job in jobs:
-        identity = job_identity(args, job, backend, calibration_record)
-        key = writer.manifest.key(identity)
-        if key in completed:
-            rows.append(completed[key])
-            continue
+
+    def execute_job(job, identity):
         if job["partition"] == "train_primary" and primary_tokens[job["temperature"]] >= quota:
-            continue
+            return
         row = job["row"]
         metadata = {"prompt_id": row["prompt_id"], "split": row["split"], "condition": row["condition"],
                     "seed": job["seed"], "scale": args.scale, "model_pair": backend.model_pair,
@@ -462,6 +498,41 @@ def collect(args, prompts=None, backend=None):
             "scale": args.scale, "status": "running", "rank": args.rank, "world_size": args.world_size,
             "primary_tokens_by_temperature": dict(primary_tokens), "quota_per_temperature": quota,
             "completed_generations": len(rows), "partitions": args.partitions})
+
+    if dynamic:
+        if dynamic_jobs:
+            dynamic_by_key = {}
+            for job in dynamic_jobs:
+                identity = job_identity(args, job, backend, calibration_record)
+                dynamic_by_key[writer.manifest.key(identity)] = (job, identity)
+            for key in dynamic_by_key:
+                if key in completed:
+                    rows.append(completed[key])
+            globally_done = _globally_completed_trace_keys(args.output / "traces")
+            queue = WorkQueue(args.output / "traces" / "work_queue.json",
+                              list(dynamic_by_key.keys()), precompleted=globally_done)
+            while (claimed_key := queue.claim(rank=args.rank)) is not None:
+                if claimed_key in completed or claimed_key in _globally_completed_trace_keys(args.output / "traces"):
+                    queue.complete(claimed_key)
+                    continue
+                job, identity = dynamic_by_key[claimed_key]
+                execute_job(job, identity)
+                queue.complete(claimed_key)
+        for job in primary_jobs:
+            identity = job_identity(args, job, backend, calibration_record)
+            key = writer.manifest.key(identity)
+            if key in completed:
+                rows.append(completed[key])
+                continue
+            execute_job(job, identity)
+    else:
+        for job in jobs:
+            identity = job_identity(args, job, backend, calibration_record)
+            key = writer.manifest.key(identity)
+            if key in completed:
+                rows.append(completed[key])
+                continue
+            execute_job(job, identity)
     missing = [T for T in [0., .7] if primary_tokens[T] < quota] if "train_primary" in args.partitions else []
     summary = {"scale": args.scale, "status": "blocked" if missing else "passed", "rank": args.rank,
                "world_size": args.world_size, "partitions": args.partitions,

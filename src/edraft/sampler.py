@@ -102,11 +102,20 @@ def draw(probs: torch.Tensor, generator: torch.Generator | None = None) -> int:
     return int(torch.multinomial(probs, 1, generator=generator).item())
 
 
+def draw_tensor(probs: torch.Tensor, generator: torch.Generator | None = None) -> torch.Tensor:
+    """Draw one full-vocabulary categorical token without host synchronization."""
+    if probs.ndim != 1:
+        raise ValueError("draw_tensor requires a single probability vector")
+    return torch.multinomial(probs, 1, generator=generator)[0]
+
+
 def sample_token(
     scores: torch.Tensor,
     temperature: float,
     warper: SamplingWarper = SamplingWarper(),
     generator: torch.Generator | None = None,
+    *,
+    probs_fn=None,
 ) -> tuple[int, torch.Tensor | None]:
     if scores.ndim != 1 or scores.numel() == 0:
         raise ValueError("sample_token requires a nonempty vocabulary vector")
@@ -116,8 +125,28 @@ def sample_token(
         # torch.argmax returns the first maximum: lowest full-vocabulary ID.
         # Deliberately no division, warper, sampling softmax, or random draw.
         return int(torch.argmax(scores).item()), None
-    probs = probabilities(scores, temperature, warper)
+    probs = (probabilities if probs_fn is None else probs_fn)(scores, temperature, warper)
     return draw(probs, generator), probs
+
+
+def sample_token_tensor(
+    scores: torch.Tensor,
+    temperature: float,
+    warper: SamplingWarper = SamplingWarper(),
+    generator: torch.Generator | None = None,
+    *,
+    probs_fn=None,
+) -> tuple[torch.Tensor, torch.Tensor | None]:
+    if scores.ndim != 1 or scores.numel() == 0:
+        raise ValueError("sample_token_tensor requires a nonempty vocabulary vector")
+    if not math.isfinite(temperature) or temperature < 0:
+        raise ValueError("temperature must be finite and nonnegative")
+    if temperature == 0:
+        # torch.argmax returns the first maximum: lowest full-vocabulary ID.
+        # Deliberately no division, warper, sampling softmax, or random draw.
+        return torch.argmax(scores), None
+    probs = (probabilities if probs_fn is None else probs_fn)(scores, temperature, warper)
+    return draw_tensor(probs, generator), probs
 
 
 sample_score = sample_token

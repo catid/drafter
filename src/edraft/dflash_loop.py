@@ -15,7 +15,7 @@ import torch
 from torch.nn import functional as F
 
 from .backend import crop_cache, extract_context_feature, make_cache
-from .sampler import SamplingWarper, probabilities, sample_token
+from .sampler import SamplingWarper, probabilities, sample_token, sample_token_tensor
 from .verify import verify_block
 
 
@@ -84,8 +84,11 @@ def _is_zero(snapshot):
 
 
 def _sample_proposal(draft_logits, h_raw, prefix, *, temperature, warper, generator,
-                     snapshot, projection, beta, bigram, timer, need_training_tensors=True):
+                     snapshot, projection, beta, bigram, timer, need_training_tensors=True,
+                     fastpath=None, _return_token_tensor=False):
     K = len(draft_logits)
+    probs_fn = None if fastpath is None else fastpath.probabilities
+    unary_fn = None if fastpath is None else fastpath.unary
     bigram_inactive = (bigram is None or bigram.lambda_tr == 0 or not bigram.counts)
     adapter_active = not _is_zero(snapshot)
     # Plain evaluation does not pay for adapter-only projection or training transforms.
@@ -103,14 +106,37 @@ def _sample_proposal(draft_logits, h_raw, prefix, *, temperature, warper, genera
         # proposal is unchanged; raw logits avoid an unnecessary FP32 shift.
         with timer.phase("sequential_sampling"):
             if temperature == 0:
-                return draft_logits.argmax(-1).tolist(), None, l_unit, H
-            q = probabilities(draft_logits, temperature, warper)
-            tokens = torch.multinomial(q, 1, generator=generator)[:, 0].tolist()
-            return tokens, q, l_unit, H
+                token_tensor = draft_logits.argmax(-1)
+                return (token_tensor if _return_token_tensor else token_tensor.tolist()), None, l_unit, H
+            q = (probabilities if probs_fn is None else probs_fn)(draft_logits, temperature, warper)
+            token_tensor = torch.multinomial(q, 1, generator=generator)[:, 0]
+            return (token_tensor if _return_token_tensor else token_tensor.tolist()), q, l_unit, H
     U = None
     if adapter_active:
         with timer.phase("dense_adapter_score"):
-            U = snapshot.unary(H)
+            U = snapshot.unary(H, unary_fn=unary_fn)
+    if bigram is None and snapshot is not None and snapshot.C0 is None:
+        D = len(snapshot.A)
+        prefix_tail = prefix[-D:] if D > 0 else ()
+        L_ctx = len(prefix_tail)
+        ctx_buf = torch.empty(L_ctx + K, dtype=torch.long, device=draft_logits.device)
+        if L_ctx:
+            ctx_buf[:L_ctx] = torch.tensor(prefix_tail, dtype=torch.long, device=draft_logits.device)
+        offsets_all = torch.arange(1, D + 1, dtype=torch.long, device=draft_logits.device)
+        qs = []
+        for i in range(K):
+            avail = min(D, L_ctx + i)
+            prev_ids = ctx_buf[L_ctx + i - offsets_all[:avail]]
+            score = snapshot.score_slot_tensor(
+                l_unit[i], U[i] if U is not None else None, offsets_all[:avail, None], prev_ids, i,
+                beta=beta, timer=timer)
+            with timer.phase("sequential_sampling"):
+                tok_t, q_i = sample_token_tensor(score, temperature, warper, generator, probs_fn=probs_fn)
+                ctx_buf[L_ctx + i] = tok_t
+            if q_i is not None:
+                qs.append(q_i)
+        token_tensor = ctx_buf[L_ctx:L_ctx + K]
+        return (token_tensor if _return_token_tensor else token_tensor.tolist()), (torch.stack(qs) if qs else None), l_unit, H
     tokens, qs = [], []
     for i in range(K):
         score = (snapshot.score_slot(l_unit[i], U[i] if U is not None else None, prefix, tokens, i, beta=beta, timer=timer)
@@ -120,11 +146,12 @@ def _sample_proposal(draft_logits, h_raw, prefix, *, temperature, warper, genera
                 previous = tokens[-1] if tokens else (prefix[-1] if prefix else None)
                 score = bigram.score(score, previous)
         with timer.phase("sequential_sampling"):
-            token, q_i = sample_token(score, temperature, warper, generator)
+            token, q_i = sample_token(score, temperature, warper, generator, probs_fn=probs_fn)
         tokens.append(token)
         if q_i is not None:
             qs.append(q_i)
-    return tokens, torch.stack(qs) if qs else None, l_unit, H
+    out_tokens = torch.tensor(tokens, dtype=torch.long, device=draft_logits.device) if _return_token_tensor else tokens
+    return out_tokens, torch.stack(qs) if qs else None, l_unit, H
 
 
 def _record(*, round_idx, offset, input_context_length, prefix, draft_tokens, q, target_logits,
@@ -191,7 +218,7 @@ def generate_reference(
     warper: SamplingWarper = SamplingWarper(), generator: torch.Generator | None = None,
     adapter=None, online_state=None, projection=None, bigram=None, beta: float = 1.,
     block_size: int | None = None, stop_token_ids=None, on_block: Callable | None = None,
-    retain_tensors: bool = False, measure_phases: bool = False,
+    retain_tensors: bool = False, measure_phases: bool = False, fastpath=None,
 ) -> GenerationResult:
     if input_ids.ndim != 2 or input_ids.shape[0] != 1 or input_ids.shape[1] == 0:
         raise ValueError("The reference loop requires one nonempty unpadded prompt")
@@ -205,6 +232,7 @@ def generate_reference(
     if adapter is not None and online_state is not None:
         raise ValueError("Pass adapter or online_state, not both")
     device = input_ids.device
+    probs_fn = None if fastpath is None else fastpath.probabilities
     timer = PhaseTimer(device, measure_phases)
     if device.type == "cuda":
         torch.cuda.synchronize(device)
@@ -222,28 +250,29 @@ def generate_reference(
         output = backend.target(input_ids, position_ids=positions[:, :n], past_key_values=target_cache,
                                 use_cache=True, logits_to_keep=1, output_hidden_states=True)
         target_hidden = extract_context_feature(output.hidden_states, backend.drafter.target_layer_ids)
-    token, _ = sample_token(output.logits[0, -1], temperature, warper, generator)
+    token, _ = sample_token(output.logits[0, -1], temperature, warper, generator, probs_fn=probs_fn)
     output_ids[0, n] = token
     crop_cache(target_cache, n)
+    prompt_tokens = input_ids[0].tolist()
     if bigram is not None:
         # The prefill's first target token is already committed, and its
         # transition from the last prompt token belongs to the request table.
-        bigram.update(input_ids[0].tolist(), [token])
+        bigram.update(prompt_tokens, [token])
+    committed_history = prompt_tokens + [token]
     stops = set(backend.stop_token_ids if stop_token_ids is None else stop_token_ids)
     stopped = token in stops
     start, round_idx, blocks = n, 0, []
     head_metadata = backend.head_metadata()
     static_snapshot = adapter.snapshot() if adapter is not None else None
     need_training_tensors = on_block is not None or retain_tensors or online_state is not None
+    full_prefix_needed = on_block is not None or retain_tensors
     while start + 1 < max_length and not stopped:
         round_idx += 1
         verify_size = min(block_size, max_length - start)
-        K = verify_size - 1
         canvas = output_ids[:, start:start + verify_size].clone()
         snapshot = online_state.snapshot() if online_state is not None else static_snapshot
         history_depth = max(4, len(snapshot.A) if snapshot is not None else 1)
-        prefix_start = 0 if on_block is not None or retain_tensors else max(0, start + 1 - history_depth)
-        prefix = output_ids[0, prefix_start:start + 1].tolist()
+        prefix = list(committed_history) if full_prefix_needed else committed_history[-history_depth:]
         with torch.no_grad(), timer.phase("dflash_draft"):
             noise = F.embedding(canvas, backend.target.get_input_embeddings().weight) * backend.input_embedding_scale
             h_raw = backend.drafter(
@@ -254,16 +283,19 @@ def generate_reference(
             crop_cache(draft_cache, start)
             draft_logits = backend.drafter.compute_logits(h_raw[None], backend.draft_lm_head)[0]
         with torch.no_grad():
-            tokens, q, l_unit, H = _sample_proposal(
+            token_tensor, q, l_unit, H = _sample_proposal(
                 draft_logits, h_raw, prefix, temperature=temperature, warper=warper,
                 generator=generator, snapshot=snapshot, projection=projection, beta=beta,
                 bigram=bigram, timer=timer, need_training_tensors=need_training_tensors,
+                fastpath=fastpath, _return_token_tensor=True,
             )
-        canvas[0, 1:] = input_ids.new_tensor(tokens)
+        canvas[0, 1:] = token_tensor
         with torch.no_grad(), timer.phase("target_verification"):
             output = backend.target(canvas, position_ids=positions[:, start:start + verify_size],
                                     past_key_values=target_cache, use_cache=True, output_hidden_states=True)
-            verification = verify_block(tokens, q, output.logits[0], temperature, warper, generator)
+            tokens = token_tensor.tolist()
+            verification = verify_block(token_tensor, q, output.logits[0], temperature, warper, generator,
+                                        probs_fn=probs_fn)
         emitted = verification.emitted_tokens[:max_length - start - 1]
         for i, item in enumerate(emitted):
             if item in stops:
@@ -271,6 +303,7 @@ def generate_reference(
                 stopped = True
                 break
         output_ids[0, start + 1:start + 1 + len(emitted)] = input_ids.new_tensor(emitted)
+        committed_history.extend(emitted)
         record = _record(
             round_idx=round_idx, offset=start + 1 - n, input_context_length=start + 1, prefix=prefix,
             draft_tokens=tokens, q=q, target_logits=output.logits[0], draft_logits=draft_logits,
@@ -293,7 +326,7 @@ def generate_toy(
     target, drafter, prefix, max_new_tokens: int, *, block_length: int = 4,
     temperature: float = 0., warper: SamplingWarper = SamplingWarper(), generator=None,
     adapter=None, online_state=None, projection=None, bigram=None, beta=1.,
-    on_block=None, retain_tensors=False, measure_phases=False,
+    on_block=None, retain_tensors=False, measure_phases=False, fastpath=None,
 ) -> GenerationResult:
     """CPU smoke loop with exactly the same proposal/verification/update helpers."""
     if target.embedding.device.type != "cpu":
@@ -304,6 +337,7 @@ def generate_toy(
         raise ValueError("Pass adapter or online_state, not both")
     context, output, blocks = list(prefix), [], []
     n = len(context)
+    probs_fn = None if fastpath is None else fastpath.probabilities
     timer = PhaseTimer("cpu", measure_phases)
     begun = time.perf_counter()
     static_snapshot = adapter.snapshot() if adapter is not None else None
@@ -320,10 +354,12 @@ def generate_toy(
                 drafted.logits, drafted.h_raw, proposal_prefix, temperature=temperature, warper=warper,
                 generator=generator, snapshot=snapshot, projection=projection, beta=beta,
                 bigram=bigram, timer=timer, need_training_tensors=need_training_tensors,
+                fastpath=fastpath,
             )
         with timer.phase("target_verification"):
             target_logits = target.verify_logits(context, tokens)
-            verification = verify_block(tokens, q, target_logits, temperature, warper, generator)
+            verification = verify_block(tokens, q, target_logits, temperature, warper, generator,
+                                        probs_fn=probs_fn)
         emitted = verification.emitted_tokens[:max_new_tokens - len(output)]
         record = _record(
             round_idx=len(blocks) + 1, offset=len(output), input_context_length=len(context), prefix=proposal_prefix,

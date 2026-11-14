@@ -43,6 +43,8 @@ def verify_block(
     warper: SamplingWarper = SamplingWarper(),
     generator: torch.Generator | None = None,
     verification_rule: str = "ratio",
+    *,
+    probs_fn=None,
 ) -> VerificationResult:
     """Verify K proposals against K+1 target conditionals on their realized canvas.
 
@@ -54,7 +56,8 @@ def verify_block(
         raise ValueError("M0–M4 stochastic verification requires verification_rule='ratio'")
     if not math.isfinite(temperature) or temperature < 0:
         raise ValueError("temperature must be finite and nonnegative")
-    tokens = [int(x) for x in draft_tokens]
+    draft_tensor = draft_tokens if isinstance(draft_tokens, torch.Tensor) else None
+    tokens = draft_tensor.tolist() if draft_tensor is not None else [int(x) for x in draft_tokens]
     K = len(tokens)
     if target_logits.ndim != 2 or target_logits.shape[0] != K + 1:
         raise ValueError("target_logits must have shape [K+1, V], including bonus")
@@ -76,16 +79,18 @@ def verify_block(
     q = probability_dtype(q)
     if q.shape != (K, V):
         raise ValueError("proposal_probs must have shape [K,V]")
-    P = probabilities(target_logits, temperature, warper)
-    token_indices = torch.tensor(tokens, device=q.device, dtype=torch.long)[:, None]
+    P = (probabilities if probs_fn is None else probs_fn)(target_logits, temperature, warper)
+    if draft_tensor is not None and draft_tensor.device == q.device and draft_tensor.dtype == torch.long:
+        token_indices = draft_tensor[:, None]
+    else:
+        token_indices = torch.tensor(tokens, device=q.device, dtype=torch.long)[:, None]
     q_selected = q.gather(-1, token_indices)[:, 0]
     p_selected = P[:K].gather(-1, token_indices)[:, 0]
-    if not bool(((q_selected > 0) & torch.isfinite(q_selected)).all()):
+    # Transfer both [K] vectors in one host sync and validate before touching RNG.
+    qp_cpu = torch.stack((q_selected, p_selected)).tolist()
+    proposal_token_probs, target_token_probs = qp_cpu[0], qp_cpu[1]
+    if not all(x > 0 and math.isfinite(x) for x in proposal_token_probs):
         raise ValueError("a realized draft token must have positive finite proposal mass")
-    # Preserve the complete realized canvas probabilities for off-policy teacher
-    # diagnostics, including slots beyond the first rejection.
-    proposal_token_probs = q_selected.tolist()
-    target_token_probs = p_selected.tolist()
     # Draw every slot's acceptance uniform before any residual draw, matching
     # the inspected upstream ratio sampler's seeded RNG consumption.
     uniforms = torch.rand((K,), device=P.device, dtype=P.dtype, generator=generator)
