@@ -6,6 +6,7 @@ never enter the primary optimizer. Real fitting requires the M1 audit gate.
 """
 from __future__ import annotations
 
+from collections import OrderedDict
 from dataclasses import dataclass
 import hashlib
 import json
@@ -258,11 +259,21 @@ def load_frozen_head(metadata, device):
     return weight, bias
 
 
-def epoch_references(entries, split, seed=None):
+def epoch_references(entries, split, seed=None, *, block_shuffle_window: int = 0):
     chosen = [x for x in entries if x.split == split]
-    if seed is not None:
-        random.Random(seed).shuffle(chosen)
-    return [(shard, i) for shard in chosen for i in range(shard.blocks)]
+    if seed is None:
+        return [(shard, i) for shard in chosen for i in range(shard.blocks)]
+    rng = random.Random(seed)
+    rng.shuffle(chosen)
+    if block_shuffle_window <= 1:
+        return [(shard, i) for shard in chosen for i in range(shard.blocks)]
+    w = int(block_shuffle_window)
+    out = []
+    for k in range(0, len(chosen), w):
+        window_refs = [(shard, i) for shard in chosen[k:k + w] for i in range(shard.blocks)]
+        rng.shuffle(window_refs)
+        out.extend(window_refs)
+    return out
 
 
 def _block_own_committed(block) -> list[int]:
@@ -293,21 +304,28 @@ def _annotate_verified_stream(payload_blocks, history_depth: int):
 
 
 def batches(references, batch_blocks, *, start_batch=0, head_metadata=None,
-            eligibility_fn=primary_eligible, history_depth: int = 4):
-    """Only one compact shard and one block batch are resident at a time."""
-    cached_path, payload = None, None
+            eligibility_fn=primary_eligible, history_depth: int = 4,
+            shard_cache_size: int = 1):
+    """Bounded compact-shard LRU cache (`1` shard by default; `W` under multi-shard block shuffle)."""
+    max_cached = max(1, int(shard_cache_size))
+    shard_cache: OrderedDict[Path, dict] = OrderedDict()
     for batch_index in range(start_batch, (len(references) + batch_blocks - 1) // batch_blocks):
         selected = references[batch_index * batch_blocks:(batch_index + 1) * batch_blocks]
         result = []
         for shard, index in selected:
-            if shard.path != cached_path:
+            if shard.path in shard_cache:
+                shard_cache.move_to_end(shard.path)
+                payload = shard_cache[shard.path]
+            else:
                 if json.loads(shard.path.with_suffix('.pt.json').read_text())['sha256'] != shard.sha256:
                     raise ValueError('An indexed shard changed after the frozen training manifest was built')
                 payload = read_shard(shard.path)
-                cached_path = shard.path
                 if len(payload['blocks']) != shard.blocks:
                     raise ValueError('Shard block count differs from immutable sidecar')
                 _annotate_verified_stream(payload['blocks'], history_depth)
+                shard_cache[shard.path] = payload
+                while len(shard_cache) > max_cached:
+                    shard_cache.popitem(last=False)
             block = payload['blocks'][index]
             if block['split'] != shard.split or block['prompt_id'] != shard.prompt_id or not eligibility_fn(block):
                 raise ValueError('Block metadata differs from eligible shard identity')
@@ -618,6 +636,9 @@ def _resolve_fit_regime(args):
         raise ValueError('Cannot combine --allow_long_oracle_fit and --allow_pure_t1_ablation in one fit')
     sparse_backend = getattr(args, 'sparse_backend', 'signed_feature_hash')
     objective = getattr(args, 'objective', 'union_rest_grouped')
+    block_shuffle = int(getattr(args, 'block_shuffle_window', 0) or 0)
+    if block_shuffle < 0:
+        raise ValueError('block_shuffle_window must be nonnegative')
     custom_tag = getattr(args, 'm5_fit_tag', None)
     if allow_long:
         regime = 'long_oracle_m5'
@@ -641,8 +662,9 @@ def _resolve_fit_regime(args):
         training_dist = 'standard_nonthinking, greedy or model-card T=.7 topk20 topp.8 minp0 contexts; unwarped T_train=beta_train=1'
         scope = 'complete eligible train/dev/test shard sets; no long/pure-temperature fitting'
         warning = None
-        if custom_tag or sparse_backend != 'signed_feature_hash' or objective != 'union_rest_grouped':
-            base = custom_tag or f'm5_{objective}_{sparse_backend}'
+        if custom_tag or sparse_backend != 'signed_feature_hash' or objective != 'union_rest_grouped' or block_shuffle > 0:
+            shuf_suffix = f'_shuf{block_shuffle}' if block_shuffle > 0 else ''
+            base = custom_tag or f'm5_{objective}_{sparse_backend}{shuf_suffix}'
             subdir = f'{base}_smoke' if args.scale == 'smoke' else base
         else:
             subdir = 'm2_smoke' if args.scale == 'smoke' else 'm2'
@@ -655,6 +677,9 @@ def fit(entries, index_report, E, head, bias, head_metadata, args, *, stop_after
     sparse_backend = getattr(args, 'sparse_backend', 'signed_feature_hash')
     sparse_overflow_policy = getattr(args, 'sparse_overflow_policy', 'freeze_new')
     objective = getattr(args, 'objective', 'union_rest_grouped')
+    block_shuffle = int(getattr(args, 'block_shuffle_window', 0) or 0)
+    if block_shuffle < 0:
+        raise ValueError('block_shuffle_window must be nonnegative')
     stats_memory_limit = getattr(args, 'stats_memory_limit', None) or ('16GB' if args.scale == 'full' else '512MB')
     outdir = args.output / subdir
     outdir.mkdir(parents=True, exist_ok=True)
@@ -695,6 +720,8 @@ def fit(entries, index_report, E, head, bias, head_metadata, args, *, stop_after
     if sparse_backend != 'signed_feature_hash':
         report['sparse_backend'] = sparse_backend
         report['sparse_overflow_policy'] = sparse_overflow_policy
+    if block_shuffle > 0:
+        report['block_shuffle_window'] = block_shuffle
     resumed = None
     if latest.exists() and args.resume:
         resumed = torch.load(latest, map_location='cpu', weights_only=True)
@@ -739,10 +766,12 @@ def fit(entries, index_report, E, head, bias, head_metadata, args, *, stop_after
             start_epoch, start_batch = resumed['epoch'], resumed['next_batch']
         for epoch in range(start_epoch, epochs):
             adapter.train()
-            train_refs = epoch_references(entries, 'train', seed=args.seed + 1000 * stage_index + epoch)
+            train_refs = epoch_references(entries, 'train', seed=args.seed + 1000 * stage_index + epoch,
+                                          block_shuffle_window=block_shuffle)
             for batch_index, blocks in batches(train_refs, args.batch_blocks, start_batch=start_batch,
                                                head_metadata=head_metadata, eligibility_fn=eligibility_fn,
-                                               history_depth=args.history_depth):
+                                               history_depth=args.history_depth,
+                                               shard_cache_size=max(1, block_shuffle)):
                 l_unit = reconstruct_batch(blocks, head, bias, vocab_chunk=args.vocab_chunk,
                                            output_multiplier=head_metadata.get('output_multiplier', 1.))
                 dense_optimizer.zero_grad(set_to_none=True)
@@ -919,6 +948,8 @@ def main(argv=None):
     parser.add_argument('--allow_pure_t1_ablation', action='store_true', default=False,
                         help='M5 calibration ablation: fit separate pure-T=1.0 adapter without overwriting m2/')
     parser.add_argument('--max_primary_train_tokens', type=int, default=4_000_000)
+    parser.add_argument('--block_shuffle_window', type=int, default=0,
+                        help='M5 multi-shard i.i.d. block shuffle buffer size in shards (0 preserves shard-sequential default)')
     parser.add_argument('--m5_fit_tag', default=None)
     parser.add_argument('--resume', action='store_true', default=True)
     parser.add_argument('--no_resume', action='store_false', dest='resume')
@@ -929,6 +960,8 @@ def main(argv=None):
         args.m1_diagnostic = args.output / f'diagnostic_{args.scale}.json'
     if min(args.batch_blocks, args.vocab_chunk, args.epochs_dense, args.epochs_sparse, args.checkpoint_every) < 1:
         raise ValueError('Training counts must be positive')
+    if args.block_shuffle_window < 0:
+        raise ValueError('block_shuffle_window must be nonnegative')
     if min(args.learning_rate, args.sparse_learning_rate) <= 0 or min(args.weight_decay, args.bias_weight_decay, args.lambda_l1) < 0:
         raise ValueError('Learning rates must be positive and regularization nonnegative')
     regime, eligibility_fn, *_ = _resolve_fit_regime(args)

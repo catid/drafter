@@ -42,7 +42,13 @@ def main(argv=None):
     parser.add_argument('--m5_triton', action='store_true', default=False)
     parser.add_argument('--m5_torch_compile', action='store_true', default=False)
     parser.add_argument('--m5_server_url', default=None)
+    parser.add_argument('--bigram_count_gate_kappa', type=float, default=None)
     args = parse_config(parser, argv)
+    if args.bigram_count_gate_kappa is not None:
+        if args.task != 'm5':
+            parser.error('--bigram_count_gate_kappa requires --task m5')
+        if not (args.bigram_count_gate_kappa > 0):
+            parser.error('--bigram_count_gate_kappa must be > 0')
     if args.train_tokens_per_temperature is None:
         args.train_tokens_per_temperature = 1000000 if args.scale == 'full' else 250000
     record_run(args, 'launch')
@@ -91,6 +97,8 @@ def main(argv=None):
                         command.append('--m5_torch_compile')
                     if args.m5_server_url:
                         command.extend(['--m5_server_url', args.m5_server_url])
+                    if args.bigram_count_gate_kappa is not None:
+                        command.extend(['--bigram_count_gate_kappa', str(args.bigram_count_gate_kappa)])
             if args.allow_large_run:
                 command.append('--allow_large_run')
             # Downloads must already be resolved once by the parent preparation step.

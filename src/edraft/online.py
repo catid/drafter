@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from collections import Counter, defaultdict
 from dataclasses import dataclass
+import math
 from typing import Callable
 import torch
 
@@ -21,12 +22,18 @@ class OnlineBigram:
     Memory reports include that ledger; this ablation does not claim bounded
     memory savings over exact counts.
     """
-    def __init__(self, vocab_size: int, alpha: float = 1., lambda_tr: float = 0.1, k_ret: int | None = None):
+    def __init__(self, vocab_size: int, alpha: float = 1., lambda_tr: float = 0.1,
+                 k_ret: int | None = None, *, count_gate_kappa: float | None = None):
         if alpha <= 0:
             raise ValueError('alpha must be strictly positive')
         if vocab_size < 1 or (k_ret is not None and k_ret < 1):
             raise ValueError('invalid vocabulary or retention count')
+        if count_gate_kappa is not None:
+            if isinstance(count_gate_kappa, bool) or not math.isfinite(float(count_gate_kappa)) or float(count_gate_kappa) <= 0:
+                raise ValueError('count_gate_kappa must be a finite positive float when set')
+            count_gate_kappa = float(count_gate_kappa)
         self.vocab_size, self.alpha, self.lambda_tr, self.k_ret = vocab_size, alpha, lambda_tr, k_ret
+        self.count_gate_kappa = count_gate_kappa
         self.counts = defaultdict(Counter)
         self.version = 0
 
@@ -62,17 +69,32 @@ class OnlineBigram:
             effective[ids] = torch.tensor([count for _, count in retained], device=device, dtype=dtype)
         return torch.log((effective + self.alpha) / (total + self.alpha * self.vocab_size))
 
+    def effective_lambda(self, previous: int | None) -> float:
+        if previous is None or self.lambda_tr == 0:
+            return 0.0
+        counts = self.counts.get(int(previous))
+        if not counts:
+            return 0.0
+        if self.count_gate_kappa is None:
+            return float(self.lambda_tr)
+        n_prev = sum(counts.values())
+        return float(self.lambda_tr) * (n_prev / (n_prev + self.count_gate_kappa))
+
     def score(self, l_unit, previous: int | None):
-        if previous is None or self.lambda_tr == 0 or not self.counts.get(int(previous)):
+        lam = self.effective_lambda(previous)
+        if lam == 0.0:
             return l_unit
-        return l_unit + self.lambda_tr * self.prior(previous, device=l_unit.device, dtype=l_unit.dtype)
+        return l_unit + lam * self.prior(previous, device=l_unit.device, dtype=l_unit.dtype)
 
     def metrics(self):
         retained = sum(min(len(c), self.k_ret) if self.k_ret is not None else len(c) for c in self.counts.values())
         all_pairs = sum(len(c) for c in self.counts.values())
-        return {'counted_transitions': sum(sum(c.values()) for c in self.counts.values()),
-                'exact_ledger_pairs': all_pairs, 'retained_prior_pairs': retained,
-                'ledger_retained_for_exact_counts': True, 'k_ret': self.k_ret}
+        out = {'counted_transitions': sum(sum(c.values()) for c in self.counts.values()),
+               'exact_ledger_pairs': all_pairs, 'retained_prior_pairs': retained,
+               'ledger_retained_for_exact_counts': True, 'k_ret': self.k_ret}
+        if self.count_gate_kappa is not None:
+            out['count_gate_kappa'] = self.count_gate_kappa
+        return out
 
 
 @dataclass(frozen=True)

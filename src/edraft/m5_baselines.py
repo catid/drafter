@@ -362,6 +362,7 @@ def generate_token_recycling_toy(
     branch_widths: Sequence[int] = (2, 2, 1, 1),
     use_dflash_fallback: bool = True,
     measure_phases: bool = False,
+    record_round_timing: bool = False,
 ) -> tuple[GenerationResult, TokenRecyclingState]:
     """Closed-loop full tree-based Token Recycling on the CPU ToyTarget/ToyParallelDrafter."""
     if target.embedding.device.type != 'cpu':
@@ -381,6 +382,7 @@ def generate_token_recycling_toy(
     begun = time.perf_counter()
     head_meta = drafter.head_metadata()
     while len(output) < max_new_tokens:
+        round_t0 = time.perf_counter() if record_round_timing else 0.0
         budget = min(block_length, max_new_tokens - len(output))
         with timer.phase('dflash_draft'):
             fb_logits = drafter.draft(context, budget).logits if use_dflash_fallback else None
@@ -431,6 +433,7 @@ def generate_token_recycling_toy(
             'sampling_warp_config': warper.to_dict(),
             'off_policy_teacher_positions': [],
             'committed_tokens': list(emitted),
+            **({'round_elapsed_seconds': max(time.perf_counter() - round_t0, 1e-12)} if record_round_timing else {}),
         })
         context.extend(emitted)
         output.extend(emitted)
@@ -455,6 +458,7 @@ def generate_token_recycling_reference(
     max_successors: int = 8,
     branch_widths: Sequence[int] = (4, 2, 1, 1),
     measure_phases: bool = False,
+    record_round_timing: bool = False,
 ) -> tuple[GenerationResult, TokenRecyclingState]:
     """Closed-loop full tree-based Token Recycling on ReferenceBackend with tree attention & KV compaction."""
     if input_ids.ndim != 2 or input_ids.shape[0] != 1 or input_ids.shape[1] == 0:
@@ -497,6 +501,7 @@ def generate_token_recycling_reference(
     start, round_idx, blocks = n, 0, []
     head_metadata = backend.head_metadata()
     while start + 1 < max_length and not stopped:
+        round_t0 = time.perf_counter() if record_round_timing else 0.0
         round_idx += 1
         verify_budget = min(block_size, max_length - start)
         max_draft_nodes = verify_budget - 1
@@ -570,6 +575,7 @@ def generate_token_recycling_reference(
             'off_policy_teacher_positions': [],
             'committed_tokens': list(emitted),
             'target_cache_length_after_rollback': int(target_cache.get_seq_length()),
+            **({'round_elapsed_seconds': max(time.perf_counter() - round_t0, 1e-12)} if record_round_timing else {}),
         })
     phases = timer.finish()
     return (

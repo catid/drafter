@@ -863,15 +863,17 @@ def test_m3_and_m4_never_import_triton_ops_and_m5_end_to_end_smoke_completes(tmp
     oracle_ckpt = tmp_path / 'm5_long_oracle_smoke' / 'dense_sparse.pt'
     assert oracle_ckpt.is_file()
 
-    # Full end-to-end --stage m5 --scale smoke --mode all across all 17 M5 arms!
+    # Full end-to-end --stage m5 --scale smoke --mode all across all 21 M5 arms!
     eval_closed_loop.main([
         '--stage', 'm5', '--scale', 'smoke', '--mode', 'all',
         '--device', 'cpu', '--output', str(tmp_path),
         '--smoke_tokens', '16', '--timing_repeats', '2', '--timing_warmups', '1',
         '--m5_oracle_checkpoint', str(oracle_ckpt),
+        '--bigram_count_gate_kappa', '12.0',
         '--m5_triton', '--m5_torch_compile',
     ])
     summary = json.loads((tmp_path / 'm5' / 'summary.json').read_text())
+    timed = json.loads((tmp_path / 'm5' / 'timing.json').read_text())
     assert summary['status'] == 'complete'
     assert summary['external_baselines_not_run'] == []
     assert summary['greedy_output_comparisons_complete'] is True
@@ -879,6 +881,20 @@ def test_m3_and_m4_never_import_triton_ops_and_m5_end_to_end_smoke_completes(tmp
     assert summary['isolated_timing_complete'] is True
     assert summary['triton_gate_report'] is not None
     assert summary['torch_compile_gate_report'] is not None
+    assert summary['settings']['selected']['online_bigram_count_gated']['count_gate_kappa'] == pytest.approx(12.0)
+
+    # Verify M5 offset_bin_slices and head_to_head_online_offset_comparison in both timing.json and summary.json:
+    assert len(timed['offset_bin_slices']) > 0
+    assert len(summary['offset_bin_slices']) > 0
+    for sl in summary['offset_bin_slices']:
+        assert [b['bin'] for b in sl['bins']] == ['0-1K', '1K-4K', '4K-8K', '8K-16K', '16K+']
+        b0 = sl['bins'][0]
+        assert b0['empty_bin'] is False
+        assert b0['tokens_per_second']['mean'] > 0
+        for higher in sl['bins'][1:]:
+            assert higher['empty_bin'] is True
+    h2h_pairs = {(c['arm'], c['reference_arm']) for c in summary['head_to_head_online_offset_comparison']}
+    assert h2h_pairs == set(eval_closed_loop.M5_ONLINE_HEAD_TO_HEAD_PAIRS)
 
     families = {c['matched_support_family'] for c in summary['matched_support_comparisons']}
     assert families == {
@@ -886,6 +902,8 @@ def test_m3_and_m4_never_import_triton_ops_and_m5_end_to_end_smoke_completes(tmp
         'full_vocabulary',
         'online_sparse_representation',
         'online_stride5_update_mode',
+        'online_bigram_count_gate',
+        'online_zero_init_dbS_vs_count_gated_bigram',
     }
     compared_arms = {(c['arm'], c['reference_arm']) for c in summary['matched_support_comparisons']}
     assert compared_arms == {
@@ -895,4 +913,309 @@ def test_m3_and_m4_never_import_triton_ops_and_m5_end_to_end_smoke_completes(tmp
         ('lookahead_rerelax_full', 'dense_full'),
         ('exact_observed_pairs_online', 'signed_feature_hash_online'),
         ('online_buffered_stride5', 'offline_online_stride5'),
+        ('online_bigram_count_gated', 'online_bigram'),
+        ('online_dbS_zero_init', 'online_bigram_count_gated'),
     }
+
+
+def test_count_gated_online_bigram_and_zero_init_online_dbs_dynamics():
+    from edraft.online import OnlineBigram, OnlineState
+
+    for bad_kappa in (0.0, -4.0, float('nan'), float('inf'), True):
+        with pytest.raises(ValueError, match='count_gate_kappa'):
+            OnlineBigram(16, lambda_tr=0.2, alpha=1.0, count_gate_kappa=bad_kappa)
+
+    ungated = OnlineBigram(16, lambda_tr=0.2, alpha=1.0)
+    assert 'count_gate_kappa' not in ungated.metrics()
+    assert ungated.effective_lambda(3) == 0.0
+    ungated.update([3], [5])
+    assert ungated.effective_lambda(3) == pytest.approx(0.2)
+
+    gated = OnlineBigram(16, lambda_tr=0.2, alpha=1.0, count_gate_kappa=8.0)
+    assert gated.metrics()['count_gate_kappa'] == pytest.approx(8.0)
+    # N=0: exact zero weight and zero score perturbation (no Laplace prior distortion!)
+    assert gated.effective_lambda(3) == 0.0
+    base = torch.linspace(-1.0, 1.0, 16)
+    assert gated.score(base, 3) is base
+
+    # N=1 -> 0.2 * 1 / 9; N=8 -> 0.2 * 8 / 16 = 0.1
+    gated.update([3], [5])
+    assert gated.effective_lambda(3) == pytest.approx(0.2 * 1.0 / 9.0)
+    for _ in range(7):
+        gated.update([3], [5])
+    assert gated.effective_lambda(3) == pytest.approx(0.1)
+    torch.testing.assert_close(
+        gated.score(base, 3),
+        base + 0.1 * gated.prior(3),
+    )
+
+    # Verify zero-init online_dbS (`W=0, A=0, b=0, S=0`, `D=4`, `bias_sparse_only=True`):
+    torch.manual_seed(77)
+    V, d_tok, p, D, K = 12, 4, 5, 4, 4
+    E = F.normalize(torch.randn(V, d_tok), dim=-1)
+    zero_offline = DenseAdapter(E, p, D, M_sparse=8)
+    state = OnlineState(
+        zero_offline, enable_sparse=True, sparse_capacity=128,
+        lr=0.05, update_stride=1, lambda_l2=0.01, lambda_l1_b=0.0, lambda_l1_s=0.0,
+        bias_sparse_only=True,
+    )
+    snap0 = state.snapshot()
+    assert snap0.is_zero is True
+    l_unit = torch.randn(K, V).log_softmax(-1)
+    H = torch.randn(K, p)
+    prefix = [1, 2, 3, 4]
+    draft_tokens = [5, 6, 7, 8]
+    u0 = snap0.unary(H)
+    s0 = torch.stack([snap0.score_slot(l_unit[i], u0[i], prefix, draft_tokens, i) for i in range(K)])
+    torch.testing.assert_close(s0, l_unit, rtol=0, atol=0)
+
+    # Target strongly prefers token 9 across slots; online update pushes energy negatively on 9
+    target_logits = torch.full((K, V), -4.0)
+    target_logits[:, 9] = 6.0
+    assert state.update(1, l_unit, target_logits, H, prefix, draft_tokens,
+                        first_rejection=1, committed_tokens=[9, 9]) is True
+    assert state.u == 1
+    assert torch.count_nonzero(state.dW).item() == 0
+    assert torch.count_nonzero(state.dA).item() == 0
+    # Negative energy on target-favored token 9 increases its proposal score!
+    assert float(state.db[9].item()) < 0.0
+    snap1 = state.snapshot()
+    u1 = snap1.unary(H)
+    s1 = torch.stack([snap1.score_slot(l_unit[i], u1[i], prefix, draft_tokens, i) for i in range(K)])
+    assert float((s1[:, 9] - l_unit[:, 9]).mean().item()) > 0.0
+
+
+def test_head_to_head_online_offset_bin_slices_across_all_five_bins():
+    from edraft import launch
+
+    # CLI guard checks on eval_closed_loop and launch:
+    with pytest.raises(SystemExit):
+        eval_closed_loop.main(['--stage', 'm4', '--scale', 'smoke', '--bigram_count_gate_kappa', '8'])
+    with pytest.raises(SystemExit):
+        eval_closed_loop.main(['--stage', 'm5', '--scale', 'smoke', '--bigram_count_gate_kappa', '0'])
+    with pytest.raises(SystemExit):
+        launch.main(['--task', 'm4', '--scale', 'smoke', '--bigram_count_gate_kappa', '8'])
+
+    offsets = [0, 1500, 5000, 10000, 18000]  # covers '0-1K', '1K-4K', '4K-8K', '8K-16K', '16K+'
+    arms_acc = {
+        'plain_dflash': [2, 2, 2, 2, 2],
+        'online_bigram': [1, 2, 3, 3, 4],
+        'online_bigram_count_gated': [2, 2, 3, 3, 4],
+        'online_dbS': [2, 3, 3, 4, 4],
+        'online_dbS_zero_init': [2, 3, 4, 4, 4],
+    }
+
+    def make_row(arm, pid, seed, acc_list, *, sec_per_round=0.01, rep_dom=False, repeat=None):
+        blocks = []
+        for idx, (off, acc) in enumerate(zip(offsets, acc_list)):
+            blocks.append({
+                'round_idx': idx + 1,
+                'absolute_output_offset': off,
+                'input_context_length': 128 + off,
+                'draft_tokens': [1, 2, 3, 4],
+                'accepted_length': acc,
+                'committed_tokens': [1] * (acc + 1),
+                'round_elapsed_seconds': sec_per_round,
+            })
+        return {
+            'condition': 'long_thinking',
+            'temperature': 0.6,
+            'sampling_warp_config': {'top_k': 20, 'top_p': 0.95, 'min_p': 0.0},
+            'arm': arm,
+            'prompt_id': pid,
+            'seed': seed,
+            'repeat': repeat,
+            'phase_profile': False,
+            'generation': {'repetition_dominated': rep_dom},
+            'blocks': blocks,
+        }
+
+    eval_rows, timed_rows = [], []
+    for arm, acc_list in arms_acc.items():
+        sec = 0.01 if arm != 'online_bigram' else 0.012
+        for pid in ('p0', 'p1'):
+            eval_rows.append(make_row(arm, pid, 2026, acc_list, sec_per_round=sec))
+            for rep in ('0:epoch=e1', '1:epoch=e1'):
+                timed_rows.append(make_row(arm, pid, 2026, acc_list, sec_per_round=sec, repeat=rep))
+        # Excluded repetition-dominated pair on p_rep:
+        eval_rows.append(make_row(arm, 'p_rep', 2026, [4, 4, 4, 4, 4], sec_per_round=sec, rep_dom=True))
+
+    slices = eval_closed_loop.summarize_offset_bin_slices(timed_rows, isolated_timing=True)
+    by_arm = {s['arm']: s for s in slices}
+    assert set(by_arm) == set(arms_acc)
+    z_bins = {b['bin']: b for b in by_arm['online_dbS_zero_init']['bins']}
+    assert list(z_bins) == ['0-1K', '1K-4K', '4K-8K', '8K-16K', '16K+']
+    for b_label, expected_acc in zip(['0-1K', '1K-4K', '4K-8K', '8K-16K', '16K+'], [2, 3, 4, 4, 4]):
+        assert z_bins[b_label]['empty_bin'] is False
+        assert z_bins[b_label]['accepted_length']['mean'] == pytest.approx(float(expected_acc))
+        assert z_bins[b_label]['tokens_per_second']['mean'] == pytest.approx((expected_acc + 1) / 0.01)
+
+    h2h = eval_closed_loop.compute_head_to_head_online_offset_comparison(eval_rows, timed_rows)
+    by_pair = {(c['arm'], c['reference_arm']): c for c in h2h}
+    assert set(by_pair) == set(eval_closed_loop.M5_ONLINE_HEAD_TO_HEAD_PAIRS)
+
+    # Check 0-1K vs 16K+ trajectory: online_bigram loses in 0-1K (-1 accepted_length vs plain),
+    # while online_bigram_count_gated and online_dbS_zero_init have 0 loss in 0-1K and +2 gain in 16K+!
+    bg_vs_plain = {b['bin']: b for b in by_pair[('online_bigram', 'plain_dflash')]['bins']}
+    cg_vs_plain = {b['bin']: b for b in by_pair[('online_bigram_count_gated', 'plain_dflash')]['bins']}
+    z_vs_cg = {b['bin']: b for b in by_pair[('online_dbS_zero_init', 'online_bigram_count_gated')]['bins']}
+    assert by_pair[('online_bigram', 'plain_dflash')]['repetition_excluded_pairs'] == 1
+    assert bg_vs_plain['0-1K']['accepted_length_delta']['mean'] == pytest.approx(-1.0)
+    assert cg_vs_plain['0-1K']['accepted_length_delta']['mean'] == pytest.approx(0.0)
+    assert cg_vs_plain['16K+']['accepted_length_delta']['mean'] == pytest.approx(2.0)
+    assert z_vs_cg['4K-8K']['accepted_length_delta']['mean'] == pytest.approx(1.0)
+    assert z_vs_cg['4K-8K']['isolated_timing_tokens_per_second']['paired_ratio']['mean'] == pytest.approx(5.0 / 4.0)
+
+
+def test_verify_fp32_one_ulp_tie_and_guardrail_a_strict_residual(monkeypatch):
+    from edraft.sampler import SamplingWarper, probabilities
+    from edraft.verify import residual_distribution, verify_block
+
+    # Guardrail A (#56): standalone residual_distribution MUST still raise RuntimeError on zero positive mass!
+    with pytest.raises(RuntimeError, match='no positive finite residual mass'):
+        residual_distribution(torch.tensor([0.5, 0.5]), torch.tensor([0.5, 0.5]))
+
+    # Exact REPRO-1 (#55) trigger: P and q from real probabilities() with 1-ULP FP32 zero residual,
+    # while q[tok] > P[tok] by 1 ULP so u_max = 1 - 2**-24 rejects!
+    g = torch.Generator().manual_seed(0)
+    warp = SamplingWarper(top_k=20, top_p=0.8)
+    triggered = False
+    for _ in range(300):
+        t_logits = torch.randn(100, generator=g, dtype=torch.float32) * 3.0
+        d_logits = t_logits + torch.randn(100, generator=g, dtype=torch.float32) * 1e-6
+        P = probabilities(t_logits, 0.7, warp)
+        q = probabilities(d_logits, 0.7, warp)
+        if float((P - q).clamp_min(0).sum()) == 0.0 and bool((q > P).any()):
+            tok = int((q > P).nonzero(as_tuple=True)[0][0])
+            # Confirm standalone residual_distribution raises on this exact REPRO-1 pair:
+            with pytest.raises(RuntimeError, match='no positive finite residual mass'):
+                residual_distribution(P, q)
+            # Force uniform draw to u_max = 1 - 2**-24 so verify_block enters the rejection branch:
+            u_max = float(torch.tensor(1.0, dtype=torch.float32) - torch.tensor(2**-24, dtype=torch.float32))
+            orig_rand = torch.rand
+            monkeypatch.setattr(torch, 'rand', lambda shape, **kw: torch.full(shape, u_max,
+                                                                              device=kw.get('device'),
+                                                                              dtype=kw.get('dtype', torch.float32)))
+            try:
+                out = verify_block(
+                    draft_tokens=[tok],
+                    proposal_probs=q.unsqueeze(0),
+                    target_logits=torch.stack([t_logits, t_logits]),
+                    temperature=0.7,
+                    warper=warp,
+                    generator=torch.Generator().manual_seed(42),
+                )
+            finally:
+                monkeypatch.setattr(torch, 'rand', orig_rand)
+            assert 0 <= out.accepted_length <= 1
+            assert len(out.emitted_tokens) in (1, 2)
+            triggered = True
+            break
+    assert triggered, 'Expected exact REPRO-1 1-ULP zero-residual trigger within 300 trials'
+
+    # Also test exact bitwise P == q tie with u_max rejection -> safely flips to accepted:
+    logits_tie = torch.linspace(-2.0, 2.0, 16, dtype=torch.float32)
+    q_tie = probabilities(logits_tie, 0.7, SamplingWarper(top_k=8, top_p=0.9))
+    q_over = q_tie.clone()
+    tok0 = int(q_tie.argmax())
+    q_over[tok0] = q_tie[tok0] + 1e-7  # tiny unnormalized excess with zero positive (P - q) everywhere
+    u_max = float(torch.tensor(1.0, dtype=torch.float32) - torch.tensor(2**-24, dtype=torch.float32))
+    orig_rand = torch.rand
+    monkeypatch.setattr(torch, 'rand', lambda shape, **kw: torch.full(shape, u_max,
+                                                                      device=kw.get('device'),
+                                                                      dtype=kw.get('dtype', torch.float32)))
+    try:
+        out_tie = verify_block(
+            draft_tokens=[tok0],
+            proposal_probs=q_over.unsqueeze(0),
+            target_logits=torch.stack([logits_tie, logits_tie]),
+            temperature=0.7,
+            warper=SamplingWarper(top_k=8, top_p=0.9),
+            generator=torch.Generator().manual_seed(99),
+        )
+    finally:
+        monkeypatch.setattr(torch, 'rand', orig_rand)
+    assert len(out_tie.emitted_tokens) in (1, 2)
+
+
+def test_train_multi_shard_block_shuffle_window_and_bit_exact_resume(tmp_path):
+    parser_args = [
+        '--scale', 'smoke', '--device', 'cpu', '--output', str(tmp_path),
+        '--epochs_dense', '1', '--epochs_sparse', '1',
+        '--batch_blocks', '8', '--checkpoint_every', '1',
+    ]
+    with pytest.raises(ValueError, match='block_shuffle_window'):
+        train.main([*parser_args, '--block_shuffle_window', '-1'])
+
+    # Run sequential baseline (window=0) and shuffled (window=4):
+    train.main([*parser_args, '--block_shuffle_window', '0'])
+    train.main([*parser_args, '--block_shuffle_window', '4'])
+    seq_report = json.loads((tmp_path / 'm2_smoke.json').read_text())
+    shuf_name = 'm5_union_rest_grouped_signed_feature_hash_shuf4_smoke'
+    shuf_report = json.loads((tmp_path / f'{shuf_name}.json').read_text())
+    assert shuf_report['block_shuffle_window'] == 4
+    # Exact 1:1 bijection over blocks -> identical initial baseline & sparse lookup key multiset!
+    assert shuf_report['baseline']['dev']['weighted_mean_kl'] == pytest.approx(
+        seq_report['baseline']['dev']['weighted_mean_kl']
+    )
+    seq_sp = seq_report['stages']['dense_sparse']['sparse_collision_statistics']
+    shuf_sp = shuf_report['stages']['dense_sparse']['sparse_collision_statistics']
+    assert shuf_sp['observed_lookup_events'] == seq_sp['observed_lookup_events']
+    assert shuf_sp['unique_observed_keys'] == seq_sp['unique_observed_keys']
+
+    # Verify epoch_references mixes multiple shards/prompts inside a single batch when window=4:
+    entries, idx_rep = train.trace_index(tmp_path / 'm2_smoke_traces')
+    refs_seq = train.epoch_references(entries, 'train', seed=2026, block_shuffle_window=0)
+    refs_shuf = train.epoch_references(entries, 'train', seed=2026, block_shuffle_window=4)
+    assert sorted((s.path, i) for s, i in refs_seq) == sorted((s.path, i) for s, i in refs_shuf)
+    first_batch_prompts_shuf = {s.prompt_id for s, _ in refs_shuf[:8]}
+    assert len(first_batch_prompts_shuf) >= 2
+
+    # Verify mid-epoch --resume bit-exactness (rtol=0, atol=0) AND identity invalidation on window change:
+    from types import SimpleNamespace
+    from edraft.toy import ToyParallelDrafter, ToyTarget
+    from edraft.features import fit_token_features
+
+    target = ToyTarget(vocab_size=8, hidden_size=12, seed=2026)
+    draft = ToyParallelDrafter(target, seed=2027)
+    calibration = [[i % 8, (i + 3) % 8, (i * 3 + 1) % 8] for i in range(64)]
+    E, _ = fit_token_features(target.embedding, 4, 2026, torch.tensor(sum(calibration, [])))
+    head, bias, head_meta = draft.draft_lm_head.weight, draft.draft_lm_head.bias, draft.head_metadata()
+
+    def make_ns(out_dir, win, tag='shuf_resume_test'):
+        return SimpleNamespace(
+            scale='smoke', device='cpu', output=out_dir, seed=2026,
+            learning_rate=1e-3, weight_decay=1e-4, bias_weight_decay=0.0,
+            sparse_learning_rate=0.01, lambda_l1=1e-5, sparse_capacity=256,
+            M_sparse=4, history_depth=4, batch_blocks=4, vocab_chunk=8192,
+            epochs_dense=1, epochs_sparse=1, checkpoint_every=1,
+            stats_memory_limit='64MB', stats_benchmark_entries=1024,
+            sparse_backend='signed_feature_hash', sparse_overflow_policy='freeze_new',
+            objective='union_rest_grouped', allow_long_oracle_fit=False,
+            allow_pure_t1_ablation=False, block_shuffle_window=win,
+            m5_fit_tag=tag, resume=True,
+        )
+
+    import random
+    out_uninterrupted = tmp_path / 'uninterrupted'
+    out_resumed = tmp_path / 'resumed'
+    torch.manual_seed(2026)
+    random.seed(2026)
+    train.fit(entries, idx_rep, E, head, bias, head_meta, make_ns(out_uninterrupted, 4))
+
+    torch.manual_seed(2026)
+    random.seed(2026)
+    interrupted = train.fit(entries, idx_rep, E, head, bias, head_meta, make_ns(out_resumed, 4), stop_after_steps=3)
+    assert interrupted['status'] == 'interrupted_for_resume_test'
+
+    # Changing block_shuffle_window from 4 -> 3 on same checkpoint dir MUST fail identity validation!
+    with pytest.raises(ValueError, match='Checkpoint identity differs'):
+        train.fit(entries, idx_rep, E, head, bias, head_meta, make_ns(out_resumed, 3))
+
+    # Resuming with matching block_shuffle_window=4 produces rtol=0, atol=0 bit-exact parameters!
+    train.fit(entries, idx_rep, E, head, bias, head_meta, make_ns(out_resumed, 4))
+    a_full, _ = train.load_adapter_checkpoint(out_uninterrupted / 'shuf_resume_test_smoke' / 'dense_sparse.pt', 'cpu')
+    a_res, _ = train.load_adapter_checkpoint(out_resumed / 'shuf_resume_test_smoke' / 'dense_sparse.pt', 'cpu')
+    for k, v in a_full.state_dict().items():
+        torch.testing.assert_close(v, a_res.state_dict()[k], rtol=0, atol=0)
+

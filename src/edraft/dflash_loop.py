@@ -312,6 +312,7 @@ def generate_reference(
     retain_tensors: bool = False, measure_phases: bool = False,
     proposal_mode: str = "dense_full", lookahead: LookaheadConfig | None = None,
     proposal_controller=None, adaptive_controller=None,
+    record_round_timing: bool = False,
 ) -> GenerationResult:
     if input_ids.ndim != 2 or input_ids.shape[0] != 1 or input_ids.shape[1] == 0:
         raise ValueError("The reference loop requires one nonempty unpadded prompt")
@@ -357,6 +358,7 @@ def generate_reference(
     controller_updates = proposal_controller is not None and hasattr(proposal_controller, "update")
     need_training_tensors = on_block is not None or retain_tensors or online_state is not None or controller_updates
     while start + 1 < max_length and not stopped:
+        round_t0 = time.perf_counter() if record_round_timing else 0.0
         round_idx += 1
         max_verify_size = min(block_size, max_length - start)
         max_k = max_verify_size - 1
@@ -423,9 +425,12 @@ def generate_reference(
         with torch.no_grad(), timer.phase("target_feature_extraction"):
             target_hidden = extract_context_feature(output.hidden_states, backend.drafter.target_layer_ids)[:, :len(emitted)]
         record["target_cache_length_after_rollback"] = int(target_cache.get_seq_length())
-        blocks.append(_finish_round(record, snapshot=snapshot, online_state=online_state, bigram=bigram,
-                                    committed=emitted, on_block=on_block, retain_tensors=retain_tensors,
-                                    timer=timer, proposal_controller=proposal_controller))
+        finished = _finish_round(record, snapshot=snapshot, online_state=online_state, bigram=bigram,
+                                 committed=emitted, on_block=on_block, retain_tensors=retain_tensors,
+                                 timer=timer, proposal_controller=proposal_controller)
+        if record_round_timing:
+            finished["round_elapsed_seconds"] = max(time.perf_counter() - round_t0, 1e-12)
+        blocks.append(finished)
     phases = timer.finish()
     return GenerationResult(output_ids[:, :min(start + 1, max_length)].clone(), n, blocks,
                             time.perf_counter() - begun, phases)
@@ -438,6 +443,7 @@ def generate_toy(
     on_block=None, retain_tensors=False, measure_phases=False,
     proposal_mode: str = "dense_full", lookahead: LookaheadConfig | None = None,
     proposal_controller=None, adaptive_controller=None,
+    record_round_timing: bool = False,
 ) -> GenerationResult:
     """CPU smoke loop with exactly the same proposal/verification/update helpers."""
     if target.embedding.device.type != "cpu":
@@ -454,6 +460,7 @@ def generate_toy(
     controller_updates = proposal_controller is not None and hasattr(proposal_controller, "update")
     need_training_tensors = on_block is not None or retain_tensors or online_state is not None or controller_updates
     while len(output) < max_new_tokens:
+        round_t0 = time.perf_counter() if record_round_timing else 0.0
         max_k = min(block_length, max_new_tokens - len(output))
         k_draft = adaptive_controller.predict_block_length(max_k) if adaptive_controller is not None else max_k
         snapshot = online_state.snapshot() if online_state is not None else static_snapshot
@@ -495,9 +502,12 @@ def generate_toy(
             record["effective_block_length"] = len(tokens)
         if proposal_controller is not None and hasattr(proposal_controller, "version"):
             record["adapter_version"] = proposal_controller.version
-        blocks.append(_finish_round(record, snapshot=snapshot, online_state=online_state, bigram=bigram,
-                                    committed=emitted, on_block=on_block, retain_tensors=retain_tensors,
-                                    timer=timer, proposal_controller=proposal_controller))
+        finished = _finish_round(record, snapshot=snapshot, online_state=online_state, bigram=bigram,
+                                 committed=emitted, on_block=on_block, retain_tensors=retain_tensors,
+                                 timer=timer, proposal_controller=proposal_controller)
+        if record_round_timing:
+            finished["round_elapsed_seconds"] = max(time.perf_counter() - round_t0, 1e-12)
+        blocks.append(finished)
         context.extend(emitted)
         output.extend(emitted)
     return GenerationResult(torch.tensor([context], dtype=torch.long), n, blocks,

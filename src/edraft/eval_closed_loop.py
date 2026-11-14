@@ -16,7 +16,7 @@ import torch
 
 from .adapter import DenseAdapter, LookaheadConfig
 from .diagnose import (prompt_bootstrap, output_bin, context_bin, generation_diagnostics,
-                       DEFAULT_CONTEXT_EDGES)
+                       DEFAULT_CONTEXT_EDGES, OUTPUT_LABELS)
 from .features import HiddenProjection
 from .online import OnlineBigram, OnlineState
 from .runtime import (ROOT, Manifest, atomic_json, common_parser, fingerprint, parse_config,
@@ -27,6 +27,10 @@ M3_ARMS = ('plain_dflash', 'online_bigram', 'dense', 'dense_sparse')
 M4_ARMS = ('plain_dflash', 'online_bigram', 'offline_static', 'offline_online_stride1', 'online_dbS')
 M5_ARMS = (
     'plain_dflash',
+    'online_bigram',
+    'online_bigram_count_gated',
+    'online_dbS',
+    'online_dbS_zero_init',
     'dense_full',
     'dense_candidate',
     'lookahead_static_candidate',
@@ -155,11 +159,18 @@ def evaluation_jobs(prompts, stage, scale, seed=2026, *, m5_arms=None, include_l
     return jobs
 
 
-def candidate_settings(arm):
+def candidate_settings(arm, *, bigram_count_gate_kappa=None):
     if arm == 'plain_dflash':
         return [{}]
     if arm == 'online_bigram':
         return [{'lambda_tr': .05, 'alpha': .5, 'k_ret': None}, {'lambda_tr': .2, 'alpha': 1., 'k_ret': None}]
+    if arm == 'online_bigram_count_gated':
+        if bigram_count_gate_kappa is not None:
+            kappa = float(bigram_count_gate_kappa)
+            return [{'lambda_tr': .15, 'alpha': 1., 'k_ret': None, 'count_gate_kappa': kappa},
+                    {'lambda_tr': .25, 'alpha': 1., 'k_ret': None, 'count_gate_kappa': kappa}]
+        return [{'lambda_tr': .15, 'alpha': 1., 'k_ret': None, 'count_gate_kappa': 8.},
+                {'lambda_tr': .25, 'alpha': 1., 'k_ret': None, 'count_gate_kappa': 16.}]
     if arm in ('dense', 'dense_sparse', 'offline_static', 'dense_full', 'dense_candidate', 'long_oracle_offline'):
         return [{'beta': .5}, {'beta': 1.}]
     if arm in ('lookahead_static_candidate', 'lookahead_rerelax_candidate',
@@ -414,6 +425,7 @@ class EvaluationRunner:
         recycling_state = None
         inputs, max_tokens, input_metadata = self.prepare_inputs(prompt, job.get('max_new_tokens_override'))
         generator = torch.Generator(device=self.device).manual_seed(job['seed'])
+        record_round_timing = args.stage == 'm5'
 
         if arm == 'token_recycling_tree':
             from .m5_baselines import generate_token_recycling_reference, generate_token_recycling_toy
@@ -425,6 +437,7 @@ class EvaluationRunner:
                     self.target, self.drafter, prefix, max_tokens,
                     temperature=temperature, warper=warper, generator=generator,
                     max_successors=max_succ, branch_widths=b_widths, measure_phases=profile,
+                    record_round_timing=record_round_timing,
                 )
                 eos = False
             else:
@@ -432,10 +445,11 @@ class EvaluationRunner:
                     self.backend, inputs, max_tokens,
                     temperature=temperature, warper=warper, generator=generator,
                     max_successors=max_succ, branch_widths=b_widths, measure_phases=profile,
+                    record_round_timing=record_round_timing,
                 )
                 eos = bool(result.output_tokens and result.output_tokens[-1] in self.backend.stop_token_ids)
         else:
-            if arm == 'online_bigram':
+            if arm in ('online_bigram', 'online_bigram_count_gated'):
                 bigram = OnlineBigram(self.dense.E.shape[0], **setting)
             elif arm == 'dense':
                 adapter = self.dense
@@ -480,7 +494,7 @@ class EvaluationRunner:
                 adaptive_controller = AdaptiveBlockController(max_block_length=max_blk, **ctrl_kwargs)
             elif arm != 'plain_dflash':
                 offline = self.dense_sparse
-                if arm == 'zero_offline_online_only':
+                if arm in ('zero_offline_online_only', 'online_dbS_zero_init'):
                     offline = DenseAdapter(self.dense.E, self.dense.W.shape[1], len(self.dense.A), M_sparse=self.dense.M_sparse)
                 kwargs = {k: v for k, v in setting.items() if k != 'beta'}
                 if arm == 'exact_observed_pairs_online':
@@ -494,7 +508,7 @@ class EvaluationRunner:
                 elif arm == 'online_two_sided_pl':
                     kwargs['loss_mode'] = 'two_sided_pseudolikelihood'
                 online = OnlineState(offline, enable_sparse=True, sparse_capacity=257 if self.tiny else 2**20,
-                                     bias_sparse_only=arm == 'online_dbS', **kwargs)
+                                     bias_sparse_only=arm in ('online_dbS', 'online_dbS_zero_init'), **kwargs)
 
             need_projection = (adapter is not None or online is not None
                                or (proposal_controller is not None and getattr(proposal_controller, 'needs_hidden', False)))
@@ -505,14 +519,16 @@ class EvaluationRunner:
                     generator=generator, adapter=adapter, online_state=online, projection=proj,
                     bigram=bigram, beta=beta, measure_phases=profile,
                     proposal_mode=proposal_mode, lookahead=lookahead,
-                    proposal_controller=proposal_controller, adaptive_controller=adaptive_controller)
+                    proposal_controller=proposal_controller, adaptive_controller=adaptive_controller,
+                    record_round_timing=record_round_timing)
                 eos = False
             else:
                 result = generate_reference(self.backend, inputs, max_tokens, temperature=temperature, warper=warper,
                     generator=generator, adapter=adapter, online_state=online, projection=proj,
                     bigram=bigram, beta=beta, measure_phases=profile,
                     proposal_mode=proposal_mode, lookahead=lookahead,
-                    proposal_controller=proposal_controller, adaptive_controller=adaptive_controller)
+                    proposal_controller=proposal_controller, adaptive_controller=adaptive_controller,
+                    record_round_timing=record_round_timing)
                 eos = bool(result.output_tokens and result.output_tokens[-1] in self.backend.stop_token_ids)
         request_elapsed = time.perf_counter() - request_started
         if self.tiny and temperature == 0:
@@ -868,16 +884,18 @@ def tune(runner, manifest):
     if args.rank != 0 or args.world_size != 1:
         raise ValueError('dev selection is a single-process matched timing session')
     active_arms = _arms_from_args(args)
+    kappa = getattr(args, 'bigram_count_gate_kappa', None)
+    arm_candidates = {a: candidate_settings(a, bigram_count_gate_kappa=kappa) for a in active_arms}
     prompts = select_prompts(manifest, 'dev', args.scale, args.standard_dev_prompts, args.long_dev_prompts)
     session_path, session_state, epoch = comparison_session(runner, 'tune', {'prompt_manifest_hash': fingerprint(manifest),
-        'dev_ids': [p['prompt_id'] for p in prompts], 'candidates': {a: candidate_settings(a) for a in active_arms}})
-    warm_comparisons(runner, prompts, {a: candidate_settings(a) for a in active_arms})
+        'dev_ids': [p['prompt_id'] for p in prompts], 'candidates': arm_candidates})
+    warm_comparisons(runner, prompts, arm_candidates)
     observations = defaultdict(lambda: defaultdict(list))
     dev_rows = []
     for prompt_index, prompt in enumerate(prompts):
         name, temperature, warp = sampling_conditions(prompt['condition'], primary_only=True)[0]
         base = {'prompt': prompt, 'sampling_name': name, 'temperature': temperature, 'warper': warp, 'seed': args.seed}
-        jobs = [(arm, setting) for arm in active_arms for setting in candidate_settings(arm)]
+        jobs = [(arm, setting) for arm in active_arms for setting in arm_candidates[arm]]
         # Rotate arm order across prompts to reduce systematic thermal/order bias.
         offset = prompt_index % len(jobs)
         comparisons = [(dict(base, arm=arm), setting) for arm, setting in jobs[offset:] + jobs[:offset]]
@@ -889,7 +907,7 @@ def tune(runner, manifest):
     selected, candidate_reports = {}, {}
     for arm in active_arms:
         reports = []
-        for setting in candidate_settings(arm):
+        for setting in arm_candidates[arm]:
             rows = observations[arm][fingerprint(setting)]
             # Each condition receives equal weight; long completions do not dilute standard tuning.
             by_condition = defaultdict(list)
@@ -1353,6 +1371,8 @@ def timing(runner, prompt_manifest, settings):
         group['throughput_improved_after_all_proposal_and_online_costs'] = matched_arm_mean > matched_plain_mean if matched_plain_mean else None
         group['paired_throughput_ratio'] = ratio
         group['throughput_gain_supported_by_95_ci'] = ratio['ci95'][0] > 1 if ratio['ci95'] else None
+    if args.stage == 'm5':
+        report['offset_bin_slices'] = summarize_offset_bin_slices(rows, isolated_timing=True)
     atomic_json(args.output / args.stage / 'timing.json', report)
     return report
 
@@ -1532,7 +1552,242 @@ M5_MATCHED_PAIRS = (
     ('lookahead_rerelax_full', 'dense_full', 'full_vocabulary'),
     ('exact_observed_pairs_online', 'signed_feature_hash_online', 'online_sparse_representation'),
     ('online_buffered_stride5', 'offline_online_stride5', 'online_stride5_update_mode'),
+    ('online_bigram_count_gated', 'online_bigram', 'online_bigram_count_gate'),
+    ('online_dbS_zero_init', 'online_bigram_count_gated', 'online_zero_init_dbS_vs_count_gated_bigram'),
 )
+
+M5_ONLINE_HEAD_TO_HEAD_PAIRS = (
+    ('online_bigram', 'plain_dflash'),
+    ('online_bigram_count_gated', 'plain_dflash'),
+    ('online_dbS', 'plain_dflash'),
+    ('online_dbS_zero_init', 'plain_dflash'),
+    ('online_bigram_count_gated', 'online_bigram'),
+    ('online_dbS_zero_init', 'online_bigram'),
+    ('online_dbS_zero_init', 'online_bigram_count_gated'),
+    ('online_dbS', 'online_bigram_count_gated'),
+)
+
+
+def _block_committed_count(block: dict) -> int:
+    if block.get('committed_tokens') is not None:
+        return len(block['committed_tokens'])
+    return int(block['accepted_length']) + (
+        1 if block.get('replacement_token') is not None or block.get('bonus_token') is not None else 0
+    )
+
+
+def _request_offset_bin_stats(row: dict, bin_label: str) -> dict:
+    blocks = row.get('blocks') or []
+    bin_blocks = [b for b in blocks if output_bin(int(b['absolute_output_offset'])) == bin_label]
+    acc_len = statistics.mean(float(b['accepted_length']) for b in bin_blocks) if bin_blocks else None
+    yes, total = 0, 0
+    for b in blocks:
+        accepted = int(b['accepted_length'])
+        base_off = int(b['absolute_output_offset'])
+        for i in range(len(b['draft_tokens'])):
+            if output_bin(base_off + i) == bin_label:
+                yes += int(i < accepted)
+                total += 1
+    slot_rate = (yes / total) if total > 0 else None
+    timed_blocks = [b for b in bin_blocks if b.get('round_elapsed_seconds') is not None]
+    committed = sum(_block_committed_count(b) for b in timed_blocks)
+    elapsed = sum(float(b['round_elapsed_seconds']) for b in timed_blocks)
+    tps = (committed / elapsed) if (committed > 0 and elapsed > 0.0 and not row.get('phase_profile')) else None
+    return {
+        'reached_bin': bool(bin_blocks) or total > 0,
+        'blocks_in_bin': len(bin_blocks),
+        'slots_in_bin': total,
+        'committed_tokens_in_bin': committed,
+        'round_elapsed_seconds_in_bin': elapsed if timed_blocks else None,
+        'accepted_length': acc_len,
+        'slot_acceptance_rate': slot_rate,
+        'tokens_per_second': tps,
+    }
+
+
+def summarize_offset_bin_slices(rows, *, isolated_timing: bool = False):
+    """Slice acceptance and per-round wall-clock tok/s across OUTPUT_LABELS (`0-1K`..`16K+`)."""
+    grouped = defaultdict(list)
+    for row in rows:
+        if row.get('phase_profile'):
+            continue
+        warp = json.dumps(row['sampling_warp_config'], sort_keys=True)
+        grouped[(row['condition'], row['temperature'], warp, row['arm'])].append(row)
+    slices = []
+    for (condition, temperature, warp, arm), group in sorted(grouped.items()):
+        primary = [
+            r for r in group
+            if not (r['condition'].startswith('long_') and r['generation']['repetition_dominated'])
+        ]
+        bins_out = []
+        for bin_label in OUTPUT_LABELS:
+            acc_obs, slot_obs, tps_obs = [], [], []
+            total_blocks = 0
+            total_committed = 0
+            reaching_requests = 0
+            for r in primary:
+                st = _request_offset_bin_stats(r, bin_label)
+                if st['reached_bin']:
+                    reaching_requests += 1
+                total_blocks += st['blocks_in_bin']
+                total_committed += st['committed_tokens_in_bin']
+                if st['accepted_length'] is not None:
+                    acc_obs.append({'prompt_id': r['prompt_id'], 'seed': r['seed'], 'accepted_length': st['accepted_length']})
+                if st['slot_acceptance_rate'] is not None:
+                    slot_obs.append({'prompt_id': r['prompt_id'], 'seed': r['seed'], 'slot_acceptance_rate': st['slot_acceptance_rate']})
+                if st['tokens_per_second'] is not None:
+                    tps_obs.append({'prompt_id': r['prompt_id'], 'seed': r['seed'], 'tokens_per_second': st['tokens_per_second']})
+            bins_out.append({
+                'bin': bin_label,
+                'empty_bin': reaching_requests == 0,
+                'requests_reaching_bin': reaching_requests,
+                'primary_requests': len(primary),
+                'blocks_in_bin': total_blocks,
+                'committed_tokens_in_bin': total_committed,
+                'accepted_length': prompt_bootstrap(acc_obs, 'accepted_length') if acc_obs else None,
+                'slot_acceptance_rate': prompt_bootstrap(slot_obs, 'slot_acceptance_rate') if slot_obs else None,
+                'tokens_per_second': prompt_bootstrap(tps_obs, 'tokens_per_second') if tps_obs else None,
+                'timing_source': 'isolated_timing_rounds' if isolated_timing else 'observational_eval_rounds',
+            })
+        slices.append({
+            'condition': condition,
+            'temperature': temperature,
+            'sampling_warp_config': json.loads(warp),
+            'arm': arm,
+            'primary_requests': len(primary),
+            'repetition_excluded': len(group) - len(primary),
+            'timing_isolated': isolated_timing,
+            'bins': bins_out,
+        })
+    return slices
+
+
+def load_isolated_timing_rows(args):
+    """Load non-profile completed rows from the stage timing manifest when available."""
+    manifest_path = args.output / args.stage / 'timing' / 'manifest-rank0.json'
+    if not manifest_path.is_file():
+        return []
+    try:
+        entries = Manifest(manifest_path).data.get('jobs', {}).values()
+        out = []
+        for entry in entries:
+            identity = entry.get('identity', {})
+            if entry.get('status') != 'complete' or identity.get('phase_profile'):
+                continue
+            rpath = Path(entry.get('result_path', ''))
+            if rpath.is_file():
+                out.append(json.loads(rpath.read_text()))
+        return out
+    except (OSError, ValueError, KeyError, TypeError):
+        return []
+
+
+def compute_head_to_head_online_offset_comparison(eval_rows, isolated_timing_rows=None):
+    """Paired prompt-bootstrap M5 comparison by output-offset bin (`0-1K`, `1K-4K`, `4K-8K`, `8K-16K`, `16K+`)."""
+    eval_by_slot = {}
+    regimes = set()
+    active_arms = set()
+    for row in eval_rows:
+        warp = json.dumps(row['sampling_warp_config'], sort_keys=True)
+        regimes.add((row['condition'], row['temperature'], warp))
+        active_arms.add(row['arm'])
+        eval_by_slot[(row['condition'], row['temperature'], warp, row['prompt_id'], row['seed'], row['arm'])] = row
+    timed_by_slot = {}
+    for row in (isolated_timing_rows or []):
+        if row.get('phase_profile'):
+            continue
+        warp = json.dumps(row['sampling_warp_config'], sort_keys=True)
+        timed_by_slot[(row['condition'], row['temperature'], warp, row['prompt_id'],
+                       row['seed'], row.get('repeat'), row['arm'])] = row
+    comparisons = []
+    for arm, ref_arm in M5_ONLINE_HEAD_TO_HEAD_PAIRS:
+        if arm not in active_arms or ref_arm not in active_arms:
+            continue
+        for condition, temperature, warp in sorted(regimes):
+            paired_eval = []
+            excluded_eval = 0
+            for (c, t, w, pid, seed, a), row in eval_by_slot.items():
+                if a != arm or (c, t, w) != (condition, temperature, warp):
+                    continue
+                ref_row = eval_by_slot.get((c, t, w, pid, seed, ref_arm))
+                if ref_row is None:
+                    continue
+                if condition.startswith('long_') and (
+                    row['generation']['repetition_dominated'] or ref_row['generation']['repetition_dominated']
+                ):
+                    excluded_eval += 1
+                    continue
+                paired_eval.append((pid, seed, row, ref_row))
+            if not paired_eval and excluded_eval == 0:
+                continue
+            paired_timed = []
+            for (c, t, w, pid, seed, rep, a), row in timed_by_slot.items():
+                if a != arm or (c, t, w) != (condition, temperature, warp):
+                    continue
+                ref_row = timed_by_slot.get((c, t, w, pid, seed, rep, ref_arm))
+                if ref_row is None:
+                    continue
+                if condition.startswith('long_') and (
+                    row['generation']['repetition_dominated'] or ref_row['generation']['repetition_dominated']
+                ):
+                    continue
+                paired_timed.append((pid, seed, row, ref_row))
+            bin_reports = []
+            for bin_label in OUTPUT_LABELS:
+                acc_deltas, slot_deltas, obs_tps_ratios = [], [], []
+                arm_reach, ref_reach = 0, 0
+                for pid, seed, row, ref_row in paired_eval:
+                    st_arm = _request_offset_bin_stats(row, bin_label)
+                    st_ref = _request_offset_bin_stats(ref_row, bin_label)
+                    arm_reach += int(st_arm['reached_bin'])
+                    ref_reach += int(st_ref['reached_bin'])
+                    if st_arm['accepted_length'] is not None and st_ref['accepted_length'] is not None:
+                        acc_deltas.append({'prompt_id': pid, 'seed': seed,
+                                           'delta': st_arm['accepted_length'] - st_ref['accepted_length']})
+                    if st_arm['slot_acceptance_rate'] is not None and st_ref['slot_acceptance_rate'] is not None:
+                        slot_deltas.append({'prompt_id': pid, 'seed': seed,
+                                            'delta': st_arm['slot_acceptance_rate'] - st_ref['slot_acceptance_rate']})
+                    if st_arm['tokens_per_second'] and st_ref['tokens_per_second']:
+                        obs_tps_ratios.append({'prompt_id': pid, 'seed': seed,
+                                               'ratio': st_arm['tokens_per_second'] / st_ref['tokens_per_second']})
+                iso_tps_ratios, iso_tps_deltas, iso_arm_tps, iso_ref_tps = [], [], [], []
+                for pid, seed, t_row, t_ref in paired_timed:
+                    st_arm = _request_offset_bin_stats(t_row, bin_label)
+                    st_ref = _request_offset_bin_stats(t_ref, bin_label)
+                    if st_arm['tokens_per_second'] and st_ref['tokens_per_second']:
+                        iso_arm_tps.append({'prompt_id': pid, 'seed': seed, 'tps': st_arm['tokens_per_second']})
+                        iso_ref_tps.append({'prompt_id': pid, 'seed': seed, 'tps': st_ref['tokens_per_second']})
+                        iso_tps_ratios.append({'prompt_id': pid, 'seed': seed,
+                                               'ratio': st_arm['tokens_per_second'] / st_ref['tokens_per_second']})
+                        iso_tps_deltas.append({'prompt_id': pid, 'seed': seed,
+                                               'delta': st_arm['tokens_per_second'] - st_ref['tokens_per_second']})
+                bin_reports.append({
+                    'bin': bin_label,
+                    'empty_bin': len(acc_deltas) == 0 and len(slot_deltas) == 0,
+                    'arm_requests_reaching_bin': arm_reach,
+                    'reference_requests_reaching_bin': ref_reach,
+                    'paired_requests_in_bin': len(acc_deltas),
+                    'accepted_length_delta': prompt_bootstrap(acc_deltas, 'delta') if acc_deltas else None,
+                    'slot_acceptance_rate_delta': prompt_bootstrap(slot_deltas, 'delta') if slot_deltas else None,
+                    'observational_tokens_per_second_ratio': prompt_bootstrap(obs_tps_ratios, 'ratio') if obs_tps_ratios else None,
+                    'isolated_timing_tokens_per_second': {
+                        'arm': prompt_bootstrap(iso_arm_tps, 'tps'),
+                        'reference_arm': prompt_bootstrap(iso_ref_tps, 'tps'),
+                        'paired_ratio': prompt_bootstrap(iso_tps_ratios, 'ratio'),
+                        'paired_delta': prompt_bootstrap(iso_tps_deltas, 'delta'),
+                    } if iso_tps_ratios else None,
+                })
+            comparisons.append({
+                'arm': arm,
+                'reference_arm': ref_arm,
+                'condition': condition,
+                'temperature': temperature,
+                'sampling_warp_config': json.loads(warp),
+                'matched_pairs': len(paired_eval),
+                'repetition_excluded_pairs': excluded_eval,
+                'bins': bin_reports,
+            })
+    return comparisons
 
 
 def compute_matched_support_comparisons(rows, timed_report=None):
@@ -1861,6 +2116,11 @@ def aggregate(args, prompt_manifest, settings):
         report['matched_support_comparisons'] = compute_matched_support_comparisons(
             rows, timed if timing_valid else None
         )
+        report['offset_bin_slices'] = summarize_offset_bin_slices(rows, isolated_timing=False)
+        isolated_rows = load_isolated_timing_rows(args) if timing_valid else []
+        report['head_to_head_online_offset_comparison'] = compute_head_to_head_online_offset_comparison(
+            rows, isolated_rows
+        )
         if settings.get('triton_gate_report') is not None:
             report['triton_gate_report'] = settings['triton_gate_report']
         if settings.get('torch_compile_gate_report') is not None:
@@ -1908,6 +2168,8 @@ def main(argv=None):
     parser.add_argument('--m5_server_model', default='default')
     parser.add_argument('--m5_server_api_key', default='EMPTY')
     parser.add_argument('--m5_server_timeout', type=float, default=600.)
+    parser.add_argument('--bigram_count_gate_kappa', type=float, default=None,
+                        help='M5 count-confidence gate kappa > 0 for online_bigram_count_gated')
     args = parse_config(parser, argv)
     if args.long_dev_prompts is None:
         args.long_dev_prompts = 32 if args.scale == 'full' else 12
@@ -1923,9 +2185,13 @@ def main(argv=None):
         parser.error('generation caps must be positive')
     if args.mode == 'all' and args.world_size != 1:
         parser.error('shard only --mode evaluate; tune/timing run once on an idle GPU')
+    if args.bigram_count_gate_kappa is not None:
+        if not math.isfinite(args.bigram_count_gate_kappa) or args.bigram_count_gate_kappa <= 0:
+            parser.error('--bigram_count_gate_kappa must be finite and > 0')
     if args.stage != 'm5' and (args.m5_arms or args.m5_oracle_checkpoint or args.m5_triton
-                               or args.m5_torch_compile or args.mode == 'server_eval'):
-        parser.error('M5-specific options (--m5_*, --mode server_eval) require --stage m5')
+                               or args.m5_torch_compile or args.mode == 'server_eval'
+                               or args.bigram_count_gate_kappa is not None):
+        parser.error('M5-specific options (--m5_*, --bigram_count_gate_kappa, --mode server_eval) require --stage m5')
     record_run(args, f'{args.stage}-{args.mode}')
     torch.set_num_threads(1)
     prompt_manifest = smoke_manifest() if args.scale == 'smoke' else json.loads(args.prompts_manifest.read_text())

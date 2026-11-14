@@ -96,13 +96,19 @@ def verify_block(
             P_i = probability_dtype(P[i])
             q_i = probability_dtype(q[i])
             if not bool((P_i - q_i).clamp_min(0).sum() > 0):
-                # Guard FP32 1-ULP normalization tie while keeping residual_distribution strict.
-                P_i = P_i / P_i.sum()
-                q_i = q_i / q_i.sum()
-                if not bool((P_i - q_i).clamp_min(0).sum() > 0):
+                # Guard FP32 1-ULP normalization tie in FP64 while keeping residual_distribution strict.
+                P_i64 = P[i].double()
+                q_i64 = q[i].double()
+                p_sum64, q_sum64 = P_i64.sum(), q_i64.sum()
+                if bool(p_sum64 > 0.0) and bool(q_sum64 > 0.0):
+                    P_i64 = P_i64 / p_sum64
+                    q_i64 = q_i64 / q_sum64
+                res64 = (P_i64 - q_i64).clamp_min(0.0)
+                tot64 = res64.sum()
+                if not bool(torch.isfinite(tot64)) or not bool(tot64 > 0.0):
                     decisions_all[i] = True
                     continue
-                replacement = draw(residual_distribution(P_i, q_i), generator)
+                replacement = draw((res64 / tot64).to(dtype=P.dtype), generator)
             else:
                 replacement = draw(residual_distribution(P[i], q[i]), generator)
             return VerificationResult(tokens[:i] + [replacement], i, i, replacement, None,
