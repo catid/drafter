@@ -1,0 +1,1835 @@
+{
+  "status": "passed",
+  "scale": "reference",
+  "recorded_at_utc": "2026-11-14T02:20:16.353358+00:00",
+  "scope": "Eight standard development prompts x seven candidates; long outputs and later test/timing runs excluded.",
+  "source_path": "/home/catid/drafter/artifacts/repetition_detector_review/current_m3_standard_parity_source.py",
+  "source_sha256": "05d96f5b03fe291e3cc479b1caeae6e0bc3c1677086df78349b786ac340f155b",
+  "old_session": "672dec894a4447c9b2f59eb3411bcdcf",
+  "new_session": "00df5018aa1946d6821bd38a71de77b8",
+  "old_implementation": "090fcd0a3492eeb37646cd2cdeb9eddccaa429c7d3399fed72b25ce0d5c650da",
+  "new_implementation": "60da3e0c57fee2fbd9cd7ce756c66c56ba5642a63da27ef428b9b30538a459df",
+  "snapshot": {
+    "old_manifest_jobs": 58,
+    "new_manifest_jobs": 114,
+    "old_session_path": "/home/catid/drafter/artifacts/repetition_detector_review/pre_correction/artifacts/m3/tune/sessions/a05ebfa5ed86894c202a53c95e600d634ee2c2edd0d46c30071b8049d010c03d.json",
+    "new_session_path": "/home/catid/drafter/artifacts/m3/tune/sessions/baa0c5cee13bb21d83155d21791bbe56bcc00e8995f9880fa5a44278baced860.json",
+    "manifest_and_session_hashes_are_snapshot_only": true
+  },
+  "coverage": {
+    "prompts": 8,
+    "candidate_rows": 56,
+    "blocks": 2846,
+    "tokens": 15573
+  },
+  "excluded_comparison_fields": [
+    "elapsed_seconds",
+    "generation_loop_elapsed_seconds",
+    "peak_allocated_bytes",
+    "peak_reserved_bytes",
+    "tokens_per_second",
+    "generation (compared separately)",
+    "identity.checkpoint.implementation",
+    "checkpoint_hashes.implementation",
+    "timing_session",
+    "repeat",
+    "identity.timing_session",
+    "identity.repeat"
+  ],
+  "detector_field_change_counts": {
+    "/periodic_run": 56,
+    "/repetition_detector_version": 56,
+    "/repetition_rule": 56
+  },
+  "classification_changes": 0,
+  "discrepancies": [],
+  "rows": [
+    {
+      "prompt_id": "gsm8k-main-train-01021",
+      "arm": "dense",
+      "settings": {
+        "beta": 0.5
+      },
+      "old_path": "/home/catid/drafter/artifacts/repetition_detector_review/pre_correction/artifacts/m3/tune/rank0/1a034c961a9654729e8c1914a8919fdfd92208cd5cb1d710c4aa35b2a0a5f1d7.json",
+      "old_sha256": "630ae249a029efc76ec02f1fe4a0cdf9b088f3c266738811d391085b2facc753",
+      "new_path": "/home/catid/drafter/artifacts/m3/tune/rank0/60dad588deec85df80df8b499b7b5dd2879c8b2b235a7073c316f9277e13369b.json",
+      "new_sha256": "e4d71b75749232ead9bb689e29243a1b1525cf4d3a7f225fd1d670301c155579",
+      "output_tokens_equal": true,
+      "full_verification_blocks_equal": true,
+      "parameter_norms_equal": true,
+      "core_exact_equal": true,
+      "tokens": 235,
+      "blocks": 42,
+      "diagnostic_differences": [
+        "/periodic_run",
+        "/repetition_detector_version",
+        "/repetition_rule"
+      ],
+      "classification_changed": false
+    },
+    {
+      "prompt_id": "gsm8k-main-train-01021",
+      "arm": "dense",
+      "settings": {
+        "beta": 1.0
+      },
+      "old_path": "/home/catid/drafter/artifacts/repetition_detector_review/pre_correction/artifacts/m3/tune/rank0/10b72be1fb039ccede006fb14d609b101da04ff1d091b7922dd6670920ae86a7.json",
+      "old_sha256": "40938d634eef6afd295dec33021a71d0f11d832642dd2fa4b5231e0818ba0f7b",
+      "new_path": "/home/catid/drafter/artifacts/m3/tune/rank0/ddfb8ad2698ccad39ea43efdbbcb61fd75c6a57c1b2a2cb2574f5a613085760a.json",
+      "new_sha256": "d8e49907294e963f01d6aa8cf8a190f8a2e38935a71e767e07a3845467dc890f",
+      "output_tokens_equal": true,
+      "full_verification_blocks_equal": true,
+      "parameter_norms_equal": true,
+      "core_exact_equal": true,
+      "tokens": 250,
+      "blocks": 52,
+      "diagnostic_differences": [
+        "/periodic_run",
+        "/repetition_detector_version",
+        "/repetition_rule"
+      ],
+      "classification_changed": false
+    },
+    {
+      "prompt_id": "gsm8k-main-train-01021",
+      "arm": "dense_sparse",
+      "settings": {
+        "beta": 0.5
+      },
+      "old_path": "/home/catid/drafter/artifacts/repetition_detector_review/pre_correction/artifacts/m3/tune/rank0/9fc218293f6f4d5eae2f13850a8ef9973b1ee9e9d52e3c193c722dbc40232dec.json",
+      "old_sha256": "17a2a83e0cea438d2c441ca1f46a9d5e913416af1ea20c2dc550285200f2f221",
+      "new_path": "/home/catid/drafter/artifacts/m3/tune/rank0/224216d9f2c1571f9e9608bc065b4c365fa90c9ce0d1d7d2020cb0afd2759a52.json",
+      "new_sha256": "4601bd63a3a684440629386a4e5cb207463d71f719d28fee9d953b1790b6d2b6",
+      "output_tokens_equal": true,
+      "full_verification_blocks_equal": true,
+      "parameter_norms_equal": true,
+      "core_exact_equal": true,
+      "tokens": 249,
+      "blocks": 47,
+      "diagnostic_differences": [
+        "/periodic_run",
+        "/repetition_detector_version",
+        "/repetition_rule"
+      ],
+      "classification_changed": false
+    },
+    {
+      "prompt_id": "gsm8k-main-train-01021",
+      "arm": "dense_sparse",
+      "settings": {
+        "beta": 1.0
+      },
+      "old_path": "/home/catid/drafter/artifacts/repetition_detector_review/pre_correction/artifacts/m3/tune/rank0/0b4edad0a3cf5ff525e3644325beef45e690b0cfa794eecf52670c2243a287ee.json",
+      "old_sha256": "0ca58ae9a6cd177a33376f6105e8d468c3a60fc4ae81d086ea18f3ec72f14ff5",
+      "new_path": "/home/catid/drafter/artifacts/m3/tune/rank0/1d829a75e68d873a33f01dafa0898ae8a610979df1a55063073aa852ad240877.json",
+      "new_sha256": "c02cab009accc9f08b8cfc38aab5b81db7edda831deb941bd5718a5838acd441",
+      "output_tokens_equal": true,
+      "full_verification_blocks_equal": true,
+      "parameter_norms_equal": true,
+      "core_exact_equal": true,
+      "tokens": 241,
+      "blocks": 51,
+      "diagnostic_differences": [
+        "/periodic_run",
+        "/repetition_detector_version",
+        "/repetition_rule"
+      ],
+      "classification_changed": false
+    },
+    {
+      "prompt_id": "gsm8k-main-train-01021",
+      "arm": "online_bigram",
+      "settings": {
+        "lambda_tr": 0.05,
+        "alpha": 0.5,
+        "k_ret": null
+      },
+      "old_path": "/home/catid/drafter/artifacts/repetition_detector_review/pre_correction/artifacts/m3/tune/rank0/1b67412fda7bb4a0b5654974d0bcef87a0903efdf58824012b0f2d8718208733.json",
+      "old_sha256": "22669a4a918b6a7f3977c5a87b53bf5a025f863b8e43390759a305f508c38cc9",
+      "new_path": "/home/catid/drafter/artifacts/m3/tune/rank0/3629ce4f892b370e29950ceaf468384d52f8023455c80565517fcfa83e83ec66.json",
+      "new_sha256": "68d6fb6d3b6330600185bddbad4e160c1017290aef38ab68f9e3844c979bc98d",
+      "output_tokens_equal": true,
+      "full_verification_blocks_equal": true,
+      "parameter_norms_equal": true,
+      "core_exact_equal": true,
+      "tokens": 228,
+      "blocks": 43,
+      "diagnostic_differences": [
+        "/periodic_run",
+        "/repetition_detector_version",
+        "/repetition_rule"
+      ],
+      "classification_changed": false
+    },
+    {
+      "prompt_id": "gsm8k-main-train-01021",
+      "arm": "online_bigram",
+      "settings": {
+        "lambda_tr": 0.2,
+        "alpha": 1.0,
+        "k_ret": null
+      },
+      "old_path": "/home/catid/drafter/artifacts/repetition_detector_review/pre_correction/artifacts/m3/tune/rank0/83d6cd288ae196e33d1b5167e09a293208643790071b423d900d14668e2e3edf.json",
+      "old_sha256": "1b1e5bbdd574c539d769679742889776c5280f00ab5add39b2868fb1d00a28e8",
+      "new_path": "/home/catid/drafter/artifacts/m3/tune/rank0/8a3d8717be4a994417b58754d896b702918168819243698855c3ae479b83d201.json",
+      "new_sha256": "074c2f62848f6654c45bd26ad902d1d1c96a7cb80b0bfe69fd5981d44f4b10de",
+      "output_tokens_equal": true,
+      "full_verification_blocks_equal": true,
+      "parameter_norms_equal": true,
+      "core_exact_equal": true,
+      "tokens": 228,
+      "blocks": 43,
+      "diagnostic_differences": [
+        "/periodic_run",
+        "/repetition_detector_version",
+        "/repetition_rule"
+      ],
+      "classification_changed": false
+    },
+    {
+      "prompt_id": "gsm8k-main-train-01021",
+      "arm": "plain_dflash",
+      "settings": {},
+      "old_path": "/home/catid/drafter/artifacts/repetition_detector_review/pre_correction/artifacts/m3/tune/rank0/69d50240f97e44cdc4e04cf0c37fae747f049b4b4e3766c57f7a9d02b8d14532.json",
+      "old_sha256": "de10044e91ac0f4fe75e376e0f4cca2ed4072a92c3e162776acc4f5bd1535b3a",
+      "new_path": "/home/catid/drafter/artifacts/m3/tune/rank0/aad1d0b1929ab67896d99065fd0f9de25b5ed48822edf33d9bb62c8d9a0b06cd.json",
+      "new_sha256": "c9aab7ad3a9256e79328b56857c8b3577d165c222c71cdb85cbedf930dbaa710",
+      "output_tokens_equal": true,
+      "full_verification_blocks_equal": true,
+      "parameter_norms_equal": true,
+      "core_exact_equal": true,
+      "tokens": 197,
+      "blocks": 32,
+      "diagnostic_differences": [
+        "/periodic_run",
+        "/repetition_detector_version",
+        "/repetition_rule"
+      ],
+      "classification_changed": false
+    },
+    {
+      "prompt_id": "gsm8k-main-train-01582",
+      "arm": "dense",
+      "settings": {
+        "beta": 0.5
+      },
+      "old_path": "/home/catid/drafter/artifacts/repetition_detector_review/pre_correction/artifacts/m3/tune/rank0/7cc500b5288b2e40f11cc29b012b73ef50add7cea534f1bdf52e62e27ef7bb0c.json",
+      "old_sha256": "3d24adf9b9e39d3ad90cc134b8497568e8fe9f37a2d0d633ba2f12e82a605061",
+      "new_path": "/home/catid/drafter/artifacts/m3/tune/rank0/c5e93f8f45546476a2aece550e173b0692a26c05ccce8ff43a9cae032b979e17.json",
+      "new_sha256": "212799db51833bf246638af79f619a087365e66a29dd2f2517983c72b93a6303",
+      "output_tokens_equal": true,
+      "full_verification_blocks_equal": true,
+      "parameter_norms_equal": true,
+      "core_exact_equal": true,
+      "tokens": 295,
+      "blocks": 57,
+      "diagnostic_differences": [
+        "/periodic_run",
+        "/repetition_detector_version",
+        "/repetition_rule"
+      ],
+      "classification_changed": false
+    },
+    {
+      "prompt_id": "gsm8k-main-train-01582",
+      "arm": "dense",
+      "settings": {
+        "beta": 1.0
+      },
+      "old_path": "/home/catid/drafter/artifacts/repetition_detector_review/pre_correction/artifacts/m3/tune/rank0/35a42e1a5bb775f9fd6bc0150029419bcef137b8c3be46cbef42cd655a2b1b3b.json",
+      "old_sha256": "f4066c845d8a91e75d4442ccd95184e37df30f617d79fde7ef9030e1afb2e637",
+      "new_path": "/home/catid/drafter/artifacts/m3/tune/rank0/456fdc0e9065df3789187b40b4de9137515f44c2b683e8a335bd05edc05d6d87.json",
+      "new_sha256": "76eda6ffc0d095564411b732f229790a4c13d3ba48f839d7fc6b38f9c24c2eef",
+      "output_tokens_equal": true,
+      "full_verification_blocks_equal": true,
+      "parameter_norms_equal": true,
+      "core_exact_equal": true,
+      "tokens": 301,
+      "blocks": 62,
+      "diagnostic_differences": [
+        "/periodic_run",
+        "/repetition_detector_version",
+        "/repetition_rule"
+      ],
+      "classification_changed": false
+    },
+    {
+      "prompt_id": "gsm8k-main-train-01582",
+      "arm": "dense_sparse",
+      "settings": {
+        "beta": 0.5
+      },
+      "old_path": "/home/catid/drafter/artifacts/repetition_detector_review/pre_correction/artifacts/m3/tune/rank0/b96917a5d43151dd7a272c477516d414af1a2a97c21a56ae14f73e690785cc15.json",
+      "old_sha256": "7c61352d051f29906221081b015f0e4db364171650d87299bfc0ad7ec0498c7b",
+      "new_path": "/home/catid/drafter/artifacts/m3/tune/rank0/0287d8afec32320fe233227c2c66e2e727b184a42db53b359541c745b4e4e254.json",
+      "new_sha256": "9af1bec6783dc0c5dc1a5ab090f394b408e0333f71fc8cd28f0ab946fa66d2bb",
+      "output_tokens_equal": true,
+      "full_verification_blocks_equal": true,
+      "parameter_norms_equal": true,
+      "core_exact_equal": true,
+      "tokens": 303,
+      "blocks": 46,
+      "diagnostic_differences": [
+        "/periodic_run",
+        "/repetition_detector_version",
+        "/repetition_rule"
+      ],
+      "classification_changed": false
+    },
+    {
+      "prompt_id": "gsm8k-main-train-01582",
+      "arm": "dense_sparse",
+      "settings": {
+        "beta": 1.0
+      },
+      "old_path": "/home/catid/drafter/artifacts/repetition_detector_review/pre_correction/artifacts/m3/tune/rank0/c6f75ec8f38ffd30dd47337159da0b5f8d4b7bd3906496d4687af66a4b6b00bf.json",
+      "old_sha256": "ffc6255c9d399edbc441aeea265055678535abcd661c2706d032990d30085c29",
+      "new_path": "/home/catid/drafter/artifacts/m3/tune/rank0/93b60d80c920faa12bcacb686d6ef6ad5add0a1ddbab0f0c82d718cd373b617c.json",
+      "new_sha256": "b01fa6780cf637e89abe2f0cf0c4315effa05a32af01d2a9e6c45d37fad0999b",
+      "output_tokens_equal": true,
+      "full_verification_blocks_equal": true,
+      "parameter_norms_equal": true,
+      "core_exact_equal": true,
+      "tokens": 336,
+      "blocks": 71,
+      "diagnostic_differences": [
+        "/periodic_run",
+        "/repetition_detector_version",
+        "/repetition_rule"
+      ],
+      "classification_changed": false
+    },
+    {
+      "prompt_id": "gsm8k-main-train-01582",
+      "arm": "online_bigram",
+      "settings": {
+        "lambda_tr": 0.05,
+        "alpha": 0.5,
+        "k_ret": null
+      },
+      "old_path": "/home/catid/drafter/artifacts/repetition_detector_review/pre_correction/artifacts/m3/tune/rank0/9cf71bc85bf42f6437167dd808412ab741233d3abe9a3213fc61c9302580f2dd.json",
+      "old_sha256": "27306693a9df6ee092f9f5706c0ed6491837f9c38ab26bb7c95e3b58c4f07d87",
+      "new_path": "/home/catid/drafter/artifacts/m3/tune/rank0/62db21fb5339de9119c487e418f7b5db72e4df27f95590d4b4c2963e90e10bb4.json",
+      "new_sha256": "802bc07336b47cb75b38630d121903166821283d86f16fb4e510ef9ed07e6cbf",
+      "output_tokens_equal": true,
+      "full_verification_blocks_equal": true,
+      "parameter_norms_equal": true,
+      "core_exact_equal": true,
+      "tokens": 331,
+      "blocks": 54,
+      "diagnostic_differences": [
+        "/periodic_run",
+        "/repetition_detector_version",
+        "/repetition_rule"
+      ],
+      "classification_changed": false
+    },
+    {
+      "prompt_id": "gsm8k-main-train-01582",
+      "arm": "online_bigram",
+      "settings": {
+        "lambda_tr": 0.2,
+        "alpha": 1.0,
+        "k_ret": null
+      },
+      "old_path": "/home/catid/drafter/artifacts/repetition_detector_review/pre_correction/artifacts/m3/tune/rank0/c16ae94003f6022b16c2d3f1af81c0d9f385c9446865dd43673f93f16f6a498c.json",
+      "old_sha256": "502a67c12d4f21cc95de90051bbb03d07042a17cadd239b2248f766211e83183",
+      "new_path": "/home/catid/drafter/artifacts/m3/tune/rank0/3dfd2441208f1da1549d978eb33eed37de5e5da2d446c02ffc5c88fda7ab0d81.json",
+      "new_sha256": "426ca1eece992854f2af435881f0f70372ca0d272d86c9715f02c85026730cc6",
+      "output_tokens_equal": true,
+      "full_verification_blocks_equal": true,
+      "parameter_norms_equal": true,
+      "core_exact_equal": true,
+      "tokens": 340,
+      "blocks": 57,
+      "diagnostic_differences": [
+        "/periodic_run",
+        "/repetition_detector_version",
+        "/repetition_rule"
+      ],
+      "classification_changed": false
+    },
+    {
+      "prompt_id": "gsm8k-main-train-01582",
+      "arm": "plain_dflash",
+      "settings": {},
+      "old_path": "/home/catid/drafter/artifacts/repetition_detector_review/pre_correction/artifacts/m3/tune/rank0/78af219b53c4b566bc52b507d869fccdaece0d275db03dcea93021b2b73ccaeb.json",
+      "old_sha256": "00668a46a5a0255063a1846dacd9a105841fb5d85d203f3995c76033bbb19c7d",
+      "new_path": "/home/catid/drafter/artifacts/m3/tune/rank0/c8623247edf68d42f2eb4ec49c4276762df77455534c263fb2e851532a86787e.json",
+      "new_sha256": "bfb0d098e1fc993c65f82857bb9bb445b0000c9a46d538fddb40357fbb84da4c",
+      "output_tokens_equal": true,
+      "full_verification_blocks_equal": true,
+      "parameter_norms_equal": true,
+      "core_exact_equal": true,
+      "tokens": 296,
+      "blocks": 52,
+      "diagnostic_differences": [
+        "/periodic_run",
+        "/repetition_detector_version",
+        "/repetition_rule"
+      ],
+      "classification_changed": false
+    },
+    {
+      "prompt_id": "gsm8k-main-train-01916",
+      "arm": "dense",
+      "settings": {
+        "beta": 0.5
+      },
+      "old_path": "/home/catid/drafter/artifacts/repetition_detector_review/pre_correction/artifacts/m3/tune/rank0/f79b6e5bb2dae1214853971d65d6b016044ccf954a9038c27f4ae585512dc34f.json",
+      "old_sha256": "d77558aed25c2993374bcd1b8e2bc26a0b379c64fcaee01da31cab8d01ef571e",
+      "new_path": "/home/catid/drafter/artifacts/m3/tune/rank0/2a1f893b2d13fce8b06cc3d37d259b259fc1ce2f11e3f5f37190f4260cacfa12.json",
+      "new_sha256": "62b53ee36250ee22db94ab4728e332b732ec2cad7516b41b229a952e598b7cca",
+      "output_tokens_equal": true,
+      "full_verification_blocks_equal": true,
+      "parameter_norms_equal": true,
+      "core_exact_equal": true,
+      "tokens": 217,
+      "blocks": 36,
+      "diagnostic_differences": [
+        "/periodic_run",
+        "/repetition_detector_version",
+        "/repetition_rule"
+      ],
+      "classification_changed": false
+    },
+    {
+      "prompt_id": "gsm8k-main-train-01916",
+      "arm": "dense",
+      "settings": {
+        "beta": 1.0
+      },
+      "old_path": "/home/catid/drafter/artifacts/repetition_detector_review/pre_correction/artifacts/m3/tune/rank0/887445cd3f7eef322f1a0754eba6a93ddd13528eeae0dd7ae5654c025fce4666.json",
+      "old_sha256": "4b713064b426516fcf2091b036c45baa243d8a7bb391a436f9229b24a6016bd2",
+      "new_path": "/home/catid/drafter/artifacts/m3/tune/rank0/863f170d61b97b7ddcdc313f256ecd5252b28206d9f8bca2d8cd88e0029552be.json",
+      "new_sha256": "79790baf4d207168fa1cd28976ab53dcf5aaf03fa334d9a2136a1c9f40aff07c",
+      "output_tokens_equal": true,
+      "full_verification_blocks_equal": true,
+      "parameter_norms_equal": true,
+      "core_exact_equal": true,
+      "tokens": 270,
+      "blocks": 43,
+      "diagnostic_differences": [
+        "/periodic_run",
+        "/repetition_detector_version",
+        "/repetition_rule"
+      ],
+      "classification_changed": false
+    },
+    {
+      "prompt_id": "gsm8k-main-train-01916",
+      "arm": "dense_sparse",
+      "settings": {
+        "beta": 0.5
+      },
+      "old_path": "/home/catid/drafter/artifacts/repetition_detector_review/pre_correction/artifacts/m3/tune/rank0/ca68913e2c95435af28a63dd6fcd4fa101cd40d289a207989dd452e468c3a3e9.json",
+      "old_sha256": "a1577f9e63f4a6e28a690ebb1b7ca0b5fa1edf80fe4bfeaf2ef472d3b878460c",
+      "new_path": "/home/catid/drafter/artifacts/m3/tune/rank0/b3c8942e44ff5774e98cfff953fb74d32717101a12586945695b9cef8d3a8318.json",
+      "new_sha256": "74a5ca0c3421d49c67b3b5849852b113a1f754cd51a9c49930679f191d2dabf8",
+      "output_tokens_equal": true,
+      "full_verification_blocks_equal": true,
+      "parameter_norms_equal": true,
+      "core_exact_equal": true,
+      "tokens": 270,
+      "blocks": 39,
+      "diagnostic_differences": [
+        "/periodic_run",
+        "/repetition_detector_version",
+        "/repetition_rule"
+      ],
+      "classification_changed": false
+    },
+    {
+      "prompt_id": "gsm8k-main-train-01916",
+      "arm": "dense_sparse",
+      "settings": {
+        "beta": 1.0
+      },
+      "old_path": "/home/catid/drafter/artifacts/repetition_detector_review/pre_correction/artifacts/m3/tune/rank0/b375999be427b948d77603b2d57e6b1efb56168453279cbdcd3f533be48db67d.json",
+      "old_sha256": "d0a6963fbdcf877bb148b4b8498598d8821b9ef48c307fb7cffa55f60a47064e",
+      "new_path": "/home/catid/drafter/artifacts/m3/tune/rank0/e8c059590c3d894d2adf65cb2b764835a3075962147325b91dd3131d15afb507.json",
+      "new_sha256": "3d2127d52226fe0df5bff2aba8367a91aa7661e6701f661521b4b6278c335404",
+      "output_tokens_equal": true,
+      "full_verification_blocks_equal": true,
+      "parameter_norms_equal": true,
+      "core_exact_equal": true,
+      "tokens": 227,
+      "blocks": 38,
+      "diagnostic_differences": [
+        "/periodic_run",
+        "/repetition_detector_version",
+        "/repetition_rule"
+      ],
+      "classification_changed": false
+    },
+    {
+      "prompt_id": "gsm8k-main-train-01916",
+      "arm": "online_bigram",
+      "settings": {
+        "lambda_tr": 0.05,
+        "alpha": 0.5,
+        "k_ret": null
+      },
+      "old_path": "/home/catid/drafter/artifacts/repetition_detector_review/pre_correction/artifacts/m3/tune/rank0/2e34348ca9a63da1f6dcc77965296f5119b68c19c42117ade367145aeaccd6f7.json",
+      "old_sha256": "88a8db49ce38576dd1cded43408fcb0c28cd6c2d8a44f1b2f4041c8d20362422",
+      "new_path": "/home/catid/drafter/artifacts/m3/tune/rank0/18517e1a085f04ccca64e9ac893d5d7e89af2b59a4b9586cbf4995bcd7b30e02.json",
+      "new_sha256": "72b1a709c5fa96e0bbfe9356814059b21880de4472feff95d3d0d4ad8b57955e",
+      "output_tokens_equal": true,
+      "full_verification_blocks_equal": true,
+      "parameter_norms_equal": true,
+      "core_exact_equal": true,
+      "tokens": 276,
+      "blocks": 37,
+      "diagnostic_differences": [
+        "/periodic_run",
+        "/repetition_detector_version",
+        "/repetition_rule"
+      ],
+      "classification_changed": false
+    },
+    {
+      "prompt_id": "gsm8k-main-train-01916",
+      "arm": "online_bigram",
+      "settings": {
+        "lambda_tr": 0.2,
+        "alpha": 1.0,
+        "k_ret": null
+      },
+      "old_path": "/home/catid/drafter/artifacts/repetition_detector_review/pre_correction/artifacts/m3/tune/rank0/f90984df074de8088a47ed1b50727102c6e480900a4d6a7d0146f7a0a451c109.json",
+      "old_sha256": "d4d67be848c2f79e0d611732091402e5655743b18708789a0dc5e328570a7a5c",
+      "new_path": "/home/catid/drafter/artifacts/m3/tune/rank0/92d6fcc02c497066705faa105c69f6bbd2b815c5f7f01b3d4954952923776395.json",
+      "new_sha256": "76b584853ba1c451660c4671b0af000fe2ab32566eb4716ab966f19f582dce8b",
+      "output_tokens_equal": true,
+      "full_verification_blocks_equal": true,
+      "parameter_norms_equal": true,
+      "core_exact_equal": true,
+      "tokens": 267,
+      "blocks": 34,
+      "diagnostic_differences": [
+        "/periodic_run",
+        "/repetition_detector_version",
+        "/repetition_rule"
+      ],
+      "classification_changed": false
+    },
+    {
+      "prompt_id": "gsm8k-main-train-01916",
+      "arm": "plain_dflash",
+      "settings": {},
+      "old_path": "/home/catid/drafter/artifacts/repetition_detector_review/pre_correction/artifacts/m3/tune/rank0/0e3510b1d96b440a51647ab2e5d866760db9b8d038a83afe79544a3f170ee255.json",
+      "old_sha256": "8283fb80dd2adfcf849cb6737f90b27399f7e7369dcbf95000c439c5dc240c75",
+      "new_path": "/home/catid/drafter/artifacts/m3/tune/rank0/47743524b0b2ed404a1bc095eba1781152cf55d73acdee894c9d7749a5f0f3d4.json",
+      "new_sha256": "631545bbc69bf1db2d68e3c40086cd504da6efd1ff52fc813885595c41bd4f04",
+      "output_tokens_equal": true,
+      "full_verification_blocks_equal": true,
+      "parameter_norms_equal": true,
+      "core_exact_equal": true,
+      "tokens": 225,
+      "blocks": 37,
+      "diagnostic_differences": [
+        "/periodic_run",
+        "/repetition_detector_version",
+        "/repetition_rule"
+      ],
+      "classification_changed": false
+    },
+    {
+      "prompt_id": "gsm8k-main-train-02661",
+      "arm": "dense",
+      "settings": {
+        "beta": 0.5
+      },
+      "old_path": "/home/catid/drafter/artifacts/repetition_detector_review/pre_correction/artifacts/m3/tune/rank0/51fc0378436b723e411354d06ca79611bd76aea4dd5cc3337d1ec5cd2ca4366c.json",
+      "old_sha256": "263604dc5c7fee4c0b8a6bd83c354116aab299e2ad519a3e21f55c6b826f0fd2",
+      "new_path": "/home/catid/drafter/artifacts/m3/tune/rank0/7ea31765e769184ed774c05bcfde6913930c10468dbc49f3eb5e9270c56d4764.json",
+      "new_sha256": "11f89cb7aa3c0be3c6e961ddae74bcba21e8b7fa61b747672ed7ad912a86e630",
+      "output_tokens_equal": true,
+      "full_verification_blocks_equal": true,
+      "parameter_norms_equal": true,
+      "core_exact_equal": true,
+      "tokens": 176,
+      "blocks": 35,
+      "diagnostic_differences": [
+        "/periodic_run",
+        "/repetition_detector_version",
+        "/repetition_rule"
+      ],
+      "classification_changed": false
+    },
+    {
+      "prompt_id": "gsm8k-main-train-02661",
+      "arm": "dense",
+      "settings": {
+        "beta": 1.0
+      },
+      "old_path": "/home/catid/drafter/artifacts/repetition_detector_review/pre_correction/artifacts/m3/tune/rank0/e1e95887fca8d84e293b91f4deadebb412f32fbd4de4eacfd5205735280da53c.json",
+      "old_sha256": "7a97d667d23d28487d681d60d9bcf2e19545e35fa8ed94d58d5bc0e4afe64864",
+      "new_path": "/home/catid/drafter/artifacts/m3/tune/rank0/50b1b71feda3c55e8a7e52523219ba58e3c30ceca546dfca8750ebc37eb32c7f.json",
+      "new_sha256": "6f3f3cfcad7c3c46d63d5fd525dd5b31c3c28ebf207cf01dd0eaa43e8541b4df",
+      "output_tokens_equal": true,
+      "full_verification_blocks_equal": true,
+      "parameter_norms_equal": true,
+      "core_exact_equal": true,
+      "tokens": 212,
+      "blocks": 39,
+      "diagnostic_differences": [
+        "/periodic_run",
+        "/repetition_detector_version",
+        "/repetition_rule"
+      ],
+      "classification_changed": false
+    },
+    {
+      "prompt_id": "gsm8k-main-train-02661",
+      "arm": "dense_sparse",
+      "settings": {
+        "beta": 0.5
+      },
+      "old_path": "/home/catid/drafter/artifacts/repetition_detector_review/pre_correction/artifacts/m3/tune/rank0/043a3dc121f1691e790e0fe10c3b6210e7796a9813411901c79bca069ae1ba77.json",
+      "old_sha256": "955f59b1466326eb3ea051888b0b6e64270f747849bfcc88f2cd70d6aee51dcb",
+      "new_path": "/home/catid/drafter/artifacts/m3/tune/rank0/4d1ee8ccf399c0cedccf5506084d954fcbe4979841a18d5dcc8786e13852a9ec.json",
+      "new_sha256": "1d8aed85b9617eaa904587c3c676899cd9278b474359bc32f4f9cc77169e0286",
+      "output_tokens_equal": true,
+      "full_verification_blocks_equal": true,
+      "parameter_norms_equal": true,
+      "core_exact_equal": true,
+      "tokens": 228,
+      "blocks": 44,
+      "diagnostic_differences": [
+        "/periodic_run",
+        "/repetition_detector_version",
+        "/repetition_rule"
+      ],
+      "classification_changed": false
+    },
+    {
+      "prompt_id": "gsm8k-main-train-02661",
+      "arm": "dense_sparse",
+      "settings": {
+        "beta": 1.0
+      },
+      "old_path": "/home/catid/drafter/artifacts/repetition_detector_review/pre_correction/artifacts/m3/tune/rank0/fc9e5931ae53e8325ab5ab05c53655a1052c35a0f76854a8bee5914f570a7d0e.json",
+      "old_sha256": "22787cb77a9a507dfab28281dace3dfa622a59d395ce1c438f17838e2c4c7a90",
+      "new_path": "/home/catid/drafter/artifacts/m3/tune/rank0/f5b8ce1bd1e68d7414dea1975118601ff17f20bbf5370b2a87d533f35952349b.json",
+      "new_sha256": "ec3bc66f1d311cb3248467addb20e1eea327a2b1b33c8a6491ceb31cab5e4b4b",
+      "output_tokens_equal": true,
+      "full_verification_blocks_equal": true,
+      "parameter_norms_equal": true,
+      "core_exact_equal": true,
+      "tokens": 222,
+      "blocks": 51,
+      "diagnostic_differences": [
+        "/periodic_run",
+        "/repetition_detector_version",
+        "/repetition_rule"
+      ],
+      "classification_changed": false
+    },
+    {
+      "prompt_id": "gsm8k-main-train-02661",
+      "arm": "online_bigram",
+      "settings": {
+        "lambda_tr": 0.05,
+        "alpha": 0.5,
+        "k_ret": null
+      },
+      "old_path": "/home/catid/drafter/artifacts/repetition_detector_review/pre_correction/artifacts/m3/tune/rank0/e31c112c6e7c8ae653a52b656f72ae02fc7871cfa5d26b0cb8ed2e5ca4ba3d7d.json",
+      "old_sha256": "bf3947674b1732312ab8c0c837a3ed81763918570d97918cc73276f4621305d6",
+      "new_path": "/home/catid/drafter/artifacts/m3/tune/rank0/7a9e280e09be1a92e54cd89f06694761095c2ff66c3f45d3e09ec5ad16dd2e57.json",
+      "new_sha256": "a8b9b9c38283facc167210bb7e795600890bd24213de1854f942282100871d75",
+      "output_tokens_equal": true,
+      "full_verification_blocks_equal": true,
+      "parameter_norms_equal": true,
+      "core_exact_equal": true,
+      "tokens": 184,
+      "blocks": 27,
+      "diagnostic_differences": [
+        "/periodic_run",
+        "/repetition_detector_version",
+        "/repetition_rule"
+      ],
+      "classification_changed": false
+    },
+    {
+      "prompt_id": "gsm8k-main-train-02661",
+      "arm": "online_bigram",
+      "settings": {
+        "lambda_tr": 0.2,
+        "alpha": 1.0,
+        "k_ret": null
+      },
+      "old_path": "/home/catid/drafter/artifacts/repetition_detector_review/pre_correction/artifacts/m3/tune/rank0/e7f348a05852876eb97a606bdab347429df01a9f30f24c60d74ab55a521b0b55.json",
+      "old_sha256": "81a1e364c8d12e072538bd6d6bdee20f07eb93e10ad04a3eb4f2e10439744a76",
+      "new_path": "/home/catid/drafter/artifacts/m3/tune/rank0/be83e5f4f2856bcbed7d04c0a9ff6b9a4b9cd1bb5213e1310dc96618e33ecfb9.json",
+      "new_sha256": "8e7c42b849cb8bee73dc932f85be172583559380395e663dedec9af8cf2120a2",
+      "output_tokens_equal": true,
+      "full_verification_blocks_equal": true,
+      "parameter_norms_equal": true,
+      "core_exact_equal": true,
+      "tokens": 184,
+      "blocks": 27,
+      "diagnostic_differences": [
+        "/periodic_run",
+        "/repetition_detector_version",
+        "/repetition_rule"
+      ],
+      "classification_changed": false
+    },
+    {
+      "prompt_id": "gsm8k-main-train-02661",
+      "arm": "plain_dflash",
+      "settings": {},
+      "old_path": "/home/catid/drafter/artifacts/repetition_detector_review/pre_correction/artifacts/m3/tune/rank0/2da917e4f82d8a28888eda65f411c944fcf8b9ebb5df3b12587ee0af3ddc7ee8.json",
+      "old_sha256": "818f564f85989049fd74323e1d0f18f54064b8357d918cedd212176636f9502f",
+      "new_path": "/home/catid/drafter/artifacts/m3/tune/rank0/feedff014f45c4eb553be4e7f32d9397c1a91f59a745a478592284b1c4943d71.json",
+      "new_sha256": "322349ffd6fb1e5f095f7dcbaee6f276b3bf4e44952d5dea38a7c0e1c71c6e62",
+      "output_tokens_equal": true,
+      "full_verification_blocks_equal": true,
+      "parameter_norms_equal": true,
+      "core_exact_equal": true,
+      "tokens": 227,
+      "blocks": 35,
+      "diagnostic_differences": [
+        "/periodic_run",
+        "/repetition_detector_version",
+        "/repetition_rule"
+      ],
+      "classification_changed": false
+    },
+    {
+      "prompt_id": "gsm8k-main-train-02980",
+      "arm": "dense",
+      "settings": {
+        "beta": 0.5
+      },
+      "old_path": "/home/catid/drafter/artifacts/repetition_detector_review/pre_correction/artifacts/m3/tune/rank0/28fe8149c819f03c397b2c3711d55e5020fa8cd2f19dc3c8445c284a7f757043.json",
+      "old_sha256": "4816b3a552b371581aae1c1354b05c25a32cef0b4021dab2a23762cea5a7cf8c",
+      "new_path": "/home/catid/drafter/artifacts/m3/tune/rank0/6f624d58bab965d3255d3ff7717e72fc302907481be33b1edb70cb906299e837.json",
+      "new_sha256": "fa48e6f1300681e50498ffd04050acffcaf94c16cefdf5e17a46091ff4fcdfff",
+      "output_tokens_equal": true,
+      "full_verification_blocks_equal": true,
+      "parameter_norms_equal": true,
+      "core_exact_equal": true,
+      "tokens": 328,
+      "blocks": 68,
+      "diagnostic_differences": [
+        "/periodic_run",
+        "/repetition_detector_version",
+        "/repetition_rule"
+      ],
+      "classification_changed": false
+    },
+    {
+      "prompt_id": "gsm8k-main-train-02980",
+      "arm": "dense",
+      "settings": {
+        "beta": 1.0
+      },
+      "old_path": "/home/catid/drafter/artifacts/repetition_detector_review/pre_correction/artifacts/m3/tune/rank0/fff0924c3f824472999f62495f8855ae3a11f07d7b089a0af15a668a2fadcff9.json",
+      "old_sha256": "81e2a4a25a59b78886baa38da5bfbbcfa93edb2c2d32ef239f185dd0c01ce550",
+      "new_path": "/home/catid/drafter/artifacts/m3/tune/rank0/df17c4bdb3ebb34ddd52b9529987473abc3f8cf852f62b57e31e8b8372bf9e53.json",
+      "new_sha256": "86522b4d024e5ff61083f13ce6d494292405b2e96ba667db6f11d123ec2e8b93",
+      "output_tokens_equal": true,
+      "full_verification_blocks_equal": true,
+      "parameter_norms_equal": true,
+      "core_exact_equal": true,
+      "tokens": 368,
+      "blocks": 104,
+      "diagnostic_differences": [
+        "/periodic_run",
+        "/repetition_detector_version",
+        "/repetition_rule"
+      ],
+      "classification_changed": false
+    },
+    {
+      "prompt_id": "gsm8k-main-train-02980",
+      "arm": "dense_sparse",
+      "settings": {
+        "beta": 0.5
+      },
+      "old_path": "/home/catid/drafter/artifacts/repetition_detector_review/pre_correction/artifacts/m3/tune/rank0/ab9aae529092adf54f9336c3bdbd58c82c645bfac1b62786ac81706f7a739cbf.json",
+      "old_sha256": "f20a14a4d9acd4025f3c36ff0f3efff1b55315678839bb6d92a23fc35461d495",
+      "new_path": "/home/catid/drafter/artifacts/m3/tune/rank0/0da3372548155a376daa0e1e3a0b178d423d84ab3dc771edfe6a413fa6212d91.json",
+      "new_sha256": "be1e67eba2fe45d4053adcf676a5e2419f7111a52deed427aaccd50d6d236b0a",
+      "output_tokens_equal": true,
+      "full_verification_blocks_equal": true,
+      "parameter_norms_equal": true,
+      "core_exact_equal": true,
+      "tokens": 347,
+      "blocks": 79,
+      "diagnostic_differences": [
+        "/periodic_run",
+        "/repetition_detector_version",
+        "/repetition_rule"
+      ],
+      "classification_changed": false
+    },
+    {
+      "prompt_id": "gsm8k-main-train-02980",
+      "arm": "dense_sparse",
+      "settings": {
+        "beta": 1.0
+      },
+      "old_path": "/home/catid/drafter/artifacts/repetition_detector_review/pre_correction/artifacts/m3/tune/rank0/8850cc423151a7fdd093f716d86f8be2a0063c05fd9ecd67dd74ec0dcf4867d3.json",
+      "old_sha256": "c60a080b000f0d1b1080c0c95af06be53cfc319dd5de33964a9487af8ebcf263",
+      "new_path": "/home/catid/drafter/artifacts/m3/tune/rank0/ddfef09a94c676acb40b4707b2b1ad45b3f74e3f99967c185e47c930c2ad8555.json",
+      "new_sha256": "d6e490acab28b5dc436d5f8763e506caae85148e0c28b7df2ecdf459e7e5e339",
+      "output_tokens_equal": true,
+      "full_verification_blocks_equal": true,
+      "parameter_norms_equal": true,
+      "core_exact_equal": true,
+      "tokens": 335,
+      "blocks": 100,
+      "diagnostic_differences": [
+        "/periodic_run",
+        "/repetition_detector_version",
+        "/repetition_rule"
+      ],
+      "classification_changed": false
+    },
+    {
+      "prompt_id": "gsm8k-main-train-02980",
+      "arm": "online_bigram",
+      "settings": {
+        "lambda_tr": 0.05,
+        "alpha": 0.5,
+        "k_ret": null
+      },
+      "old_path": "/home/catid/drafter/artifacts/repetition_detector_review/pre_correction/artifacts/m3/tune/rank0/33839e7bdcda3daed83d9dc752cbb8a5233ff0b4e6cecded60e511e3e90f2c06.json",
+      "old_sha256": "c3614758db29018253e2333a2d8e09f9d2cb0e3a5435c6236efbd387aa096041",
+      "new_path": "/home/catid/drafter/artifacts/m3/tune/rank0/251c6e060470958b2dac8781a783cbe43ed438c1d46373a054422d6360f9e986.json",
+      "new_sha256": "8679e1a5881b4ba4124b0a8568f2a252127d93fb982e6ca4bc4a8be7df476ea3",
+      "output_tokens_equal": true,
+      "full_verification_blocks_equal": true,
+      "parameter_norms_equal": true,
+      "core_exact_equal": true,
+      "tokens": 372,
+      "blocks": 86,
+      "diagnostic_differences": [
+        "/periodic_run",
+        "/repetition_detector_version",
+        "/repetition_rule"
+      ],
+      "classification_changed": false
+    },
+    {
+      "prompt_id": "gsm8k-main-train-02980",
+      "arm": "online_bigram",
+      "settings": {
+        "lambda_tr": 0.2,
+        "alpha": 1.0,
+        "k_ret": null
+      },
+      "old_path": "/home/catid/drafter/artifacts/repetition_detector_review/pre_correction/artifacts/m3/tune/rank0/7bb9176f040a73c1df15bb471448bf1adcd0b19108ea1e2393367d033d48daf2.json",
+      "old_sha256": "12e53d428f52a6d53e0cf964d43b8f734367c98a6b50aaada44b587a50c876b2",
+      "new_path": "/home/catid/drafter/artifacts/m3/tune/rank0/2fdb776a5eb9bc8169adaea33cc449472650117c1244469422c73e3ba129c6f3.json",
+      "new_sha256": "f5c87074f876d6e9b1597e6a345ca3fc86b971a096be8f9493f318aa783772e3",
+      "output_tokens_equal": true,
+      "full_verification_blocks_equal": true,
+      "parameter_norms_equal": true,
+      "core_exact_equal": true,
+      "tokens": 395,
+      "blocks": 89,
+      "diagnostic_differences": [
+        "/periodic_run",
+        "/repetition_detector_version",
+        "/repetition_rule"
+      ],
+      "classification_changed": false
+    },
+    {
+      "prompt_id": "gsm8k-main-train-02980",
+      "arm": "plain_dflash",
+      "settings": {},
+      "old_path": "/home/catid/drafter/artifacts/repetition_detector_review/pre_correction/artifacts/m3/tune/rank0/008a9807e1583ea8a35e446a4004b29e3001f10467317f5e2bb5aab455209059.json",
+      "old_sha256": "ee87de54a3499a10c383eb6f6263f03640491fef7b95c1bb32f92f4a14aa3e3f",
+      "new_path": "/home/catid/drafter/artifacts/m3/tune/rank0/74dca511e2d3afcb90b66a39e0b2d77d20749cdbfc0826c4fff4b252033fa231.json",
+      "new_sha256": "fbc4b1c4c13fbb0e8855ab0539a5a4266986a7d49329393b78cae1bf974676cf",
+      "output_tokens_equal": true,
+      "full_verification_blocks_equal": true,
+      "parameter_norms_equal": true,
+      "core_exact_equal": true,
+      "tokens": 350,
+      "blocks": 70,
+      "diagnostic_differences": [
+        "/periodic_run",
+        "/repetition_detector_version",
+        "/repetition_rule"
+      ],
+      "classification_changed": false
+    },
+    {
+      "prompt_id": "gsm8k-main-train-04298",
+      "arm": "dense",
+      "settings": {
+        "beta": 0.5
+      },
+      "old_path": "/home/catid/drafter/artifacts/repetition_detector_review/pre_correction/artifacts/m3/tune/rank0/b5750f318b237020f7967a57edab6e737d671b78e72b77ea5814a3172e7a4c37.json",
+      "old_sha256": "1f196f200943d2b64c19f1ce643a8ff88bf0cf0154748fa93765c085f0f0d5ec",
+      "new_path": "/home/catid/drafter/artifacts/m3/tune/rank0/e5cdbdb825dd1c1b5860109a8679c2126b9b2afbfd0028f6a5dcaf13bbae126e.json",
+      "new_sha256": "248e3d0504279d76cb91dde6a273542b3c35ab7c16d30cf308e0f037b0e8a515",
+      "output_tokens_equal": true,
+      "full_verification_blocks_equal": true,
+      "parameter_norms_equal": true,
+      "core_exact_equal": true,
+      "tokens": 319,
+      "blocks": 46,
+      "diagnostic_differences": [
+        "/periodic_run",
+        "/repetition_detector_version",
+        "/repetition_rule"
+      ],
+      "classification_changed": false
+    },
+    {
+      "prompt_id": "gsm8k-main-train-04298",
+      "arm": "dense",
+      "settings": {
+        "beta": 1.0
+      },
+      "old_path": "/home/catid/drafter/artifacts/repetition_detector_review/pre_correction/artifacts/m3/tune/rank0/35f8b41d8fc507f3741b3a87d88db309270fe130196ee4b0d24b24488e20c9bf.json",
+      "old_sha256": "4f0f250239b603fe3069942bcabe3cd9c7c7711cc1353334c1326d7167fbd39a",
+      "new_path": "/home/catid/drafter/artifacts/m3/tune/rank0/697b72b5fdbdd52ff777e0c5c1d1f1dc216826594f521476f3dc442bbac0a10c.json",
+      "new_sha256": "c03ef6969c55053b1c1b3723ad3a4a1bce2f20bf26a7c0e3a71f65e45d7213c1",
+      "output_tokens_equal": true,
+      "full_verification_blocks_equal": true,
+      "parameter_norms_equal": true,
+      "core_exact_equal": true,
+      "tokens": 333,
+      "blocks": 64,
+      "diagnostic_differences": [
+        "/periodic_run",
+        "/repetition_detector_version",
+        "/repetition_rule"
+      ],
+      "classification_changed": false
+    },
+    {
+      "prompt_id": "gsm8k-main-train-04298",
+      "arm": "dense_sparse",
+      "settings": {
+        "beta": 0.5
+      },
+      "old_path": "/home/catid/drafter/artifacts/repetition_detector_review/pre_correction/artifacts/m3/tune/rank0/22dbd224a0252ce5c668492c5778c78a810a11782a6190e870508d6e4762a0e6.json",
+      "old_sha256": "b325c1b8e790c9f707dc87cdfeeaf71e5fdc62698f2a4e85d577c1a224d8dc9a",
+      "new_path": "/home/catid/drafter/artifacts/m3/tune/rank0/35a963e80c1bbcd5c85db8ebdc281646ad3ea083025644d23135b515c4011fee.json",
+      "new_sha256": "b0df6e4a08d61c4a69aaa59835d44651b4d716bd72fcb4f21e3c408106acd393",
+      "output_tokens_equal": true,
+      "full_verification_blocks_equal": true,
+      "parameter_norms_equal": true,
+      "core_exact_equal": true,
+      "tokens": 247,
+      "blocks": 42,
+      "diagnostic_differences": [
+        "/periodic_run",
+        "/repetition_detector_version",
+        "/repetition_rule"
+      ],
+      "classification_changed": false
+    },
+    {
+      "prompt_id": "gsm8k-main-train-04298",
+      "arm": "dense_sparse",
+      "settings": {
+        "beta": 1.0
+      },
+      "old_path": "/home/catid/drafter/artifacts/repetition_detector_review/pre_correction/artifacts/m3/tune/rank0/7798a067a08b125491593bcb99f9ce2340482dfb928ad97ea5fe466b1bcf75fe.json",
+      "old_sha256": "1b20ded4a74b9bd6898d38997ceb806ebaea39b650f6f56f9a94e529d2cf06e4",
+      "new_path": "/home/catid/drafter/artifacts/m3/tune/rank0/b4472b87fb3f7475b375acbf924bcdb904f75779353041a8e492942501fd7a77.json",
+      "new_sha256": "69207705f868ac2b962ab87cd5e080b6c340a2085dee5e6a1deec94d5e4e4020",
+      "output_tokens_equal": true,
+      "full_verification_blocks_equal": true,
+      "parameter_norms_equal": true,
+      "core_exact_equal": true,
+      "tokens": 292,
+      "blocks": 62,
+      "diagnostic_differences": [
+        "/periodic_run",
+        "/repetition_detector_version",
+        "/repetition_rule"
+      ],
+      "classification_changed": false
+    },
+    {
+      "prompt_id": "gsm8k-main-train-04298",
+      "arm": "online_bigram",
+      "settings": {
+        "lambda_tr": 0.05,
+        "alpha": 0.5,
+        "k_ret": null
+      },
+      "old_path": "/home/catid/drafter/artifacts/repetition_detector_review/pre_correction/artifacts/m3/tune/rank0/2ad7d139e2f8af71b8960c415c07c361d62b842992a8754bdae86b0510af16c4.json",
+      "old_sha256": "ea49905c7c694b24d9e6cd1b20286b4e4f2b7bfdca2d1d39d68a55943c8d0170",
+      "new_path": "/home/catid/drafter/artifacts/m3/tune/rank0/7256bf889a56fa91d13fc6ebd760c997fbb44f40f61b8be68b9546448836a7b5.json",
+      "new_sha256": "194ad0928a5ca3c9f098dd7cfb54ed1cfb9e8c04b1b2be3c712f240d041a8f9c",
+      "output_tokens_equal": true,
+      "full_verification_blocks_equal": true,
+      "parameter_norms_equal": true,
+      "core_exact_equal": true,
+      "tokens": 252,
+      "blocks": 44,
+      "diagnostic_differences": [
+        "/periodic_run",
+        "/repetition_detector_version",
+        "/repetition_rule"
+      ],
+      "classification_changed": false
+    },
+    {
+      "prompt_id": "gsm8k-main-train-04298",
+      "arm": "online_bigram",
+      "settings": {
+        "lambda_tr": 0.2,
+        "alpha": 1.0,
+        "k_ret": null
+      },
+      "old_path": "/home/catid/drafter/artifacts/repetition_detector_review/pre_correction/artifacts/m3/tune/rank0/1ceca0d701e700de2201c3a8b3f470a19afdc4a33d50d33748496e8d5fb00fa4.json",
+      "old_sha256": "e4dde4dbaf3810c8955a8f417d75296570591a70715d3a8badb600d9d1946f9b",
+      "new_path": "/home/catid/drafter/artifacts/m3/tune/rank0/04fdc3fa5386b57fe15e6b92b1deba95c912ad5f7d15997cebc9edd271aadf84.json",
+      "new_sha256": "21ddcb1449fb44389da8eef6e09f86df052cd405b111212c2710150719439678",
+      "output_tokens_equal": true,
+      "full_verification_blocks_equal": true,
+      "parameter_norms_equal": true,
+      "core_exact_equal": true,
+      "tokens": 252,
+      "blocks": 44,
+      "diagnostic_differences": [
+        "/periodic_run",
+        "/repetition_detector_version",
+        "/repetition_rule"
+      ],
+      "classification_changed": false
+    },
+    {
+      "prompt_id": "gsm8k-main-train-04298",
+      "arm": "plain_dflash",
+      "settings": {},
+      "old_path": "/home/catid/drafter/artifacts/repetition_detector_review/pre_correction/artifacts/m3/tune/rank0/d383150219fbdfb230fe7f5cbc1c618fed8dc034649f01a31e97ca7b50cc05d1.json",
+      "old_sha256": "bb24ec11551af2464b8806f672a0148b76cab2b3f52152b30828c5d0938c64ed",
+      "new_path": "/home/catid/drafter/artifacts/m3/tune/rank0/1e1c03ada1da6994e99a7625d5fbc36ce53923a2649f10f1fd4502bd7592b1b8.json",
+      "new_sha256": "8f8ae32c6676274245e72b6dd2f5da4a0e8ab8b8a29a2f8a7f3cf87977b84c7f",
+      "output_tokens_equal": true,
+      "full_verification_blocks_equal": true,
+      "parameter_norms_equal": true,
+      "core_exact_equal": true,
+      "tokens": 262,
+      "blocks": 43,
+      "diagnostic_differences": [
+        "/periodic_run",
+        "/repetition_detector_version",
+        "/repetition_rule"
+      ],
+      "classification_changed": false
+    },
+    {
+      "prompt_id": "gsm8k-main-train-06800",
+      "arm": "dense",
+      "settings": {
+        "beta": 0.5
+      },
+      "old_path": "/home/catid/drafter/artifacts/repetition_detector_review/pre_correction/artifacts/m3/tune/rank0/81692a8e9b2ea8b6d283a6e4af5a47909589f44404325b64a73b9d2f958aae3d.json",
+      "old_sha256": "48dca267c1442ba7816f5b7342a6630fd8ee51db2109fca6b66102b57243e403",
+      "new_path": "/home/catid/drafter/artifacts/m3/tune/rank0/1497ded782cf3b3170cc3a83eea94980b7a8d89a81291b6cdb126b153ae5c61a.json",
+      "new_sha256": "2ead087f0cfbf3090e2c3033a420cb8501bc3b7f6af2a465971aabea31b1bdd4",
+      "output_tokens_equal": true,
+      "full_verification_blocks_equal": true,
+      "parameter_norms_equal": true,
+      "core_exact_equal": true,
+      "tokens": 215,
+      "blocks": 37,
+      "diagnostic_differences": [
+        "/periodic_run",
+        "/repetition_detector_version",
+        "/repetition_rule"
+      ],
+      "classification_changed": false
+    },
+    {
+      "prompt_id": "gsm8k-main-train-06800",
+      "arm": "dense",
+      "settings": {
+        "beta": 1.0
+      },
+      "old_path": "/home/catid/drafter/artifacts/repetition_detector_review/pre_correction/artifacts/m3/tune/rank0/0cec65f02c851b144cd49fa128c1cc59223cb962872b0bd235b147e38c0809f3.json",
+      "old_sha256": "b986ee68be9c9aa025d98e26dba3a100ef2de6f24bf12710757e496bdb9507aa",
+      "new_path": "/home/catid/drafter/artifacts/m3/tune/rank0/2a0fb0342ffebd3342f019895a16f1a36785a8230a7347c9f6a253a932032baa.json",
+      "new_sha256": "03a07da1b8a992da651ae69b4001b99cb5a36c79fda37cfd92228ad02778c654",
+      "output_tokens_equal": true,
+      "full_verification_blocks_equal": true,
+      "parameter_norms_equal": true,
+      "core_exact_equal": true,
+      "tokens": 280,
+      "blocks": 78,
+      "diagnostic_differences": [
+        "/periodic_run",
+        "/repetition_detector_version",
+        "/repetition_rule"
+      ],
+      "classification_changed": false
+    },
+    {
+      "prompt_id": "gsm8k-main-train-06800",
+      "arm": "dense_sparse",
+      "settings": {
+        "beta": 0.5
+      },
+      "old_path": "/home/catid/drafter/artifacts/repetition_detector_review/pre_correction/artifacts/m3/tune/rank0/d6bb47ba1a20c826a4feef1969454e69f4b9a01c7d05d9e496865e6a3844c3ec.json",
+      "old_sha256": "363a4d974b7b3257d8d715cb8aa3ce4aaefec67f9a6b703efc99b0857dbc77f6",
+      "new_path": "/home/catid/drafter/artifacts/m3/tune/rank0/16d521bec00c60216162467ad75783be9a4d4dc5ed3b5375a5c9258dc68415be.json",
+      "new_sha256": "75ff42bdf50765f331ef8af35359e647888020e44399936a673fd9fbed9d0b73",
+      "output_tokens_equal": true,
+      "full_verification_blocks_equal": true,
+      "parameter_norms_equal": true,
+      "core_exact_equal": true,
+      "tokens": 265,
+      "blocks": 67,
+      "diagnostic_differences": [
+        "/periodic_run",
+        "/repetition_detector_version",
+        "/repetition_rule"
+      ],
+      "classification_changed": false
+    },
+    {
+      "prompt_id": "gsm8k-main-train-06800",
+      "arm": "dense_sparse",
+      "settings": {
+        "beta": 1.0
+      },
+      "old_path": "/home/catid/drafter/artifacts/repetition_detector_review/pre_correction/artifacts/m3/tune/rank0/e08c74cbca45b9870443f4afbdc1736bd6723c8c86b75e6812e72e8bc053391e.json",
+      "old_sha256": "0a144afe491882478082197b69faaf78ee692145caa229fd7f8650b6212e2113",
+      "new_path": "/home/catid/drafter/artifacts/m3/tune/rank0/41613bb14d8fc31011df24f3530d42ce59ac02629634e68b06e656199d4ba9c1.json",
+      "new_sha256": "a2a46a055cd7c5bd91139276084ad503fb75af685a6b37be86f9f41db81c015c",
+      "output_tokens_equal": true,
+      "full_verification_blocks_equal": true,
+      "parameter_norms_equal": true,
+      "core_exact_equal": true,
+      "tokens": 210,
+      "blocks": 53,
+      "diagnostic_differences": [
+        "/periodic_run",
+        "/repetition_detector_version",
+        "/repetition_rule"
+      ],
+      "classification_changed": false
+    },
+    {
+      "prompt_id": "gsm8k-main-train-06800",
+      "arm": "online_bigram",
+      "settings": {
+        "lambda_tr": 0.05,
+        "alpha": 0.5,
+        "k_ret": null
+      },
+      "old_path": "/home/catid/drafter/artifacts/repetition_detector_review/pre_correction/artifacts/m3/tune/rank0/6305bdd548960f0ba960f80049d0270ef7fc354a5653e7e511d2357f8070ecbe.json",
+      "old_sha256": "ea9fab1a10e9bed32cbfdd764dc4db69cd9afcdeaf96b2794950fd158c6359b8",
+      "new_path": "/home/catid/drafter/artifacts/m3/tune/rank0/10426d5eae0074b67aa28083f07b45fa77b4bd4cffa9502eff0cde5b22fe429b.json",
+      "new_sha256": "e3a31cc41e2260143be64746150848d9ddb7aedd6269bf25cc37ddf6a02b0a40",
+      "output_tokens_equal": true,
+      "full_verification_blocks_equal": true,
+      "parameter_norms_equal": true,
+      "core_exact_equal": true,
+      "tokens": 201,
+      "blocks": 35,
+      "diagnostic_differences": [
+        "/periodic_run",
+        "/repetition_detector_version",
+        "/repetition_rule"
+      ],
+      "classification_changed": false
+    },
+    {
+      "prompt_id": "gsm8k-main-train-06800",
+      "arm": "online_bigram",
+      "settings": {
+        "lambda_tr": 0.2,
+        "alpha": 1.0,
+        "k_ret": null
+      },
+      "old_path": "/home/catid/drafter/artifacts/repetition_detector_review/pre_correction/artifacts/m3/tune/rank0/30a6a2d8f122f2533d55bbaeab3fa86fec78d4757b56121f49e77a20db5ad404.json",
+      "old_sha256": "91c6f21d3bbbdc94cab9c13d34bd3331b24859eb76832d907cb1e78f09e86195",
+      "new_path": "/home/catid/drafter/artifacts/m3/tune/rank0/83cb97f7dcae98769720e77b3af342f53608284b38822da13e3f53a752a3a749.json",
+      "new_sha256": "58df70eab5ba55e0f794886c64e9f26d78076932943ed9cb589814fbbfad209c",
+      "output_tokens_equal": true,
+      "full_verification_blocks_equal": true,
+      "parameter_norms_equal": true,
+      "core_exact_equal": true,
+      "tokens": 201,
+      "blocks": 35,
+      "diagnostic_differences": [
+        "/periodic_run",
+        "/repetition_detector_version",
+        "/repetition_rule"
+      ],
+      "classification_changed": false
+    },
+    {
+      "prompt_id": "gsm8k-main-train-06800",
+      "arm": "plain_dflash",
+      "settings": {},
+      "old_path": "/home/catid/drafter/artifacts/repetition_detector_review/pre_correction/artifacts/m3/tune/rank0/37ff382ebea47f429851fd761e5b54bc97e8811cc6610025f4089933977b2005.json",
+      "old_sha256": "eed8c8a003bc355aa93b0ebec6a449b5b5a317929f46f4fd771d899b6a34bb01",
+      "new_path": "/home/catid/drafter/artifacts/m3/tune/rank0/eb397867c915f93026155bf39e0e84cd56ac2950dc597893dca437f32ac54941.json",
+      "new_sha256": "828a0c60656195e6fcd3ef7d720060ddc75105a437cf94cb5ba63ebe4a34cb8b",
+      "output_tokens_equal": true,
+      "full_verification_blocks_equal": true,
+      "parameter_norms_equal": true,
+      "core_exact_equal": true,
+      "tokens": 234,
+      "blocks": 45,
+      "diagnostic_differences": [
+        "/periodic_run",
+        "/repetition_detector_version",
+        "/repetition_rule"
+      ],
+      "classification_changed": false
+    },
+    {
+      "prompt_id": "gsm8k-main-train-07102",
+      "arm": "dense",
+      "settings": {
+        "beta": 0.5
+      },
+      "old_path": "/home/catid/drafter/artifacts/repetition_detector_review/pre_correction/artifacts/m3/tune/rank0/7e699a07e04671df984b9fa548dc0f977440354a5784d96146844cc792b4371f.json",
+      "old_sha256": "c986a93e3838e3dc05dc0f93ca8b2bf6af1415e9fad39cdbf0e3c12bfd97bdf9",
+      "new_path": "/home/catid/drafter/artifacts/m3/tune/rank0/f1b55432cbbf16db0a343750a4774b63fd1d4679c71cc10b1aa3e7c897ce72ec.json",
+      "new_sha256": "b4042e6bed80ca81426a7ed5069c1d86b585964688807e1308ffa974de2b7c9e",
+      "output_tokens_equal": true,
+      "full_verification_blocks_equal": true,
+      "parameter_norms_equal": true,
+      "core_exact_equal": true,
+      "tokens": 353,
+      "blocks": 44,
+      "diagnostic_differences": [
+        "/periodic_run",
+        "/repetition_detector_version",
+        "/repetition_rule"
+      ],
+      "classification_changed": false
+    },
+    {
+      "prompt_id": "gsm8k-main-train-07102",
+      "arm": "dense",
+      "settings": {
+        "beta": 1.0
+      },
+      "old_path": "/home/catid/drafter/artifacts/repetition_detector_review/pre_correction/artifacts/m3/tune/rank0/80ba7d6c4dc89b4ffc106e2221f7f64162f79612a5c00b9f17fd49aa8390997a.json",
+      "old_sha256": "ea78b983d573891f7be791f454485e068d1df700fdd53121a2c68bcf39e52e8e",
+      "new_path": "/home/catid/drafter/artifacts/m3/tune/rank0/871906d4f069f2574c09f95f72b46eee9a20549debaf64a45ee3928dff0cebe2.json",
+      "new_sha256": "dbddb133a8f1554b1e0bc57ef7bdfb05368cd22c79c75098712e35947f9b74fd",
+      "output_tokens_equal": true,
+      "full_verification_blocks_equal": true,
+      "parameter_norms_equal": true,
+      "core_exact_equal": true,
+      "tokens": 293,
+      "blocks": 45,
+      "diagnostic_differences": [
+        "/periodic_run",
+        "/repetition_detector_version",
+        "/repetition_rule"
+      ],
+      "classification_changed": false
+    },
+    {
+      "prompt_id": "gsm8k-main-train-07102",
+      "arm": "dense_sparse",
+      "settings": {
+        "beta": 0.5
+      },
+      "old_path": "/home/catid/drafter/artifacts/repetition_detector_review/pre_correction/artifacts/m3/tune/rank0/e630891b12450c6911b970490a10e9dc6042579a4aa2d0085ab3d1224a52badc.json",
+      "old_sha256": "0a833337387b4919471a0f88296fda1f3cf40a5048f7b4d8d3eae777126b0a11",
+      "new_path": "/home/catid/drafter/artifacts/m3/tune/rank0/14cfb3923eb82c4ed2e57b508147afa075dc69e7efd5fd15183daceead2be60f.json",
+      "new_sha256": "36fd3c14412060269827d8416c92923687d84ed288401dc9896ee0ee63b198ed",
+      "output_tokens_equal": true,
+      "full_verification_blocks_equal": true,
+      "parameter_norms_equal": true,
+      "core_exact_equal": true,
+      "tokens": 365,
+      "blocks": 44,
+      "diagnostic_differences": [
+        "/periodic_run",
+        "/repetition_detector_version",
+        "/repetition_rule"
+      ],
+      "classification_changed": false
+    },
+    {
+      "prompt_id": "gsm8k-main-train-07102",
+      "arm": "dense_sparse",
+      "settings": {
+        "beta": 1.0
+      },
+      "old_path": "/home/catid/drafter/artifacts/repetition_detector_review/pre_correction/artifacts/m3/tune/rank0/4a1958479a81fefbe9e1e3d592e4752532106e2a314cff7ea9a652f3d4767501.json",
+      "old_sha256": "058f8860629f974b32be8a1f41b7641f2b814f0a79816ca2cb0e13702145920f",
+      "new_path": "/home/catid/drafter/artifacts/m3/tune/rank0/6697e5980ffa40e52757791703ff48040212dce23346b87c03ffa485de2685e4.json",
+      "new_sha256": "a25aace1b26af3bfedb408223bd57973c1f22567a820a61d7158a9cce0ee362f",
+      "output_tokens_equal": true,
+      "full_verification_blocks_equal": true,
+      "parameter_norms_equal": true,
+      "core_exact_equal": true,
+      "tokens": 294,
+      "blocks": 52,
+      "diagnostic_differences": [
+        "/periodic_run",
+        "/repetition_detector_version",
+        "/repetition_rule"
+      ],
+      "classification_changed": false
+    },
+    {
+      "prompt_id": "gsm8k-main-train-07102",
+      "arm": "online_bigram",
+      "settings": {
+        "lambda_tr": 0.05,
+        "alpha": 0.5,
+        "k_ret": null
+      },
+      "old_path": "/home/catid/drafter/artifacts/repetition_detector_review/pre_correction/artifacts/m3/tune/rank0/0851b4c146fbd46b6ed863079c74d268956f64381d5242f22a838d0c5a67ae33.json",
+      "old_sha256": "ac0428a8e93a390b04eb6f9ebc97f5943fbf14d0b75cbf3dbe109f12dfce5f2c",
+      "new_path": "/home/catid/drafter/artifacts/m3/tune/rank0/ebe63327cae6d9dc22f042b843ea8f39c7f3ca722c159d9a5284b5cb017f3d70.json",
+      "new_sha256": "7b48f43637ac966618d2b8c21a1aa8c79c2e29f4922437e9637c9263a5c20c4a",
+      "output_tokens_equal": true,
+      "full_verification_blocks_equal": true,
+      "parameter_norms_equal": true,
+      "core_exact_equal": true,
+      "tokens": 367,
+      "blocks": 43,
+      "diagnostic_differences": [
+        "/periodic_run",
+        "/repetition_detector_version",
+        "/repetition_rule"
+      ],
+      "classification_changed": false
+    },
+    {
+      "prompt_id": "gsm8k-main-train-07102",
+      "arm": "online_bigram",
+      "settings": {
+        "lambda_tr": 0.2,
+        "alpha": 1.0,
+        "k_ret": null
+      },
+      "old_path": "/home/catid/drafter/artifacts/repetition_detector_review/pre_correction/artifacts/m3/tune/rank0/477f2599f87533ab083391ba5ab7fdab71762eca0633cfc4993efe26e294944f.json",
+      "old_sha256": "e8698085f355dcb6e629b5a8da7db7703b861b629d8796a8e5a59e852434b2e3",
+      "new_path": "/home/catid/drafter/artifacts/m3/tune/rank0/111c6b037751398ec80247b2ecf6ecae840811b9efc979ddbff0a86f989bd9b1.json",
+      "new_sha256": "c30f8b3fb0b70cd35da068458919505269958e356e10931ac02a041b8cbc7c6a",
+      "output_tokens_equal": true,
+      "full_verification_blocks_equal": true,
+      "parameter_norms_equal": true,
+      "core_exact_equal": true,
+      "tokens": 414,
+      "blocks": 46,
+      "diagnostic_differences": [
+        "/periodic_run",
+        "/repetition_detector_version",
+        "/repetition_rule"
+      ],
+      "classification_changed": false
+    },
+    {
+      "prompt_id": "gsm8k-main-train-07102",
+      "arm": "plain_dflash",
+      "settings": {},
+      "old_path": "/home/catid/drafter/artifacts/repetition_detector_review/pre_correction/artifacts/m3/tune/rank0/074aad10ec4843eb55f0b90864c2c8b4a5273ff64624b99db2d616dd527fe5b7.json",
+      "old_sha256": "415876a67da676f099665490634247141e4413193e6e9b218eeaf2cbc195635a",
+      "new_path": "/home/catid/drafter/artifacts/m3/tune/rank0/015f2027eecf7bfa4b739477c169b4181a4836afdadb4a6fd10e0311073eff33.json",
+      "new_sha256": "45e16f1445005db573ee2df9e10d1a88925354a8b41f2a6c4ffab98acbc2507a",
+      "output_tokens_equal": true,
+      "full_verification_blocks_equal": true,
+      "parameter_norms_equal": true,
+      "core_exact_equal": true,
+      "tokens": 414,
+      "blocks": 50,
+      "diagnostic_differences": [
+        "/periodic_run",
+        "/repetition_detector_version",
+        "/repetition_rule"
+      ],
+      "classification_changed": false
+    }
+  ],
+  "evidence": {
+    "/home/catid/drafter/artifacts/repetition_detector_review/pre_correction/artifacts/m3/tune/manifest-rank0.json": {
+      "sha256": "5275ed2c106b252acb9259621f9a605cc4d6059797ebe1e3ba6513338805adad",
+      "bytes": 116690
+    },
+    "/home/catid/drafter/artifacts/m3/tune/manifest-rank0.json": {
+      "sha256": "55f042a536d1d2c27751c017f4f29e37db900cb9441211a701788f6cf9cfc824",
+      "bytes": 229274
+    },
+    "/home/catid/drafter/artifacts/repetition_detector_review/pre_correction/artifacts/m3/tune/sessions/a05ebfa5ed86894c202a53c95e600d634ee2c2edd0d46c30071b8049d010c03d.json": {
+      "sha256": "6ad2d6035ef1d839d2f70faaaa2c4db00385a0a0cd8847eb0609a2e70ecfa7be",
+      "bytes": 12015
+    },
+    "/home/catid/drafter/artifacts/m3/tune/sessions/a05ebfa5ed86894c202a53c95e600d634ee2c2edd0d46c30071b8049d010c03d.json": {
+      "sha256": "6ad2d6035ef1d839d2f70faaaa2c4db00385a0a0cd8847eb0609a2e70ecfa7be",
+      "bytes": 12015
+    },
+    "/home/catid/drafter/artifacts/m3/tune/sessions/baa0c5cee13bb21d83155d21791bbe56bcc00e8995f9880fa5a44278baced860.json": {
+      "sha256": "a648bf7a5364439ef9f26d5c9559888283a91b234b5c82badee5c2ff1b5126a9",
+      "bytes": 12014
+    },
+    "/home/catid/drafter/artifacts/prompts.json": {
+      "sha256": "1f4789116c53beaea8460020659f695f9d4d6e09bd60470f9cd7dd056e622182",
+      "bytes": 4282967
+    },
+    "/home/catid/drafter/artifacts/repetition_detector_review/pre_correction/artifacts/m3/tune/rank0/d383150219fbdfb230fe7f5cbc1c618fed8dc034649f01a31e97ca7b50cc05d1.json": {
+      "sha256": "bb24ec11551af2464b8806f672a0148b76cab2b3f52152b30828c5d0938c64ed",
+      "bytes": 127581
+    },
+    "/home/catid/drafter/artifacts/repetition_detector_review/pre_correction/artifacts/m3/tune/rank0/2ad7d139e2f8af71b8960c415c07c361d62b842992a8754bdae86b0510af16c4.json": {
+      "sha256": "ea49905c7c694b24d9e6cd1b20286b4e4f2b7bfdca2d1d39d68a55943c8d0170",
+      "bytes": 130288
+    },
+    "/home/catid/drafter/artifacts/repetition_detector_review/pre_correction/artifacts/m3/tune/rank0/1ceca0d701e700de2201c3a8b3f470a19afdc4a33d50d33748496e8d5fb00fa4.json": {
+      "sha256": "e4dde4dbaf3810c8955a8f417d75296570591a70715d3a8badb600d9d1946f9b",
+      "bytes": 130293
+    },
+    "/home/catid/drafter/artifacts/repetition_detector_review/pre_correction/artifacts/m3/tune/rank0/b5750f318b237020f7967a57edab6e737d671b78e72b77ea5814a3172e7a4c37.json": {
+      "sha256": "1f196f200943d2b64c19f1ce643a8ff88bf0cf0154748fa93765c085f0f0d5ec",
+      "bytes": 135044
+    },
+    "/home/catid/drafter/artifacts/repetition_detector_review/pre_correction/artifacts/m3/tune/rank0/35f8b41d8fc507f3741b3a87d88db309270fe130196ee4b0d24b24488e20c9bf.json": {
+      "sha256": "4f0f250239b603fe3069942bcabe3cd9c7c7711cc1353334c1326d7167fbd39a",
+      "bytes": 182990
+    },
+    "/home/catid/drafter/artifacts/repetition_detector_review/pre_correction/artifacts/m3/tune/rank0/22dbd224a0252ce5c668492c5778c78a810a11782a6190e870508d6e4762a0e6.json": {
+      "sha256": "b325c1b8e790c9f707dc87cdfeeaf71e5fdc62698f2a4e85d577c1a224d8dc9a",
+      "bytes": 123039
+    },
+    "/home/catid/drafter/artifacts/repetition_detector_review/pre_correction/artifacts/m3/tune/rank0/7798a067a08b125491593bcb99f9ce2340482dfb928ad97ea5fe466b1bcf75fe.json": {
+      "sha256": "1b20ded4a74b9bd6898d38997ceb806ebaea39b650f6f56f9a94e529d2cf06e4",
+      "bytes": 176288
+    },
+    "/home/catid/drafter/artifacts/repetition_detector_review/pre_correction/artifacts/m3/tune/rank0/1b67412fda7bb4a0b5654974d0bcef87a0903efdf58824012b0f2d8718208733.json": {
+      "sha256": "22669a4a918b6a7f3977c5a87b53bf5a025f863b8e43390759a305f508c38cc9",
+      "bytes": 127139
+    },
+    "/home/catid/drafter/artifacts/repetition_detector_review/pre_correction/artifacts/m3/tune/rank0/83d6cd288ae196e33d1b5167e09a293208643790071b423d900d14668e2e3edf.json": {
+      "sha256": "1b1e5bbdd574c539d769679742889776c5280f00ab5add39b2868fb1d00a28e8",
+      "bytes": 127126
+    },
+    "/home/catid/drafter/artifacts/repetition_detector_review/pre_correction/artifacts/m3/tune/rank0/1a034c961a9654729e8c1914a8919fdfd92208cd5cb1d710c4aa35b2a0a5f1d7.json": {
+      "sha256": "630ae249a029efc76ec02f1fe4a0cdf9b088f3c266738811d391085b2facc753",
+      "bytes": 123169
+    },
+    "/home/catid/drafter/artifacts/repetition_detector_review/pre_correction/artifacts/m3/tune/rank0/10b72be1fb039ccede006fb14d609b101da04ff1d091b7922dd6670920ae86a7.json": {
+      "sha256": "40938d634eef6afd295dec33021a71d0f11d832642dd2fa4b5231e0818ba0f7b",
+      "bytes": 149450
+    },
+    "/home/catid/drafter/artifacts/repetition_detector_review/pre_correction/artifacts/m3/tune/rank0/9fc218293f6f4d5eae2f13850a8ef9973b1ee9e9d52e3c193c722dbc40232dec.json": {
+      "sha256": "17a2a83e0cea438d2c441ca1f46a9d5e913416af1ea20c2dc550285200f2f221",
+      "bytes": 136247
+    },
+    "/home/catid/drafter/artifacts/repetition_detector_review/pre_correction/artifacts/m3/tune/rank0/0b4edad0a3cf5ff525e3644325beef45e690b0cfa794eecf52670c2243a287ee.json": {
+      "sha256": "0ca58ae9a6cd177a33376f6105e8d468c3a60fc4ae81d086ea18f3ec72f14ff5",
+      "bytes": 146211
+    },
+    "/home/catid/drafter/artifacts/repetition_detector_review/pre_correction/artifacts/m3/tune/rank0/69d50240f97e44cdc4e04cf0c37fae747f049b4b4e3766c57f7a9d02b8d14532.json": {
+      "sha256": "de10044e91ac0f4fe75e376e0f4cca2ed4072a92c3e162776acc4f5bd1535b3a",
+      "bytes": 95402
+    },
+    "/home/catid/drafter/artifacts/repetition_detector_review/pre_correction/artifacts/m3/tune/rank0/f90984df074de8088a47ed1b50727102c6e480900a4d6a7d0146f7a0a451c109.json": {
+      "sha256": "d4d67be848c2f79e0d611732091402e5655743b18708789a0dc5e328570a7a5c",
+      "bytes": 102252
+    },
+    "/home/catid/drafter/artifacts/repetition_detector_review/pre_correction/artifacts/m3/tune/rank0/f79b6e5bb2dae1214853971d65d6b016044ccf954a9038c27f4ae585512dc34f.json": {
+      "sha256": "d77558aed25c2993374bcd1b8e2bc26a0b379c64fcaee01da31cab8d01ef571e",
+      "bytes": 105533
+    },
+    "/home/catid/drafter/artifacts/repetition_detector_review/pre_correction/artifacts/m3/tune/rank0/887445cd3f7eef322f1a0754eba6a93ddd13528eeae0dd7ae5654c025fce4666.json": {
+      "sha256": "4b713064b426516fcf2091b036c45baa243d8a7bb391a436f9229b24a6016bd2",
+      "bytes": 125310
+    },
+    "/home/catid/drafter/artifacts/repetition_detector_review/pre_correction/artifacts/m3/tune/rank0/ca68913e2c95435af28a63dd6fcd4fa101cd40d289a207989dd452e468c3a3e9.json": {
+      "sha256": "a1577f9e63f4a6e28a690ebb1b7ca0b5fa1edf80fe4bfeaf2ef472d3b878460c",
+      "bytes": 114739
+    },
+    "/home/catid/drafter/artifacts/repetition_detector_review/pre_correction/artifacts/m3/tune/rank0/b375999be427b948d77603b2d57e6b1efb56168453279cbdcd3f533be48db67d.json": {
+      "sha256": "d0a6963fbdcf877bb148b4b8498598d8821b9ef48c307fb7cffa55f60a47064e",
+      "bytes": 111367
+    },
+    "/home/catid/drafter/artifacts/repetition_detector_review/pre_correction/artifacts/m3/tune/rank0/0e3510b1d96b440a51647ab2e5d866760db9b8d038a83afe79544a3f170ee255.json": {
+      "sha256": "8283fb80dd2adfcf849cb6737f90b27399f7e7369dcbf95000c439c5dc240c75",
+      "bytes": 109437
+    },
+    "/home/catid/drafter/artifacts/repetition_detector_review/pre_correction/artifacts/m3/tune/rank0/2e34348ca9a63da1f6dcc77965296f5119b68c19c42117ade367145aeaccd6f7.json": {
+      "sha256": "88a8db49ce38576dd1cded43408fcb0c28cd6c2d8a44f1b2f4041c8d20362422",
+      "bytes": 110375
+    },
+    "/home/catid/drafter/artifacts/repetition_detector_review/pre_correction/artifacts/m3/tune/rank0/7cc500b5288b2e40f11cc29b012b73ef50add7cea534f1bdf52e62e27ef7bb0c.json": {
+      "sha256": "3d24adf9b9e39d3ad90cc134b8497568e8fe9f37a2d0d633ba2f12e82a605061",
+      "bytes": 165375
+    },
+    "/home/catid/drafter/artifacts/repetition_detector_review/pre_correction/artifacts/m3/tune/rank0/35a42e1a5bb775f9fd6bc0150029419bcef137b8c3be46cbef42cd655a2b1b3b.json": {
+      "sha256": "f4066c845d8a91e75d4442ccd95184e37df30f617d79fde7ef9030e1afb2e637",
+      "bytes": 177606
+    },
+    "/home/catid/drafter/artifacts/repetition_detector_review/pre_correction/artifacts/m3/tune/rank0/b96917a5d43151dd7a272c477516d414af1a2a97c21a56ae14f73e690785cc15.json": {
+      "sha256": "7c61352d051f29906221081b015f0e4db364171650d87299bfc0ad7ec0498c7b",
+      "bytes": 135192
+    },
+    "/home/catid/drafter/artifacts/repetition_detector_review/pre_correction/artifacts/m3/tune/rank0/c6f75ec8f38ffd30dd47337159da0b5f8d4b7bd3906496d4687af66a4b6b00bf.json": {
+      "sha256": "ffc6255c9d399edbc441aeea265055678535abcd661c2706d032990d30085c29",
+      "bytes": 202782
+    },
+    "/home/catid/drafter/artifacts/repetition_detector_review/pre_correction/artifacts/m3/tune/rank0/78af219b53c4b566bc52b507d869fccdaece0d275db03dcea93021b2b73ccaeb.json": {
+      "sha256": "00668a46a5a0255063a1846dacd9a105841fb5d85d203f3995c76033bbb19c7d",
+      "bytes": 152437
+    },
+    "/home/catid/drafter/artifacts/repetition_detector_review/pre_correction/artifacts/m3/tune/rank0/9cf71bc85bf42f6437167dd808412ab741233d3abe9a3213fc61c9302580f2dd.json": {
+      "sha256": "27306693a9df6ee092f9f5706c0ed6491837f9c38ab26bb7c95e3b58c4f07d87",
+      "bytes": 158961
+    },
+    "/home/catid/drafter/artifacts/repetition_detector_review/pre_correction/artifacts/m3/tune/rank0/c16ae94003f6022b16c2d3f1af81c0d9f385c9446865dd43673f93f16f6a498c.json": {
+      "sha256": "502a67c12d4f21cc95de90051bbb03d07042a17cadd239b2248f766211e83183",
+      "bytes": 167415
+    },
+    "/home/catid/drafter/artifacts/repetition_detector_review/pre_correction/artifacts/m3/tune/rank0/0cec65f02c851b144cd49fa128c1cc59223cb962872b0bd235b147e38c0809f3.json": {
+      "sha256": "b986ee68be9c9aa025d98e26dba3a100ef2de6f24bf12710757e496bdb9507aa",
+      "bytes": 222021
+    },
+    "/home/catid/drafter/artifacts/repetition_detector_review/pre_correction/artifacts/m3/tune/rank0/d6bb47ba1a20c826a4feef1969454e69f4b9a01c7d05d9e496865e6a3844c3ec.json": {
+      "sha256": "363a4d974b7b3257d8d715cb8aa3ce4aaefec67f9a6b703efc99b0857dbc77f6",
+      "bytes": 193358
+    },
+    "/home/catid/drafter/artifacts/repetition_detector_review/pre_correction/artifacts/m3/tune/rank0/e08c74cbca45b9870443f4afbdc1736bd6723c8c86b75e6812e72e8bc053391e.json": {
+      "sha256": "0a144afe491882478082197b69faaf78ee692145caa229fd7f8650b6212e2113",
+      "bytes": 151004
+    },
+    "/home/catid/drafter/artifacts/repetition_detector_review/pre_correction/artifacts/m3/tune/rank0/37ff382ebea47f429851fd761e5b54bc97e8811cc6610025f4089933977b2005.json": {
+      "sha256": "eed8c8a003bc355aa93b0ebec6a449b5b5a317929f46f4fd771d899b6a34bb01",
+      "bytes": 132937
+    },
+    "/home/catid/drafter/artifacts/repetition_detector_review/pre_correction/artifacts/m3/tune/rank0/6305bdd548960f0ba960f80049d0270ef7fc354a5653e7e511d2357f8070ecbe.json": {
+      "sha256": "ea9fab1a10e9bed32cbfdd764dc4db69cd9afcdeaf96b2794950fd158c6359b8",
+      "bytes": 104079
+    },
+    "/home/catid/drafter/artifacts/repetition_detector_review/pre_correction/artifacts/m3/tune/rank0/30a6a2d8f122f2533d55bbaeab3fa86fec78d4757b56121f49e77a20db5ad404.json": {
+      "sha256": "91c6f21d3bbbdc94cab9c13d34bd3331b24859eb76832d907cb1e78f09e86195",
+      "bytes": 104139
+    },
+    "/home/catid/drafter/artifacts/repetition_detector_review/pre_correction/artifacts/m3/tune/rank0/81692a8e9b2ea8b6d283a6e4af5a47909589f44404325b64a73b9d2f958aae3d.json": {
+      "sha256": "48dca267c1442ba7816f5b7342a6630fd8ee51db2109fca6b66102b57243e403",
+      "bytes": 109405
+    },
+    "/home/catid/drafter/artifacts/repetition_detector_review/pre_correction/artifacts/m3/tune/rank0/ab9aae529092adf54f9336c3bdbd58c82c645bfac1b62786ac81706f7a739cbf.json": {
+      "sha256": "f20a14a4d9acd4025f3c36ff0f3efff1b55315678839bb6d92a23fc35461d495",
+      "bytes": 226155
+    },
+    "/home/catid/drafter/artifacts/repetition_detector_review/pre_correction/artifacts/m3/tune/rank0/8850cc423151a7fdd093f716d86f8be2a0063c05fd9ecd67dd74ec0dcf4867d3.json": {
+      "sha256": "c60a080b000f0d1b1080c0c95af06be53cfc319dd5de33964a9487af8ebcf263",
+      "bytes": 283032
+    },
+    "/home/catid/drafter/artifacts/repetition_detector_review/pre_correction/artifacts/m3/tune/rank0/008a9807e1583ea8a35e446a4004b29e3001f10467317f5e2bb5aab455209059.json": {
+      "sha256": "ee87de54a3499a10c383eb6f6263f03640491fef7b95c1bb32f92f4a14aa3e3f",
+      "bytes": 203883
+    },
+    "/home/catid/drafter/artifacts/repetition_detector_review/pre_correction/artifacts/m3/tune/rank0/33839e7bdcda3daed83d9dc752cbb8a5233ff0b4e6cecded60e511e3e90f2c06.json": {
+      "sha256": "c3614758db29018253e2333a2d8e09f9d2cb0e3a5435c6236efbd387aa096041",
+      "bytes": 249953
+    },
+    "/home/catid/drafter/artifacts/repetition_detector_review/pre_correction/artifacts/m3/tune/rank0/7bb9176f040a73c1df15bb471448bf1adcd0b19108ea1e2393367d033d48daf2.json": {
+      "sha256": "12e53d428f52a6d53e0cf964d43b8f734367c98a6b50aaada44b587a50c876b2",
+      "bytes": 258350
+    },
+    "/home/catid/drafter/artifacts/repetition_detector_review/pre_correction/artifacts/m3/tune/rank0/28fe8149c819f03c397b2c3711d55e5020fa8cd2f19dc3c8445c284a7f757043.json": {
+      "sha256": "4816b3a552b371581aae1c1354b05c25a32cef0b4021dab2a23762cea5a7cf8c",
+      "bytes": 197312
+    },
+    "/home/catid/drafter/artifacts/repetition_detector_review/pre_correction/artifacts/m3/tune/rank0/fff0924c3f824472999f62495f8855ae3a11f07d7b089a0af15a668a2fadcff9.json": {
+      "sha256": "81e2a4a25a59b78886baa38da5bfbbcfa93edb2c2d32ef239f185dd0c01ce550",
+      "bytes": 293288
+    },
+    "/home/catid/drafter/artifacts/repetition_detector_review/pre_correction/artifacts/m3/tune/rank0/4a1958479a81fefbe9e1e3d592e4752532106e2a314cff7ea9a652f3d4767501.json": {
+      "sha256": "058f8860629f974b32be8a1f41b7641f2b814f0a79816ca2cb0e13702145920f",
+      "bytes": 149470
+    },
+    "/home/catid/drafter/artifacts/repetition_detector_review/pre_correction/artifacts/m3/tune/rank0/074aad10ec4843eb55f0b90864c2c8b4a5273ff64624b99db2d616dd527fe5b7.json": {
+      "sha256": "415876a67da676f099665490634247141e4413193e6e9b218eeaf2cbc195635a",
+      "bytes": 148072
+    },
+    "/home/catid/drafter/artifacts/repetition_detector_review/pre_correction/artifacts/m3/tune/rank0/0851b4c146fbd46b6ed863079c74d268956f64381d5242f22a838d0c5a67ae33.json": {
+      "sha256": "ac0428a8e93a390b04eb6f9ebc97f5943fbf14d0b75cbf3dbe109f12dfce5f2c",
+      "bytes": 128541
+    },
+    "/home/catid/drafter/artifacts/repetition_detector_review/pre_correction/artifacts/m3/tune/rank0/477f2599f87533ab083391ba5ab7fdab71762eca0633cfc4993efe26e294944f.json": {
+      "sha256": "e8698085f355dcb6e629b5a8da7db7703b861b629d8796a8e5a59e852434b2e3",
+      "bytes": 137160
+    },
+    "/home/catid/drafter/artifacts/repetition_detector_review/pre_correction/artifacts/m3/tune/rank0/7e699a07e04671df984b9fa548dc0f977440354a5784d96146844cc792b4371f.json": {
+      "sha256": "c986a93e3838e3dc05dc0f93ca8b2bf6af1415e9fad39cdbf0e3c12bfd97bdf9",
+      "bytes": 129081
+    },
+    "/home/catid/drafter/artifacts/repetition_detector_review/pre_correction/artifacts/m3/tune/rank0/80ba7d6c4dc89b4ffc106e2221f7f64162f79612a5c00b9f17fd49aa8390997a.json": {
+      "sha256": "ea78b983d573891f7be791f454485e068d1df700fdd53121a2c68bcf39e52e8e",
+      "bytes": 130356
+    },
+    "/home/catid/drafter/artifacts/repetition_detector_review/pre_correction/artifacts/m3/tune/rank0/e630891b12450c6911b970490a10e9dc6042579a4aa2d0085ab3d1224a52badc.json": {
+      "sha256": "0a833337387b4919471a0f88296fda1f3cf40a5048f7b4d8d3eae777126b0a11",
+      "bytes": 129004
+    },
+    "/home/catid/drafter/artifacts/repetition_detector_review/pre_correction/artifacts/m3/tune/rank0/2da917e4f82d8a28888eda65f411c944fcf8b9ebb5df3b12587ee0af3ddc7ee8.json": {
+      "sha256": "818f564f85989049fd74323e1d0f18f54064b8357d918cedd212176636f9502f",
+      "bytes": 104281
+    },
+    "/home/catid/drafter/artifacts/repetition_detector_review/pre_correction/artifacts/m3/tune/rank0/e31c112c6e7c8ae653a52b656f72ae02fc7871cfa5d26b0cb8ed2e5ca4ba3d7d.json": {
+      "sha256": "bf3947674b1732312ab8c0c837a3ed81763918570d97918cc73276f4621305d6",
+      "bytes": 81852
+    },
+    "/home/catid/drafter/artifacts/repetition_detector_review/pre_correction/artifacts/m3/tune/rank0/e7f348a05852876eb97a606bdab347429df01a9f30f24c60d74ab55a521b0b55.json": {
+      "sha256": "81a1e364c8d12e072538bd6d6bdee20f07eb93e10ad04a3eb4f2e10439744a76",
+      "bytes": 81818
+    },
+    "/home/catid/drafter/artifacts/repetition_detector_review/pre_correction/artifacts/m3/tune/rank0/51fc0378436b723e411354d06ca79611bd76aea4dd5cc3337d1ec5cd2ca4366c.json": {
+      "sha256": "263604dc5c7fee4c0b8a6bd83c354116aab299e2ad519a3e21f55c6b826f0fd2",
+      "bytes": 102559
+    },
+    "/home/catid/drafter/artifacts/repetition_detector_review/pre_correction/artifacts/m3/tune/rank0/e1e95887fca8d84e293b91f4deadebb412f32fbd4de4eacfd5205735280da53c.json": {
+      "sha256": "7a97d667d23d28487d681d60d9bcf2e19545e35fa8ed94d58d5bc0e4afe64864",
+      "bytes": 113505
+    },
+    "/home/catid/drafter/artifacts/repetition_detector_review/pre_correction/artifacts/m3/tune/rank0/043a3dc121f1691e790e0fe10c3b6210e7796a9813411901c79bca069ae1ba77.json": {
+      "sha256": "955f59b1466326eb3ea051888b0b6e64270f747849bfcc88f2cd70d6aee51dcb",
+      "bytes": 127492
+    },
+    "/home/catid/drafter/artifacts/repetition_detector_review/pre_correction/artifacts/m3/tune/rank0/fc9e5931ae53e8325ab5ab05c53655a1052c35a0f76854a8bee5914f570a7d0e.json": {
+      "sha256": "22787cb77a9a507dfab28281dace3dfa622a59d395ce1c438f17838e2c4c7a90",
+      "bytes": 145493
+    },
+    "/home/catid/drafter/artifacts/m3/tune/rank0/1e1c03ada1da6994e99a7625d5fbc36ce53923a2649f10f1fd4502bd7592b1b8.json": {
+      "sha256": "8f8ae32c6676274245e72b6dd2f5da4a0e8ab8b8a29a2f8a7f3cf87977b84c7f",
+      "bytes": 127770
+    },
+    "/home/catid/drafter/artifacts/m3/tune/rank0/7256bf889a56fa91d13fc6ebd760c997fbb44f40f61b8be68b9546448836a7b5.json": {
+      "sha256": "194ad0928a5ca3c9f098dd7cfb54ed1cfb9e8c04b1b2be3c712f240d041a8f9c",
+      "bytes": 130475
+    },
+    "/home/catid/drafter/artifacts/m3/tune/rank0/04fdc3fa5386b57fe15e6b92b1deba95c912ad5f7d15997cebc9edd271aadf84.json": {
+      "sha256": "21ddcb1449fb44389da8eef6e09f86df052cd405b111212c2710150719439678",
+      "bytes": 130478
+    },
+    "/home/catid/drafter/artifacts/m3/tune/rank0/e5cdbdb825dd1c1b5860109a8679c2126b9b2afbfd0028f6a5dcaf13bbae126e.json": {
+      "sha256": "248e3d0504279d76cb91dde6a273542b3c35ab7c16d30cf308e0f037b0e8a515",
+      "bytes": 135231
+    },
+    "/home/catid/drafter/artifacts/m3/tune/rank0/697b72b5fdbdd52ff777e0c5c1d1f1dc216826594f521476f3dc442bbac0a10c.json": {
+      "sha256": "c03ef6969c55053b1c1b3723ad3a4a1bce2f20bf26a7c0e3a71f65e45d7213c1",
+      "bytes": 183177
+    },
+    "/home/catid/drafter/artifacts/m3/tune/rank0/35a963e80c1bbcd5c85db8ebdc281646ad3ea083025644d23135b515c4011fee.json": {
+      "sha256": "b0df6e4a08d61c4a69aaa59835d44651b4d716bd72fcb4f21e3c408106acd393",
+      "bytes": 123223
+    },
+    "/home/catid/drafter/artifacts/m3/tune/rank0/b4472b87fb3f7475b375acbf924bcdb904f75779353041a8e492942501fd7a77.json": {
+      "sha256": "69207705f868ac2b962ab87cd5e080b6c340a2085dee5e6a1deec94d5e4e4020",
+      "bytes": 176472
+    },
+    "/home/catid/drafter/artifacts/m3/tune/rank0/3629ce4f892b370e29950ceaf468384d52f8023455c80565517fcfa83e83ec66.json": {
+      "sha256": "68d6fb6d3b6330600185bddbad4e160c1017290aef38ab68f9e3844c979bc98d",
+      "bytes": 127326
+    },
+    "/home/catid/drafter/artifacts/m3/tune/rank0/8a3d8717be4a994417b58754d896b702918168819243698855c3ae479b83d201.json": {
+      "sha256": "074c2f62848f6654c45bd26ad902d1d1c96a7cb80b0bfe69fd5981d44f4b10de",
+      "bytes": 127312
+    },
+    "/home/catid/drafter/artifacts/m3/tune/rank0/60dad588deec85df80df8b499b7b5dd2879c8b2b235a7073c316f9277e13369b.json": {
+      "sha256": "e4d71b75749232ead9bb689e29243a1b1525cf4d3a7f225fd1d670301c155579",
+      "bytes": 123355
+    },
+    "/home/catid/drafter/artifacts/m3/tune/rank0/ddfb8ad2698ccad39ea43efdbbcb61fd75c6a57c1b2a2cb2574f5a613085760a.json": {
+      "sha256": "d8e49907294e963f01d6aa8cf8a190f8a2e38935a71e767e07a3845467dc890f",
+      "bytes": 149636
+    },
+    "/home/catid/drafter/artifacts/m3/tune/rank0/224216d9f2c1571f9e9608bc065b4c365fa90c9ce0d1d7d2020cb0afd2759a52.json": {
+      "sha256": "4601bd63a3a684440629386a4e5cb207463d71f719d28fee9d953b1790b6d2b6",
+      "bytes": 136433
+    },
+    "/home/catid/drafter/artifacts/m3/tune/rank0/1d829a75e68d873a33f01dafa0898ae8a610979df1a55063073aa852ad240877.json": {
+      "sha256": "c02cab009accc9f08b8cfc38aab5b81db7edda831deb941bd5718a5838acd441",
+      "bytes": 146399
+    },
+    "/home/catid/drafter/artifacts/m3/tune/rank0/aad1d0b1929ab67896d99065fd0f9de25b5ed48822edf33d9bb62c8d9a0b06cd.json": {
+      "sha256": "c9aab7ad3a9256e79328b56857c8b3577d165c222c71cdb85cbedf930dbaa710",
+      "bytes": 95589
+    },
+    "/home/catid/drafter/artifacts/m3/tune/rank0/92d6fcc02c497066705faa105c69f6bbd2b815c5f7f01b3d4954952923776395.json": {
+      "sha256": "76b584853ba1c451660c4671b0af000fe2ab32566eb4716ab966f19f582dce8b",
+      "bytes": 102438
+    },
+    "/home/catid/drafter/artifacts/m3/tune/rank0/2a1f893b2d13fce8b06cc3d37d259b259fc1ce2f11e3f5f37190f4260cacfa12.json": {
+      "sha256": "62b53ee36250ee22db94ab4728e332b732ec2cad7516b41b229a952e598b7cca",
+      "bytes": 105717
+    },
+    "/home/catid/drafter/artifacts/m3/tune/rank0/863f170d61b97b7ddcdc313f256ecd5252b28206d9f8bca2d8cd88e0029552be.json": {
+      "sha256": "79790baf4d207168fa1cd28976ab53dcf5aaf03fa334d9a2136a1c9f40aff07c",
+      "bytes": 125497
+    },
+    "/home/catid/drafter/artifacts/m3/tune/rank0/b3c8942e44ff5774e98cfff953fb74d32717101a12586945695b9cef8d3a8318.json": {
+      "sha256": "74a5ca0c3421d49c67b3b5849852b113a1f754cd51a9c49930679f191d2dabf8",
+      "bytes": 114928
+    },
+    "/home/catid/drafter/artifacts/m3/tune/rank0/e8c059590c3d894d2adf65cb2b764835a3075962147325b91dd3131d15afb507.json": {
+      "sha256": "3d2127d52226fe0df5bff2aba8367a91aa7661e6701f661521b4b6278c335404",
+      "bytes": 111554
+    },
+    "/home/catid/drafter/artifacts/m3/tune/rank0/47743524b0b2ed404a1bc095eba1781152cf55d73acdee894c9d7749a5f0f3d4.json": {
+      "sha256": "631545bbc69bf1db2d68e3c40086cd504da6efd1ff52fc813885595c41bd4f04",
+      "bytes": 109624
+    },
+    "/home/catid/drafter/artifacts/m3/tune/rank0/18517e1a085f04ccca64e9ac893d5d7e89af2b59a4b9586cbf4995bcd7b30e02.json": {
+      "sha256": "72b1a709c5fa96e0bbfe9356814059b21880de4472feff95d3d0d4ad8b57955e",
+      "bytes": 110561
+    },
+    "/home/catid/drafter/artifacts/m3/tune/rank0/c5e93f8f45546476a2aece550e173b0692a26c05ccce8ff43a9cae032b979e17.json": {
+      "sha256": "212799db51833bf246638af79f619a087365e66a29dd2f2517983c72b93a6303",
+      "bytes": 165561
+    },
+    "/home/catid/drafter/artifacts/m3/tune/rank0/456fdc0e9065df3789187b40b4de9137515f44c2b683e8a335bd05edc05d6d87.json": {
+      "sha256": "76eda6ffc0d095564411b732f229790a4c13d3ba48f839d7fc6b38f9c24c2eef",
+      "bytes": 177793
+    },
+    "/home/catid/drafter/artifacts/m3/tune/rank0/0287d8afec32320fe233227c2c66e2e727b184a42db53b359541c745b4e4e254.json": {
+      "sha256": "9af1bec6783dc0c5dc1a5ab090f394b408e0333f71fc8cd28f0ab946fa66d2bb",
+      "bytes": 135379
+    },
+    "/home/catid/drafter/artifacts/m3/tune/rank0/93b60d80c920faa12bcacb686d6ef6ad5add0a1ddbab0f0c82d718cd373b617c.json": {
+      "sha256": "b01fa6780cf637e89abe2f0cf0c4315effa05a32af01d2a9e6c45d37fad0999b",
+      "bytes": 202969
+    },
+    "/home/catid/drafter/artifacts/m3/tune/rank0/c8623247edf68d42f2eb4ec49c4276762df77455534c263fb2e851532a86787e.json": {
+      "sha256": "bfb0d098e1fc993c65f82857bb9bb445b0000c9a46d538fddb40357fbb84da4c",
+      "bytes": 152623
+    },
+    "/home/catid/drafter/artifacts/m3/tune/rank0/62db21fb5339de9119c487e418f7b5db72e4df27f95590d4b4c2963e90e10bb4.json": {
+      "sha256": "802bc07336b47cb75b38630d121903166821283d86f16fb4e510ef9ed07e6cbf",
+      "bytes": 159148
+    },
+    "/home/catid/drafter/artifacts/m3/tune/rank0/3dfd2441208f1da1549d978eb33eed37de5e5da2d446c02ffc5c88fda7ab0d81.json": {
+      "sha256": "426ca1eece992854f2af435881f0f70372ca0d272d86c9715f02c85026730cc6",
+      "bytes": 167603
+    },
+    "/home/catid/drafter/artifacts/m3/tune/rank0/2a0fb0342ffebd3342f019895a16f1a36785a8230a7347c9f6a253a932032baa.json": {
+      "sha256": "03a07da1b8a992da651ae69b4001b99cb5a36c79fda37cfd92228ad02778c654",
+      "bytes": 222207
+    },
+    "/home/catid/drafter/artifacts/m3/tune/rank0/16d521bec00c60216162467ad75783be9a4d4dc5ed3b5375a5c9258dc68415be.json": {
+      "sha256": "75ff42bdf50765f331ef8af35359e647888020e44399936a673fd9fbed9d0b73",
+      "bytes": 193544
+    },
+    "/home/catid/drafter/artifacts/m3/tune/rank0/41613bb14d8fc31011df24f3530d42ce59ac02629634e68b06e656199d4ba9c1.json": {
+      "sha256": "a2a46a055cd7c5bd91139276084ad503fb75af685a6b37be86f9f41db81c015c",
+      "bytes": 151192
+    },
+    "/home/catid/drafter/artifacts/m3/tune/rank0/eb397867c915f93026155bf39e0e84cd56ac2950dc597893dca437f32ac54941.json": {
+      "sha256": "828a0c60656195e6fcd3ef7d720060ddc75105a437cf94cb5ba63ebe4a34cb8b",
+      "bytes": 133125
+    },
+    "/home/catid/drafter/artifacts/m3/tune/rank0/10426d5eae0074b67aa28083f07b45fa77b4bd4cffa9502eff0cde5b22fe429b.json": {
+      "sha256": "e3a31cc41e2260143be64746150848d9ddb7aedd6269bf25cc37ddf6a02b0a40",
+      "bytes": 104265
+    },
+    "/home/catid/drafter/artifacts/m3/tune/rank0/83cb97f7dcae98769720e77b3af342f53608284b38822da13e3f53a752a3a749.json": {
+      "sha256": "58df70eab5ba55e0f794886c64e9f26d78076932943ed9cb589814fbbfad209c",
+      "bytes": 104326
+    },
+    "/home/catid/drafter/artifacts/m3/tune/rank0/1497ded782cf3b3170cc3a83eea94980b7a8d89a81291b6cdb126b153ae5c61a.json": {
+      "sha256": "2ead087f0cfbf3090e2c3033a420cb8501bc3b7f6af2a465971aabea31b1bdd4",
+      "bytes": 109592
+    },
+    "/home/catid/drafter/artifacts/m3/tune/rank0/0da3372548155a376daa0e1e3a0b178d423d84ab3dc771edfe6a413fa6212d91.json": {
+      "sha256": "be1e67eba2fe45d4053adcf676a5e2419f7111a52deed427aaccd50d6d236b0a",
+      "bytes": 226341
+    },
+    "/home/catid/drafter/artifacts/m3/tune/rank0/ddfef09a94c676acb40b4707b2b1ad45b3f74e3f99967c185e47c930c2ad8555.json": {
+      "sha256": "d6e490acab28b5dc436d5f8763e506caae85148e0c28b7df2ecdf459e7e5e339",
+      "bytes": 283219
+    },
+    "/home/catid/drafter/artifacts/m3/tune/rank0/74dca511e2d3afcb90b66a39e0b2d77d20749cdbfc0826c4fff4b252033fa231.json": {
+      "sha256": "fbc4b1c4c13fbb0e8855ab0539a5a4266986a7d49329393b78cae1bf974676cf",
+      "bytes": 204069
+    },
+    "/home/catid/drafter/artifacts/m3/tune/rank0/251c6e060470958b2dac8781a783cbe43ed438c1d46373a054422d6360f9e986.json": {
+      "sha256": "8679e1a5881b4ba4124b0a8568f2a252127d93fb982e6ca4bc4a8be7df476ea3",
+      "bytes": 250139
+    },
+    "/home/catid/drafter/artifacts/m3/tune/rank0/2fdb776a5eb9bc8169adaea33cc449472650117c1244469422c73e3ba129c6f3.json": {
+      "sha256": "f5c87074f876d6e9b1597e6a345ca3fc86b971a096be8f9493f318aa783772e3",
+      "bytes": 258537
+    },
+    "/home/catid/drafter/artifacts/m3/tune/rank0/6f624d58bab965d3255d3ff7717e72fc302907481be33b1edb70cb906299e837.json": {
+      "sha256": "fa48e6f1300681e50498ffd04050acffcaf94c16cefdf5e17a46091ff4fcdfff",
+      "bytes": 197497
+    },
+    "/home/catid/drafter/artifacts/m3/tune/rank0/df17c4bdb3ebb34ddd52b9529987473abc3f8cf852f62b57e31e8b8372bf9e53.json": {
+      "sha256": "86522b4d024e5ff61083f13ce6d494292405b2e96ba667db6f11d123ec2e8b93",
+      "bytes": 293473
+    },
+    "/home/catid/drafter/artifacts/m3/tune/rank0/6697e5980ffa40e52757791703ff48040212dce23346b87c03ffa485de2685e4.json": {
+      "sha256": "a25aace1b26af3bfedb408223bd57973c1f22567a820a61d7158a9cce0ee362f",
+      "bytes": 149656
+    },
+    "/home/catid/drafter/artifacts/m3/tune/rank0/015f2027eecf7bfa4b739477c169b4181a4836afdadb4a6fd10e0311073eff33.json": {
+      "sha256": "45e16f1445005db573ee2df9e10d1a88925354a8b41f2a6c4ffab98acbc2507a",
+      "bytes": 148258
+    },
+    "/home/catid/drafter/artifacts/m3/tune/rank0/ebe63327cae6d9dc22f042b843ea8f39c7f3ca722c159d9a5284b5cb017f3d70.json": {
+      "sha256": "7b48f43637ac966618d2b8c21a1aa8c79c2e29f4922437e9637c9263a5c20c4a",
+      "bytes": 128727
+    },
+    "/home/catid/drafter/artifacts/m3/tune/rank0/111c6b037751398ec80247b2ecf6ecae840811b9efc979ddbff0a86f989bd9b1.json": {
+      "sha256": "c30f8b3fb0b70cd35da068458919505269958e356e10931ac02a041b8cbc7c6a",
+      "bytes": 137343
+    },
+    "/home/catid/drafter/artifacts/m3/tune/rank0/f1b55432cbbf16db0a343750a4774b63fd1d4679c71cc10b1aa3e7c897ce72ec.json": {
+      "sha256": "b4042e6bed80ca81426a7ed5069c1d86b585964688807e1308ffa974de2b7c9e",
+      "bytes": 129266
+    },
+    "/home/catid/drafter/artifacts/m3/tune/rank0/871906d4f069f2574c09f95f72b46eee9a20549debaf64a45ee3928dff0cebe2.json": {
+      "sha256": "dbddb133a8f1554b1e0bc57ef7bdfb05368cd22c79c75098712e35947f9b74fd",
+      "bytes": 130544
+    },
+    "/home/catid/drafter/artifacts/m3/tune/rank0/14cfb3923eb82c4ed2e57b508147afa075dc69e7efd5fd15183daceead2be60f.json": {
+      "sha256": "36fd3c14412060269827d8416c92923687d84ed288401dc9896ee0ee63b198ed",
+      "bytes": 129190
+    },
+    "/home/catid/drafter/artifacts/m3/tune/rank0/feedff014f45c4eb553be4e7f32d9397c1a91f59a745a478592284b1c4943d71.json": {
+      "sha256": "322349ffd6fb1e5f095f7dcbaee6f276b3bf4e44952d5dea38a7c0e1c71c6e62",
+      "bytes": 104468
+    },
+    "/home/catid/drafter/artifacts/m3/tune/rank0/7a9e280e09be1a92e54cd89f06694761095c2ff66c3f45d3e09ec5ad16dd2e57.json": {
+      "sha256": "a8b9b9c38283facc167210bb7e795600890bd24213de1854f942282100871d75",
+      "bytes": 82037
+    },
+    "/home/catid/drafter/artifacts/m3/tune/rank0/be83e5f4f2856bcbed7d04c0a9ff6b9a4b9cd1bb5213e1310dc96618e33ecfb9.json": {
+      "sha256": "8e7c42b849cb8bee73dc932f85be172583559380395e663dedec9af8cf2120a2",
+      "bytes": 82005
+    },
+    "/home/catid/drafter/artifacts/m3/tune/rank0/7ea31765e769184ed774c05bcfde6913930c10468dbc49f3eb5e9270c56d4764.json": {
+      "sha256": "11f89cb7aa3c0be3c6e961ddae74bcba21e8b7fa61b747672ed7ad912a86e630",
+      "bytes": 102747
+    },
+    "/home/catid/drafter/artifacts/m3/tune/rank0/50b1b71feda3c55e8a7e52523219ba58e3c30ceca546dfca8750ebc37eb32c7f.json": {
+      "sha256": "6f3f3cfcad7c3c46d63d5fd525dd5b31c3c28ebf207cf01dd0eaa43e8541b4df",
+      "bytes": 113693
+    },
+    "/home/catid/drafter/artifacts/m3/tune/rank0/4d1ee8ccf399c0cedccf5506084d954fcbe4979841a18d5dcc8786e13852a9ec.json": {
+      "sha256": "1d8aed85b9617eaa904587c3c676899cd9278b474359bc32f4f9cc77169e0286",
+      "bytes": 127680
+    },
+    "/home/catid/drafter/artifacts/m3/tune/rank0/f5b8ce1bd1e68d7414dea1975118601ff17f20bbf5370b2a87d533f35952349b.json": {
+      "sha256": "ec3bc66f1d311cb3248467addb20e1eea327a2b1b33c8a6491ceb31cab5e4b4b",
+      "bytes": 145679
+    }
+  },
+  "limitations": [
+    "Exact recorded outputs/blocks establish parity only for these 56 requests, not all future or long outputs.",
+    "No model inference, hidden runtime tensors, RNG state, normalization, or unseen execution was independently inspected.",
+    "Timing and peak memory are deliberately not parity requirements; this is not a speed comparison.",
+    "Session/manifest files may grow after the captured snapshots; immutable raw rows and their hashes identify the audited scope."
+  ],
+  "cuda_initialized": false,
+  "execution": "Python standard library only; no model/code imports",
+  "elapsed_seconds": 0.47516233194619417
+}
