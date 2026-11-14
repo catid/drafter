@@ -1,0 +1,18 @@
+{
+  "archived_at_utc": "2026-11-14T02:59:46.257048+00:00",
+  "reason": "Preserve initial audit source/report verbatim before root-requested CLI and atomic-publication convention revision.",
+  "files": [
+    {
+      "original_path": "artifacts/m3_first_long_bundle_validation.json",
+      "archive_path": "artifacts/m3_first_long_bundle_validation_pre_review/m3_first_long_bundle_validation.json",
+      "sha256": "afd9c6f9540b4d9744b31ad0deb84ab76ed358cd5083ee4ca9b19d65e5381965",
+      "bytes": 18245
+    },
+    {
+      "original_path": "artifacts/m3_first_long_bundle_validation_source.py",
+      "archive_path": "artifacts/m3_first_long_bundle_validation_pre_review/m3_first_long_bundle_validation_source.py",
+      "sha256": "48ef223d676b606680f3373f1430bb800afbf6e8e4ee2ca3d74659634e4df9d4",
+      "bytes": 17192
+    }
+  ]
+}

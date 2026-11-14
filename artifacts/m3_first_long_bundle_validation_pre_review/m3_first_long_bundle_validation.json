@@ -1,0 +1,404 @@
+{
+  "status": "passed",
+  "validation_kind": "first_corrected_m3_complete_long_dev_bundle",
+  "recorded_at_utc": "2026-11-14T02:58:04.145396+00:00",
+  "scope": "One complete long-thinking development prompt with seven candidates; mandatory M3/M4 remain incomplete.",
+  "source_path": "artifacts/m3_first_long_bundle_validation_source.py",
+  "source_sha256": "48ef223d676b606680f3373f1430bb800afbf6e8e4ee2ca3d74659634e4df9d4",
+  "source_preservation": "Reconstructed and freshly rerun after the earlier successful unsaved in-memory audit.",
+  "logical_session": "00df5018aa1946d6821bd38a71de77b8",
+  "implementation": "60da3e0c57fee2fbd9cd7ce756c66c56ba5642a63da27ef428b9b30538a459df",
+  "prompt_id": "math500-long-0176",
+  "bundle_key": "5c843a8fdefde35195b7c5fdbdd9d0d1137553b2a0baff7bfcc939e677d559c6",
+  "bundle": {
+    "status": "complete",
+    "epoch": "541506d9afe54bfd955f85030cdf6f64",
+    "result_paths": [
+      "/home/catid/drafter/artifacts/m3/tune/rank0/bc0e23cdc6f75b67744707f9a625f51c03f0ddd60a86834e6826e25c65a16498.json",
+      "/home/catid/drafter/artifacts/m3/tune/rank0/0014609712f068449b8914172de140d1cfdc2b3356251f54018a00232418edff.json",
+      "/home/catid/drafter/artifacts/m3/tune/rank0/5c9bdba7290169a4e9f5d97e3c24524695c6641e0acda1adf39cf7b3fa862b3f.json",
+      "/home/catid/drafter/artifacts/m3/tune/rank0/a6c2578c84241912abd8466edfbeb155bdd95dfcea55aa1643c4962ad2af4e75.json",
+      "/home/catid/drafter/artifacts/m3/tune/rank0/accf6f445454bfb1200ef1ded23dc867ff187669aec01a51ddb1ce92088e3970.json",
+      "/home/catid/drafter/artifacts/m3/tune/rank0/d7f6e4744407f64d72e5d11b579830de7bdafc4ed68802f90675596b4d5ab1d0.json",
+      "/home/catid/drafter/artifacts/m3/tune/rank0/8b4cd1b97abd1c13d88499a79f6586bcd3e3360c6f9d948bbfac1e89707d0d0f.json"
+    ]
+  },
+  "checkpoint_hashes_from_session": {
+    "dense": "53ed0f23458bceb44842d2598a51b78604897347915df5be01c6f1a16a8229da",
+    "dense_sparse": "926d143079658508c5d406e3416c413468339b19584e5a4b4c26165e86f90758",
+    "projection": "4614a3a5384d49563d485083e9386ca30e93500144cf346b2dba714cc476dd8a",
+    "implementation": "60da3e0c57fee2fbd9cd7ce756c66c56ba5642a63da27ef428b9b30538a459df"
+  },
+  "model_pair_from_session": [
+    "Qwen/Qwen3-8B",
+    "z-lab/Qwen3-8B-DFlash-b16"
+  ],
+  "model_revisions_from_session": [
+    "b968826d9c46dd6066d109eabc6255188de91218",
+    "9b41424b7109f9c5413454f481b09a82b85333f4"
+  ],
+  "input_metadata": {
+    "input_token_ids_sha256": "e90b81bb459aa3c203d049157880d10b47356e727ebc859ce80c2f551a279b70",
+    "input_token_count": 124,
+    "enable_thinking": true,
+    "requested_generation_cap": 24576,
+    "effective_generation_cap": 24576,
+    "generation_environment_sha256": "092ea73901ba9d0b7c91eff10670c0ec4d74c0c150e26671de6c9c2eb405238f"
+  },
+  "checks": {
+    "cuda_hidden": 1,
+    "new_report_does_not_overwrite_prior_evidence": 1,
+    "captured_mutable_snapshot_bytes": 2,
+    "session_configuration_filename": 1,
+    "current_corrected_session": 1,
+    "corrected_implementation_binding": 1,
+    "reference_m3_session_seed": 1,
+    "prompt_manifest_binding": 1,
+    "long_dev_prompt": 1,
+    "prompt_planned_for_tuning": 1,
+    "bundle_complete": 1,
+    "known_epoch": 1,
+    "seven_unique_rows": 1,
+    "seven_planned_candidates": 1,
+    "manifest_row_complete": 7,
+    "raw_path_binding": 7,
+    "raw_checksum": 7,
+    "canonical_identity": 7,
+    "prompt_payload_binding": 7,
+    "checkpoint_metadata_binding": 7,
+    "model_metadata_binding": 7,
+    "tune_stage_scale": 7,
+    "session_epoch_binding": 7,
+    "prompt_condition_seed": 7,
+    "sampling_and_verification": 7,
+    "generation_caps": 7,
+    "tune_identity_fields": 7,
+    "row_identity_consistency": 7,
+    "reference_dev_row": 7,
+    "generation_environment_binding": 7,
+    "effective_cap": 7,
+    "development_timing_scope": 7,
+    "token_count_cap": 7,
+    "token_range": 7,
+    "complete_first_eos": 7,
+    "termination_at_eos_or_cap": 7,
+    "finite_metrics": 42,
+    "latency_nesting": 7,
+    "throughput_arithmetic": 7,
+    "accepted_length_bounds": 7,
+    "acceptance_arithmetic": 7,
+    "target_forward_arithmetic": 7,
+    "committed_stream_reconstruction": 7,
+    "all_periods_diagnostic_recomputation": 7,
+    "every_periodic_witness_token": 7,
+    "ngram_diagnostics": 7,
+    "repetition_version_and_flag": 7,
+    "candidate_multiset": 1,
+    "rotated_candidate_order": 1,
+    "canonical_bundle_key": 1,
+    "matched_input_metadata": 1,
+    "matched_initial_target_token": 1,
+    "raw_files_unchanged_during_audit": 7,
+    "no_torch_import": 1
+  },
+  "check_count": 294,
+  "candidate_metrics": [
+    {
+      "path": "artifacts/m3/tune/rank0/bc0e23cdc6f75b67744707f9a625f51c03f0ddd60a86834e6826e25c65a16498.json",
+      "sha256": "8353ecb9183eda70b2fb200bf3f05d06bd11cbd6ede36c6487ff6fcdb5c921fc",
+      "identity_sha256": "bc0e23cdc6f75b67744707f9a625f51c03f0ddd60a86834e6826e25c65a16498",
+      "arm": "online_bigram",
+      "settings": {
+        "lambda_tr": 0.05,
+        "alpha": 0.5,
+        "k_ret": null
+      },
+      "generated_tokens": 9370,
+      "verification_blocks": 2795,
+      "elapsed_seconds": 253.9860732217785,
+      "generation_loop_elapsed_seconds": 253.9830606149044,
+      "tokens_per_second": 36.89178655011606,
+      "mean_accepted_length": 2.352772808586762,
+      "median_accepted_length": 1,
+      "target_forwards_per_generated_token": 0.2983991462113127,
+      "eos_reached": true,
+      "capped": false,
+      "repetition_dominated": false,
+      "longest_periodic_run_tokens": 7,
+      "periodic_fraction": 0.0007470651013874066,
+      "periodic_run": {
+        "start": 1435,
+        "end": 1442,
+        "period": 1,
+        "complete_cycles": 7
+      },
+      "output_tokens_sha256_le_int64": "7d0301f6aa692498e376e0ece868ecde4ce1a1eb38d549b3e3eeaa87520dcb8b"
+    },
+    {
+      "path": "artifacts/m3/tune/rank0/0014609712f068449b8914172de140d1cfdc2b3356251f54018a00232418edff.json",
+      "sha256": "001968d01bb30d41a195cf0f641a10d2d94c8accd35e5bf091664e9a83a60636",
+      "identity_sha256": "0014609712f068449b8914172de140d1cfdc2b3356251f54018a00232418edff",
+      "arm": "online_bigram",
+      "settings": {
+        "lambda_tr": 0.2,
+        "alpha": 1.0,
+        "k_ret": null
+      },
+      "generated_tokens": 24576,
+      "verification_blocks": 4682,
+      "elapsed_seconds": 447.9459021219518,
+      "generation_loop_elapsed_seconds": 447.93990291818045,
+      "tokens_per_second": 54.86376788710808,
+      "mean_accepted_length": 4.249038872276805,
+      "median_accepted_length": 2.0,
+      "target_forwards_per_generated_token": 0.1905517578125,
+      "eos_reached": false,
+      "capped": true,
+      "repetition_dominated": true,
+      "longest_periodic_run_tokens": 15477,
+      "periodic_fraction": 0.6297607421875,
+      "periodic_run": {
+        "start": 9099,
+        "end": 24576,
+        "period": 96,
+        "complete_cycles": 161
+      },
+      "output_tokens_sha256_le_int64": "d42e39e764c85b9b0583fe872c6ae6578a4b332f9edac0507261634210699c93"
+    },
+    {
+      "path": "artifacts/m3/tune/rank0/5c9bdba7290169a4e9f5d97e3c24524695c6641e0acda1adf39cf7b3fa862b3f.json",
+      "sha256": "25c3d7afb37a0e8a9a7bf6bfce2e008be8185316e5b4e589a89eebbc46b0af04",
+      "identity_sha256": "5c9bdba7290169a4e9f5d97e3c24524695c6641e0acda1adf39cf7b3fa862b3f",
+      "arm": "dense",
+      "settings": {
+        "beta": 0.5
+      },
+      "generated_tokens": 11993,
+      "verification_blocks": 4022,
+      "elapsed_seconds": 307.12802495318465,
+      "generation_loop_elapsed_seconds": 307.122524705017,
+      "tokens_per_second": 39.04886244694891,
+      "mean_accepted_length": 1.982098458478369,
+      "median_accepted_length": 1.0,
+      "target_forwards_per_generated_token": 0.3354456766447094,
+      "eos_reached": true,
+      "capped": false,
+      "repetition_dominated": false,
+      "longest_periodic_run_tokens": 8,
+      "periodic_fraction": 0.0006670557825398149,
+      "periodic_run": {
+        "start": 9241,
+        "end": 9249,
+        "period": 1,
+        "complete_cycles": 8
+      },
+      "output_tokens_sha256_le_int64": "fbddd5dffd24ec2836b958ce572d4bb0be4fba42a16cfba8fa095bc79094fd97"
+    },
+    {
+      "path": "artifacts/m3/tune/rank0/a6c2578c84241912abd8466edfbeb155bdd95dfcea55aa1643c4962ad2af4e75.json",
+      "sha256": "5e829d81cf4df7d01bca9d87fab40a761e142749bb7fc0f38e833304a7365b74",
+      "identity_sha256": "a6c2578c84241912abd8466edfbeb155bdd95dfcea55aa1643c4962ad2af4e75",
+      "arm": "dense",
+      "settings": {
+        "beta": 1.0
+      },
+      "generated_tokens": 9234,
+      "verification_blocks": 3853,
+      "elapsed_seconds": 225.50498172896914,
+      "generation_loop_elapsed_seconds": 225.4995105850976,
+      "tokens_per_second": 40.94809759501543,
+      "mean_accepted_length": 1.3965740981053725,
+      "median_accepted_length": 1,
+      "target_forwards_per_generated_token": 0.41737058696123025,
+      "eos_reached": true,
+      "capped": false,
+      "repetition_dominated": false,
+      "longest_periodic_run_tokens": 7,
+      "periodic_fraction": 0.0007580680095299979,
+      "periodic_run": {
+        "start": 5041,
+        "end": 5048,
+        "period": 1,
+        "complete_cycles": 7
+      },
+      "output_tokens_sha256_le_int64": "cff450eb80fbc74977aba48470b9b010b9492f00b01609648b3dfdf4433b000e"
+    },
+    {
+      "path": "artifacts/m3/tune/rank0/accf6f445454bfb1200ef1ded23dc867ff187669aec01a51ddb1ce92088e3970.json",
+      "sha256": "87a67d80af3dfb216317b4c2f497154c28772f141922652d5f84570968188292",
+      "identity_sha256": "accf6f445454bfb1200ef1ded23dc867ff187669aec01a51ddb1ce92088e3970",
+      "arm": "dense_sparse",
+      "settings": {
+        "beta": 0.5
+      },
+      "generated_tokens": 14458,
+      "verification_blocks": 4978,
+      "elapsed_seconds": 375.58199410908855,
+      "generation_loop_elapsed_seconds": 375.5763177718036,
+      "tokens_per_second": 38.494923150657335,
+      "mean_accepted_length": 1.9041783848935316,
+      "median_accepted_length": 1.0,
+      "target_forwards_per_generated_token": 0.34437681560381794,
+      "eos_reached": true,
+      "capped": false,
+      "repetition_dominated": false,
+      "longest_periodic_run_tokens": 13,
+      "periodic_fraction": 0.000899156176511274,
+      "periodic_run": {
+        "start": 2427,
+        "end": 2440,
+        "period": 3,
+        "complete_cycles": 4
+      },
+      "output_tokens_sha256_le_int64": "71f180cf4f8f07b56a4109ffb0a0df4346d7b9047aeb230d45cb89ad91fd969d"
+    },
+    {
+      "path": "artifacts/m3/tune/rank0/d7f6e4744407f64d72e5d11b579830de7bdafc4ed68802f90675596b4d5ab1d0.json",
+      "sha256": "afbcb2d3f7fac945cf57c6cee3be4b473291ec19a750377f9276671fe4340fee",
+      "identity_sha256": "d7f6e4744407f64d72e5d11b579830de7bdafc4ed68802f90675596b4d5ab1d0",
+      "arm": "dense_sparse",
+      "settings": {
+        "beta": 1.0
+      },
+      "generated_tokens": 12590,
+      "verification_blocks": 5210,
+      "elapsed_seconds": 324.58760624891147,
+      "generation_loop_elapsed_seconds": 324.5823994970415,
+      "tokens_per_second": 38.78767937413267,
+      "mean_accepted_length": 1.4163147792706334,
+      "median_accepted_length": 1.0,
+      "target_forwards_per_generated_token": 0.41389992057188246,
+      "eos_reached": true,
+      "capped": false,
+      "repetition_dominated": false,
+      "longest_periodic_run_tokens": 7,
+      "periodic_fraction": 0.0005559968228752979,
+      "periodic_run": {
+        "start": 2071,
+        "end": 2078,
+        "period": 1,
+        "complete_cycles": 7
+      },
+      "output_tokens_sha256_le_int64": "b967bfbc42084f4b0242bf4237afc15a16ee124285a9737fb1373772b6ab1e22"
+    },
+    {
+      "path": "artifacts/m3/tune/rank0/8b4cd1b97abd1c13d88499a79f6586bcd3e3360c6f9d948bbfac1e89707d0d0f.json",
+      "sha256": "e41665820ba97105d0abda5b1693816c3be87bc99f723aa4df065c8bfab3a470",
+      "identity_sha256": "8b4cd1b97abd1c13d88499a79f6586bcd3e3360c6f9d948bbfac1e89707d0d0f",
+      "arm": "plain_dflash",
+      "settings": {},
+      "generated_tokens": 9640,
+      "verification_blocks": 2778,
+      "elapsed_seconds": 105.81044511287473,
+      "generation_loop_elapsed_seconds": 105.80536966887303,
+      "tokens_per_second": 91.10631743129328,
+      "mean_accepted_length": 2.4697624190064795,
+      "median_accepted_length": 1.0,
+      "target_forwards_per_generated_token": 0.28827800829875516,
+      "eos_reached": true,
+      "capped": false,
+      "repetition_dominated": false,
+      "longest_periodic_run_tokens": 7,
+      "periodic_fraction": 0.0007261410788381743,
+      "periodic_run": {
+        "start": 7801,
+        "end": 7808,
+        "period": 1,
+        "complete_cycles": 7
+      },
+      "output_tokens_sha256_le_int64": "a5078c3f4568308051b514882d5b0e18800175784b33acd56f28920fbab77423"
+    }
+  ],
+  "evidence": {
+    "artifacts/m3_first_long_bundle_validation_source.py": {
+      "sha256": "48ef223d676b606680f3373f1430bb800afbf6e8e4ee2ca3d74659634e4df9d4"
+    },
+    "artifacts/m3/tune/sessions/baa0c5cee13bb21d83155d21791bbe56bcc00e8995f9880fa5a44278baced860.json": {
+      "sha256": "04ded4ed5e95d8f95495ba9b12cbdd7e11a46d4a9be57bb91b7643b56791796e",
+      "bytes": 13080,
+      "mutable": true,
+      "snapshot_path": "artifacts/m3_first_long_bundle_validation_inputs/baa0c5cee13bb21d83155d21791bbe56bcc00e8995f9880fa5a44278baced860-04ded4ed5e95d8f95495ba9b12cbdd7e11a46d4a9be57bb91b7643b56791796e.json"
+    },
+    "artifacts/m3/tune/manifest-rank0.json": {
+      "sha256": "6c4956da79d2d2c0ab6ff1ffbeb3dcac8b9ebd02c9ab9d12a9993f1944a601ea",
+      "bytes": 245299,
+      "mutable": true,
+      "snapshot_path": "artifacts/m3_first_long_bundle_validation_inputs/manifest-rank0-6c4956da79d2d2c0ab6ff1ffbeb3dcac8b9ebd02c9ab9d12a9993f1944a601ea.json"
+    },
+    "artifacts/prompts.json": {
+      "sha256": "1f4789116c53beaea8460020659f695f9d4d6e09bd60470f9cd7dd056e622182",
+      "bytes": 4282967,
+      "mutable": false
+    },
+    "artifacts/m3/tune/rank0/bc0e23cdc6f75b67744707f9a625f51c03f0ddd60a86834e6826e25c65a16498.json": {
+      "sha256": "8353ecb9183eda70b2fb200bf3f05d06bd11cbd6ede36c6487ff6fcdb5c921fc",
+      "bytes": 8082833,
+      "mutable": false
+    },
+    "artifacts/m3/tune/rank0/0014609712f068449b8914172de140d1cfdc2b3356251f54018a00232418edff.json": {
+      "sha256": "001968d01bb30d41a195cf0f641a10d2d94c8accd35e5bf091664e9a83a60636",
+      "bytes": 13455402,
+      "mutable": false
+    },
+    "artifacts/m3/tune/rank0/5c9bdba7290169a4e9f5d97e3c24524695c6641e0acda1adf39cf7b3fa862b3f.json": {
+      "sha256": "25c3d7afb37a0e8a9a7bf6bfce2e008be8185316e5b4e589a89eebbc46b0af04",
+      "bytes": 11561058,
+      "mutable": false
+    },
+    "artifacts/m3/tune/rank0/a6c2578c84241912abd8466edfbeb155bdd95dfcea55aa1643c4962ad2af4e75.json": {
+      "sha256": "5e829d81cf4df7d01bca9d87fab40a761e142749bb7fc0f38e833304a7365b74",
+      "bytes": 10964706,
+      "mutable": false
+    },
+    "artifacts/m3/tune/rank0/accf6f445454bfb1200ef1ded23dc867ff187669aec01a51ddb1ce92088e3970.json": {
+      "sha256": "87a67d80af3dfb216317b4c2f497154c28772f141922652d5f84570968188292",
+      "bytes": 14293935,
+      "mutable": false
+    },
+    "artifacts/m3/tune/rank0/d7f6e4744407f64d72e5d11b579830de7bdafc4ed68802f90675596b4d5ab1d0.json": {
+      "sha256": "afbcb2d3f7fac945cf57c6cee3be4b473291ec19a750377f9276671fe4340fee",
+      "bytes": 14831283,
+      "mutable": false
+    },
+    "artifacts/m3/tune/rank0/8b4cd1b97abd1c13d88499a79f6586bcd3e3360c6f9d948bbfac1e89707d0d0f.json": {
+      "sha256": "e41665820ba97105d0abda5b1693816c3be87bc99f723aa4df065c8bfab3a470",
+      "bytes": 8036768,
+      "mutable": false
+    }
+  },
+  "totals": {
+    "candidate_rows": 7,
+    "generated_tokens": 91861,
+    "verification_blocks": 28318,
+    "request_elapsed_seconds": 2040.5450274967588,
+    "generation_loop_elapsed_seconds": 2040.5090857609175,
+    "eos_rows": 6,
+    "capped_rows": 1,
+    "repetition_dominated_rows": 1
+  },
+  "remaining_long_dev_equal_cost_scenario": {
+    "bundles": 11,
+    "seconds_per_bundle": 2040.5450274967588,
+    "seconds": 22445.995302464347,
+    "hours": 6.2349986951289855,
+    "interpretation": "One-prompt arithmetic only, not a forecast or confidence interval. Ignores work already begun and reporting/serialization overhead. Includes the excluded pathological candidate generation cost; applies only to the remaining eleven M3 long-dev bundles."
+  },
+  "limitations": [
+    "Only one long-dev prompt; no final setting, statistical quality, generalization, or full-study speed conclusion follows.",
+    "The seven candidates have different realized outputs and lengths from one seed/repeat. Their request-time sum excludes between-request/reporting overhead and is workload evidence, not elapsed job duration; pooled tokens/seconds is not presented as a performance metric.",
+    "Development timings are not isolated throughput/profile evidence; mandatory fresh M3/M4 timing remains required.",
+    "Mutable manifest and session snapshots are preserved by hash; this audit includes only the seven named current-session rows, never historical pre-correction rows.",
+    "Checkpoint and model hashes/revisions are metadata bindings here; this bounded audit does not rehash checkpoint bytes, inspect live tensors, retokenize, replay inference, or establish causal loading.",
+    "Acceptance summaries and committed-stream algebra are checked; full probability vectors, stochastic uniforms, residual sampling, and tensor/cache exactness are not independently reconstructed.",
+    "The exhaustive NumPy detector is an independent artifact implementation also used in the prior detector experiment; it shares the equality-run algorithmic principle with production and is not a separate scalar all-period oracle on these long rows.",
+    "Periodic/n-gram flagging is a mechanical pathology diagnostic, not semantic grading. Unflagged outputs are not thereby proven correct.",
+    "Repetition-excluded output still consumes real generation time. One-prompt length and arm variation make extrapolation uncertain."
+  ],
+  "execution": {
+    "python": "3.12.14 (main, Sep 24 2026, 17:57:43) [Clang 22.1.3 ]",
+    "numpy": "2.3.5",
+    "torch_imported": false,
+    "cuda_visible_devices": "",
+    "audit_elapsed_seconds": 0.9331509948242456
+  }
+}

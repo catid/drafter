@@ -285,6 +285,19 @@
       "driver_exit_code": 1,
       "child_exit_code": -15,
       "reason": "intentional stop for confirmed detector defect; evidence preserved"
+    },
+    "first_complete_long_development_bundle": {
+      "status": "audited_partial_development_evidence",
+      "prompt_id": "math500-long-0176",
+      "artifact": "artifacts/m3_first_long_bundle_validation.json",
+      "artifact_sha256": "4cdad06cd4f090956d86b85c8db696798b4392a303488e97e94301ff843b1041",
+      "candidate_rows": 7,
+      "summed_request_seconds": 2040.5450274967588,
+      "completed_dev_bundles_at_first_observation": 9,
+      "completed_dev_requests_at_first_observation": 63,
+      "required_dev_bundles": 20,
+      "required_dev_requests": 140,
+      "limitation": "One dev prompt; full test/timing and settings selection remain pending."
     }
   },
   "M4": {

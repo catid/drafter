@@ -79,5 +79,122 @@
       21074,
       22034
     ]
+  },
+  "measured_m3_first_long_dev_bundle": {
+    "label": "reference",
+    "recorded_at_utc": "2026-11-14T02:57:58.526288+00:00",
+    "scope": "One complete development prompt, one seed, one measurement per candidate; not test or final isolated timing evidence.",
+    "prompt_id": "math500-long-0176",
+    "condition": "long_thinking",
+    "seed": 2026,
+    "logical_session": "00df5018aa1946d6821bd38a71de77b8",
+    "candidates": 7,
+    "generated_tokens": 91861,
+    "summed_request_seconds": 2040.5450274967588,
+    "duration_scope": "Adapter initialization, tokenizer and generation; excludes reporting/serialization and between-request overhead.",
+    "audit": "artifacts/m3_first_long_bundle_validation.json",
+    "rows": [
+      {
+        "arm": "online_bigram",
+        "settings": {
+          "lambda_tr": 0.05,
+          "alpha": 0.5,
+          "k_ret": null
+        },
+        "generated_tokens": 9370,
+        "elapsed_seconds": 253.9860732217785,
+        "tokens_per_second": 36.89178655011606,
+        "mean_accepted_length": 2.352772808586762,
+        "repetition_excluded": false,
+        "primary_throughput_ratio_vs_plain": 0.4049311572486458
+      },
+      {
+        "arm": "online_bigram",
+        "settings": {
+          "lambda_tr": 0.2,
+          "alpha": 1.0,
+          "k_ret": null
+        },
+        "generated_tokens": 24576,
+        "elapsed_seconds": 447.9459021219518,
+        "tokens_per_second": 54.86376788710808,
+        "mean_accepted_length": 4.249038872276805,
+        "repetition_excluded": true,
+        "primary_throughput_ratio_vs_plain": null
+      },
+      {
+        "arm": "dense",
+        "settings": {
+          "beta": 0.5
+        },
+        "generated_tokens": 11993,
+        "elapsed_seconds": 307.12802495318465,
+        "tokens_per_second": 39.04886244694891,
+        "mean_accepted_length": 1.982098458478369,
+        "repetition_excluded": false,
+        "primary_throughput_ratio_vs_plain": 0.42860762620986337
+      },
+      {
+        "arm": "dense",
+        "settings": {
+          "beta": 1.0
+        },
+        "generated_tokens": 9234,
+        "elapsed_seconds": 225.50498172896914,
+        "tokens_per_second": 40.94809759501543,
+        "mean_accepted_length": 1.3965740981053725,
+        "repetition_excluded": false,
+        "primary_throughput_ratio_vs_plain": 0.4494539868313297
+      },
+      {
+        "arm": "dense_sparse",
+        "settings": {
+          "beta": 0.5
+        },
+        "generated_tokens": 14458,
+        "elapsed_seconds": 375.58199410908855,
+        "tokens_per_second": 38.494923150657335,
+        "mean_accepted_length": 1.9041783848935316,
+        "repetition_excluded": false,
+        "primary_throughput_ratio_vs_plain": 0.4225274847673194
+      },
+      {
+        "arm": "dense_sparse",
+        "settings": {
+          "beta": 1.0
+        },
+        "generated_tokens": 12590,
+        "elapsed_seconds": 324.58760624891147,
+        "tokens_per_second": 38.78767937413267,
+        "mean_accepted_length": 1.4163147792706334,
+        "repetition_excluded": false,
+        "primary_throughput_ratio_vs_plain": 0.42574083189548223
+      },
+      {
+        "arm": "plain_dflash",
+        "settings": {},
+        "generated_tokens": 9640,
+        "elapsed_seconds": 105.81044511287473,
+        "tokens_per_second": 91.10631743129328,
+        "mean_accepted_length": 2.4697624190064795,
+        "repetition_excluded": false,
+        "primary_throughput_ratio_vs_plain": 1.0
+      }
+    ],
+    "remaining_dev_scenario": {
+      "remaining_long_prompt_bundles_at_observation": 11,
+      "remaining_measured_requests": 77,
+      "hours_if_each_remaining_bundle_costs_the_same": 6.2349986951289855,
+      "not_a_forecast": true,
+      "limitations": [
+        "Only one of twelve long dev prompts measured completely.",
+        "Realized lengths and candidate repetition vary by prompt.",
+        "No measured M4 online costs yet.",
+        "No changes to counts, caps, settings, timing repeats, or schedule."
+      ],
+      "basis_completed_dev_requests": 63,
+      "ignores_partial_next_bundle_work": true
+    },
+    "audit_sha256": "4cdad06cd4f090956d86b85c8db696798b4392a303488e97e94301ff843b1041"
   }
 }
