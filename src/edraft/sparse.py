@@ -31,27 +31,33 @@ def proximal_l1(values: torch.Tensor, threshold) -> torch.Tensor:
 class FrozenHash:
     values: torch.Tensor
     capacity: int
+    lookup_fn: object | None = None
 
     def lookup(self, d, previous, current):
+        if self.lookup_fn is not None:
+            return self.lookup_fn(d, previous, current, self.values, self.capacity)
         buckets, signs = hash_keys(d, previous, current, self.capacity, self.values.device)
         return self.values[buckets] * signs
 
 
 class SignedHash(nn.Module):
-    def __init__(self, capacity: int = 2**24, device=None):
+    def __init__(self, capacity: int = 2**24, device=None, *, lookup_fn=None):
         super().__init__()
         if capacity <= 0:
             raise ValueError('capacity must be positive')
         self.capacity = capacity
         self.values = nn.Parameter(torch.zeros(capacity, dtype=torch.float32, device=device))
+        self.lookup_fn = lookup_fn
 
     def lookup(self, d, previous, current):
+        if self.lookup_fn is not None:
+            return self.lookup_fn(d, previous, current, self.values, self.capacity)
         buckets, signs = hash_keys(d, previous, current, self.capacity, self.values.device)
         return self.values[buckets] * signs
 
     def snapshot(self):
         # Offline fit stops before decoding; capture once when a request is created.
-        return FrozenHash(self.values.detach().clone(), self.capacity)
+        return FrozenHash(self.values.detach().clone(), self.capacity, self.lookup_fn)
 
     @torch.no_grad()
     def proximal_step(self, lr: float, lambda_l1: float):

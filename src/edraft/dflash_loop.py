@@ -88,7 +88,8 @@ def _is_zero(snapshot):
 def _sample_proposal(draft_logits, h_raw, prefix, *, temperature, warper, generator,
                      snapshot, projection, beta, bigram, timer, need_training_tensors=True,
                      proposal_mode='dense_full', lookahead: LookaheadConfig | None = None,
-                     proposal_controller=None, return_proposal_meta: bool = False):
+                     proposal_controller=None, return_proposal_meta: bool = False,
+                     beta_relax: float | None = None):
     K = len(draft_logits)
     lookahead_mode = 'off' if lookahead is None else lookahead.mode
     if proposal_mode not in ('dense_full', 'dense_candidate'):
@@ -139,7 +140,8 @@ def _sample_proposal(draft_logits, h_raw, prefix, *, temperature, warper, genera
     if lookahead_mode != 'off':
         with timer.phase("dense_adapter_score"):
             U_all = snapshot.unary(H)
-        eff_beta_relax = beta if lookahead.beta_relax is None else lookahead.beta_relax
+        default_br = beta if beta_relax is None else float(beta_relax)
+        eff_beta_relax = default_br if lookahead.beta_relax is None else lookahead.beta_relax
         with timer.phase("lookahead_iterations"):
             state = initialize_lookahead(
                 snapshot, l_unit, H, prefix,
@@ -153,7 +155,7 @@ def _sample_proposal(draft_logits, h_raw, prefix, *, temperature, warper, genera
             score = state.l_unit[i] - beta * state.g[i]
             if lookahead.domain == 'candidate_masked':
                 ids = state.snapshot.C0[i]
-                score = torch.full_like(score, -torch.inf).scatter(0, ids, score[ids])
+                score = torch.full(score.shape, -torch.inf, device=score.device, dtype=score.dtype).scatter(0, ids, score[ids])
             if bigram is not None:
                 with timer.phase("bigram_score"):
                     previous = tokens[-1] if tokens else (prefix[-1] if prefix else None)
@@ -177,7 +179,8 @@ def _sample_proposal(draft_logits, h_raw, prefix, *, temperature, warper, genera
     if proposal_mode == 'dense_candidate':
         with timer.phase("dense_adapter_score"):
             U_all = snapshot.unary(H)
-            eff_beta_relax = beta if (lookahead is None or lookahead.beta_relax is None) else lookahead.beta_relax
+            default_br = beta if beta_relax is None else float(beta_relax)
+            eff_beta_relax = default_br if (lookahead is None or lookahead.beta_relax is None) else lookahead.beta_relax
             C0 = compute_frozen_candidates(snapshot, l_unit, U_all, eff_beta_relax)
             snap_c = snapshot.with_candidates(C0)
             U_cand = [U_all[i, ids] for i, ids in enumerate(snap_c.C0)]
@@ -267,6 +270,7 @@ def _record(*, round_idx, offset, input_context_length, prefix, draft_tokens, q,
 
 def _finish_round(record, *, snapshot, online_state, bigram, committed, on_block,
                   retain_tensors, timer, proposal_controller=None):
+    record["committed_tokens"] = list(committed)
     if on_block is not None:
         on_block(record)
     version = getattr(snapshot, "version", 0) if proposal_controller is None else getattr(proposal_controller, "version", 0)
@@ -290,7 +294,6 @@ def _finish_round(record, *, snapshot, online_state, bigram, committed, on_block
             bigram.update(record["prefix"], committed)
     if proposal_controller is None and getattr(snapshot, "version", 0) != version:
         raise RuntimeError("Active proposal snapshot version changed during round")
-    record["committed_tokens"] = list(committed)
     if online_state is not None:
         record["next_adapter_version"] = getattr(online_state, "version", version)
     elif proposal_controller is not None and hasattr(proposal_controller, "version"):
@@ -312,7 +315,7 @@ def generate_reference(
     retain_tensors: bool = False, measure_phases: bool = False,
     proposal_mode: str = "dense_full", lookahead: LookaheadConfig | None = None,
     proposal_controller=None, adaptive_controller=None,
-    record_round_timing: bool = False,
+    record_round_timing: bool = False, beta_relax: float | None = None,
 ) -> GenerationResult:
     if input_ids.ndim != 2 or input_ids.shape[0] != 1 or input_ids.shape[1] == 0:
         raise ValueError("The reference loop requires one nonempty unpadded prompt")
@@ -392,6 +395,7 @@ def generate_reference(
                 bigram=bigram, timer=timer, need_training_tensors=need_training_tensors,
                 proposal_mode=proposal_mode, lookahead=lookahead,
                 proposal_controller=proposal_controller, return_proposal_meta=True,
+                beta_relax=beta_relax,
             )
         canvas[0, 1:] = input_ids.new_tensor(tokens)
         with torch.no_grad(), timer.phase("target_verification"):
@@ -443,7 +447,7 @@ def generate_toy(
     on_block=None, retain_tensors=False, measure_phases=False,
     proposal_mode: str = "dense_full", lookahead: LookaheadConfig | None = None,
     proposal_controller=None, adaptive_controller=None,
-    record_round_timing: bool = False,
+    record_round_timing: bool = False, beta_relax: float | None = None,
 ) -> GenerationResult:
     """CPU smoke loop with exactly the same proposal/verification/update helpers."""
     if target.embedding.device.type != "cpu":
@@ -482,6 +486,7 @@ def generate_toy(
                 bigram=bigram, timer=timer, need_training_tensors=need_training_tensors,
                 proposal_mode=proposal_mode, lookahead=lookahead,
                 proposal_controller=proposal_controller, return_proposal_meta=True,
+                beta_relax=beta_relax,
             )
         with timer.phase("target_verification"):
             target_logits = target.verify_logits(context, tokens)

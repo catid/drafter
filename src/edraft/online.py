@@ -147,7 +147,8 @@ class OnlineState:
                  sparse_overflow_policy: str = 'freeze_new',
                  accumulate_stride: bool = False,
                  buffer_reduction: str = 'mean',
-                 loss_mode: str = 'live_full'):
+                 loss_mode: str = 'live_full',
+                 kl_loss_fn: Callable | None = None):
         if update_stride < 1 or min(lambda_l2, lambda_l1_b, lambda_l1_s) < 0:
             raise ValueError('invalid online stride or regularization')
         if not callable(lr) and lr < 0:
@@ -170,6 +171,7 @@ class OnlineState:
         self.accumulate_stride = bool(accumulate_stride)
         self.buffer_reduction = buffer_reduction
         self.loss_mode = loss_mode
+        self.kl_loss_fn = kl_loss_fn
         self.dW = torch.zeros_like(self.offline.W, dtype=torch.float32)
         self.dA = torch.zeros_like(self.offline.A, dtype=torch.float32)
         self.db = torch.zeros_like(self.offline.b, dtype=torch.float32)
@@ -214,7 +216,8 @@ class OnlineState:
         is_zero = self.offline.is_zero and all(not bool(torch.count_nonzero(x)) for x in (self.dW, self.dA, self.db))
         if self.dS is not None:
             is_zero = is_zero and len(self.dS.active) == 0
-        return ProposalSnapshot(self.offline.E, W, A, b, self.version, sparse, self.offline.M_sparse, None, is_zero)
+        return ProposalSnapshot(self.offline.E, W, A, b, self.version, sparse, self.offline.M_sparse,
+                                None, is_zero, getattr(self.offline, 'unary_fn', None))
 
     def snapshot(self, C0=None):
         return self._snapshot if C0 is None else self._snapshot.with_candidates(C0)
@@ -252,11 +255,15 @@ class OnlineState:
                     if target_logits is None:
                         raise ValueError('two_sided_pseudolikelihood requires committed_tokens or target_logits')
                     committed = [int(t) for t in tokens[:first_rejection]] + [int(target_logits[first_rejection].argmax())]
+                if not committed:
+                    raise ValueError('two_sided_pseudolikelihood requires at least one committed verified token')
             else:
                 committed = [int(t) for t in committed_tokens]
-            if not committed:
-                raise ValueError('two_sided_pseudolikelihood requires at least one committed verified token')
+                if not committed or len(H) == 0:
+                    return None, None, None, None, None, None
             n_eval = min(len(H), len(committed))
+            if n_eval <= 0:
+                return None, None, None, None, None, None
             U = block_unary(E, W, b, H[:n_eval])
             sparse = self.offline.sparse
             if self.dS is not None:
@@ -321,7 +328,8 @@ class OnlineState:
                 weights_t = loss_weights(len(l_unit), l_unit.device, self.weighting_mode, self.gamma, first_rejection)
             else:
                 weights_t = weights.detach().clone()
-            loss = full_kl(l_unit - correction, target_logits, weights_t)
+            kl_fn = self.kl_loss_fn if self.kl_loss_fn is not None else full_kl
+            loss = kl_fn(l_unit - correction, target_logits, weights_t)
         loss.backward()
         g_dW = None if self.bias_sparse_only else (dW.grad.detach() if dW.grad is not None else torch.zeros_like(dW))
         g_dA = None if self.bias_sparse_only else (dA.grad.detach() if dA.grad is not None else torch.zeros_like(dA))
@@ -367,19 +375,22 @@ class OnlineState:
             weights=weights, first_rejection=first_rejection, committed_tokens=committed_tokens,
         )
         if not self.accumulate_stride:
+            if loss_val is None:
+                return False
             self._apply_step(lr_check, loss_val, g_dW, g_dA, g_db, dirty, g_sparse, cloned_rounds=1)
             return True
         with torch.no_grad():
-            self._buffered_rounds += 1
-            self._buf_loss += loss_val
-            if not self.bias_sparse_only:
-                self._buf_dW = g_dW.clone() if self._buf_dW is None else (self._buf_dW + g_dW)
-                self._buf_dA = g_dA.clone() if self._buf_dA is None else (self._buf_dA + g_dA)
-            self._buf_db = g_db.clone() if self._buf_db is None else (self._buf_db + g_db)
-            if self.dS is not None and dirty is not None and dirty.numel() > 0:
-                self._buf_sparse_idx.append(dirty.detach().clone())
-                self._buf_sparse_grad.append(g_sparse.detach().clone())
-            if round_idx % self.update_stride != 0:
+            if loss_val is not None:
+                self._buffered_rounds += 1
+                self._buf_loss += loss_val
+                if not self.bias_sparse_only:
+                    self._buf_dW = g_dW.clone() if self._buf_dW is None else (self._buf_dW + g_dW)
+                    self._buf_dA = g_dA.clone() if self._buf_dA is None else (self._buf_dA + g_dA)
+                self._buf_db = g_db.clone() if self._buf_db is None else (self._buf_db + g_db)
+                if self.dS is not None and dirty is not None and dirty.numel() > 0:
+                    self._buf_sparse_idx.append(dirty.detach().clone())
+                    self._buf_sparse_grad.append(g_sparse.detach().clone())
+            if round_idx % self.update_stride != 0 or self._buffered_rounds == 0:
                 return False
             denom = float(self._buffered_rounds) if self.buffer_reduction == 'mean' else 1.0
             agg_dW = None if self.bias_sparse_only else (self._buf_dW / denom)

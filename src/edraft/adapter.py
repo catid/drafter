@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from contextlib import nullcontext
+import math
 from typing import Sequence
 import torch
 from torch import nn
@@ -112,6 +113,7 @@ class ProposalSnapshot:
     M_sparse: int = 256
     C0: tuple[torch.Tensor, ...] | None = None
     is_zero: bool = False
+    unary_fn: object | None = None
 
     @property
     def D(self):
@@ -123,12 +125,17 @@ class ProposalSnapshot:
 
     def unary(self, H, proposal_mode='dense_full'):
         if proposal_mode == 'dense_full':
+            if self.unary_fn is not None:
+                return self.unary_fn(self.E, self.W, self.b, H)
             return block_unary(self.E, self.W, self.b, H)
         if proposal_mode != 'dense_candidate' or self.C0 is None:
             raise ValueError('candidate unary requires frozen C0')
-        hidden = H.to(self.W.dtype) @ self.W.T
+        work_dtype = torch.promote_types(H.dtype, self.W.dtype)
+        hidden = H.to(work_dtype) @ self.W.to(work_dtype).T
+        E_w = self.E.to(work_dtype)
+        b_w = self.b.to(work_dtype)
         # Only candidate rows of E are read; no K-by-V dense GEMM occurs here.
-        return [self.E[ids].to(self.W.dtype) @ hidden[i] + self.b[ids]
+        return [E_w[ids] @ hidden[i] + b_w[ids]
                 for i, ids in enumerate(self.C0)]
 
     def score_slot(self, l_unit_i, U_i, prefix, realized, i, beta=1.0, proposal_mode='dense_full', timer=None):
@@ -136,43 +143,51 @@ class ProposalSnapshot:
             if self.C0 is None:
                 raise ValueError('dense_candidate requires the frozen C0 matched-support snapshot')
             ids = self.C0[i]
+            work_dtype = torch.promote_types(l_unit_i.dtype, self.A.dtype)
+            if U_i is not None:
+                work_dtype = torch.promote_types(work_dtype, U_i.dtype)
             if beta == 0 or self.is_zero:
-                selected = l_unit_i[ids]
+                selected = l_unit_i[ids].to(work_dtype)
             else:
                 if U_i.shape[-1] != len(ids):
                     raise ValueError('candidate scoring requires candidate unary rows; call unary(..., proposal_mode=dense_candidate)')
-                unary = U_i
+                unary = U_i.to(work_dtype)
+                A_w = self.A.to(work_dtype)
+                E_w = self.E.to(work_dtype)
                 with _phase(timer, 'dense_pair_score'):
-                    message = torch.zeros(self.E.shape[1], dtype=self.A.dtype, device=self.A.device)
+                    message = torch.zeros(E_w.shape[1], dtype=work_dtype, device=self.A.device)
                     predecessors = []
-                    for d in range(1, len(self.A) + 1):
+                    for d in range(1, len(A_w) + 1):
                         previous = prev_token(prefix, realized, i, d)
                         if previous is not None:
-                            message = message + self.A[d - 1] @ self.E[previous]
+                            message = message + A_w[d - 1] @ E_w[previous]
                             predecessors.append((d, previous))
-                    correction = unary + self.E[ids] @ message
+                    correction = unary + E_w[ids] @ message
                 if self.sparse is not None and predecessors:
                     with _phase(timer, 'sparse_lookup'):
                         offsets = torch.tensor([d for d, _ in predecessors], device=ids.device)[:, None]
                         previous_ids = torch.tensor([p for _, p in predecessors], device=ids.device)[:, None]
-                        correction = correction + self.sparse.lookup(offsets, previous_ids, ids[None, :]).sum(0)
-                selected = l_unit_i[ids] - beta * correction
-            return torch.full_like(l_unit_i, -torch.inf).scatter(0, ids, selected)
+                        correction = correction + self.sparse.lookup(offsets, previous_ids, ids[None, :]).to(work_dtype).sum(0)
+                selected = l_unit_i[ids].to(work_dtype) - beta * correction
+            return torch.full(l_unit_i.shape, -torch.inf, device=selected.device, dtype=selected.dtype).scatter(0, ids, selected)
         if proposal_mode != 'dense_full':
             raise ValueError('unknown proposal mode')
         if beta == 0 or self.is_zero:
             return l_unit_i
-        correction = slot_correction(self.E, self.A, U_i, l_unit_i, prefix, realized, i,
+        work_dtype = torch.promote_types(l_unit_i.dtype, self.A.dtype)
+        if U_i is not None:
+            work_dtype = torch.promote_types(work_dtype, U_i.dtype)
+        correction = slot_correction(self.E, self.A, U_i.to(work_dtype), l_unit_i.to(work_dtype), prefix, realized, i,
                                      self.sparse, self.M_sparse, beta, timer=timer)
-        return l_unit_i - beta * correction
+        return l_unit_i.to(correction.dtype) - beta * correction
 
     def with_candidates(self, C0):
         return ProposalSnapshot(self.E, self.W, self.A, self.b, self.version, self.sparse,
-                                self.M_sparse, tuple(c.detach().clone() for c in C0), self.is_zero)
+                                self.M_sparse, tuple(c.detach().clone() for c in C0), self.is_zero, self.unary_fn)
 
 
 class DenseAdapter(nn.Module):
-    def __init__(self, E: torch.Tensor, p: int, D: int = 4, sparse=None, M_sparse: int = 256):
+    def __init__(self, E: torch.Tensor, p: int, D: int = 4, sparse=None, M_sparse: int = 256, *, unary_fn=None):
         super().__init__()
         if E.ndim != 2 or p < 1 or D < 1 or M_sparse < 1:
             raise ValueError('invalid adapter dimensions')
@@ -183,8 +198,11 @@ class DenseAdapter(nn.Module):
         self.b = nn.Parameter(torch.zeros(V, device=E.device, dtype=torch.float32))
         self.sparse = sparse
         self.M_sparse = M_sparse
+        self.unary_fn = unary_fn
 
     def unary(self, H):
+        if self.unary_fn is not None:
+            return self.unary_fn(self.E, self.W, self.b, H)
         return block_unary(self.E, self.W, self.b, H)
 
     def correction(self, l_unit, H, prefix, tokens, beta=1.0):
@@ -226,7 +244,8 @@ class DenseAdapter(nn.Module):
             is_zero = is_zero and not bool(torch.count_nonzero(sparse.values))
         return ProposalSnapshot(self.E.detach(), self.W.detach().clone(), self.A.detach().clone(),
                                 self.b.detach().clone(), version, sparse, self.M_sparse,
-                                None if C0 is None else tuple(c.detach().clone() for c in C0), is_zero)
+                                None if C0 is None else tuple(c.detach().clone() for c in C0), is_zero,
+                                self.unary_fn)
 
 
 def loss_weights(K, device=None, mode='exponential', gamma=5., first_rejection=None):
@@ -341,17 +360,21 @@ class LookaheadState:
             self.r[i] = torch.ones(1, device=self.g.device, dtype=self.g.dtype)
         else:
             self.r[i] = torch.nn.functional.one_hot(torch.tensor(token, device=self.g.device), self.g.shape[-1]).to(self.g.dtype)
-        self.mu[i] = self.snapshot.E[token]
+        self.mu[i] = self.snapshot.E[token].to(self.g.dtype)
 
     def sample_slot(self, i, T_sample, beta_sample=1., warper=None, generator=None):
         from .sampler import SamplingWarper, sample_token
         scores = self.l_unit[i] - beta_sample * self.g[i]
         if self.domain == 'candidate_masked':
             ids = self.snapshot.C0[i]
-            scores = torch.full_like(scores, -torch.inf).scatter(0, ids, scores[ids])
+            scores = torch.full(scores.shape, -torch.inf, device=scores.device, dtype=scores.dtype).scatter(0, ids, scores[ids])
         token, probs = sample_token(scores, T_sample, warper or SamplingWarper(), generator=generator)
         self.clamp(i, token)
         return token, probs
+
+
+def _valid_real_scalar(value) -> bool:
+    return isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(float(value))
 
 
 @dataclass(frozen=True)
@@ -369,10 +392,16 @@ class LookaheadConfig:
             raise ValueError("lookahead mode must be 'off', 'static', or 'rerelax'")
         if self.domain not in ('candidate_masked', 'full_vocabulary'):
             raise ValueError("lookahead domain must be 'candidate_masked' or 'full_vocabulary'")
-        if self.T_relax <= 0:
-            raise ValueError('T_relax must be strictly positive')
-        if not 0 < self.eta <= 1:
-            raise ValueError('eta must lie in (0, 1]')
+        if not _valid_real_scalar(self.T_relax) or float(self.T_relax) <= 0:
+            raise ValueError('T_relax must be finite and strictly positive')
+        if not _valid_real_scalar(self.eta) or not (0.0 < float(self.eta) <= 1.0):
+            raise ValueError('eta must be finite and lie in (0, 1]')
+        if self.beta_relax is not None and not _valid_real_scalar(self.beta_relax):
+            raise ValueError('beta_relax must be a finite real number when set')
+        if not isinstance(self.R_init, int) or isinstance(self.R_init, bool) or self.R_init < 0:
+            raise ValueError('R_init must be a nonnegative integer')
+        if not isinstance(self.R_clamp, int) or isinstance(self.R_clamp, bool) or self.R_clamp < 0:
+            raise ValueError('R_clamp must be a nonnegative integer')
         if self.mode != 'off' and self.R_init < 1:
             raise ValueError('active lookahead requires R_init >= 1')
         if self.mode == 'rerelax' and self.R_clamp < 1:
@@ -382,29 +411,41 @@ class LookaheadConfig:
 def compute_frozen_candidates(snapshot: ProposalSnapshot, l_unit: torch.Tensor,
                               U_all: torch.Tensor, beta_relax: float = 1.0) -> tuple[torch.Tensor, ...]:
     """Single authoritative frozen C0[j] constructor shared by causal dense_candidate and lookahead."""
+    if not _valid_real_scalar(beta_relax):
+        raise ValueError('beta_relax must be finite')
     if snapshot.C0 is not None:
         return snapshot.C0
-    raw = top_candidates(l_unit - beta_relax * U_all, snapshot.M_sparse)
+    work_dtype = torch.promote_types(torch.promote_types(l_unit.dtype, U_all.dtype), torch.float32)
+    raw = top_candidates(l_unit.to(work_dtype) - float(beta_relax) * U_all.to(work_dtype), snapshot.M_sparse)
     return tuple(c.detach().clone() for c in raw)
 
 
 def initialize_lookahead(snapshot, l_unit, H, prefix, domain='candidate_masked',
                          T_relax=1., beta_relax=1., U_precomputed=None):
-    if T_relax <= 0:
-        raise ValueError('T_relax must be strictly positive')
+    if not _valid_real_scalar(T_relax) or float(T_relax) <= 0:
+        raise ValueError('T_relax must be finite and strictly positive')
+    if not _valid_real_scalar(beta_relax):
+        raise ValueError('beta_relax must be finite')
     if domain not in ('candidate_masked', 'full_vocabulary'):
         raise ValueError('unknown belief domain')
-    U = snapshot.unary(H) if U_precomputed is None else U_precomputed
+    T_relax_f = float(T_relax)
+    beta_relax_f = float(beta_relax)
+    raw_U = snapshot.unary(H) if U_precomputed is None else U_precomputed
+    work_dtype = torch.promote_types(torch.promote_types(l_unit.dtype, raw_U.dtype), torch.float32)
+    l_w = l_unit.to(work_dtype)
+    U = raw_U.to(work_dtype)
+    E_w = snapshot.E.to(work_dtype)
     if snapshot.C0 is None:
-        snapshot = snapshot.with_candidates(compute_frozen_candidates(snapshot, l_unit, U, beta_relax))
+        snapshot = snapshot.with_candidates(compute_frozen_candidates(snapshot, l_w, U, beta_relax_f))
     support = [ids.clone() for ids in snapshot.C0]
-    state = LookaheadState(snapshot, l_unit, U, tuple(prefix), support, [None] * len(H), [], [], U.clone(), domain, T_relax, beta_relax)
+    state = LookaheadState(snapshot, l_w, U, tuple(prefix), support, [None] * len(H), [], [],
+                           U.clone(), domain, T_relax_f, beta_relax_f)
     for i in range(len(H)):
-        scores = l_unit[i] - beta_relax * U[i]
-        ids = support[i] if domain == 'candidate_masked' else torch.arange(l_unit.shape[-1], device=l_unit.device)
-        belief = torch.softmax(scores[ids] / T_relax, -1)
+        scores = l_w[i] - beta_relax_f * U[i]
+        ids = support[i] if domain == 'candidate_masked' else torch.arange(l_w.shape[-1], device=l_w.device)
+        belief = torch.softmax(scores[ids] / T_relax_f, -1).to(work_dtype)
         state.r.append(belief)
-        state.mu.append(belief @ snapshot.E[ids])
+        state.mu.append(belief @ E_w[ids])
     return state
 
 
@@ -457,39 +498,48 @@ def lookahead_fields(state: LookaheadState):
 
 def lookahead_energy(state: LookaheadState):
     """One shared masked scalar energy used to verify both message derivatives."""
-    snap, E, A = state.snapshot, state.snapshot.E, state.snapshot.A
-    energy = sum((state.full_belief(i) * state.U_all[i]).sum() for i in range(len(state.r)))
+    snap = state.snapshot
+    dtype = state.g.dtype
+    E_cast = snap.E.to(dtype)
+    A_cast = snap.A.to(dtype)
+    U_cast = state.U_all.to(dtype)
+    energy = sum((state.full_belief(i).to(dtype) * U_cast[i]).sum() for i in range(len(state.r)))
     for i in range(len(state.r)):
-        for d in range(1, len(A) + 1):
+        mu_i = state.mu[i].to(dtype)
+        raw_i = state.raw_support_mass(i).to(dtype)
+        for d in range(1, len(A_cast) + 1):
             k = i - d
             if k >= 0:
-                energy = energy + state.mu[i] @ A[d - 1] @ state.mu[k]
+                energy = energy + mu_i @ A_cast[d - 1] @ state.mu[k].to(dtype)
                 if snap.sparse is not None:
-                    pairs = snap.sparse.lookup(d, state.support[k][:, None], state.support[i][None, :])
-                    energy = energy + state.raw_support_mass(k) @ pairs @ state.raw_support_mass(i)
+                    pairs = snap.sparse.lookup(d, state.support[k][:, None], state.support[i][None, :]).to(dtype)
+                    energy = energy + state.raw_support_mass(k).to(dtype) @ pairs @ raw_i
             else:
                 previous = prev_token(state.prefix, (), i, d)
                 if previous is not None:
-                    energy = energy + state.mu[i] @ A[d - 1] @ E[previous]
+                    energy = energy + mu_i @ A_cast[d - 1] @ E_cast[previous]
                     if snap.sparse is not None:
-                        energy = energy + state.raw_support_mass(i) @ snap.sparse.lookup(d, previous, state.support[i])
+                        energy = energy + raw_i @ snap.sparse.lookup(d, previous, state.support[i]).to(dtype)
     return energy
 
 
 def damped_lookahead_step(state: LookaheadState, eta=0.5):
-    if not 0 < eta <= 1:
-        raise ValueError('eta must be in (0,1]')
+    if not _valid_real_scalar(eta) or not (0.0 < float(eta) <= 1.0):
+        raise ValueError('eta must be finite and in (0, 1]')
+    eta_f = float(eta)
+    dtype = state.g.dtype
+    E_cast = state.snapshot.E.to(dtype)
     forward, backward = lookahead_fields(state)
-    tilde = state.U_all + forward + backward
+    tilde = state.U_all.to(dtype) + forward + backward
     # All fields are computed before any belief changes: genuinely synchronous.
-    fields = (1 - eta) * state.g + eta * tilde
+    fields = (1.0 - eta_f) * state.g + eta_f * tilde
     r_new, mu_new = list(state.r), list(state.mu)
     for i in range(len(state.r)):
         if state.clamped[i] is not None:
             fields[i] = state.g[i]
             continue
         ids = state.support[i] if state.domain == 'candidate_masked' else torch.arange(state.g.shape[-1], device=state.g.device)
-        r_new[i] = torch.softmax((state.l_unit[i, ids] - state.beta_relax * fields[i, ids]) / state.T_relax, -1)
-        mu_new[i] = r_new[i] @ state.snapshot.E[ids]
+        r_new[i] = torch.softmax((state.l_unit[i, ids] - state.beta_relax * fields[i, ids]) / state.T_relax, -1).to(dtype)
+        mu_new[i] = r_new[i] @ E_cast[ids]
     state.g, state.r, state.mu = fields, r_new, mu_new
     return state

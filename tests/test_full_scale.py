@@ -390,6 +390,19 @@ def test_launch_full_scale_and_m5_worker_commands(tmp_path, monkeypatch):
     launch.main([
         '--scale', 'full', '--allow_large_run', '--task', 'm5',
         '--eval_mode', 'beta_sweep', '--m5_triton',
+        '--beta_grid', '0.0', '0.2', '0.5', '1.0',
+        '--beta_sweep_split', 'dev',
+        '--beta_sweep_arms', 'dense_full', 'dense_candidate',
+        '--sparse_overflow_policy', 'error',
+        '--m5_server_url', 'http://127.0.0.1:8000',
+        '--m5_server_model', 'qwen35-test',
+        '--m5_server_api_key', 'tok123',
+        '--m5_server_timeout', '120.0',
+        '--dense_checkpoint', str(tmp_path / 'custom_dense.pt'),
+        '--sparse_checkpoint', str(tmp_path / 'custom_sparse.pt'),
+        '--checkpoint_scale', '0.20',
+        '--m5_beta_candidates', '0.25', '0.75',
+        '--m5_beta_relax', '1.0',
         '--gpus', '3', '--output', str(tmp_path),
     ])
     assert len(spawned) == 1
@@ -398,3 +411,34 @@ def test_launch_full_scale_and_m5_worker_commands(tmp_path, monkeypatch):
     assert '--mode' in cmd and cmd[cmd.index('--mode') + 1] == 'beta_sweep'
     assert '--m5_triton' in cmd
     assert '--allow_large_run' in cmd
+    for flag, expected in [
+        ('--sparse_overflow_policy', 'error'),
+        ('--beta_sweep_split', 'dev'),
+        ('--m5_server_model', 'qwen35-test'),
+        ('--m5_server_api_key', 'tok123'),
+        ('--m5_server_timeout', '120.0'),
+        ('--dense_checkpoint', str(tmp_path / 'custom_dense.pt')),
+        ('--sparse_checkpoint', str(tmp_path / 'custom_sparse.pt')),
+        ('--checkpoint_scale', '0.2'),
+        ('--m5_beta_relax', '1.0'),
+    ]:
+        assert flag in cmd and cmd[cmd.index(flag) + 1] == expected
+    assert '--beta_grid' in cmd
+    assert '--beta_sweep_arms' in cmd
+    assert '--m5_beta_candidates' in cmd
+
+    # Verify strict launch.py CLI rejections (#69 M5-BUG-3):
+    for bad_argv in [
+        ['--scale', 'smoke', '--task', 'm5', '--bigram_count_gate_kappa', 'inf'],
+        ['--scale', 'smoke', '--task', 'm5', '--bigram_count_gate_kappa', 'nan'],
+        ['--scale', 'smoke', '--task', 'm5', '--m5_server_timeout', 'inf'],
+        ['--scale', 'smoke', '--task', 'm5', '--checkpoint_scale', '-0.1'],
+        ['--scale', 'smoke', '--task', 'm5', '--checkpoint_scale', 'nan'],
+        ['--scale', 'smoke', '--task', 'm4', '--m5_triton'],
+        ['--scale', 'smoke', '--task', 'm4', '--eval_mode', 'server_eval', '--m5_server_url', 'http://localhost:8000'],
+        ['--scale', 'smoke', '--task', 'm3', '--checkpoint_scale', '0.2'],
+        ['--scale', 'smoke', '--task', 'collect', '--eval_mode', 'beta_sweep'],
+        ['--scale', 'smoke', '--task', 'collect', '--beta_grid', '0.0', '1.0'],
+    ]:
+        with pytest.raises(SystemExit):
+            launch.main(bad_argv)

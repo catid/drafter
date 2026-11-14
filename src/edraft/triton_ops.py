@@ -118,6 +118,8 @@ if TRITON_AVAILABLE:
         scores_ptr,
         target_ptr,
         out_row_kl_ptr,
+        out_lse_s_ptr,
+        out_lse_t_ptr,
         n_cols,
         stride_s_row,
         stride_t_row,
@@ -164,7 +166,39 @@ if TRITON_AVAILABLE:
             term = tl.where(mask, p * (log_p - log_q), 0.0)
             kl_acc += tl.sum(term, axis=0)
 
+        tl.store(out_lse_s_ptr + row, lse_s)
+        tl.store(out_lse_t_ptr + row, lse_t)
         tl.store(out_row_kl_ptr + row, kl_acc)
+
+    @triton.jit
+    def _rowwise_kl_backward_kernel(
+        scores_ptr,
+        target_ptr,
+        lse_s_ptr,
+        lse_t_ptr,
+        row_scale_ptr,
+        grad_scores_ptr,
+        n_cols,
+        stride_s_row,
+        stride_t_row,
+        stride_g_row,
+        BLOCK_V: tl.constexpr,
+    ):
+        row = tl.program_id(0)
+        s_row = scores_ptr + row * stride_s_row
+        t_row = target_ptr + row * stride_t_row
+        g_row = grad_scores_ptr + row * stride_g_row
+        lse_s = tl.load(lse_s_ptr + row).to(tl.float32)
+        lse_t = tl.load(lse_t_ptr + row).to(tl.float32)
+        scale = tl.load(row_scale_ptr + row).to(tl.float32)
+        for start in range(0, n_cols, BLOCK_V):
+            cols = start + tl.arange(0, BLOCK_V)
+            mask = cols < n_cols
+            sv = tl.load(s_row + cols, mask=mask, other=-float('inf')).to(tl.float32)
+            tv = tl.load(t_row + cols, mask=mask, other=-float('inf')).to(tl.float32)
+            q = tl.exp(sv - lse_s)
+            p = tl.exp(tv - lse_t)
+            tl.store(g_row + cols, scale * (q - p), mask=mask)
 
 
 def emulate_signed_hash_kernel_cpu(
@@ -238,19 +272,88 @@ def triton_signed_hash_lookup(
     return out.reshape(out_shape)
 
 
-def triton_rowwise_kl(scores: torch.Tensor, target_logits: torch.Tensor, weights: torch.Tensor | None = None) -> torch.Tensor:
+def _canonical_row_weights(weights: torch.Tensor | float | None, n_rows: int, device: torch.device) -> torch.Tensor:
+    if weights is None:
+        return loss_weights(n_rows, device)
+    w = torch.as_tensor(weights, device=device, dtype=torch.float32).detach()
+    if w.shape == (n_rows,):
+        return w.contiguous()
+    bshape = torch.broadcast_shapes((n_rows,), w.shape)
+    w_exp = w.expand(bshape)
+    return (w_exp.sum(dim=tuple(range(w_exp.ndim - 1))) if w_exp.ndim > 1 else w_exp.clone()).contiguous()
+
+
+class _TritonRowwiseKLFunction(torch.autograd.Function):
+    @staticmethod
+    def forward(ctx, scores: torch.Tensor, target_logits: torch.Tensor,
+                weights_1d: torch.Tensor, emulate_cpu: bool = False) -> torch.Tensor:
+        s = scores.detach().float().contiguous()
+        t = target_logits.detach().float().contiguous()
+        w = weights_1d.detach().float().contiguous()
+        n_rows, n_cols = s.shape
+        if not emulate_cpu:
+            row_kl = torch.empty(n_rows, dtype=torch.float32, device=s.device)
+            lse_s = torch.empty(n_rows, dtype=torch.float32, device=s.device)
+            lse_t = torch.empty(n_rows, dtype=torch.float32, device=s.device)
+            _rowwise_kl_forward_kernel[(n_rows,)](
+                s, t, row_kl, lse_s, lse_t, n_cols, s.stride(0), t.stride(0), BLOCK_V=1024,
+            )
+        else:
+            # Tiled online LSE + KL CPU mirror for CPU exactness verification of the autograd Function.
+            lse_s = torch.logsumexp(s, dim=-1)
+            lse_t = torch.logsumexp(t, dim=-1)
+            row_kl = torch.zeros(n_rows, dtype=torch.float32, device=s.device)
+            for start in range(0, n_cols, 1024):
+                sc = s[:, start:start + 1024]
+                tc = t[:, start:start + 1024]
+                lp = tc - lse_t[:, None]
+                lq = sc - lse_s[:, None]
+                p = torch.exp(lp)
+                row_kl = row_kl + torch.where(torch.isfinite(tc), p * (lp - lq), torch.zeros_like(p)).sum(-1)
+        ctx.save_for_backward(s, t, lse_s, lse_t, w)
+        ctx.orig_dtype = scores.dtype
+        ctx.emulate_cpu = emulate_cpu
+        return (row_kl * w).sum()
+
+    @staticmethod
+    def backward(ctx, grad_output: torch.Tensor):
+        s, t, lse_s, lse_t, w = ctx.saved_tensors
+        row_scale = (grad_output.to(torch.float32) * w).contiguous()
+        n_rows, n_cols = s.shape
+        if not ctx.emulate_cpu:
+            grad_s = torch.empty_like(s)
+            _rowwise_kl_backward_kernel[(n_rows,)](
+                s, t, lse_s, lse_t, row_scale, grad_s,
+                n_cols, s.stride(0), t.stride(0), grad_s.stride(0), BLOCK_V=1024,
+            )
+        else:
+            grad_s = torch.empty_like(s)
+            for start in range(0, n_cols, 1024):
+                sc = s[:, start:start + 1024]
+                tc = t[:, start:start + 1024]
+                q = torch.exp(sc - lse_s[:, None])
+                p = torch.exp(tc - lse_t[:, None])
+                grad_s[:, start:start + 1024] = row_scale[:, None] * (q - p)
+        return grad_s.to(ctx.orig_dtype), None, None, None
+
+
+def emulate_rowwise_kl_cpu(scores: torch.Tensor, target_logits: torch.Tensor,
+                           weights: torch.Tensor | float | None = None) -> torch.Tensor:
+    """CPU mirror of differentiable `triton_rowwise_kl` (`_TritonRowwiseKLFunction`)."""
+    if scores.ndim != 2 or target_logits.shape != scores.shape:
+        raise ValueError('scores and target_logits must share 2D shape [K, V]')
+    w_1d = _canonical_row_weights(weights, scores.shape[0], scores.device)
+    return _TritonRowwiseKLFunction.apply(scores, target_logits, w_1d, True)
+
+
+def triton_rowwise_kl(scores: torch.Tensor, target_logits: torch.Tensor,
+                      weights: torch.Tensor | float | None = None) -> torch.Tensor:
     if not TRITON_AVAILABLE or scores.device.type != 'cuda':
         raise RuntimeError('triton_rowwise_kl requires CUDA tensors and installed triton')
-    s = scores.float().contiguous()
-    t = target_logits.detach().float().contiguous()
-    n_rows, n_cols = s.shape
-    row_kl = torch.empty(n_rows, dtype=torch.float32, device=s.device)
-    _rowwise_kl_forward_kernel[(n_rows,)](
-        s, t, row_kl, n_cols, s.stride(0), t.stride(0), BLOCK_V=1024,
-    )
-    if weights is None:
-        weights = loss_weights(n_rows, s.device)
-    return (row_kl * weights).sum()
+    if scores.ndim != 2 or target_logits.shape != scores.shape:
+        raise ValueError('scores and target_logits must share 2D shape [K, V]')
+    w_1d = _canonical_row_weights(weights, scores.shape[0], scores.device)
+    return _TritonRowwiseKLFunction.apply(scores, target_logits, w_1d, False)
 
 
 def _bench_fn_ms(fn: Callable[[], torch.Tensor], device: torch.device, *, warmups: int = 3, repeats: int = 11) -> float:
@@ -289,6 +392,7 @@ def evaluate_kernel_gate(
     warmups: int = 3,
     repeats: int = 11,
     measured_times_ms: tuple[float, float] | None = None,
+    grad_parity_fn: Callable[[], tuple[torch.Tensor, torch.Tensor]] | None = None,
 ) -> tuple[Callable[[], torch.Tensor], TritonGateReport]:
     """Run mandatory numerical parity + speed gates; return `(winning_fn, report)`."""
     dev = torch.device(device)
@@ -312,6 +416,13 @@ def evaluate_kernel_gate(
         cand_out = candidate_fn().detach().float()
         max_err = float((ref_out - cand_out).abs().max().item()) if ref_out.numel() else 0.0
         parity_ok = bool(torch.allclose(cand_out, ref_out, atol=atol, rtol=rtol))
+    if grad_parity_fn is not None:
+        ref_grad, cand_grad = grad_parity_fn()
+        ref_g = ref_grad.detach().float()
+        cand_g = cand_grad.detach().float()
+        grad_err = float((ref_g - cand_g).abs().max().item()) if ref_g.numel() else 0.0
+        max_err = max(max_err, grad_err)
+        parity_ok = parity_ok and bool(torch.allclose(cand_g, ref_g, atol=atol, rtol=rtol))
     if not parity_ok:
         if strict:
             raise TritonParityError(
@@ -379,13 +490,16 @@ def build_gated_m5_kernels(
     D: int = 4,
     K: int = 15,
     strict: bool = True,
-) -> dict[str, TritonGateReport]:
-    """Benchmark and parity-gate M5 Triton kernels on `device`, returning gate reports."""
+    return_callables: bool = False,
+):
+    """Benchmark and parity-gate M5 Triton kernels on `device` (full vocab forward+backward)."""
     dev = torch.device(device)
     if dev.type != 'cuda' or not TRITON_AVAILABLE:
         _, hash_rep = evaluate_kernel_gate('signed_hash_lookup', lambda: torch.zeros(1), None, device=dev, strict=strict)
         _, kl_rep = evaluate_kernel_gate('rowwise_full_kl', lambda: torch.zeros(1), None, device=dev, strict=strict)
-        return {'signed_hash_lookup': hash_rep, 'rowwise_full_kl': kl_rep}
+        reports = {'signed_hash_lookup': hash_rep, 'rowwise_full_kl': kl_rep}
+        callables = {'signed_hash_lookup': None, 'rowwise_full_kl': None}
+        return (callables, reports) if return_callables else reports
     gen = torch.Generator(device=dev).manual_seed(2026)
     d_q = torch.arange(1, D + 1, device=dev, dtype=torch.int64)[:, None]
     prev_q = torch.randint(0, vocab_size, (D, 1), generator=gen, device=dev, dtype=torch.int64)
@@ -401,19 +515,41 @@ def build_gated_m5_kernels(
 
     _, hash_rep = evaluate_kernel_gate('signed_hash_lookup', ref_hash, cand_hash, device=dev,
                                        atol=1e-6, rtol=1e-6, strict=strict)
-    scores = torch.randn((K, min(vocab_size, 32768)), generator=gen, device=dev, dtype=torch.float32)
-    targets = torch.randn_like(scores)
+    scores_base = torch.randn((K, int(vocab_size)), generator=gen, device=dev, dtype=torch.float32)
+    targets = torch.randn_like(scores_base)
     weights = loss_weights(K, dev)
 
+    def grad_pair():
+        with torch.enable_grad():
+            s_ref = scores_base.detach().clone().requires_grad_(True)
+            s_cand = scores_base.detach().clone().requires_grad_(True)
+            full_kl(s_ref, targets, weights).backward()
+            triton_rowwise_kl(s_cand, targets, weights).backward()
+            return s_ref.grad, s_cand.grad
+
     def ref_kl():
-        return full_kl(scores, targets, weights)
+        with torch.enable_grad():
+            s_in = scores_base.detach().clone().requires_grad_(True)
+            out = full_kl(s_in, targets, weights)
+            out.backward()
+            return out.detach()
 
     def cand_kl():
-        return triton_rowwise_kl(scores, targets, weights)
+        with torch.enable_grad():
+            s_in = scores_base.detach().clone().requires_grad_(True)
+            out = triton_rowwise_kl(s_in, targets, weights)
+            out.backward()
+            return out.detach()
 
     _, kl_rep = evaluate_kernel_gate('rowwise_full_kl', ref_kl, cand_kl, device=dev,
-                                     atol=1e-4, rtol=1e-4, strict=strict)
-    return {'signed_hash_lookup': hash_rep, 'rowwise_full_kl': kl_rep}
+                                     atol=1e-4, rtol=1e-4, strict=strict,
+                                     grad_parity_fn=grad_pair)
+    reports = {'signed_hash_lookup': hash_rep, 'rowwise_full_kl': kl_rep}
+    callables = {
+        'signed_hash_lookup': triton_signed_hash_lookup if hash_rep.enabled else None,
+        'rowwise_full_kl': triton_rowwise_kl if kl_rep.enabled else None,
+    }
+    return (callables, reports) if return_callables else reports
 
 
 def build_gated_torch_compile(
@@ -425,14 +561,16 @@ def build_gated_torch_compile(
     K: int = 15,
     speed_margin: float = 0.98,
     strict: bool = False,
-) -> dict[str, TritonGateReport]:
+    return_callables: bool = False,
+):
     """Profile and parity-gate `torch.compile` on dense adapter ops (`prompt.md:869, 891`)."""
     from .adapter import block_unary
 
     dev = torch.device(device)
     if not hasattr(torch, 'compile'):
         _, rep = evaluate_kernel_gate('torch_compile_block_unary', lambda: torch.zeros(1), None, device=dev, strict=strict)
-        return {'torch_compile_block_unary': rep}
+        reports = {'torch_compile_block_unary': rep}
+        return ({'torch_compile_block_unary': None}, reports) if return_callables else reports
 
     v_bench = min(int(vocab_size), 8192 if dev.type == 'cpu' else int(vocab_size))
     gen = torch.Generator(device=dev).manual_seed(2026)
@@ -444,13 +582,22 @@ def build_gated_torch_compile(
     def ref_unary():
         return block_unary(E, W, b, H)
 
+    compiled_unary = None
     try:
-        compiled_unary = torch.compile(block_unary)
+        raw_compiled = torch.compile(block_unary, dynamic=True)
+
+        def compiled_unary(E_in, W_in, b_in, H_in):
+            if any(t.requires_grad for t in (E_in, W_in, b_in, H_in)) and torch.is_grad_enabled():
+                return block_unary(E_in, W_in, b_in, H_in)
+            with torch.no_grad():
+                return raw_compiled(E_in, W_in, b_in, H_in)
+
         _ = compiled_unary(E, W, b, H)
 
         def cand_unary():
             return compiled_unary(E, W, b, H)
     except Exception:
+        compiled_unary = None
         cand_unary = None
 
     _, rep = evaluate_kernel_gate(
@@ -465,4 +612,6 @@ def build_gated_torch_compile(
         repeats=3 if dev.type == 'cpu' else 11,
         strict=strict,
     )
-    return {'torch_compile_block_unary': rep}
+    reports = {'torch_compile_block_unary': rep}
+    callables = {'torch_compile_block_unary': compiled_unary if rep.enabled else None}
+    return (callables, reports) if return_callables else reports

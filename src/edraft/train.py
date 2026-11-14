@@ -10,6 +10,7 @@ from collections import OrderedDict
 from dataclasses import dataclass
 import hashlib
 import json
+import math
 import os
 from pathlib import Path
 import random
@@ -289,8 +290,28 @@ def _block_own_committed(block) -> list[int]:
     return own
 
 
-def _annotate_verified_stream(payload_blocks, history_depth: int):
-    own_lists = [_block_own_committed(b) for b in payload_blocks]
+def _annotate_verified_stream(payload_blocks, history_depth: int, *, sidecar_generation: dict | None = None):
+    gen_tokens = sidecar_generation.get('output_tokens') if isinstance(sidecar_generation, dict) else None
+    realized_len = (
+        len(gen_tokens) if isinstance(gen_tokens, list)
+        else int(sidecar_generation.get('realized_length', gen_tokens))
+        if isinstance(gen_tokens, int) and isinstance(sidecar_generation, dict)
+        else None
+    )
+    own_lists = []
+    for idx, block in enumerate(payload_blocks):
+        if block.get('committed_tokens') is not None:
+            own_lists.append([int(x) for x in block['committed_tokens']])
+        elif isinstance(gen_tokens, list):
+            start = int(block['absolute_output_offset'])
+            end = int(payload_blocks[idx + 1]['absolute_output_offset']) if idx + 1 < len(payload_blocks) else len(gen_tokens)
+            own_lists.append([int(x) for x in gen_tokens[start:max(start, end)]])
+        else:
+            raw_own = _block_own_committed(block)
+            if realized_len is not None:
+                rem = max(0, realized_len - int(block['absolute_output_offset']))
+                raw_own = raw_own[:rem]
+            own_lists.append(raw_own)
     for idx, block in enumerate(payload_blocks):
         own = own_lists[idx]
         future: list[int] = []
@@ -300,7 +321,7 @@ def _annotate_verified_stream(payload_blocks, history_depth: int):
             future.extend(own_lists[j][:need])
             j += 1
         block['_verified_committed_window'] = own + future
-        block['_verified_eval_slots'] = max(1, min(int(block['block_length']), len(own)))
+        block['_verified_eval_slots'] = min(int(block['block_length']), len(own))
 
 
 def batches(references, batch_blocks, *, start_batch=0, head_metadata=None,
@@ -317,12 +338,13 @@ def batches(references, batch_blocks, *, start_batch=0, head_metadata=None,
                 shard_cache.move_to_end(shard.path)
                 payload = shard_cache[shard.path]
             else:
-                if json.loads(shard.path.with_suffix('.pt.json').read_text())['sha256'] != shard.sha256:
+                sidecar = json.loads(shard.path.with_suffix('.pt.json').read_text())
+                if sidecar['sha256'] != shard.sha256:
                     raise ValueError('An indexed shard changed after the frozen training manifest was built')
                 payload = read_shard(shard.path)
                 if len(payload['blocks']) != shard.blocks:
                     raise ValueError('Shard block count differs from immutable sidecar')
-                _annotate_verified_stream(payload['blocks'], history_depth)
+                _annotate_verified_stream(payload['blocks'], history_depth, sidecar_generation=sidecar.get('generation'))
                 shard_cache[shard.path] = payload
                 while len(shard_cache) > max_cached:
                     shard_cache.popitem(last=False)
@@ -344,8 +366,11 @@ def reconstruct_batch(blocks, weight, bias=None, *, vocab_chunk=8192, output_mul
     return logits.log_softmax(-1)
 
 
-def corrected_batch_scores(adapter, blocks, l_unit, *, return_sparse_keys=False):
+def corrected_batch_scores(adapter, blocks, l_unit, *, return_sparse_keys=False, beta: float = 1.0):
     """Batched teacher-forced dense features; sampled canvas IDs stay constants."""
+    if isinstance(beta, bool) or not isinstance(beta, (int, float)) or not math.isfinite(float(beta)) or float(beta) < 0.0:
+        raise ValueError('beta must be a finite nonnegative scalar')
+    beta_f = float(beta)
     H = torch.cat([b['h'] for b in blocks]).to(adapter.W.device, dtype=torch.float32)
     predecessors = []
     for block in blocks:
@@ -364,7 +389,7 @@ def corrected_batch_scores(adapter, blocks, l_unit, *, return_sparse_keys=False)
             part = adapter.E[previous[rows, d]].float() @ adapter.A[d].T
             pair = pair.index_add(0, rows, part)
     dense = adapter.unary(H) + pair @ adapter.E.float().T
-    scores = l_unit - dense
+    scores = l_unit - beta_f * dense
     observed_keys = []
     if adapter.sparse is not None:
         candidates = scores.topk(min(adapter.M_sparse, scores.shape[-1]), dim=-1).indices
@@ -377,7 +402,7 @@ def corrected_batch_scores(adapter, blocks, l_unit, *, return_sparse_keys=False)
                 if return_sparse_keys:
                     observed_keys.append(pack_keys(d + 1, previous[rows, d, None], candidates[rows],
                                                    adapter.E.shape[0]).reshape(-1))
-        scores = scores - torch.zeros_like(scores).scatter(1, candidates, values)
+        scores = scores - beta_f * torch.zeros_like(scores).scatter(1, candidates, values)
     if return_sparse_keys:
         return scores, torch.cat(observed_keys) if observed_keys else torch.empty(0, dtype=torch.long, device=scores.device)
     return scores
@@ -401,17 +426,27 @@ def two_sided_batch_scores_and_targets(adapter, blocks, l_unit_full, *, return_s
     cursor = 0
     for block in blocks:
         K = int(block['block_length'])
-        committed = block.get('_verified_committed_window') or _block_own_committed(block)
-        n_eval = int(block.get('_verified_eval_slots', max(1, min(K, len(committed)))))
+        committed = block['_verified_committed_window'] if '_verified_committed_window' in block else _block_own_committed(block)
+        n_eval = int(block['_verified_eval_slots']) if '_verified_eval_slots' in block else min(K, len(committed))
+        block_l = l_unit_full[cursor:cursor + K]
+        cursor += K
+        if n_eval <= 0:
+            continue
         prefix = block['verified_prefix_tail']
         h_rows.append(block['h'][:n_eval])
-        l_rows.append(l_unit_full[cursor:cursor + n_eval])
-        cursor += K
+        l_rows.append(block_l[:n_eval])
         for i in range(n_eval):
             prev_rows.append([prev_token(prefix, committed, i, d) for d in range(1, D + 1)])
             succ_rows.append([next_token(committed, i, d) for d in range(1, D + 1)])
             target_ids.append(int(committed[i]))
         weight_rows.append(loss_weights(n_eval, device))
+    if not h_rows:
+        empty_s = torch.empty((0, adapter.E.shape[0]), dtype=torch.float32, device=device)
+        empty_t = torch.empty(0, dtype=torch.long, device=device)
+        empty_w = torch.empty(0, dtype=torch.float32, device=device)
+        if return_sparse_keys:
+            return empty_s, empty_t, empty_w, torch.empty(0, dtype=torch.long, device=device)
+        return empty_s, empty_t, empty_w
     H = torch.cat(h_rows).to(device, dtype=torch.float32)
     l_unit = torch.cat(l_rows)
     previous = torch.tensor([[x if x is not None else -1 for x in row] for row in prev_rows],
@@ -462,6 +497,10 @@ def batch_loss(adapter, blocks, l_unit, *, collect_sparse_keys=False, objective=
     if objective == 'two_sided_pseudolikelihood':
         out = two_sided_batch_scores_and_targets(adapter, blocks, l_unit, return_sparse_keys=collect_sparse_keys)
         scores, targets, weights = out[:3]
+        if len(targets) == 0:
+            zero_loss = 0.0 * adapter.b.sum()
+            result = (zero_loss, torch.zeros((), dtype=torch.float32, device=adapter.b.device), scores)
+            return (*result, out[3]) if collect_sparse_keys else result
         loss = two_sided_pseudolikelihood_loss(scores, targets, weights)
         result = (loss, weights.sum(), scores)
         return (*result, out[3]) if collect_sparse_keys else result
@@ -492,11 +531,12 @@ def evaluate(adapter, references, head, bias, args, head_metadata, *, eligibilit
             sums['weight'] += float(weight)
             if objective == 'two_sided_pseudolikelihood':
                 pl_scores, pl_targets, pl_weights = two_sided_batch_scores_and_targets(adapter, blocks, l_unit)
-                pl_val = two_sided_pseudolikelihood_loss(pl_scores, pl_targets, pl_weights)
-                sums['pl_loss'] += float(pl_val)
-                sums['pl_weight'] += float(pl_weights.sum())
-                sums['pl_slots'] += len(pl_targets)
-                sums['pl_top1'] += int((pl_scores.argmax(-1) == pl_targets).sum())
+                if len(pl_targets) > 0:
+                    pl_val = two_sided_pseudolikelihood_loss(pl_scores, pl_targets, pl_weights)
+                    sums['pl_loss'] += float(pl_val)
+                    sums['pl_weight'] += float(pl_weights.sum())
+                    sums['pl_slots'] += len(pl_targets)
+                    sums['pl_top1'] += int((pl_scores.argmax(-1) == pl_targets).sum())
             cursor = 0
             for block in blocks:
                 K = block['block_length']
@@ -547,6 +587,173 @@ def evaluate(adapter, references, head, bias, args, head_metadata, *, eligibilit
                 'causal_union_rest_grouped_kl': grouped_mean,
             }
         return result
+    finally:
+        adapter.train(was_training)
+
+
+DEFAULT_BETA_CALIBRATION_GRID = (
+    0.0, 0.05, 0.10, 0.15, 0.20, 0.25, 0.30, 0.35, 0.40, 0.50, 0.60, 0.75, 0.85, 1.0, 1.25, 1.50
+)
+
+
+@torch.no_grad()
+def scale_adapter_inplace(adapter, scale: float):
+    """Scale linear energy parameters `(W, A, b, sparse.values)` by `scale` while keeping frozen `E` untouched."""
+    if isinstance(scale, bool) or not isinstance(scale, (int, float)) or not math.isfinite(float(scale)) or float(scale) < 0.0:
+        raise ValueError('checkpoint scale must be a finite nonnegative scalar')
+    s = float(scale)
+    adapter.W.mul_(s)
+    adapter.A.mul_(s)
+    adapter.b.mul_(s)
+    if adapter.sparse is not None:
+        adapter.sparse.values.mul_(s)
+    return adapter
+
+
+def scale_adapter_checkpoint(src_path: Path | str, dst_path: Path | str, scale: float, *, extra_report: dict | None = None) -> dict:
+    """Create a scaled copy of a saved adapter checkpoint (`scale * (W, A, b, sparse.values)`)."""
+    if isinstance(scale, bool) or not isinstance(scale, (int, float)) or not math.isfinite(float(scale)) or float(scale) < 0.0:
+        raise ValueError('checkpoint scale must be a finite nonnegative scalar')
+    src = Path(src_path)
+    dst = Path(dst_path)
+    if src.resolve() == dst.resolve():
+        raise ValueError('scale_adapter_checkpoint requires distinct source and destination paths')
+    checkpoint = torch.load(src, map_location='cpu', weights_only=True)
+    s = float(scale)
+    state = {k: v.clone() for k, v in checkpoint['adapter_state'].items()}
+    for key in ('W', 'A', 'b', 'sparse.values'):
+        if key in state:
+            state[key] = state[key] * s
+    checkpoint['adapter_state'] = state
+    prev_scale = float(checkpoint.get('checkpoint_scale', 1.0))
+    eff_scale = prev_scale * s
+    checkpoint['checkpoint_scale'] = eff_scale
+    checkpoint['adapter_version'] = fingerprint({
+        'base_version': checkpoint.get('adapter_version'),
+        'checkpoint_scale': eff_scale,
+    })
+    if extra_report:
+        rep = dict(checkpoint.get('report', {}))
+        rep.update(extra_report)
+        checkpoint['report'] = rep
+    atomic_torch_save(dst, checkpoint)
+    return {
+        'source': str(src),
+        'destination': str(dst),
+        'scale': s,
+        'effective_checkpoint_scale': eff_scale,
+        'sha256': file_digest(dst),
+    }
+
+
+@torch.no_grad()
+def calibrate_beta_on_dev_live_full(adapter, references_dev, head, bias, args, head_metadata,
+                                    *, eligibility_fn=primary_eligible, beta_grid=None) -> dict:
+    """Post-fit scalar `beta` calibration minimizing exact `L_full` on held-out dev `live_full` blocks."""
+    raw_grid = DEFAULT_BETA_CALIBRATION_GRID if beta_grid is None else tuple(beta_grid)
+    if not raw_grid:
+        raise ValueError('calibrate_beta_grid must be non-empty')
+    betas = []
+    for b in raw_grid:
+        if isinstance(b, bool) or not isinstance(b, (int, float)) or not math.isfinite(float(b)) or float(b) < 0.0:
+            raise ValueError('calibrate_beta_grid values must be finite nonnegative scalars')
+        bf = float(b)
+        if bf not in betas:
+            betas.append(bf)
+    for required in (0.0, 1.0):
+        if required not in betas:
+            betas.append(required)
+    betas = sorted(betas)
+
+    was_training = adapter.training
+    adapter.eval()
+    try:
+        full_sums = {b: 0.0 for b in betas}
+        grouped_sums = {b: 0.0 for b in betas}
+        full_weight = 0.0
+        grouped_weight = 0.0
+        full_slots = 0
+        total_slots = 0
+
+        for _, blocks in batches(references_dev, args.batch_blocks, head_metadata=head_metadata,
+                                 eligibility_fn=eligibility_fn, history_depth=args.history_depth):
+            l_unit = reconstruct_batch(blocks, head, bias, vocab_chunk=args.vocab_chunk,
+                                       output_multiplier=head_metadata.get('output_multiplier', 1.))
+            H = torch.cat([blk['h'] for blk in blocks]).to(adapter.W.device, dtype=torch.float32)
+            predecessors = []
+            for blk in blocks:
+                prefix = blk['verified_prefix_tail']
+                for i in range(blk['block_length']):
+                    predecessors.append([prev_token(prefix, blk['draft_tokens'], i, d)
+                                         for d in range(1, len(adapter.A) + 1)])
+            previous = torch.tensor([[x if x is not None else -1 for x in row] for row in predecessors],
+                                    device=adapter.W.device, dtype=torch.long)
+            pair = torch.zeros(len(H), adapter.E.shape[1], device=H.device, dtype=torch.float32)
+            for d in range(len(adapter.A)):
+                rows = (previous[:, d] >= 0).nonzero(as_tuple=True)[0]
+                if len(rows):
+                    pair = pair.index_add(0, rows, adapter.E[previous[rows, d]].float() @ adapter.A[d].T)
+            dense = adapter.unary(H) + pair @ adapter.E.float().T
+
+            ids_all, probs_all, rest_all, weights_all = batch_targets(blocks, l_unit.device)
+            grouped_weight += float(weights_all.sum())
+            total_slots += int(len(H))
+
+            live_slices = []
+            cursor = 0
+            for blk in blocks:
+                K = int(blk['block_length'])
+                if 'live_full' in blk:
+                    P = blk['live_full']['target_probs'].to(l_unit.device)
+                    w_blk = loss_weights(K, l_unit.device)
+                    ent_blk = torch.xlogy(P, P).sum(-1)
+                    live_slices.append((cursor, cursor + K, P, ent_blk, w_blk))
+                    full_weight += float(w_blk.sum())
+                    full_slots += K
+                cursor += K
+
+            for b in betas:
+                if b == 0.0:
+                    scores = l_unit
+                else:
+                    scores = l_unit - b * dense
+                    if adapter.sparse is not None:
+                        cands = scores.topk(min(adapter.M_sparse, scores.shape[-1]), dim=-1).indices
+                        vals = torch.zeros_like(cands, dtype=torch.float32)
+                        for d in range(len(adapter.A)):
+                            rows = (previous[:, d] >= 0).nonzero(as_tuple=True)[0]
+                            if len(rows):
+                                vals = vals.index_add(0, rows, adapter.sparse.lookup(d + 1, previous[rows, d, None], cands[rows]))
+                        scores = scores - b * torch.zeros_like(scores).scatter(1, cands, vals)
+                grouped_sums[b] += float(union_rest_grouped(scores, ids_all, probs_all, rest_all, weights_all))
+                if live_slices:
+                    log_q = scores.log_softmax(-1)
+                    for start_i, end_i, P, ent_blk, w_blk in live_slices:
+                        kl_row = ent_blk - (P * log_q[start_i:end_i]).sum(-1)
+                        full_sums[b] += float((kl_row * w_blk).sum())
+
+        use_live_full = full_slots > 0 and full_weight > 0.0
+        denom = full_weight if use_live_full else max(grouped_weight, 1e-12)
+        active_sums = full_sums if use_live_full else grouped_sums
+        curve = [{'beta': b, 'kl': active_sums[b] / denom,
+                  'dev_live_full_kl': (full_sums[b] / full_weight) if use_live_full else None,
+                  'dev_union_rest_grouped_kl': grouped_sums[b] / max(grouped_weight, 1e-12)}
+                 for b in betas]
+        best_row = min(curve, key=lambda r: (r['kl'], r['beta']))
+        base0 = active_sums[0.0] / denom
+        uncal1 = active_sums[1.0] / denom
+        return {
+            'metric': 'dev_live_full_kl' if use_live_full else 'dev_union_rest_grouped_kl',
+            'dev_live_full_logical_slots': full_slots,
+            'dev_total_logical_slots': total_slots,
+            'optimal_beta': best_row['beta'],
+            'baseline_beta0_kl': base0,
+            'uncalibrated_beta1_kl': uncal1,
+            'calibrated_kl': best_row['kl'],
+            'relative_gain_over_beta0': (base0 - best_row['kl']) / max(base0, 1e-12),
+            'relative_gain_over_beta1': (uncal1 - best_row['kl']) / max(uncal1, 1e-12),
+            'grid_curve': curve,
+        }
     finally:
         adapter.train(was_training)
 
@@ -639,6 +846,7 @@ def _resolve_fit_regime(args):
     block_shuffle = int(getattr(args, 'block_shuffle_window', 0) or 0)
     if block_shuffle < 0:
         raise ValueError('block_shuffle_window must be nonnegative')
+    calibrate_beta = bool(getattr(args, 'calibrate_beta', False) or getattr(args, 'apply_calibrated_beta', False))
     custom_tag = getattr(args, 'm5_fit_tag', None)
     if allow_long:
         regime = 'long_oracle_m5'
@@ -662,9 +870,10 @@ def _resolve_fit_regime(args):
         training_dist = 'standard_nonthinking, greedy or model-card T=.7 topk20 topp.8 minp0 contexts; unwarped T_train=beta_train=1'
         scope = 'complete eligible train/dev/test shard sets; no long/pure-temperature fitting'
         warning = None
-        if custom_tag or sparse_backend != 'signed_feature_hash' or objective != 'union_rest_grouped' or block_shuffle > 0:
+        if custom_tag or sparse_backend != 'signed_feature_hash' or objective != 'union_rest_grouped' or block_shuffle > 0 or calibrate_beta:
             shuf_suffix = f'_shuf{block_shuffle}' if block_shuffle > 0 else ''
-            base = custom_tag or f'm5_{objective}_{sparse_backend}{shuf_suffix}'
+            cal_suffix = '_calbeta' if calibrate_beta else ''
+            base = custom_tag or f'm5_{objective}_{sparse_backend}{shuf_suffix}{cal_suffix}'
             subdir = f'{base}_smoke' if args.scale == 'smoke' else base
         else:
             subdir = 'm2_smoke' if args.scale == 'smoke' else 'm2'
@@ -781,16 +990,17 @@ def fit(entries, index_report, E, head, bias, head_metadata, args, *, stop_after
                                       collect_sparse_keys=stage == 'dense_sparse',
                                       objective=objective)
                 loss, weight = computed[:2]
-                normalized = loss / weight
-                if not bool(torch.isfinite(normalized)):
-                    raise FloatingPointError('Nonfinite training loss')
-                normalized.backward()
-                dense_optimizer.step()
-                if sparse_optimizer is not None:
-                    sparse_optimizer.step()
-                    adapter.sparse.proximal_step(args.sparse_learning_rate, args.lambda_l1)
-                    chunk = stats_recorder.write_batch(computed[3], epoch, batch_index)
-                    report.setdefault('sparse_statistics_chunks', []).append(chunk)
+                if float(weight) > 0.0:
+                    normalized = loss / weight
+                    if not bool(torch.isfinite(normalized)):
+                        raise FloatingPointError('Nonfinite training loss')
+                    normalized.backward()
+                    dense_optimizer.step()
+                    if sparse_optimizer is not None:
+                        sparse_optimizer.step()
+                        adapter.sparse.proximal_step(args.sparse_learning_rate, args.lambda_l1)
+                        chunk = stats_recorder.write_batch(computed[3], epoch, batch_index)
+                        report.setdefault('sparse_statistics_chunks', []).append(chunk)
                 steps_this_run += 1
                 if steps_this_run % args.checkpoint_every == 0 or stop_after_steps == steps_this_run:
                     atomic_torch_save(latest, checkpoint_payload(adapter, args, identity, stage, epoch, batch_index + 1,
@@ -824,27 +1034,94 @@ def fit(entries, index_report, E, head, bias, head_metadata, args, *, stop_after
                 memory_limit=stats_memory_limit,
                 benchmark_entries=getattr(args, 'stats_benchmark_entries', 1_000_000), seed=args.seed)
             if isinstance(adapter.sparse, ExactObservedPairs) and isinstance(collision_stats, dict) and collision_stats.get('status') == 'measured':
+                cf_bench = collision_stats.get('lookup_benchmark')
+                if isinstance(cf_bench, dict):
+                    cf_bench = dict(cf_bench, benchmarked_representation='counterfactual_signed_feature_hash')
                 collision_stats = dict(
                     collision_stats,
                     representation='exact_observed_pairs',
                     counterfactual_signed_hash_collision_count=collision_stats['collision_count'],
                     counterfactual_signed_hash_frequency_weighted_collisions=collision_stats['frequency_weighted_collision_count'],
+                    collision_count=0,
+                    frequency_weighted_collision_count=0,
+                    collision_rate_per_nonempty_bucket=0.0,
+                    frequency_weighted_collision_rate=0.0,
                     active_representation_collision_count=0,
                     occupied_exact_entries=adapter.sparse.num_occupied,
                     peak_occupied_exact_entries=adapter.sparse.peak_occupied,
                     overflow_events=adapter.sparse.overflow_events,
                     dropped_unique_keys=adapter.sparse.dropped_unique_keys,
+                    lookup_benchmark=cf_bench,
                 )
             report['stages'][stage]['sparse_collision_statistics'] = collision_stats
-        atomic_torch_save(outdir / f'{stage}.pt', checkpoint_payload(adapter, args, identity, stage, epochs, 0,
-                                                                    dense_optimizer, sparse_optimizer, report))
+        do_cal_beta = bool(getattr(args, 'calibrate_beta', False) or getattr(args, 'apply_calibrated_beta', False))
+        apply_cal_beta = bool(getattr(args, 'apply_calibrated_beta', False))
+        if do_cal_beta:
+            cal = calibrate_beta_on_dev_live_full(
+                adapter, references['dev'], head, bias, args, head_metadata,
+                eligibility_fn=eligibility_fn,
+                beta_grid=getattr(args, 'calibrate_beta_grid', None),
+            )
+            cal['applied_to_parameters'] = apply_cal_beta
+            report['stages'][stage]['beta_calibration'] = cal
+        stage_payload = checkpoint_payload(adapter, args, identity, stage, epochs, 0,
+                                           dense_optimizer, sparse_optimizer, report)
+        if apply_cal_beta:
+            unscaled_path = outdir / f'{stage}_unscaled.pt'
+            atomic_torch_save(unscaled_path, stage_payload)
+            cal_path = outdir / f'{stage}_calibrated.pt'
+            scale_adapter_checkpoint(
+                unscaled_path, cal_path, cal['optimal_beta'],
+                extra_report={'calibrated_stage': stage, 'applied_beta': cal['optimal_beta']},
+            )
+            scale_adapter_checkpoint(
+                unscaled_path, outdir / f'{stage}.pt', cal['optimal_beta'],
+                extra_report={'calibrated_stage': stage, 'applied_beta': cal['optimal_beta']},
+            )
+            cal_adapter, _ = load_adapter_checkpoint(outdir / f'{stage}.pt', E.device)
+            report['stages'][stage]['calibrated_eval'] = {
+                split: evaluate(cal_adapter, refs, head, bias, args, head_metadata, eligibility_fn=eligibility_fn)
+                for split, refs in references.items()
+            }
+            # Re-save stage checkpoint so its embedded report includes calibrated_eval.
+            stage_payload_updated = checkpoint_payload(adapter, args, identity, stage, epochs, 0,
+                                                       dense_optimizer, sparse_optimizer, report)
+            atomic_torch_save(unscaled_path, stage_payload_updated)
+            scale_adapter_checkpoint(
+                unscaled_path, cal_path, cal['optimal_beta'],
+                extra_report={'calibrated_stage': stage, 'applied_beta': cal['optimal_beta']},
+            )
+            scale_adapter_checkpoint(
+                unscaled_path, outdir / f'{stage}.pt', cal['optimal_beta'],
+                extra_report={'calibrated_stage': stage, 'applied_beta': cal['optimal_beta']},
+            )
+        else:
+            atomic_torch_save(outdir / f'{stage}.pt', stage_payload)
+            if do_cal_beta:
+                scale_adapter_checkpoint(
+                    outdir / f'{stage}.pt', outdir / f'{stage}_calibrated.pt', cal['optimal_beta'],
+                    extra_report={'calibrated_stage': stage, 'applied_beta': cal['optimal_beta']},
+                )
         resumed = None
-    final_gain = ((report['baseline']['dev']['weighted_mean_kl'] - report['stages']['dense_sparse']['dev']['weighted_mean_kl'])
+    do_cal_beta = bool(getattr(args, 'calibrate_beta', False) or getattr(args, 'apply_calibrated_beta', False))
+    apply_cal_beta = bool(getattr(args, 'apply_calibrated_beta', False))
+    if apply_cal_beta and 'calibrated_eval' in report['stages']['dense_sparse']:
+        dev_after = report['stages']['dense_sparse']['calibrated_eval']['dev']['weighted_mean_kl']
+    else:
+        dev_after = report['stages']['dense_sparse']['dev']['weighted_mean_kl']
+    final_gain = ((report['baseline']['dev']['weighted_mean_kl'] - dev_after)
                   / max(report['baseline']['dev']['weighted_mean_kl'], 1e-12))
+    ckpt_map = {'dense': str(outdir / 'dense.pt'), 'dense_sparse': str(outdir / 'dense_sparse.pt')}
+    if do_cal_beta:
+        ckpt_map['dense_calibrated'] = str(outdir / 'dense_calibrated.pt')
+        ckpt_map['dense_sparse_calibrated'] = str(outdir / 'dense_sparse_calibrated.pt')
+    if apply_cal_beta:
+        ckpt_map['dense_unscaled'] = str(outdir / 'dense_unscaled.pt')
+        ckpt_map['dense_sparse_unscaled'] = str(outdir / 'dense_sparse_unscaled.pt')
     report.update({'status': 'passed', 'relative_dev_improvement': final_gain,
                    'under_one_percent_stop_tuning': final_gain < .01,
                    'fit_elapsed_seconds_this_invocation': time.perf_counter() - begun,
-                   'checkpoints': {'dense': str(outdir / 'dense.pt'), 'dense_sparse': str(outdir / 'dense_sparse.pt')},
+                   'checkpoints': ckpt_map,
                    'checkpoint_selection': 'last completed epoch of each predeclared phase; test never selects',
                    'scope': scope_text})
     if regime == 'primary' and any(report['stages']['dense_sparse'][s]['live_full_diagnostic']['logical_slots'] == 0 for s in ['dev', 'test']):
@@ -950,10 +1227,35 @@ def main(argv=None):
     parser.add_argument('--max_primary_train_tokens', type=int, default=4_000_000)
     parser.add_argument('--block_shuffle_window', type=int, default=0,
                         help='M5 multi-shard i.i.d. block shuffle buffer size in shards (0 preserves shard-sequential default)')
+    parser.add_argument('--calibrate_beta', action='store_true', default=False,
+                        help='M5 post-fit scalar beta calibration on held-out dev live_full KL; writes *_calibrated.pt')
+    parser.add_argument('--apply_calibrated_beta', action='store_true', default=False,
+                        help='M5 post-fit scalar beta calibration applied directly into saved dense.pt/dense_sparse.pt')
+    parser.add_argument('--calibrate_beta_grid', type=float, nargs='+', default=None,
+                        help='Optional nonnegative scalar beta grid for --calibrate_beta')
+    parser.add_argument('--scale_checkpoint_from', type=Path, default=None,
+                        help='Standalone M5 utility: source adapter checkpoint to scale by --checkpoint_scale')
+    parser.add_argument('--scale_checkpoint_to', type=Path, default=None,
+                        help='Standalone M5 utility: destination path for scaled adapter checkpoint')
+    parser.add_argument('--checkpoint_scale', type=float, default=None,
+                        help='Standalone M5 utility: finite nonnegative scalar factor for --scale_checkpoint_from')
     parser.add_argument('--m5_fit_tag', default=None)
     parser.add_argument('--resume', action='store_true', default=True)
     parser.add_argument('--no_resume', action='store_false', dest='resume')
     args = parse_config(parser, argv)
+    if (args.scale_checkpoint_from is not None or args.scale_checkpoint_to is not None
+            or args.checkpoint_scale is not None):
+        if args.scale_checkpoint_from is None or args.scale_checkpoint_to is None or args.checkpoint_scale is None:
+            parser.error('--scale_checkpoint_from, --scale_checkpoint_to, and --checkpoint_scale must be provided together')
+        if not math.isfinite(args.checkpoint_scale) or args.checkpoint_scale < 0.0:
+            parser.error('--checkpoint_scale must be finite and >= 0')
+        record_run(args, 'scale-checkpoint')
+        scaled_meta = scale_adapter_checkpoint(args.scale_checkpoint_from, args.scale_checkpoint_to, args.checkpoint_scale)
+        print(json.dumps({'status': 'scaled', **scaled_meta}, indent=2))
+        return
+    if args.calibrate_beta_grid is not None:
+        if not args.calibrate_beta_grid or any(not math.isfinite(b) or b < 0.0 for b in args.calibrate_beta_grid):
+            parser.error('--calibrate_beta_grid values must be finite and >= 0')
     if args.stats_memory_limit is None:
         args.stats_memory_limit = '16GB' if args.scale == 'full' else '512MB'
     if args.m1_diagnostic is None:

@@ -29,6 +29,8 @@ M5_ARMS = (
     'plain_dflash',
     'online_bigram',
     'online_bigram_count_gated',
+    'offline_online_stride1',
+    'zero_offline_online_only',
     'online_dbS',
     'online_dbS_zero_init',
     'dense_full',
@@ -159,7 +161,7 @@ def evaluation_jobs(prompts, stage, scale, seed=2026, *, m5_arms=None, include_l
     return jobs
 
 
-def candidate_settings(arm, *, bigram_count_gate_kappa=None):
+def candidate_settings(arm, *, bigram_count_gate_kappa=None, m5_beta_candidates=None, m5_beta_relax=None):
     if arm == 'plain_dflash':
         return [{}]
     if arm == 'online_bigram':
@@ -171,12 +173,19 @@ def candidate_settings(arm, *, bigram_count_gate_kappa=None):
                     {'lambda_tr': .25, 'alpha': 1., 'k_ret': None, 'count_gate_kappa': kappa}]
         return [{'lambda_tr': .15, 'alpha': 1., 'k_ret': None, 'count_gate_kappa': 8.},
                 {'lambda_tr': .25, 'alpha': 1., 'k_ret': None, 'count_gate_kappa': 16.}]
-    if arm in ('dense', 'dense_sparse', 'offline_static', 'dense_full', 'dense_candidate', 'long_oracle_offline'):
+    if arm in ('dense', 'dense_sparse', 'offline_static'):
         return [{'beta': .5}, {'beta': 1.}]
+    b0, b1 = ((float(m5_beta_candidates[0]), float(m5_beta_candidates[1]))
+              if m5_beta_candidates is not None else (.5, 1.))
+    br = 1. if m5_beta_relax is None else float(m5_beta_relax)
+    if arm in ('dense_full', 'long_oracle_offline'):
+        return [{'beta': b0}, {'beta': b1}]
+    if arm == 'dense_candidate':
+        return [{'beta': b0, 'beta_relax': br}, {'beta': b1, 'beta_relax': br}]
     if arm in ('lookahead_static_candidate', 'lookahead_rerelax_candidate',
                'lookahead_static_full', 'lookahead_rerelax_full'):
-        return [{'beta': .5, 'R_init': 2, 'R_clamp': 1, 'eta': .5, 'T_relax': 1.},
-                {'beta': 1., 'R_init': 2, 'R_clamp': 1, 'eta': .5, 'T_relax': 1.}]
+        return [{'beta': b0, 'beta_relax': br, 'R_init': 2, 'R_clamp': 1, 'eta': .5, 'T_relax': 1.},
+                {'beta': b1, 'beta_relax': br, 'R_init': 2, 'R_clamp': 1, 'eta': .5, 'T_relax': 1.}]
     if arm == 'online_buffered_stride5':
         return [{'beta': 1., 'lr': lr, 'update_stride': 5, 'lambda_l2': l2,
                  'lambda_l1_b': 1e-6, 'lambda_l1_s': 1e-5, 'weighting_mode': 'exponential',
@@ -235,6 +244,21 @@ def validate_frozen_settings(settings, stage, scale, checkpoint_hashes, prompt_m
     expected_arms = arms_for(stage, scale, m5_arms=m5_arms, include_long_oracle=include_long_oracle)
     if set(settings['selected']) != set(expected_arms):
         raise ValueError('frozen settings omit a required arm')
+    if stage == 'm5':
+        matched_c0_arms = [
+            a for a in ('dense_candidate', 'lookahead_static_candidate', 'lookahead_rerelax_candidate')
+            if a in settings['selected']
+        ]
+        if matched_c0_arms:
+            br_vals = []
+            for a in matched_c0_arms:
+                raw_br = settings['selected'][a].get('beta_relax', 1.)
+                if (isinstance(raw_br, bool) or not isinstance(raw_br, (int, float))
+                        or not math.isfinite(float(raw_br)) or float(raw_br) < 0.):
+                    raise ValueError(f'frozen setting beta_relax for {a} must be finite and >= 0')
+                br_vals.append(float(raw_br))
+            if len(set(br_vals)) > 1:
+                raise ValueError('matched-support candidate arms must share identical beta_relax so frozen C0[j] matches')
 
 
 class EvaluationRunner:
@@ -245,6 +269,8 @@ class EvaluationRunner:
         self.long_oracle = None
         self.triton_gate_report = None
         self.torch_compile_gate_report = None
+        self.m5_active_kernels = {}
+        self.is_m5_custom_checkpoint = False
         if self.tiny:
             from .toy import ToyTarget, ToyParallelDrafter
             from .features import fit_hidden_projection, fit_token_features
@@ -311,12 +337,19 @@ class EvaluationRunner:
             self.model_revisions = [env['model_artifacts'][name]['revision'] for name in (args.target, args.drafter)]
             for label, metadata in [('dense', self.dense_metadata), ('dense_sparse', self.sparse_metadata)]:
                 report = metadata.get('report', {})
-                if metadata.get('identity') != m2.get('identity') or metadata.get('stage') != label:
+                if args.stage == 'm5':
+                    if metadata.get('stage') != label:
+                        raise ValueError('selected M5 checkpoint is not the corresponding fit stage')
+                elif metadata.get('identity') != m2.get('identity') or metadata.get('stage') != label:
                     raise ValueError('selected checkpoint is not the corresponding stage of the accepted M2 fit')
                 if report.get('model_pair') != [args.target, args.drafter] or report.get('model_revisions') != self.model_revisions:
                     raise ValueError('checkpoint training models/revisions do not match evaluation backend')
                 if report.get('frozen_artifacts', {}).get('hidden_projection_sha256') != self.checkpoint_hashes['projection']:
                     raise ValueError('checkpoint was fitted with a different hidden projection')
+            if args.stage == 'm5':
+                if self.dense_metadata.get('identity') != self.sparse_metadata.get('identity'):
+                    raise ValueError('M5 dense and dense_sparse checkpoints must originate from the same fit identity')
+                self.is_m5_custom_checkpoint = self.dense_metadata.get('identity') != m2.get('identity')
             if args.stage == 'm5' and getattr(args, 'm5_oracle_checkpoint', None):
                 self.long_oracle, oracle_meta = load_adapter_checkpoint(args.m5_oracle_checkpoint, args.device)
                 oracle_report = oracle_meta.get('report', {})
@@ -327,31 +360,57 @@ class EvaluationRunner:
             self.backend = ReferenceBackend.from_pretrained(target, drafter, device=args.device,
                 target_revision=self.model_revisions[0], drafter_revision=self.model_revisions[1])
             self.model_pair = [args.target, args.drafter]
+        if args.stage == 'm5' and getattr(args, 'checkpoint_scale', None) is not None:
+            from .train import scale_adapter_inplace
+            scale_val = float(args.checkpoint_scale)
+            scale_adapter_inplace(self.dense, scale_val)
+            scale_adapter_inplace(self.dense_sparse, scale_val)
+            if self.tiny:
+                self.checkpoint_hashes['dense'] = adapter_tensor_hash(self.dense)
+                self.checkpoint_hashes['dense_sparse'] = adapter_tensor_hash(self.dense_sparse)
+                self.checkpoint_hashes['checkpoint_scale'] = scale_val
         self.dense.eval()
         self.dense_sparse.eval()
         if self.long_oracle is not None:
             self.long_oracle.eval()
         if args.stage == 'm5' and getattr(args, 'm5_triton', False):
             from .triton_ops import build_gated_m5_kernels
-            reports = build_gated_m5_kernels(
+            triton_fns, reports = build_gated_m5_kernels(
                 device=self.device,
                 vocab_size=self.dense.E.shape[0],
                 sparse_capacity=257 if self.tiny else 2**20,
                 M_sparse=self.dense.M_sparse,
                 D=len(self.dense.A),
                 K=4 if self.tiny else (self.backend.block_size - 1),
+                return_callables=True,
             )
             self.triton_gate_report = {k: v.to_dict() for k, v in reports.items()}
+            if triton_fns.get('signed_hash_lookup') is not None:
+                self.m5_active_kernels['signed_hash_lookup'] = triton_fns['signed_hash_lookup']
+                if self.dense_sparse.sparse is not None and hasattr(self.dense_sparse.sparse, 'lookup_fn'):
+                    self.dense_sparse.sparse.lookup_fn = triton_fns['signed_hash_lookup']
+                if self.long_oracle is not None and self.long_oracle.sparse is not None and hasattr(self.long_oracle.sparse, 'lookup_fn'):
+                    self.long_oracle.sparse.lookup_fn = triton_fns['signed_hash_lookup']
+            if triton_fns.get('rowwise_full_kl') is not None:
+                self.m5_active_kernels['rowwise_full_kl'] = triton_fns['rowwise_full_kl']
         if args.stage == 'm5' and getattr(args, 'm5_torch_compile', False):
             from .triton_ops import build_gated_torch_compile
-            tc_reports = build_gated_torch_compile(
+            tc_fns, tc_reports = build_gated_torch_compile(
                 device=self.device,
                 vocab_size=self.dense.E.shape[0],
                 r=self.dense.E.shape[1],
                 p=self.dense.W.shape[1],
                 K=4 if self.tiny else (self.backend.block_size - 1),
+                return_callables=True,
             )
             self.torch_compile_gate_report = {k: v.to_dict() for k, v in tc_reports.items()}
+            if tc_fns.get('torch_compile_block_unary') is not None:
+                unary_fn = tc_fns['torch_compile_block_unary']
+                self.m5_active_kernels['torch_compile_block_unary'] = unary_fn
+                self.dense.unary_fn = unary_fn
+                self.dense_sparse.unary_fn = unary_fn
+                if self.long_oracle is not None:
+                    self.long_oracle.unary_fn = unary_fn
         if self.tiny:
             self.generation_environment = {'target_state_sha256': adapter_tensor_hash(self.target),
                 'tokenizer': {'kind': 'synthetic prompt-ID prefix', 'vocabulary_size': self.target.embedding.shape[0]},
@@ -413,6 +472,7 @@ class EvaluationRunner:
         beta = (setting.get('beta', 1.)
                 if (temperature > 0 or job.get('force_setting_beta', False))
                 else 1.)
+        beta_relax_val = float(setting.get('beta_relax', 1.)) if 'beta_relax' in setting else None
         if self.device.type == 'cuda':
             torch.cuda.synchronize(self.device)
             torch.cuda.reset_peak_memory_stats(self.device)
@@ -462,12 +522,16 @@ class EvaluationRunner:
             elif arm == 'dense_candidate':
                 adapter = self.dense_sparse
                 proposal_mode = 'dense_candidate'
+                if beta_relax_val is None:
+                    beta_relax_val = 1.0
             elif arm in ('lookahead_static_candidate', 'lookahead_rerelax_candidate',
                          'lookahead_static_full', 'lookahead_rerelax_full'):
                 adapter = self.dense_sparse
                 la_mode = 'static' if 'static' in arm else 'rerelax'
                 la_domain = 'candidate_masked' if arm.endswith('_candidate') else 'full_vocabulary'
                 proposal_mode = 'dense_candidate' if la_domain == 'candidate_masked' else 'dense_full'
+                if beta_relax_val is None:
+                    beta_relax_val = 1.0
                 lookahead = LookaheadConfig(
                     mode=la_mode,
                     domain=la_domain,
@@ -475,7 +539,7 @@ class EvaluationRunner:
                     R_clamp=int(setting.get('R_clamp', 1)),
                     eta=float(setting.get('eta', 0.5)),
                     T_relax=float(setting.get('T_relax', 1.0)),
-                    beta_relax=beta,
+                    beta_relax=beta_relax_val,
                 )
             elif arm == 'tts':
                 from .m5_baselines import TTSState
@@ -495,8 +559,12 @@ class EvaluationRunner:
             elif arm != 'plain_dflash':
                 offline = self.dense_sparse
                 if arm in ('zero_offline_online_only', 'online_dbS_zero_init'):
-                    offline = DenseAdapter(self.dense.E, self.dense.W.shape[1], len(self.dense.A), M_sparse=self.dense.M_sparse)
-                kwargs = {k: v for k, v in setting.items() if k != 'beta'}
+                    offline = DenseAdapter(
+                        self.dense.E, self.dense.W.shape[1], len(self.dense.A),
+                        M_sparse=self.dense.M_sparse,
+                        unary_fn=self.m5_active_kernels.get('torch_compile_block_unary') if args.stage == 'm5' else None,
+                    )
+                kwargs = {k: v for k, v in setting.items() if k not in ('beta', 'beta_relax')}
                 if arm == 'exact_observed_pairs_online':
                     kwargs['sparse_backend'] = 'exact_observed_pairs'
                     kwargs.setdefault('sparse_overflow_policy', getattr(args, 'sparse_overflow_policy', 'freeze_new'))
@@ -507,6 +575,8 @@ class EvaluationRunner:
                     kwargs.setdefault('update_stride', 5)
                 elif arm == 'online_two_sided_pl':
                     kwargs['loss_mode'] = 'two_sided_pseudolikelihood'
+                if args.stage == 'm5' and self.m5_active_kernels.get('rowwise_full_kl') is not None:
+                    kwargs['kl_loss_fn'] = self.m5_active_kernels['rowwise_full_kl']
                 online = OnlineState(offline, enable_sparse=True, sparse_capacity=257 if self.tiny else 2**20,
                                      bias_sparse_only=arm in ('online_dbS', 'online_dbS_zero_init'), **kwargs)
 
@@ -517,7 +587,7 @@ class EvaluationRunner:
                 prefix = inputs
                 result = generate_toy(self.target, self.drafter, prefix, max_tokens, temperature=temperature, warper=warper,
                     generator=generator, adapter=adapter, online_state=online, projection=proj,
-                    bigram=bigram, beta=beta, measure_phases=profile,
+                    bigram=bigram, beta=beta, beta_relax=beta_relax_val, measure_phases=profile,
                     proposal_mode=proposal_mode, lookahead=lookahead,
                     proposal_controller=proposal_controller, adaptive_controller=adaptive_controller,
                     record_round_timing=record_round_timing)
@@ -525,7 +595,7 @@ class EvaluationRunner:
             else:
                 result = generate_reference(self.backend, inputs, max_tokens, temperature=temperature, warper=warper,
                     generator=generator, adapter=adapter, online_state=online, projection=proj,
-                    bigram=bigram, beta=beta, measure_phases=profile,
+                    bigram=bigram, beta=beta, beta_relax=beta_relax_val, measure_phases=profile,
                     proposal_mode=proposal_mode, lookahead=lookahead,
                     proposal_controller=proposal_controller, adaptive_controller=adaptive_controller,
                     record_round_timing=record_round_timing)
@@ -564,6 +634,7 @@ class EvaluationRunner:
             'checkpoint_hashes': self.checkpoint_hashes,
             'offline_fit_provenance': ('M5 long-condition oracle checkpoint' if arm == 'long_oracle_offline'
                                        else 'four built-in synthetic calibration-train prefixes' if self.tiny
+                                       else 'M5 custom/calibrated fit checkpoints' if self.is_m5_custom_checkpoint
                                        else 'gated M2 checkpoints'),
             'generated_tokens': result.num_output_tokens,
             'elapsed_seconds': request_elapsed, 'generation_loop_elapsed_seconds': result.elapsed_seconds,
@@ -584,9 +655,11 @@ class EvaluationRunner:
             'peak_reserved_bytes': torch.cuda.max_memory_reserved(self.device) if self.device.type == 'cuda' else None,
             'phase_profile': profile}
         if args.stage == 'm5':
-            m5_telemetry = {}
+            m5_telemetry = {'active_dispatched_kernels': sorted(self.m5_active_kernels.keys())}
             if lookahead is not None:
                 m5_telemetry['lookahead'] = asdict(lookahead)
+            elif beta_relax_val is not None and proposal_mode == 'dense_candidate':
+                m5_telemetry['matched_c0_beta_relax'] = beta_relax_val
             if recycling_state is not None:
                 m5_telemetry['token_recycling'] = recycling_state.metrics()
             if proposal_controller is not None and hasattr(proposal_controller, 'metrics'):
@@ -595,6 +668,8 @@ class EvaluationRunner:
                 m5_telemetry['adaptive_block'] = adaptive_controller.metrics()
             if self.triton_gate_report is not None:
                 m5_telemetry['triton_gate'] = self.triton_gate_report
+            if self.torch_compile_gate_report is not None:
+                m5_telemetry['torch_compile_gate'] = self.torch_compile_gate_report
             row['m5_telemetry'] = m5_telemetry
         return row
 
@@ -604,6 +679,8 @@ def checkpoint_hashes(args):
               'projection': file_sha256(args.projection), 'implementation': implementation_hash(args.stage)}
     if args.stage == 'm5' and getattr(args, 'm5_oracle_checkpoint', None):
         hashes['long_oracle'] = file_sha256(args.m5_oracle_checkpoint)
+    if args.stage == 'm5' and getattr(args, 'checkpoint_scale', None) is not None:
+        hashes['checkpoint_scale'] = float(args.checkpoint_scale)
     return hashes
 
 
@@ -885,7 +962,12 @@ def tune(runner, manifest):
         raise ValueError('dev selection is a single-process matched timing session')
     active_arms = _arms_from_args(args)
     kappa = getattr(args, 'bigram_count_gate_kappa', None)
-    arm_candidates = {a: candidate_settings(a, bigram_count_gate_kappa=kappa) for a in active_arms}
+    m5_betas = getattr(args, 'm5_beta_candidates', None) if args.stage == 'm5' else None
+    m5_br = getattr(args, 'm5_beta_relax', None) if args.stage == 'm5' else None
+    arm_candidates = {
+        a: candidate_settings(a, bigram_count_gate_kappa=kappa, m5_beta_candidates=m5_betas, m5_beta_relax=m5_br)
+        for a in active_arms
+    }
     prompts = select_prompts(manifest, 'dev', args.scale, args.standard_dev_prompts, args.long_dev_prompts)
     session_path, session_state, epoch = comparison_session(runner, 'tune', {'prompt_manifest_hash': fingerprint(manifest),
         'dev_ids': [p['prompt_id'] for p in prompts], 'candidates': arm_candidates})
@@ -1554,14 +1636,22 @@ M5_MATCHED_PAIRS = (
     ('online_buffered_stride5', 'offline_online_stride5', 'online_stride5_update_mode'),
     ('online_bigram_count_gated', 'online_bigram', 'online_bigram_count_gate'),
     ('online_dbS_zero_init', 'online_bigram_count_gated', 'online_zero_init_dbS_vs_count_gated_bigram'),
+    ('zero_offline_online_only', 'offline_online_stride1', 'online_zero_vs_checkpoint_offline_init'),
+    ('online_dbS_zero_init', 'online_dbS', 'online_dbS_zero_vs_checkpoint_offline_init'),
 )
 
 M5_ONLINE_HEAD_TO_HEAD_PAIRS = (
     ('online_bigram', 'plain_dflash'),
     ('online_bigram_count_gated', 'plain_dflash'),
+    ('offline_online_stride1', 'plain_dflash'),
+    ('zero_offline_online_only', 'plain_dflash'),
     ('online_dbS', 'plain_dflash'),
     ('online_dbS_zero_init', 'plain_dflash'),
     ('online_bigram_count_gated', 'online_bigram'),
+    ('zero_offline_online_only', 'online_bigram'),
+    ('zero_offline_online_only', 'online_bigram_count_gated'),
+    ('zero_offline_online_only', 'offline_online_stride1'),
+    ('zero_offline_online_only', 'online_dbS_zero_init'),
     ('online_dbS_zero_init', 'online_bigram'),
     ('online_dbS_zero_init', 'online_bigram_count_gated'),
     ('online_dbS', 'online_bigram_count_gated'),
@@ -2170,6 +2260,12 @@ def main(argv=None):
     parser.add_argument('--m5_server_timeout', type=float, default=600.)
     parser.add_argument('--bigram_count_gate_kappa', type=float, default=None,
                         help='M5 count-confidence gate kappa > 0 for online_bigram_count_gated')
+    parser.add_argument('--checkpoint_scale', type=float, default=None,
+                        help='M5 scalar multiplier applied to loaded dense/dense_sparse parameters (e.g. 0.20)')
+    parser.add_argument('--m5_beta_candidates', type=float, nargs=2, default=None,
+                        help='M5 two-point dev tuning beta candidates for offline/lookahead arms')
+    parser.add_argument('--m5_beta_relax', type=float, default=None,
+                        help='M5 shared beta_relax for matched-support C0[j] candidate and lookahead arms')
     args = parse_config(parser, argv)
     if args.long_dev_prompts is None:
         args.long_dev_prompts = 32 if args.scale == 'full' else 12
@@ -2188,10 +2284,23 @@ def main(argv=None):
     if args.bigram_count_gate_kappa is not None:
         if not math.isfinite(args.bigram_count_gate_kappa) or args.bigram_count_gate_kappa <= 0:
             parser.error('--bigram_count_gate_kappa must be finite and > 0')
+    if args.checkpoint_scale is not None:
+        if not math.isfinite(args.checkpoint_scale) or args.checkpoint_scale < 0:
+            parser.error('--checkpoint_scale must be finite and >= 0')
+    if args.m5_beta_candidates is not None:
+        b0, b1 = args.m5_beta_candidates
+        if not (math.isfinite(b0) and math.isfinite(b1)) or b0 < 0 or b1 < 0 or b0 == b1:
+            parser.error('--m5_beta_candidates requires two distinct finite nonnegative values')
+    if args.m5_beta_relax is not None:
+        if not math.isfinite(args.m5_beta_relax) or args.m5_beta_relax < 0:
+            parser.error('--m5_beta_relax must be finite and >= 0')
     if args.stage != 'm5' and (args.m5_arms or args.m5_oracle_checkpoint or args.m5_triton
                                or args.m5_torch_compile or args.mode == 'server_eval'
-                               or args.bigram_count_gate_kappa is not None):
-        parser.error('M5-specific options (--m5_*, --bigram_count_gate_kappa, --mode server_eval) require --stage m5')
+                               or args.bigram_count_gate_kappa is not None
+                               or args.checkpoint_scale is not None
+                               or args.m5_beta_candidates is not None
+                               or args.m5_beta_relax is not None):
+        parser.error('M5-specific options (--m5_*, --checkpoint_scale, --bigram_count_gate_kappa, --mode server_eval) require --stage m5')
     record_run(args, f'{args.stage}-{args.mode}')
     torch.set_num_threads(1)
     prompt_manifest = smoke_manifest() if args.scale == 'smoke' else json.loads(args.prompts_manifest.read_text())
@@ -2220,10 +2329,18 @@ def main(argv=None):
         settings = tune(runner, prompt_manifest)
     else:
         settings = json.loads(settings_path.read_text())
-    current_hashes = (
-        runner.checkpoint_hashes if runner is not None
-        else dict(settings['checkpoint_hashes'], implementation=implementation_hash(args.stage))
-    ) if args.scale == 'smoke' else checkpoint_hashes(args)
+    if args.scale == 'smoke':
+        if runner is not None:
+            current_hashes = runner.checkpoint_hashes
+        else:
+            current_hashes = dict(settings['checkpoint_hashes'], implementation=implementation_hash(args.stage))
+            if args.stage == 'm5':
+                if args.checkpoint_scale is not None:
+                    current_hashes['checkpoint_scale'] = float(args.checkpoint_scale)
+                else:
+                    current_hashes.pop('checkpoint_scale', None)
+    else:
+        current_hashes = checkpoint_hashes(args)
     validate_frozen_settings(
         settings, args.stage, args.scale, current_hashes, prompt_manifest,
         generation_caps(args),

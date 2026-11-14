@@ -904,6 +904,8 @@ def test_m3_and_m4_never_import_triton_ops_and_m5_end_to_end_smoke_completes(tmp
         'online_stride5_update_mode',
         'online_bigram_count_gate',
         'online_zero_init_dbS_vs_count_gated_bigram',
+        'online_zero_vs_checkpoint_offline_init',
+        'online_dbS_zero_vs_checkpoint_offline_init',
     }
     compared_arms = {(c['arm'], c['reference_arm']) for c in summary['matched_support_comparisons']}
     assert compared_arms == {
@@ -915,6 +917,8 @@ def test_m3_and_m4_never_import_triton_ops_and_m5_end_to_end_smoke_completes(tmp
         ('online_buffered_stride5', 'offline_online_stride5'),
         ('online_bigram_count_gated', 'online_bigram'),
         ('online_dbS_zero_init', 'online_bigram_count_gated'),
+        ('zero_offline_online_only', 'offline_online_stride1'),
+        ('online_dbS_zero_init', 'online_dbS'),
     }
 
 
@@ -1001,6 +1005,8 @@ def test_head_to_head_online_offset_bin_slices_across_all_five_bins():
         'plain_dflash': [2, 2, 2, 2, 2],
         'online_bigram': [1, 2, 3, 3, 4],
         'online_bigram_count_gated': [2, 2, 3, 3, 4],
+        'offline_online_stride1': [1, 2, 3, 4, 4],
+        'zero_offline_online_only': [2, 3, 4, 4, 4],
         'online_dbS': [2, 3, 3, 4, 4],
         'online_dbS_zero_init': [2, 3, 4, 4, 4],
     }
@@ -1218,4 +1224,483 @@ def test_train_multi_shard_block_shuffle_window_and_bit_exact_resume(tmp_path):
     a_res, _ = train.load_adapter_checkpoint(out_resumed / 'shuf_resume_test_smoke' / 'dense_sparse.pt', 'cpu')
     for k, v in a_full.state_dict().items():
         torch.testing.assert_close(v, a_res.state_dict()[k], rtol=0, atol=0)
+
+
+def test_m5_audit_bug1_matched_c0_identical_across_divergent_tuned_betas(tmp_path, monkeypatch):
+    from edraft import adapter as adapter_mod
+    from edraft.runtime import common_parser, fingerprint, parse_config
+
+    parser = common_parser('test')
+    parser.add_argument('--stage', default='m5')
+    parser.add_argument('--smoke_tokens', type=int, default=8)
+    parser.add_argument('--max_new_tokens', type=int, default=32)
+    parser.add_argument('--long_max_new_tokens', type=int, default=32)
+    args = parse_config(parser, ['--scale', 'smoke', '--device', 'cpu', '--output', str(tmp_path)])
+    runner = eval_closed_loop.EvaluationRunner(args)
+    # Perturb W/A/b strongly so beta=0.5 vs beta=1.0 would change TopM if beta_relax were not shared!
+    with torch.no_grad():
+        torch.manual_seed(909)
+        runner.dense_sparse.W.copy_(torch.randn_like(runner.dense_sparse.W) * 4.0)
+        runner.dense_sparse.A.copy_(torch.randn_like(runner.dense_sparse.A) * 4.0)
+        runner.dense_sparse.b.copy_(torch.randn_like(runner.dense_sparse.b) * 4.0)
+
+    captured = {}
+    orig_c0 = adapter_mod.compute_frozen_candidates
+
+    def spy_c0(snapshot, l_unit, U_all, beta_relax=1.0):
+        c0 = orig_c0(snapshot, l_unit, U_all, beta_relax=beta_relax)
+        captured.setdefault(current_arm[0], []).append(tuple(x.clone() for x in c0))
+        return c0
+
+    monkeypatch.setattr(adapter_mod, 'compute_frozen_candidates', spy_c0)
+    monkeypatch.setattr('edraft.dflash_loop.compute_frozen_candidates', spy_c0)
+
+    prompt = {
+        'prompt_id': 'synthetic-test-standard_nonthinking-0',
+        'split': 'test', 'condition': 'standard_nonthinking',
+        'text': 'Synthetic 0', 'dataset': 'builtin', 'reference_selected': True,
+    }
+    warp = SamplingWarper(top_k=4, top_p=0.9)
+    current_arm = ['dense_candidate']
+    runner.run(
+        {'prompt': prompt, 'arm': 'dense_candidate', 'sampling_name': 'primary',
+         'temperature': 0.7, 'warper': warp, 'seed': 2026},
+        {'beta': 0.5, 'beta_relax': 1.0},
+    )
+    current_arm[0] = 'lookahead_rerelax_candidate'
+    runner.run(
+        {'prompt': prompt, 'arm': 'lookahead_rerelax_candidate', 'sampling_name': 'primary',
+         'temperature': 0.7, 'warper': warp, 'seed': 2026},
+        {'beta': 1.0, 'beta_relax': 1.0, 'R_init': 2, 'R_clamp': 1, 'eta': 0.5, 'T_relax': 1.0},
+    )
+    current_arm[0] = 'lookahead_static_candidate'
+    runner.run(
+        {'prompt': prompt, 'arm': 'lookahead_static_candidate', 'sampling_name': 'primary',
+         'temperature': 0.7, 'warper': warp, 'seed': 2026},
+        {'beta': 1.0, 'beta_relax': 1.0, 'R_init': 2, 'R_clamp': 1, 'eta': 0.5, 'T_relax': 1.0},
+    )
+
+    c0_dense_r1 = captured['dense_candidate'][0]
+    c0_rerelax_r1 = captured['lookahead_rerelax_candidate'][0]
+    c0_static_r1 = captured['lookahead_static_candidate'][0]
+    for j in range(len(c0_dense_r1)):
+        assert torch.equal(c0_dense_r1[j], c0_rerelax_r1[j])
+        assert torch.equal(c0_dense_r1[j], c0_static_r1[j])
+
+    # Verify validate_frozen_settings rejects mismatched beta_relax across matched-support arms:
+    manifest = eval_closed_loop.smoke_manifest()
+    bad_settings = {
+        'frozen': True, 'stage': 'm5', 'scale': 'smoke',
+        'checkpoint_hashes': runner.checkpoint_hashes,
+        'prompt_manifest_hash': fingerprint(manifest),
+        'development_prompt_ids': [p['prompt_id'] for p in manifest['prompts'] if p['split'] == 'dev'],
+        'selected': {
+            'plain_dflash': {},
+            'dense_candidate': {'beta': 0.5, 'beta_relax': 0.5},
+            'lookahead_rerelax_candidate': {'beta': 1.0, 'beta_relax': 1.0, 'R_init': 2, 'R_clamp': 1, 'eta': 0.5, 'T_relax': 1.0},
+        },
+    }
+    with pytest.raises(ValueError, match='identical beta_relax'):
+        eval_closed_loop.validate_frozen_settings(
+            bad_settings, 'm5', 'smoke', runner.checkpoint_hashes, manifest,
+            m5_arms=['plain_dflash', 'dense_candidate', 'lookahead_rerelax_candidate'],
+        )
+
+
+def test_m5_audit_bug2_mixed_dtypes_and_lookahead_scalar_validation():
+    import math
+    from edraft.adapter import (
+        LookaheadConfig, compute_frozen_candidates, damped_lookahead_step,
+        initialize_lookahead, lookahead_energy,
+    )
+    from edraft.sparse import SignedHash
+
+    # Strict validation against NaN / Inf / bool on LookaheadConfig and lookahead functions:
+    for bad in (float('nan'), float('inf'), float('-inf'), True, False, 0.0, -1.0):
+        with pytest.raises(ValueError):
+            LookaheadConfig(mode='static', T_relax=bad)
+    for bad_eta in (float('nan'), float('inf'), True, False, 0.0, 1.5):
+        with pytest.raises(ValueError):
+            LookaheadConfig(mode='static', eta=bad_eta)
+    for bad_br in (float('nan'), float('inf'), float('-inf'), True):
+        with pytest.raises(ValueError):
+            LookaheadConfig(mode='static', beta_relax=bad_br)
+    for bad_int in (True, False, -1):
+        with pytest.raises(ValueError):
+            LookaheadConfig(mode='rerelax', R_init=bad_int, R_clamp=1)
+        with pytest.raises(ValueError):
+            LookaheadConfig(mode='rerelax', R_init=2, R_clamp=bad_int)
+
+    torch.manual_seed(314)
+    V, d_tok, p, D, K = 16, 4, 6, 3, 4
+    E = F.normalize(torch.randn(V, d_tok), dim=-1)
+    sp = SignedHash(64)
+    adapter = DenseAdapter(E, p, D, sparse=sp, M_sparse=6)
+    with torch.no_grad():
+        sp.values.normal_(0.0, 0.2)
+        adapter.W.normal_(0.0, 0.3)
+        adapter.A.normal_(0.0, 0.3)
+        adapter.b.normal_(0.0, 0.3)
+
+    for input_dtype in (torch.bfloat16, torch.float32, torch.float64):
+        l_unit = torch.randn(K, V, dtype=torch.float32).log_softmax(-1).to(input_dtype)
+        H = torch.randn(K, p, dtype=input_dtype)
+        prefix = [1, 2, 3, 4]
+        base_snap = adapter.snapshot()
+        u_all = base_snap.unary(H)
+        c0 = compute_frozen_candidates(base_snap, l_unit, u_all, beta_relax=1.0)
+        cand_snap = base_snap.with_candidates(c0)
+        u_cand = cand_snap.unary(H, proposal_mode='dense_candidate')
+        realized = []
+        for i in range(K):
+            sc = cand_snap.score_slot(l_unit[i], u_cand[i], prefix, realized, i,
+                                      beta=0.8, proposal_mode='dense_candidate')
+            assert sc.shape == (V,)
+            assert int(torch.isfinite(sc).sum().item()) == 6
+            realized.append(int(sc.argmax().item()))
+
+        for domain in ('candidate_masked', 'full_vocabulary'):
+            state = initialize_lookahead(
+                base_snap, l_unit, H, prefix,
+                domain=domain, T_relax=0.9, beta_relax=1.0,
+            )
+            e_val = lookahead_energy(state)
+            assert math.isfinite(float(e_val.item()))
+            tok0, probs0 = state.sample_slot(0, T_sample=0.7, beta_sample=0.8,
+                                             warper=SamplingWarper(top_k=4, top_p=0.9),
+                                             generator=torch.Generator().manual_seed(11))
+            assert 0 <= tok0 < V
+            assert torch.isfinite(probs0).all()
+            damped_lookahead_step(state, eta=0.5)
+
+    # Also verify initialize_lookahead / compute_frozen_candidates / damped_lookahead_step reject NaN/bool directly:
+    snap_chk = adapter.snapshot()
+    l_chk = torch.randn(K, V).log_softmax(-1)
+    h_chk = torch.randn(K, p)
+    with pytest.raises(ValueError):
+        compute_frozen_candidates(snap_chk, l_chk, snap_chk.unary(h_chk), beta_relax=float('nan'))
+    with pytest.raises(ValueError):
+        initialize_lookahead(snap_chk, l_chk, h_chk, [1, 2], T_relax=float('inf'))
+    with pytest.raises(ValueError):
+        initialize_lookahead(snap_chk, l_chk, h_chk, [1, 2], T_relax=True)
+    with pytest.raises(ValueError):
+        initialize_lookahead(snap_chk, l_chk, h_chk, [1, 2], beta_relax=float('nan'))
+    st_ok = initialize_lookahead(snap_chk, l_chk, h_chk, [1, 2])
+    with pytest.raises(ValueError):
+        damped_lookahead_step(st_ok, eta=float('nan'))
+    with pytest.raises(ValueError):
+        damped_lookahead_step(st_ok, eta=True)
+
+
+def test_m5_audit_bug3_mid_block_eos_on_block_committed_tokens_and_empty_block(tmp_path):
+    from transformers import Qwen3Config, Qwen3ForCausalLM
+    from dflash.model import DFlashDraftModel
+    from edraft.backend import ReferenceBackend
+    from edraft.dflash_loop import generate_reference
+    from edraft.features import fit_hidden_projection, fit_token_features
+    from edraft.online import OnlineState
+    from edraft.traces import TraceShardWriter, compact_block
+
+    torch.manual_seed(91)
+    V_mock = 24
+    t_cfg = Qwen3Config(
+        vocab_size=V_mock, hidden_size=32, intermediate_size=64, num_hidden_layers=3,
+        num_attention_heads=4, num_key_value_heads=2, head_dim=8, max_position_embeddings=256,
+        eos_token_id=23, attn_implementation='sdpa',
+    )
+    t_cfg._attn_implementation = 'sdpa'
+    target = Qwen3ForCausalLM(t_cfg).eval()
+    d_cfg = Qwen3Config(
+        vocab_size=V_mock, hidden_size=32, intermediate_size=64, num_hidden_layers=2,
+        num_attention_heads=4, num_key_value_heads=2, head_dim=8, max_position_embeddings=256,
+        attn_implementation='sdpa',
+    )
+    d_cfg._attn_implementation = 'sdpa'
+    d_cfg.num_target_layers = 3
+    d_cfg.dflash_config = {'block_size': 5, 'mask_token_id': 22, 'target_layer_ids': [0, 2]}
+    drafter = DFlashDraftModel(d_cfg).eval()
+    backend = ReferenceBackend(
+        target=target, drafter=drafter,
+        target_id='tiny-qwen3', drafter_id='tiny-dflash',
+        target_revision='r0', drafter_revision='r0',
+    )
+    proj = fit_hidden_projection([torch.randn(4, 32) for _ in range(8)], 32, 4, seed=1)
+    E, _ = fit_token_features(torch.randn(V_mock, 32), 4, 1, torch.arange(V_mock))
+
+    inp = torch.tensor([[2, 5, 9, 1]], dtype=torch.long)
+    seq = backend.target_only_generate(inp, 10, temperature=0.0, stop_token_ids=())[0, 4:].tolist()
+    eos_tok = seq[2]  # Force EOS mid-block inside Round 1!
+    compacted = []
+    meta = {
+        'prompt_id': 'eos-p0', 'split': 'train', 'condition': 'standard_nonthinking',
+        'seed': 1, 'scale': 'smoke', 'model_pair': ['m-t', 'm-d'],
+        'projection_metadata': proj.metadata, 'history_depth': 4,
+    }
+    res = generate_reference(
+        backend, inp, max_new_tokens=10,
+        temperature=0.0, warper=SamplingWarper(), stop_token_ids={eos_tok},
+        projection=proj, retain_tensors=True,
+        on_block=lambda rec: compacted.append(compact_block(rec, meta, M_draft=4, M_target=2, retain_live_full=True)),
+    )
+    actual_committed = res.blocks[-1]['committed_tokens']
+    cb = compacted[-1]
+    # Crucial check (#68 M5-BUG-3): committed_tokens is populated BEFORE on_block(record), with zero post-EOS leakage!
+    assert 'committed_tokens' in cb
+    assert cb['committed_tokens'] == actual_committed
+    assert train._block_own_committed(cb) == actual_committed
+
+    # Write shard and verify train._annotate_verified_stream + legacy sidecar fallback + empty block!
+    writer = TraceShardWriter(tmp_path / 'eos_traces')
+    for split_name in ('train', 'dev', 'test'):
+        split_blocks = [dict(b, split=split_name, prompt_id=f'eos-{split_name}') for b in compacted]
+        identity = {
+            'model_pair': ['m-t', 'm-d'], 'prompt': f'eos-{split_name}', 'condition': 'standard_nonthinking',
+            'seed': 1, 'temperature': 0.0, 'verification_rule': 'greedy',
+            'proposal_mode': 'plain_dflash', 'checkpoint': 'v1', 'adapter_version': 0,
+            'sampling_warp_config': SamplingWarper().to_dict(),
+        }
+        writer.write(identity, split_blocks, {'generation': {
+            'output_tokens': res.output_tokens, 'realized_length': len(res.output_tokens),
+            'condition': 'standard_nonthinking', 'split': split_name, 'seed': 1,
+            'temperature': 0.0, 'sampling_warp_config': SamplingWarper().to_dict(),
+            'partition': 'primary', 'complete': True, 'capped': False, 'eos_reached': True,
+        }})
+    entries, _ = train.trace_index(tmp_path / 'eos_traces')
+    refs = train.epoch_references(entries, 'train')
+    loaded_blocks = next(train.batches(refs, 4, history_depth=4))[1]
+    assert loaded_blocks[-1]['_verified_committed_window'] == actual_committed
+    assert loaded_blocks[-1]['_verified_eval_slots'] == min(cb['block_length'], len(actual_committed))
+
+    # Also test legacy block without committed_tokens using sidecar_generation slicing, AND empty committed=[]:
+    legacy_blocks = [dict(b) for b in compacted]
+    for lb in legacy_blocks:
+        lb.pop('committed_tokens', None)
+        lb.pop('_verified_committed_window', None)
+        lb.pop('_verified_eval_slots', None)
+    train._annotate_verified_stream(
+        legacy_blocks, 4,
+        sidecar_generation={'output_tokens': res.output_tokens, 'realized_length': len(res.output_tokens)},
+    )
+    assert legacy_blocks[-1]['_verified_committed_window'] == actual_committed
+    assert legacy_blocks[-1]['_verified_eval_slots'] == min(cb['block_length'], len(actual_committed))
+
+    empty_blk = dict(cb, committed_tokens=[])
+    empty_blk.pop('_verified_committed_window', None)
+    empty_blk.pop('_verified_eval_slots', None)
+    train._annotate_verified_stream([empty_blk], 4)
+    assert empty_blk['_verified_eval_slots'] == 0
+    adapter = DenseAdapter(E, 4, 4, M_sparse=4)
+    l_u = torch.randn(cb['block_length'], V_mock).log_softmax(-1)
+    loss_empty, w_empty, _ = train.batch_loss(adapter, [empty_blk], l_u, objective='two_sided_pseudolikelihood')
+    assert float(w_empty.item()) == 0.0
+    assert float(loss_empty.item()) == 0.0
+
+    # OnlineState two_sided_pseudolikelihood with committed_tokens=[] is a clean no-op:
+    ostate = OnlineState(adapter, lr=0.05, update_stride=1, loss_mode='two_sided_pseudolikelihood')
+    did_step = ostate.update(1, l_u, None, torch.randn(cb['block_length'], 4), [1, 2], [7, 4, 5, 6][:cb['block_length']],
+                             first_rejection=0, committed_tokens=[])
+    assert did_step is False
+    assert ostate.u == 0
+
+
+def test_m5_triton_autograd_kl_and_runner_active_kernel_dispatch(tmp_path, monkeypatch):
+    from edraft import triton_ops
+    from edraft.adapter import block_unary, full_kl
+    from edraft.runtime import common_parser, parse_config
+    from edraft.sparse import hash_keys
+
+    # 1. Verify _TritonRowwiseKLFunction forward + backward parity across dtypes and 1D/broadcast weights:
+    torch.manual_seed(777)
+    for dt in (torch.bfloat16, torch.float32, torch.float64):
+        s_ref = torch.randn(5, 37, dtype=dt, requires_grad=True)
+        s_cand = s_ref.detach().clone().requires_grad_(True)
+        t_logits = torch.randn(5, 37, dtype=dt)
+        for w in (None, torch.linspace(0.2, 1.0, 5), torch.ones(2, 5) * 0.5):
+            l_ref = full_kl(s_ref, t_logits, w)
+            l_cand = triton_ops.emulate_rowwise_kl_cpu(s_cand, t_logits, w)
+            assert l_cand.requires_grad is True
+            l_ref.backward()
+            l_cand.backward()
+            atol = 2e-2 if dt == torch.bfloat16 else 1e-5
+            torch.testing.assert_close(l_cand.detach().float(), l_ref.detach().float(), atol=atol, rtol=atol)
+            assert s_cand.grad.dtype == dt
+            torch.testing.assert_close(s_cand.grad.float(), s_ref.grad.float(), atol=atol, rtol=atol)
+            s_ref.grad = None
+            s_cand.grad = None
+
+    # 2. Verify evaluate_kernel_gate rejects wrong backward gradient via grad_parity_fn:
+    x = torch.randn(4, 8)
+    with pytest.raises(triton_ops.TritonParityError):
+        triton_ops.evaluate_kernel_gate(
+            'bad_grad_kl_strict',
+            lambda: x.sum(),
+            lambda: x.sum(),
+            device='cpu',
+            strict=True,
+            measured_times_ms=(0.2, 1.0),
+            grad_parity_fn=lambda: (torch.ones_like(x), torch.zeros_like(x)),
+        )
+    _, bad_grad_rep = triton_ops.evaluate_kernel_gate(
+        'bad_grad_kl',
+        lambda: x.sum(),
+        lambda: x.sum(),
+        device='cpu',
+        strict=False,
+        measured_times_ms=(0.2, 1.0),
+        grad_parity_fn=lambda: (torch.ones_like(x), torch.zeros_like(x)),
+    )
+    assert bad_grad_rep.enabled is False
+    assert bad_grad_rep.parity_passed is False
+    assert bad_grad_rep.status == 'rejected_parity_failure'
+
+    # 3. Verify EvaluationRunner wires accepted gated callables into live proposal & online execution!
+    counts = {'signed_hash_lookup': 0, 'rowwise_full_kl': 0, 'torch_compile_block_unary': 0}
+
+    def fast_hash(d, previous, current, values, capacity, *, last_u=None, cum_thresh=None, u=0):
+        counts['signed_hash_lookup'] += 1
+        return triton_ops.emulate_signed_hash_kernel_cpu(
+            d, previous, current, values, capacity, last_u=last_u, cum_thresh=cum_thresh, u=u,
+        )
+
+    def fast_kl(scores, target_logits, weights=None):
+        counts['rowwise_full_kl'] += 1
+        return triton_ops.emulate_rowwise_kl_cpu(scores, target_logits, weights)
+
+    def fast_unary(E, W, b, H):
+        counts['torch_compile_block_unary'] += 1
+        return block_unary(E, W, b, H)
+
+    accepted_rep = lambda name: triton_ops.TritonGateReport(
+        kernel_name=name, enabled=True, status='accepted', device='cpu',
+        parity_passed=True, max_abs_error=0.0, atol=1e-5, rtol=1e-5,
+        speed_passed=True, triton_median_ms=0.1, pytorch_median_ms=0.5,
+        speedup_ratio=5.0,
+    )
+
+    monkeypatch.setattr(
+        triton_ops, 'build_gated_m5_kernels',
+        lambda *a, **kw: (
+            ({'signed_hash_lookup': fast_hash, 'rowwise_full_kl': fast_kl},
+             {'signed_hash_lookup': accepted_rep('signed_hash_lookup'),
+              'rowwise_full_kl': accepted_rep('rowwise_full_kl')})
+            if kw.get('return_callables') else
+            {'signed_hash_lookup': accepted_rep('signed_hash_lookup'),
+             'rowwise_full_kl': accepted_rep('rowwise_full_kl')}
+        ),
+    )
+    monkeypatch.setattr(
+        triton_ops, 'build_gated_torch_compile',
+        lambda *a, **kw: (
+            ({'torch_compile_block_unary': fast_unary},
+             {'torch_compile_block_unary': accepted_rep('torch_compile_block_unary')})
+            if kw.get('return_callables') else
+            {'torch_compile_block_unary': accepted_rep('torch_compile_block_unary')}
+        ),
+    )
+
+    parser = common_parser('test')
+    parser.add_argument('--stage', default='m5')
+    parser.add_argument('--smoke_tokens', type=int, default=12)
+    parser.add_argument('--max_new_tokens', type=int, default=32)
+    parser.add_argument('--long_max_new_tokens', type=int, default=32)
+    parser.add_argument('--m5_triton', action='store_true', default=True)
+    parser.add_argument('--m5_torch_compile', action='store_true', default=True)
+    args = parse_config(parser, ['--scale', 'smoke', '--device', 'cpu', '--output', str(tmp_path)])
+    runner = eval_closed_loop.EvaluationRunner(args)
+    with torch.no_grad():
+        runner.dense_sparse.sparse.values.normal_(0.0, 0.2)
+
+    prompt = {
+        'prompt_id': 'synthetic-test-standard_nonthinking-0',
+        'split': 'test', 'condition': 'standard_nonthinking',
+        'text': 'Synthetic 0', 'dataset': 'builtin', 'reference_selected': True,
+    }
+    for arm in ('dense_full', 'offline_online_stride1', 'zero_offline_online_only'):
+        setting = eval_closed_loop.candidate_settings(arm)[0]
+        row = runner.run(
+            {'prompt': prompt, 'arm': arm, 'sampling_name': 'primary',
+             'temperature': 0.7, 'warper': SamplingWarper(top_k=4, top_p=0.9), 'seed': 2026},
+            setting,
+        )
+        assert row['m5_telemetry']['active_dispatched_kernels'] == [
+            'rowwise_full_kl', 'signed_hash_lookup', 'torch_compile_block_unary'
+        ]
+    assert counts['signed_hash_lookup'] > 0
+    assert counts['rowwise_full_kl'] > 0
+    assert counts['torch_compile_block_unary'] > 0
+
+
+def test_m5_exact_observed_pairs_zero_collision_reporting_and_beta_calibration(tmp_path):
+    # 1. ExactObservedPairs train.py report must record 0 active collisions + counterfactual SignedHash stats (#69 M5-BUG-4):
+    train.main([
+        '--scale', 'smoke', '--device', 'cpu', '--output', str(tmp_path),
+        '--sparse_backend', 'exact_observed_pairs', '--sparse_capacity', '256',
+        '--m5_fit_tag', 'exact_pairs_audit',
+    ])
+    exact_rep = json.loads((tmp_path / 'exact_pairs_audit_smoke.json').read_text())
+    cstats = exact_rep['stages']['dense_sparse']['sparse_collision_statistics']
+    assert cstats['representation'] == 'exact_observed_pairs'
+    assert cstats['collision_count'] == 0
+    assert cstats['frequency_weighted_collision_count'] == 0
+    assert cstats['collision_rate_per_nonempty_bucket'] == 0.0
+    assert cstats['frequency_weighted_collision_rate'] == 0.0
+    assert 'counterfactual_signed_hash_collision_count' in cstats
+    if isinstance(cstats.get('lookup_benchmark'), dict):
+        assert cstats['lookup_benchmark']['benchmarked_representation'] == 'counterfactual_signed_feature_hash'
+
+    # 2. Post-fit scalar beta calibration on dev live_full KL + checkpoint scaling (#71):
+    train.main([
+        '--scale', 'smoke', '--device', 'cpu', '--output', str(tmp_path),
+        '--block_shuffle_window', '4', '--weight_decay', '1e-2',
+        '--calibrate_beta', '--apply_calibrated_beta',
+        '--m5_fit_tag', 'm5_calibrated_refit',
+    ])
+    cal_rep = json.loads((tmp_path / 'm5_calibrated_refit_smoke.json').read_text())
+    for st in ('dense', 'dense_sparse'):
+        bcal = cal_rep['stages'][st]['beta_calibration']
+        assert bcal['metric'] == 'dev_live_full_kl'
+        assert bcal['dev_live_full_logical_slots'] > 0
+        assert bcal['applied_to_parameters'] is True
+        assert bcal['calibrated_kl'] <= bcal['baseline_beta0_kl'] + 1e-9
+        assert bcal['calibrated_kl'] <= bcal['uncalibrated_beta1_kl'] + 1e-9
+        assert Path(cal_rep['checkpoints'][f'{st}_calibrated']).is_file()
+        assert Path(cal_rep['checkpoints'][f'{st}_unscaled']).is_file()
+
+    # Verify standalone --scale_checkpoint_from CLI (e.g. 0.20 * unscaled -> scaled020.pt) and linear score identity:
+    unscaled_pt = Path(cal_rep['checkpoints']['dense_sparse_unscaled'])
+    scaled020_pt = tmp_path / 'dense_sparse_020.pt'
+    train.main([
+        '--output', str(tmp_path),
+        '--scale_checkpoint_from', str(unscaled_pt),
+        '--scale_checkpoint_to', str(scaled020_pt),
+        '--checkpoint_scale', '0.20',
+    ])
+    assert scaled020_pt.is_file()
+    a_unscaled, _ = train.load_adapter_checkpoint(unscaled_pt, 'cpu')
+    a_scaled, scaled_meta = train.load_adapter_checkpoint(scaled020_pt, 'cpu')
+    assert scaled_meta['checkpoint_scale'] == pytest.approx(0.20)
+    torch.testing.assert_close(a_scaled.E, a_unscaled.E, rtol=0, atol=0)
+
+    entries, _ = train.trace_index(tmp_path / 'm2_smoke_traces')
+    dev_refs = train.epoch_references(entries, 'dev')
+    blocks = next(train.batches(dev_refs, 4, history_depth=4))[1]
+    l_unit = torch.randn(sum(b['block_length'] for b in blocks), a_unscaled.E.shape[0]).log_softmax(-1)
+    s_via_beta = train.corrected_batch_scores(a_unscaled, blocks, l_unit, beta=0.20)
+    s_via_ckpt = train.corrected_batch_scores(a_scaled, blocks, l_unit, beta=1.0)
+    torch.testing.assert_close(s_via_ckpt, s_via_beta, atol=1e-6, rtol=1e-6)
+
+    # Verify closed-loop M5 evaluation supports --checkpoint_scale and --m5_beta_candidates out of the box:
+    eval_closed_loop.main([
+        '--stage', 'm5', '--scale', 'smoke', '--mode', 'all',
+        '--device', 'cpu', '--output', str(tmp_path / 'm5_scaled_eval'),
+        '--smoke_tokens', '12', '--timing_repeats', '2', '--timing_warmups', '1',
+        '--m5_arms', 'plain_dflash', 'dense_full', 'zero_offline_online_only',
+        'offline_online_stride1', 'online_dbS_zero_init', 'online_bigram_count_gated',
+        '--checkpoint_scale', '0.20',
+        '--m5_beta_candidates', '0.5', '1.0',
+    ])
+    scaled_summary = json.loads((tmp_path / 'm5_scaled_eval' / 'm5' / 'summary.json').read_text())
+    assert scaled_summary['status'] == 'complete'
+    assert scaled_summary['settings']['checkpoint_hashes']['checkpoint_scale'] == pytest.approx(0.20)
+
 
