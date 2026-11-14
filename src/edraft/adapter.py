@@ -545,7 +545,6 @@ class _GroupedKLFunction(torch.autograd.Function):
         s = scores.float()
         gw = grad_out.float() * weights
         c_rest = (-gw * rest_p)[:, None]
-        lse_tail = torch.where(torch.isfinite(log_q_rest), log_q_rest, torch.zeros_like(log_q_rest))[:, None]
 
         if torch.is_grad_enabled():
             q_log = torch.log_softmax(s, dim=-1)
@@ -557,11 +556,14 @@ class _GroupedKLFunction(torch.autograd.Function):
             )
             if full_rows.numel():
                 dy_tail = dy_tail.index_put((full_rows, torch.zeros_like(full_rows)), q_log.new_zeros(full_rows.numel()))
-            dy = torch.exp(dy_tail - lse_tail) * c_rest
+            safe_tail = torch.where((rest_p <= 0)[:, None], torch.zeros_like(dy_tail), dy_tail)
+            lse_tail_live = torch.logsumexp(safe_tail, dim=-1, keepdim=True)
+            dy = torch.where((rest_p > 0)[:, None], torch.exp(safe_tail - lse_tail_live) * c_rest, torch.zeros_like(q_log))
             if ids.numel():
                 dy = dy.index_put((row, ids), -gw.index_select(0, row) * p, accumulate=True)
             grad = dy - q * dy.sum(dim=-1, keepdim=True)
         else:
+            lse_tail = torch.where(torch.isfinite(log_q_rest), log_q_rest, torch.zeros_like(log_q_rest))[:, None]
             dy = torch.log_softmax(s, dim=-1)
             q = dy.exp()
             if ids.numel():

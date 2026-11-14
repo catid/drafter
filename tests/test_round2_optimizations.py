@@ -87,11 +87,15 @@ def test_grouped_and_full_kl_zero_nv_saved_probability_buffers_and_second_order(
     ref_full_val = ((p_log_ref.exp() * (p_log_ref - q_log_ref)).sum(-1) * weights).sum()
     torch.testing.assert_close(loss_full, ref_full_val, rtol=1e-6, atol=1e-6)
     (grad_full,) = torch.autograd.grad(loss_full, scores, create_graph=True)
-    expected_grad_full = weights[:, None] * (scores.float().softmax(-1) - target_logits.float().softmax(-1))
+    scores_full_ref = scores.detach().clone().requires_grad_(True)
+    loss_full_ref_live = ((p_log_ref.exp() * (p_log_ref - scores_full_ref.float().log_softmax(-1))).sum(-1) * weights).sum()
+    (expected_grad_full,) = torch.autograd.grad(loss_full_ref_live, scores_full_ref, create_graph=True)
     torch.testing.assert_close(grad_full, expected_grad_full, rtol=1e-6, atol=1e-6)
-    # Second-order gradient check
+    # Exact second-order HVP parity check for _FullKLFunction
     hvp = torch.autograd.grad((grad_full ** 2).sum(), scores)[0]
+    hvp_full_ref = torch.autograd.grad((expected_grad_full ** 2).sum(), scores_full_ref)[0]
     assert torch.isfinite(hvp).all() and hvp.abs().sum() > 0
+    torch.testing.assert_close(hvp, hvp_full_ref, rtol=1e-6, atol=1e-6)
 
     # Grouped KL: saved_tensors has only 1 [N, V] tensor (`scores`), zero [N, V] prob/mask buffers
     P_full = target_logits.float().softmax(-1)
@@ -114,10 +118,12 @@ def test_grouped_and_full_kl_zero_nv_saved_probability_buffers_and_second_order(
     loss_ref = grouped_loop_reference(scores_ref, union_ids, probs_u, rest_u, weights)
     torch.testing.assert_close(loss_grp, loss_ref, rtol=1e-6, atol=1e-6)
     (grad_grp,) = torch.autograd.grad(loss_grp, scores_g, create_graph=True)
-    (grad_ref,) = torch.autograd.grad(loss_ref, scores_ref)
+    (grad_ref,) = torch.autograd.grad(loss_ref, scores_ref, create_graph=True)
     torch.testing.assert_close(grad_grp, grad_ref, rtol=1e-6, atol=2e-7)
     hvp_grp = torch.autograd.grad((grad_grp ** 2).sum(), scores_g)[0]
+    hvp_ref = torch.autograd.grad((grad_ref ** 2).sum(), scores_ref)[0]
     assert torch.isfinite(hvp_grp).all() and hvp_grp.abs().sum() > 0
+    torch.testing.assert_close(hvp_grp, hvp_ref, rtol=1e-5, atol=1e-7)
 
 
 def test_fused_head_grouped_kl_shift_invariance_and_bench_grouped_cli(tmp_path):
@@ -1176,8 +1182,10 @@ def test_bughunter_regressions_online_dbs_zombie_autograd_verify_validator_and_b
         [torch.tensor(0.0, dtype=torch.float32)],
     )
     assert torch.isfinite(loss_cand).item()
-    loss_cand.backward()
-    assert torch.isfinite(cand_scores.grad).all().item()
+    (grad_cand,) = torch.autograd.grad(loss_cand, cand_scores, create_graph=True)
+    assert torch.isfinite(grad_cand).all().item()
+    (hvp_cand,) = torch.autograd.grad((grad_cand ** 2).sum(), cand_scores)
+    assert torch.isfinite(hvp_cand).all().item()
 
     # (E) OPT-BUG-3, OPT-BUG-4, OPT-BUG-7 + Guardrail B: lockstep implementation_hash & validate.py
     val_dir = ROOT / "artifacts/m4_evidence_validator"
