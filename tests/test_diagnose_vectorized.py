@@ -171,9 +171,12 @@ def diagnostic_shards(tmp_path):
     sources = []
     for index, (key, blocks) in enumerate(grouped.items()):
         condition, temperature, prompt, seed, repetition = key
+        length = 17000 + index
+        output_tokens = (([1, 2, 3, 4] * ((length + 3) // 4))[:length] if repetition else
+                         torch.randint(19, (length,), generator=torch.Generator().manual_seed(9000 + index)).tolist())
         generation = {'prompt_id': prompt, 'condition': condition, 'temperature': temperature,
                       'seed': seed, 'split': 'test', 'sampling_warp_config': blocks[0]['sampling_warp_config'],
-                      'complete': True, 'realized_length': 17000 + index,
+                      'complete': True, 'realized_length': length, 'output_tokens': output_tokens,
                       'repetition_dominated': repetition, 'eos_reached': True, 'capped': False}
         path = tmp_path / f'shard-{index}.pt'
         summary = write_shard(path, blocks, {'generation': generation})

@@ -1,0 +1,172 @@
+{
+  "status": "confirmed_detector_false_negative",
+  "scale": "reference",
+  "recorded_at_utc": "2026-11-14T01:56:01.588478+00:00",
+  "scope": "One real completed reference M3 development candidate output; not a general performance or causal conclusion.",
+  "raw": {
+    "path": "/home/catid/drafter/artifacts/m3/tune/rank0/f3cd5559bf914c6d809243262867ede41a53dd778d5754c9bcea4644319f9677.json",
+    "sha256": "3700727a670383dffcc9a0d96fdb077c014c857d66f8e0b1020cb1dfe9c18852",
+    "bytes": 13455212,
+    "manifest_path": "/home/catid/drafter/artifacts/m3/tune/manifest-rank0.json",
+    "manifest_snapshot_sha256": "5275ed2c106b252acb9259621f9a605cc4d6059797ebe1e3ba6513338805adad",
+    "manifest_checksum_verified": true,
+    "identity": {
+      "model_pair": [
+        "Qwen/Qwen3-8B",
+        "z-lab/Qwen3-8B-DFlash-b16"
+      ],
+      "prompt": "math500-long-0176",
+      "scale": "reference",
+      "prompt_payload_hash": "56e6e34e7e8611757d430bc9248d151f2560d4e066187572492825ea06edda57",
+      "condition": "long_thinking",
+      "seed": 2026,
+      "temperature": 0.6,
+      "sampling_name": "thinking_recommended",
+      "verification_rule": "ratio",
+      "proposal_mode": "online_bigram",
+      "checkpoint": {
+        "dense": "53ed0f23458bceb44842d2598a51b78604897347915df5be01c6f1a16a8229da",
+        "dense_sparse": "926d143079658508c5d406e3416c413468339b19584e5a4b4c26165e86f90758",
+        "projection": "4614a3a5384d49563d485083e9386ca30e93500144cf346b2dba714cc476dd8a",
+        "implementation": "090fcd0a3492eeb37646cd2cdeb9eddccaa429c7d3399fed72b25ce0d5c650da"
+      },
+      "adapter_version": 0,
+      "model_revisions": [
+        "b968826d9c46dd6066d109eabc6255188de91218",
+        "9b41424b7109f9c5413454f481b09a82b85333f4"
+      ],
+      "stage": "m3",
+      "mode": "tune",
+      "sampling_warp_config": {
+        "top_k": 20,
+        "top_p": 0.95,
+        "min_p": 0.0
+      },
+      "setting": {
+        "lambda_tr": 0.2,
+        "alpha": 1.0,
+        "k_ret": null
+      },
+      "frozen_settings_hash": "",
+      "generation_cap": 24576,
+      "generation_caps": {
+        "standard": 2048,
+        "long": 24576,
+        "smoke": 32
+      },
+      "timing_session": "672dec894a4447c9b2f59eb3411bcdcf",
+      "repeat": "dev:epoch=d22e48d29a6244e5baf6fdb879fc225a",
+      "phase_profile": false
+    },
+    "generated_tokens": 24576,
+    "output_tokens_sha256": "7f88381e0a6e1cc2383e2702bdae36dc17c33c4c79bf0ca8631fbb544e4a68c4",
+    "elapsed_seconds": 466.23545011295937
+  },
+  "generation_record": {
+    "realized_length": 24576,
+    "repeated_ngram_fraction": {
+      "4": 0.7729214992064461,
+      "8": 0.6824453579714274,
+      "16": 0.6384104881723056
+    },
+    "dominant_ngram_token_coverage": {
+      "4": 0.08072916666666667,
+      "8": 0.1064453125,
+      "16": 0.10677083333333333
+    },
+    "longest_periodic_run_tokens": 7,
+    "repetition_dominated": false,
+    "repetition_rule": "length>=256 and (period<=64 repeated run >=max(256,50% length) or repeated8>=80% and dominant16 coverage>=50%)",
+    "output_bins_reached": [
+      "0-1K",
+      "1K-4K",
+      "4K-8K",
+      "8K-16K",
+      "16K+"
+    ],
+    "eos_reached": false,
+    "capped": true,
+    "complete": true
+  },
+  "exact_periodic_span": {
+    "period_tokens": 96,
+    "start_inclusive": 9099,
+    "end_exclusive": 24576,
+    "span_tokens": 15477,
+    "fraction_of_full_output": 0.6297607421875,
+    "full_cycles": 161,
+    "remainder_tokens": 21,
+    "every_token_verified_exactly": true
+  },
+  "period_derivation": {
+    "exact_anchor_length": 128,
+    "anchor_occurrences": 160,
+    "first_anchor_offset": 9099,
+    "last_anchor_offset": 24363,
+    "consecutive_offset_spacings": {
+      "96": 159
+    }
+  },
+  "decoded_evidence": {
+    "tokenizer_snapshot": "/home/catid/.cache/huggingface/hub/models--Qwen--Qwen3-8B/snapshots/b968826d9c46dd6066d109eabc6255188de91218",
+    "local_files_only": true,
+    "tokenizer_class": "Qwen2Tokenizer",
+    "motif": ". Instead, we should multiply the numerator and denominator by $2^1$ to make the denominator $2^4 \\cdot 5^2 = 10^2 \\cdot 2^2$. This results in:\n\n$$\n\\frac{5 \\cdot 2^1}{2^4 \\cdot 5^2} = \\frac{10}{10^2 \\cdot 2^2}\n$$\n\nThis is not the correct approach",
+    "think_close_offsets": [
+      3435
+    ],
+    "repeated_paragraphs": [
+      {
+        "count": 162,
+        "text": "$$\n\\frac{5 \\cdot 2^1}{2^4 \\cdot 5^2} = \\frac{10}{10^2 \\cdot 2^2}\n$$"
+      },
+      {
+        "count": 160,
+        "text": "This is not the correct approach. Instead, we should multiply the numerator and denominator by $2^1$ to make the denominator $2^4 \\cdot 5^2 = 10^2 \\cdot 2^2$. This results in:"
+      }
+    ],
+    "last_section_heading": "### Variation 1: $\\frac{5}{2^3 \\cdot 5^2}$",
+    "no_variation_2_heading_or_python_fence": true
+  },
+  "independent_frozen_rule_recomputation": {
+    "repeated_ngram_fraction": {
+      "4": 0.7729214992064461,
+      "8": 0.6824453579714274,
+      "16": 0.6384104881723056
+    },
+    "dominant_ngram_token_coverage": {
+      "4": 0.08072916666666667,
+      "8": 0.1064453125,
+      "16": 0.10677083333333333
+    },
+    "longest_periodic_run_tokens_periods_1_to_64": 7,
+    "repetition_dominated": false,
+    "matches_recorded_fields": true
+  },
+  "specification": {
+    "path": "/home/catid/drafter/prompt.md",
+    "sha256": "94bfb4ada4e4954084379a7f0e6194d73a8b85bd128f4fdeadcac63fff3fa295",
+    "relevant_line": 776,
+    "full_requirement_paragraph": "A `max_new_tokens` cap is not evidence that a generation is long. Build prompt templates that request outputs likely to exceed the target bins, such as long code files, large structured documents, exhaustive enumerations, or extended proofs. Use `min_new_tokens` only when supported and only as a documented generation setting. Record realized output lengths and detect pathological repeated n-grams or endless-loop behavior. Report and separately exclude repetition-dominated outputs from the primary long-output analysis; do not fill long bins with artificially repeated text."
+  },
+  "frozen_detector_source": {
+    "path": "/home/catid/drafter/src/edraft/diagnose.py",
+    "sha256": "371dada16bf41510c02a99954c9f1e96c8b36370f0a5967f061a6dc19b06d013",
+    "function_start_line": 96,
+    "function": "def generation_diagnostics(output_tokens) -> dict:\n    \"\"\"Report realized lengths and explicit repetition heuristics, without padding.\"\"\"\n    tokens = [int(token) for token in output_tokens]\n    length = len(tokens)\n    repeated = {}\n    dominant = {}\n    for n in (4, 8, 16):\n        counts = Counter(tuple(tokens[i:i + n]) for i in range(max(0, length - n + 1)))\n        windows = max(0, length - n + 1)\n        repeated[str(n)] = 1 - len(counts) / windows if windows else 0.\n        dominant[str(n)] = min(1., max(counts.values(), default=0) * n / max(length, 1))\n    longest = 0\n    # A periodic token run is stronger evidence than repeated boilerplate ngrams.\n    for period in range(1, min(64, length // 2) + 1):\n        run = 0\n        for i in range(period, length):\n            run = run + 1 if tokens[i] == tokens[i - period] else 0\n            if run >= 3 * period:\n                longest = max(longest, run + period)\n    repetition = length >= 256 and (longest >= max(256, .5 * length) or\n                                    (repeated['8'] >= .8 and dominant['16'] >= .5))\n    return {'realized_length': length, 'repeated_ngram_fraction': repeated,\n            'dominant_ngram_token_coverage': dominant, 'longest_periodic_run_tokens': longest,\n            'repetition_dominated': repetition,\n            'repetition_rule': 'length>=256 and (period<=64 repeated run >=max(256,50% length) or repeated8>=80% and dominant16 coverage>=50%)',\n            'output_bins_reached': [label for edge, label in zip((0, *OUTPUT_EDGES), OUTPUT_LABELS) if length > edge]}"
+  },
+  "collector_source": {
+    "path": "/home/catid/drafter/artifacts/repetition_detector_review/evidence_source.txt",
+    "sha256": "e2af430c83fbbd4fa0ef77a823f089642b1b6ff69781f21a9de881f368006e78"
+  },
+  "finding": "A 96-token exact cycle occupies 62.9761% of the capped final answer. This is a pathological loop, not substantive variation structure. The frozen detector correctly computes its published rule but its period<=64 restriction misses this case; the global n-gram fallback also does not fire.",
+  "interpretation": "Requirement-level repetition-detector coverage defect. Preserve the original flag and evidence; apply no post-hoc threshold change in this investigation. The capped tail is not evidence of useful long-output coverage.",
+  "limitations": [
+    "Does not establish that the bigram candidate caused the loop.",
+    "Does not establish a sampling/exactness defect or any quality/speed comparison.",
+    "Does not select new detector parameters or replace primary analysis classifications.",
+    "The exact-period proof is token-level; the decoded snippet is supporting semantic evidence."
+  ],
+  "cuda_initialized": false,
+  "elapsed_seconds": 3.561423661885783
+}

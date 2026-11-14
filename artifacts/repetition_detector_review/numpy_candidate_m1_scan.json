@@ -1,0 +1,1155 @@
+{
+  "generated_at_utc": "2026-11-14T01:57:33.518485+00:00",
+  "source_path": "/home/catid/drafter/artifacts/repetition_detector_review/numpy_candidate_source.py",
+  "source_sha256": "c1551fd70f618f3ce1899dabcf6d7df827fe8c11bbbbcb3edde2d26a8e676875",
+  "python": "3.12.14 (main, Sep 24 2026, 17:57:43) [Clang 22.1.3 ]",
+  "numpy": "2.3.5",
+  "platform": "Linux-7.0.0-38-generic-x86_64-with-glibc2.43",
+  "environment": {
+    "CUDA_VISIBLE_DEVICES": "",
+    "OMP_NUM_THREADS": "1",
+    "OPENBLAS_NUM_THREADS": "1",
+    "MKL_NUM_THREADS": "1"
+  },
+  "torch_imported": false,
+  "threshold": "length>=256; periodic span>=max(256,ceil(length/2)); at least four complete cycles",
+  "period_coverage": "all integers 1..floor(length/4), exhaustive and exact",
+  "production_files_modified": false,
+  "scope": "all authorized M1 long output JSON sidecars; tensor traces not loaded",
+  "audit_path": "/home/catid/drafter/artifacts/m1_audit.json",
+  "audit_sha256": "f5bbaa23b13db411069f29d19185d7a481b63007fde5183d4ab3bea3204c5279",
+  "outputs": 44,
+  "tokens": 512369,
+  "split_counts": {
+    "dev": 12,
+    "test": 32
+  },
+  "changed_count": 1,
+  "old_limit_reproduction": "all 44 old longest-span values and classifications exactly reproduced",
+  "filtered_vs_original_scan": "exact equality for all 44",
+  "rows": [
+    {
+      "prompt_id": "math500-long-0176",
+      "split": "dev",
+      "condition": "long_thinking",
+      "length": 12878,
+      "old_repetition_dominated": false,
+      "new_repetition_dominated": false,
+      "changed": false,
+      "periodic_scan": {
+        "best": {
+          "length": 6,
+          "period": 1,
+          "start": 4509,
+          "end_exclusive": 4515,
+          "complete_cycles": 6
+        },
+        "old_limit_longest": 6,
+        "qualifying_periods": []
+      },
+      "sidecar_path": "/home/catid/drafter/artifacts/traces/rank0/49e4e8a4a3bc0deb9500cd6281d52a01bdf5e18f1046455e4c131473b9611352.pt.json",
+      "sidecar_sha256": "9fcf8ec41bb7cc575078a282984260b062865cf6e483c8ded1bfaf0bb86f6cf8",
+      "trace_path": "/home/catid/drafter/artifacts/traces/rank0/49e4e8a4a3bc0deb9500cd6281d52a01bdf5e18f1046455e4c131473b9611352.pt",
+      "trace_sha256_from_audit": "a3bf31ec64e9c5f1710c952cb3f00911388731dc19bb3437682383a4aa0ed56c",
+      "output_tokens_sha256_little_endian_int64": "4f2ca3b58718d8b57f88ae990616fd72eadc2c30e39373f764f14d3cd4ffaa0f"
+    },
+    {
+      "prompt_id": "math500-long-0064",
+      "split": "dev",
+      "condition": "long_thinking",
+      "length": 16703,
+      "old_repetition_dominated": false,
+      "new_repetition_dominated": false,
+      "changed": false,
+      "periodic_scan": {
+        "best": {
+          "length": 0,
+          "period": null,
+          "start": null,
+          "end_exclusive": null,
+          "complete_cycles": 0
+        },
+        "old_limit_longest": 0,
+        "qualifying_periods": []
+      },
+      "sidecar_path": "/home/catid/drafter/artifacts/traces/rank0/fe9a19cc18c52c3c41cd31816ecce6781b767bba7b679cc9faff4500703aa84a.pt.json",
+      "sidecar_sha256": "82dd8b0173a7ba930f305dc77bd7b9f13ce1bd75a30ac5e813e6064f38d8445b",
+      "trace_path": "/home/catid/drafter/artifacts/traces/rank0/fe9a19cc18c52c3c41cd31816ecce6781b767bba7b679cc9faff4500703aa84a.pt",
+      "trace_sha256_from_audit": "23caaa0897fc8fff70a9db52b28c449b1cd4d910ca77c5bfc4e1a82e47d867b4",
+      "output_tokens_sha256_little_endian_int64": "146719b857adf7301a78a0d61029d57fadeca88199c360a8476ddbbfc323e508"
+    },
+    {
+      "prompt_id": "math500-long-0341",
+      "split": "test",
+      "condition": "long_thinking",
+      "length": 8776,
+      "old_repetition_dominated": false,
+      "new_repetition_dominated": false,
+      "changed": false,
+      "periodic_scan": {
+        "best": {
+          "length": 0,
+          "period": null,
+          "start": null,
+          "end_exclusive": null,
+          "complete_cycles": 0
+        },
+        "old_limit_longest": 0,
+        "qualifying_periods": []
+      },
+      "sidecar_path": "/home/catid/drafter/artifacts/traces/rank0/6b35fc7f08d519f582bdbb2093aeef7479f8007bd01db336c40088e6e663a940.pt.json",
+      "sidecar_sha256": "997afa57ec55d9c058b555941caf579269357bf70af72e7041627af2f50d8ed4",
+      "trace_path": "/home/catid/drafter/artifacts/traces/rank0/6b35fc7f08d519f582bdbb2093aeef7479f8007bd01db336c40088e6e663a940.pt",
+      "trace_sha256_from_audit": "92ea3c4b9c5877abad79e5e3e0e90294d290f110051f86b8eacea299b5ccce73",
+      "output_tokens_sha256_little_endian_int64": "92dd4f39d47899de53593fb765c47ff56c11379b16b4f71ecfc3d8f2459dd33c"
+    },
+    {
+      "prompt_id": "math500-long-0142",
+      "split": "test",
+      "condition": "long_thinking",
+      "length": 12044,
+      "old_repetition_dominated": false,
+      "new_repetition_dominated": false,
+      "changed": false,
+      "periodic_scan": {
+        "best": {
+          "length": 0,
+          "period": null,
+          "start": null,
+          "end_exclusive": null,
+          "complete_cycles": 0
+        },
+        "old_limit_longest": 0,
+        "qualifying_periods": []
+      },
+      "sidecar_path": "/home/catid/drafter/artifacts/traces/rank0/ff6401e42af415596992c18e178fcbab5ef41f8984265c11922b183daea623a1.pt.json",
+      "sidecar_sha256": "da9b915b78beb65edb2a61953b5eb399966780851f6a5cedffe53243beda2d13",
+      "trace_path": "/home/catid/drafter/artifacts/traces/rank0/ff6401e42af415596992c18e178fcbab5ef41f8984265c11922b183daea623a1.pt",
+      "trace_sha256_from_audit": "fec46e6cf04cecfdb55f7a5ded423609ec707a4860b65776ba1d3e004bd07555",
+      "output_tokens_sha256_little_endian_int64": "7272c559f520e6e14a3370578eb1b2ce2dc5cc7a5c80bb3c0fbe9979588f07ee"
+    },
+    {
+      "prompt_id": "math500-long-0280",
+      "split": "test",
+      "condition": "long_thinking",
+      "length": 13811,
+      "old_repetition_dominated": false,
+      "new_repetition_dominated": false,
+      "changed": false,
+      "periodic_scan": {
+        "best": {
+          "length": 0,
+          "period": null,
+          "start": null,
+          "end_exclusive": null,
+          "complete_cycles": 0
+        },
+        "old_limit_longest": 0,
+        "qualifying_periods": []
+      },
+      "sidecar_path": "/home/catid/drafter/artifacts/traces/rank0/1be825a905e5b2128714eee531ae24cbdd73a790144c1529e083a5881799aaf0.pt.json",
+      "sidecar_sha256": "3abd979890bb20e0665a08f08dacdf50c9c8f3f82ead1105ebb97bfa3bef8e9d",
+      "trace_path": "/home/catid/drafter/artifacts/traces/rank0/1be825a905e5b2128714eee531ae24cbdd73a790144c1529e083a5881799aaf0.pt",
+      "trace_sha256_from_audit": "30c768dcfbc3d6b1e788403032fd79adac4f97b32f4875b6e72e77a9f646c5e2",
+      "output_tokens_sha256_little_endian_int64": "a8f8b9453d219a6e8b1016dc676912278478d6abc7e12fbf7c5fbc771d832e1b"
+    },
+    {
+      "prompt_id": "math500-long-0458",
+      "split": "test",
+      "condition": "long_thinking",
+      "length": 7100,
+      "old_repetition_dominated": false,
+      "new_repetition_dominated": false,
+      "changed": false,
+      "periodic_scan": {
+        "best": {
+          "length": 0,
+          "period": null,
+          "start": null,
+          "end_exclusive": null,
+          "complete_cycles": 0
+        },
+        "old_limit_longest": 0,
+        "qualifying_periods": []
+      },
+      "sidecar_path": "/home/catid/drafter/artifacts/traces/rank0/07fd954170eb6ea45ab58c63672ad69d078d6c045c93fd5d592f831c7916572d.pt.json",
+      "sidecar_sha256": "8a57232f7375b2340c87fe0d3dae250db9dda7c4677d160d5ae2929128bb6152",
+      "trace_path": "/home/catid/drafter/artifacts/traces/rank0/07fd954170eb6ea45ab58c63672ad69d078d6c045c93fd5d592f831c7916572d.pt",
+      "trace_sha256_from_audit": "39a4b2d9ce7b603995154b0fb1253da9db74ba8645954e3117b865a6b33c8be0",
+      "output_tokens_sha256_little_endian_int64": "bdf6ac777c26fc9488df6cd653163f66b90be57505b2f8815e837f88ddca61af"
+    },
+    {
+      "prompt_id": "math500-long-0151",
+      "split": "dev",
+      "condition": "long_thinking",
+      "length": 8865,
+      "old_repetition_dominated": false,
+      "new_repetition_dominated": false,
+      "changed": false,
+      "periodic_scan": {
+        "best": {
+          "length": 0,
+          "period": null,
+          "start": null,
+          "end_exclusive": null,
+          "complete_cycles": 0
+        },
+        "old_limit_longest": 0,
+        "qualifying_periods": []
+      },
+      "sidecar_path": "/home/catid/drafter/artifacts/traces/rank1/a591c2f631015fabe1e5a32ca50e7719e0d0a2b1e7a5ad36e12f81f99dff24ad.pt.json",
+      "sidecar_sha256": "56e427809cadbb8b612474ba3610d45f56cbcddd5a71b6667b66b0970b768297",
+      "trace_path": "/home/catid/drafter/artifacts/traces/rank1/a591c2f631015fabe1e5a32ca50e7719e0d0a2b1e7a5ad36e12f81f99dff24ad.pt",
+      "trace_sha256_from_audit": "b5a906696ace64e196252f167398eaf7db65b41eb34bd9e1cb90cc5780b8ad58",
+      "output_tokens_sha256_little_endian_int64": "17c82272db085944c2028a0e898b1be6a846045b1fa21f5a52777dd1bec9a23d"
+    },
+    {
+      "prompt_id": "math500-long-0456",
+      "split": "dev",
+      "condition": "long_thinking",
+      "length": 12029,
+      "old_repetition_dominated": false,
+      "new_repetition_dominated": false,
+      "changed": false,
+      "periodic_scan": {
+        "best": {
+          "length": 0,
+          "period": null,
+          "start": null,
+          "end_exclusive": null,
+          "complete_cycles": 0
+        },
+        "old_limit_longest": 0,
+        "qualifying_periods": []
+      },
+      "sidecar_path": "/home/catid/drafter/artifacts/traces/rank1/b011f67a8f51f774c5be4dfb8e1522beac502c9e7949abc8091ad0b159fd5a0d.pt.json",
+      "sidecar_sha256": "5851c24c02d1ae85265974858ce894c55cb15e177dadcd8f800c68278ea4338a",
+      "trace_path": "/home/catid/drafter/artifacts/traces/rank1/b011f67a8f51f774c5be4dfb8e1522beac502c9e7949abc8091ad0b159fd5a0d.pt",
+      "trace_sha256_from_audit": "e4c48ea89bddd81ca759880d41122ef8fb0b0ff27fc2f52239ebc2e10772ec38",
+      "output_tokens_sha256_little_endian_int64": "70b8bc0b0c1e987125a3bc467d5cafc776e08100a452830a5c7af32b722c084a"
+    },
+    {
+      "prompt_id": "math500-long-0346",
+      "split": "test",
+      "condition": "long_thinking",
+      "length": 24576,
+      "old_repetition_dominated": false,
+      "new_repetition_dominated": true,
+      "changed": true,
+      "periodic_scan": {
+        "best": {
+          "length": 19806,
+          "period": 1508,
+          "start": 4770,
+          "end_exclusive": 24576,
+          "complete_cycles": 13
+        },
+        "old_limit_longest": 0,
+        "qualifying_periods": [
+          {
+            "length": 19806,
+            "period": 1508,
+            "start": 4770,
+            "end_exclusive": 24576,
+            "complete_cycles": 13
+          },
+          {
+            "length": 19806,
+            "period": 3016,
+            "start": 4770,
+            "end_exclusive": 24576,
+            "complete_cycles": 6
+          },
+          {
+            "length": 19806,
+            "period": 4524,
+            "start": 4770,
+            "end_exclusive": 24576,
+            "complete_cycles": 4
+          }
+        ]
+      },
+      "sidecar_path": "/home/catid/drafter/artifacts/traces/rank1/390b0d2e74ab69ebdfd300c9e3642d5024dcd394e8f1fe89167b45e06f387240.pt.json",
+      "sidecar_sha256": "aa82310649b398a3ebe40611146aad0b6f2f455a63074e6342dd92bf7b31866a",
+      "trace_path": "/home/catid/drafter/artifacts/traces/rank1/390b0d2e74ab69ebdfd300c9e3642d5024dcd394e8f1fe89167b45e06f387240.pt",
+      "trace_sha256_from_audit": "24ea6562b03ec14a006fedc7f9e77c08be15d645619f0ae209c4d4d1fc3a5ff4",
+      "output_tokens_sha256_little_endian_int64": "0d42c6ec9463ae7f094879c9e7f3d54abf6d8dfe49362ef722656f70fb204e6b"
+    },
+    {
+      "prompt_id": "math500-long-0025",
+      "split": "test",
+      "condition": "long_thinking",
+      "length": 15153,
+      "old_repetition_dominated": false,
+      "new_repetition_dominated": false,
+      "changed": false,
+      "periodic_scan": {
+        "best": {
+          "length": 0,
+          "period": null,
+          "start": null,
+          "end_exclusive": null,
+          "complete_cycles": 0
+        },
+        "old_limit_longest": 0,
+        "qualifying_periods": []
+      },
+      "sidecar_path": "/home/catid/drafter/artifacts/traces/rank1/174867951f08969dd520012a22789547e223145538a9b44caaa39e535473c69d.pt.json",
+      "sidecar_sha256": "f504331609535d2a19635e09310e55bab607daf7bab4bf93675bde4314d5f493",
+      "trace_path": "/home/catid/drafter/artifacts/traces/rank1/174867951f08969dd520012a22789547e223145538a9b44caaa39e535473c69d.pt",
+      "trace_sha256_from_audit": "4bb1f08edfeb4c127505b46bcfa32249763dd6b038ab47599a4c3af6206dbb10",
+      "output_tokens_sha256_little_endian_int64": "74fef81161313ef198fca6957c5f7b53733899b28de919fd966145038d00702c"
+    },
+    {
+      "prompt_id": "math500-long-0443",
+      "split": "test",
+      "condition": "long_thinking",
+      "length": 6582,
+      "old_repetition_dominated": false,
+      "new_repetition_dominated": false,
+      "changed": false,
+      "periodic_scan": {
+        "best": {
+          "length": 0,
+          "period": null,
+          "start": null,
+          "end_exclusive": null,
+          "complete_cycles": 0
+        },
+        "old_limit_longest": 0,
+        "qualifying_periods": []
+      },
+      "sidecar_path": "/home/catid/drafter/artifacts/traces/rank1/62ece590b052469035896a3742b41dcda7942c39e54a997b6604c6d940af02be.pt.json",
+      "sidecar_sha256": "4b637be267c5620171769a0c339915d317483d63e8f94d84ebe5cb0c85963615",
+      "trace_path": "/home/catid/drafter/artifacts/traces/rank1/62ece590b052469035896a3742b41dcda7942c39e54a997b6604c6d940af02be.pt",
+      "trace_sha256_from_audit": "a9f39f5a3137673b796a81e6b54cec832ab29a5e409a60a3c59121f3c39ab270",
+      "output_tokens_sha256_little_endian_int64": "f2b32641da1141236145a46f4849344f09f7dae828b71c23f29ce39bb87e428f"
+    },
+    {
+      "prompt_id": "math500-long-0001",
+      "split": "test",
+      "condition": "long_thinking",
+      "length": 11169,
+      "old_repetition_dominated": false,
+      "new_repetition_dominated": false,
+      "changed": false,
+      "periodic_scan": {
+        "best": {
+          "length": 0,
+          "period": null,
+          "start": null,
+          "end_exclusive": null,
+          "complete_cycles": 0
+        },
+        "old_limit_longest": 0,
+        "qualifying_periods": []
+      },
+      "sidecar_path": "/home/catid/drafter/artifacts/traces/rank1/72394bfeb35b020cec401eede08a433e38e3c68c20b76b4b3da9462679391cc7.pt.json",
+      "sidecar_sha256": "43b82d491f6b55532df06a100ee1ee7eb8ab1e41f601a230206f3c2b33c2ad75",
+      "trace_path": "/home/catid/drafter/artifacts/traces/rank1/72394bfeb35b020cec401eede08a433e38e3c68c20b76b4b3da9462679391cc7.pt",
+      "trace_sha256_from_audit": "eb474a6a0a40d397bd5909b83c4c00e1025914cbd6d90f51bf552bafe97f9c35",
+      "output_tokens_sha256_little_endian_int64": "14ac89575c744165e448b699dc65f2ed95a356b3d47f018428ec3d72f810088b"
+    },
+    {
+      "prompt_id": "math500-long-0134",
+      "split": "dev",
+      "condition": "long_thinking",
+      "length": 10421,
+      "old_repetition_dominated": false,
+      "new_repetition_dominated": false,
+      "changed": false,
+      "periodic_scan": {
+        "best": {
+          "length": 0,
+          "period": null,
+          "start": null,
+          "end_exclusive": null,
+          "complete_cycles": 0
+        },
+        "old_limit_longest": 0,
+        "qualifying_periods": []
+      },
+      "sidecar_path": "/home/catid/drafter/artifacts/traces/rank2/67b5df07f876c14af23447294c73b806681570973b6563dca41725127b13aa05.pt.json",
+      "sidecar_sha256": "1870632fb316f5eacb37f39ce4d74dc94d0c5ac5c7ab4a4c240b84c898202c5a",
+      "trace_path": "/home/catid/drafter/artifacts/traces/rank2/67b5df07f876c14af23447294c73b806681570973b6563dca41725127b13aa05.pt",
+      "trace_sha256_from_audit": "f00c6bb06775e51ee0e0c7c5f3113188819d48dd2a13c6b86758f3247542df10",
+      "output_tokens_sha256_little_endian_int64": "fd14bae2d36e3f7067069c479735c82a673c9fbbdd4db694f4d08615929750fc"
+    },
+    {
+      "prompt_id": "math500-long-0462",
+      "split": "dev",
+      "condition": "long_thinking",
+      "length": 10509,
+      "old_repetition_dominated": false,
+      "new_repetition_dominated": false,
+      "changed": false,
+      "periodic_scan": {
+        "best": {
+          "length": 4,
+          "period": 1,
+          "start": 7970,
+          "end_exclusive": 7974,
+          "complete_cycles": 4
+        },
+        "old_limit_longest": 4,
+        "qualifying_periods": []
+      },
+      "sidecar_path": "/home/catid/drafter/artifacts/traces/rank2/68b6d2c3eb39a7cef37fbcd790820c36e4910a9e5af8d9a6308fb90f841732e7.pt.json",
+      "sidecar_sha256": "96c8fc3a759aa31f54d893c64744969e626455d4b4dda7c9523fb1eb4b2bac24",
+      "trace_path": "/home/catid/drafter/artifacts/traces/rank2/68b6d2c3eb39a7cef37fbcd790820c36e4910a9e5af8d9a6308fb90f841732e7.pt",
+      "trace_sha256_from_audit": "8ab6482bf0306de01dec0d3c21deba27d61f1aca1b1ecfd9365a4e584be9817e",
+      "output_tokens_sha256_little_endian_int64": "45f55617e41387ae44b32e2b11958beb258c01fd3d31597282ebc556903fe184"
+    },
+    {
+      "prompt_id": "math500-long-0159",
+      "split": "test",
+      "condition": "long_thinking",
+      "length": 9056,
+      "old_repetition_dominated": false,
+      "new_repetition_dominated": false,
+      "changed": false,
+      "periodic_scan": {
+        "best": {
+          "length": 0,
+          "period": null,
+          "start": null,
+          "end_exclusive": null,
+          "complete_cycles": 0
+        },
+        "old_limit_longest": 0,
+        "qualifying_periods": []
+      },
+      "sidecar_path": "/home/catid/drafter/artifacts/traces/rank2/5dabb1f0c453a21da1d73155fd71cbf428d4c026d6297fd982d10ae98b958974.pt.json",
+      "sidecar_sha256": "c18b77f01166d2a6fcfc1b4324a29ba4f117acc5cdf9e2db3dcf1e8b76eaaedb",
+      "trace_path": "/home/catid/drafter/artifacts/traces/rank2/5dabb1f0c453a21da1d73155fd71cbf428d4c026d6297fd982d10ae98b958974.pt",
+      "trace_sha256_from_audit": "837bc3e4a54c9a22dd65b652268a1f231f1e3be73114c8f6225eacf3ea39f016",
+      "output_tokens_sha256_little_endian_int64": "65adcf1db7a9fce50d1f9a10633b5fa7b9e1fe5dfc56af99b51d725e6fa6f8b2"
+    },
+    {
+      "prompt_id": "math500-long-0273",
+      "split": "test",
+      "condition": "long_thinking",
+      "length": 6999,
+      "old_repetition_dominated": false,
+      "new_repetition_dominated": false,
+      "changed": false,
+      "periodic_scan": {
+        "best": {
+          "length": 6,
+          "period": 1,
+          "start": 6639,
+          "end_exclusive": 6645,
+          "complete_cycles": 6
+        },
+        "old_limit_longest": 6,
+        "qualifying_periods": []
+      },
+      "sidecar_path": "/home/catid/drafter/artifacts/traces/rank2/ba32494103ea16642c4da025fa4a84639e106381068d0f399e5f4b4421b197fa.pt.json",
+      "sidecar_sha256": "804b0ee2e0933917dc7cade14272b884976415b50d805dbd6c06f6d68b9258a9",
+      "trace_path": "/home/catid/drafter/artifacts/traces/rank2/ba32494103ea16642c4da025fa4a84639e106381068d0f399e5f4b4421b197fa.pt",
+      "trace_sha256_from_audit": "5fa6068ae09f35760d867a079040dd85a9b56d9c675e8b02fca78d1ddc01ba68",
+      "output_tokens_sha256_little_endian_int64": "63843fffcd307963f62f2dd97b565ac35da94a6085fa2dc7d8252499e7c43fbb"
+    },
+    {
+      "prompt_id": "math500-long-0116",
+      "split": "test",
+      "condition": "long_thinking",
+      "length": 14954,
+      "old_repetition_dominated": false,
+      "new_repetition_dominated": false,
+      "changed": false,
+      "periodic_scan": {
+        "best": {
+          "length": 4,
+          "period": 1,
+          "start": 6100,
+          "end_exclusive": 6104,
+          "complete_cycles": 4
+        },
+        "old_limit_longest": 4,
+        "qualifying_periods": []
+      },
+      "sidecar_path": "/home/catid/drafter/artifacts/traces/rank2/a8d4d301219aeab30c96ae50516527d785e4130efcd5f3a463816bdd485357b2.pt.json",
+      "sidecar_sha256": "b8974010d243ba7c9bfab41e8dd5b3ceddb19c2919bbc6a37b2d0628c309845a",
+      "trace_path": "/home/catid/drafter/artifacts/traces/rank2/a8d4d301219aeab30c96ae50516527d785e4130efcd5f3a463816bdd485357b2.pt",
+      "trace_sha256_from_audit": "dd0ea1328cbeb0575d2f829ce860bb2972d8d4ce9f75ce14a021ce76f45d395b",
+      "output_tokens_sha256_little_endian_int64": "1e7f3384dc2a72d395e622e7d0c4357204bf919d0b2f12b5c899db4d3569c102"
+    },
+    {
+      "prompt_id": "math500-long-0044",
+      "split": "test",
+      "condition": "long_thinking",
+      "length": 11315,
+      "old_repetition_dominated": false,
+      "new_repetition_dominated": false,
+      "changed": false,
+      "periodic_scan": {
+        "best": {
+          "length": 0,
+          "period": null,
+          "start": null,
+          "end_exclusive": null,
+          "complete_cycles": 0
+        },
+        "old_limit_longest": 0,
+        "qualifying_periods": []
+      },
+      "sidecar_path": "/home/catid/drafter/artifacts/traces/rank2/7a69af24bf013f93813d48b4e29b2b50c64705b2778fb049b51085f0f8abfa21.pt.json",
+      "sidecar_sha256": "be1cc1b83248b9c58ad63597dc1b1cef157a7bd1f72e8ba4a8aaf0dcf12e9d65",
+      "trace_path": "/home/catid/drafter/artifacts/traces/rank2/7a69af24bf013f93813d48b4e29b2b50c64705b2778fb049b51085f0f8abfa21.pt",
+      "trace_sha256_from_audit": "4b7424ee98dadb2f409aacc79b72da72c0a7007fc40bb50fbddd3f08176eb09c",
+      "output_tokens_sha256_little_endian_int64": "56dbacfbe4bb01d256eacf2d5b634bf002a6a150489bfdeefad9a584eed9b819"
+    },
+    {
+      "prompt_id": "math500-long-0497",
+      "split": "dev",
+      "condition": "long_thinking",
+      "length": 11168,
+      "old_repetition_dominated": false,
+      "new_repetition_dominated": false,
+      "changed": false,
+      "periodic_scan": {
+        "best": {
+          "length": 0,
+          "period": null,
+          "start": null,
+          "end_exclusive": null,
+          "complete_cycles": 0
+        },
+        "old_limit_longest": 0,
+        "qualifying_periods": []
+      },
+      "sidecar_path": "/home/catid/drafter/artifacts/traces/rank3/c99b2c16313aece403a351c7681a3a92f74e411e5241f03e3d8af2f901cf932c.pt.json",
+      "sidecar_sha256": "fcff8ebfaf234f9bcb055f8d45de8deca099f43ea945dc21f288829b75a1f4c2",
+      "trace_path": "/home/catid/drafter/artifacts/traces/rank3/c99b2c16313aece403a351c7681a3a92f74e411e5241f03e3d8af2f901cf932c.pt",
+      "trace_sha256_from_audit": "c438b564b427ee22cb359965de8504ff1643b0e5c34d853d62e0863f5a37cef9",
+      "output_tokens_sha256_little_endian_int64": "db5166d587d43b26582e26113fd4c2d473da749349b8c83f9f916366f0393c05"
+    },
+    {
+      "prompt_id": "math500-long-0336",
+      "split": "dev",
+      "condition": "long_thinking",
+      "length": 9343,
+      "old_repetition_dominated": false,
+      "new_repetition_dominated": false,
+      "changed": false,
+      "periodic_scan": {
+        "best": {
+          "length": 0,
+          "period": null,
+          "start": null,
+          "end_exclusive": null,
+          "complete_cycles": 0
+        },
+        "old_limit_longest": 0,
+        "qualifying_periods": []
+      },
+      "sidecar_path": "/home/catid/drafter/artifacts/traces/rank3/3227013cf0291025ab44fddf60ebd8e0f612b9c758306fb7fa0b310611a24882.pt.json",
+      "sidecar_sha256": "fc6e2016e8bff40309907bed3ba7c9f26c950cba55371686ef2153a6d37f6cc8",
+      "trace_path": "/home/catid/drafter/artifacts/traces/rank3/3227013cf0291025ab44fddf60ebd8e0f612b9c758306fb7fa0b310611a24882.pt",
+      "trace_sha256_from_audit": "208df38088b471b011ebe093d954670fc7334f81c12948e3b9b26264f0f0179a",
+      "output_tokens_sha256_little_endian_int64": "e6af88221adb81f32d1cfb18c818bf7908b7c121e612871dfeba124e1f2aa51c"
+    },
+    {
+      "prompt_id": "math500-long-0117",
+      "split": "test",
+      "condition": "long_thinking",
+      "length": 9118,
+      "old_repetition_dominated": false,
+      "new_repetition_dominated": false,
+      "changed": false,
+      "periodic_scan": {
+        "best": {
+          "length": 0,
+          "period": null,
+          "start": null,
+          "end_exclusive": null,
+          "complete_cycles": 0
+        },
+        "old_limit_longest": 0,
+        "qualifying_periods": []
+      },
+      "sidecar_path": "/home/catid/drafter/artifacts/traces/rank3/5b6268c654d8a330f227e50c882a8ab4f42fa7df478ab5505b474d5a7610a255.pt.json",
+      "sidecar_sha256": "5c98547ad08c71fcafe7695cc05c570d4765df068d5ba34573844b35c5635a9c",
+      "trace_path": "/home/catid/drafter/artifacts/traces/rank3/5b6268c654d8a330f227e50c882a8ab4f42fa7df478ab5505b474d5a7610a255.pt",
+      "trace_sha256_from_audit": "dd046a13b7d59657f66bf1935d25deffa6c7c4b9d04742d3b4663fcdfe55dfa7",
+      "output_tokens_sha256_little_endian_int64": "8ab78e0c6b95eca166941cd4b2f612a26652cf57bad9af3399baf0dc97179fb4"
+    },
+    {
+      "prompt_id": "math500-long-0170",
+      "split": "test",
+      "condition": "long_thinking",
+      "length": 10939,
+      "old_repetition_dominated": false,
+      "new_repetition_dominated": false,
+      "changed": false,
+      "periodic_scan": {
+        "best": {
+          "length": 4,
+          "period": 1,
+          "start": 5854,
+          "end_exclusive": 5858,
+          "complete_cycles": 4
+        },
+        "old_limit_longest": 4,
+        "qualifying_periods": []
+      },
+      "sidecar_path": "/home/catid/drafter/artifacts/traces/rank3/39508e1ea4cdf367b71747afd91615708f76efc1168f7f7390bad80cfae047e2.pt.json",
+      "sidecar_sha256": "516c5030abdd1cbc7ac1c1c03166e521f3a75b331848ca2cfca2c570b39147b4",
+      "trace_path": "/home/catid/drafter/artifacts/traces/rank3/39508e1ea4cdf367b71747afd91615708f76efc1168f7f7390bad80cfae047e2.pt",
+      "trace_sha256_from_audit": "2c48b129ff5a5ee5b2d453a731bcc72c0b9560708018963b83aa0de60bffe17e",
+      "output_tokens_sha256_little_endian_int64": "92d7b846e623b18b98d78651675555113b56dd5698d2a456a4d4da99dc191fc4"
+    },
+    {
+      "prompt_id": "math500-long-0225",
+      "split": "test",
+      "condition": "long_thinking",
+      "length": 9108,
+      "old_repetition_dominated": false,
+      "new_repetition_dominated": false,
+      "changed": false,
+      "periodic_scan": {
+        "best": {
+          "length": 0,
+          "period": null,
+          "start": null,
+          "end_exclusive": null,
+          "complete_cycles": 0
+        },
+        "old_limit_longest": 0,
+        "qualifying_periods": []
+      },
+      "sidecar_path": "/home/catid/drafter/artifacts/traces/rank3/d661709825c6dd1bdf0016367ef9f6342bfd37eae5e5ef6704245b06b06fdbe5.pt.json",
+      "sidecar_sha256": "b128a57a6da598c731805789b05676726041ae9a704defa8dc41836b53b58961",
+      "trace_path": "/home/catid/drafter/artifacts/traces/rank3/d661709825c6dd1bdf0016367ef9f6342bfd37eae5e5ef6704245b06b06fdbe5.pt",
+      "trace_sha256_from_audit": "f8bf7ee7db788a0cc90cde79e6f580686b3188f21f3a817f11085218102d4aa2",
+      "output_tokens_sha256_little_endian_int64": "e92e3702750481fc96890594304a1484a182e2ec8e4ba3fa6b9183837b26b2e0"
+    },
+    {
+      "prompt_id": "math500-long-0224",
+      "split": "test",
+      "condition": "long_thinking",
+      "length": 7190,
+      "old_repetition_dominated": false,
+      "new_repetition_dominated": false,
+      "changed": false,
+      "periodic_scan": {
+        "best": {
+          "length": 0,
+          "period": null,
+          "start": null,
+          "end_exclusive": null,
+          "complete_cycles": 0
+        },
+        "old_limit_longest": 0,
+        "qualifying_periods": []
+      },
+      "sidecar_path": "/home/catid/drafter/artifacts/traces/rank3/3870ea4cfbb2ba4520876891d30c30fb5d3b6fe1b225e04ff07d9eb2cafb8564.pt.json",
+      "sidecar_sha256": "8f6c1deef2d172a9d185a5a955b9b64680db752c24756e6a97f86b6adc54ac1d",
+      "trace_path": "/home/catid/drafter/artifacts/traces/rank3/3870ea4cfbb2ba4520876891d30c30fb5d3b6fe1b225e04ff07d9eb2cafb8564.pt",
+      "trace_sha256_from_audit": "72eaa7d76465ba9520bc75f283faecbfa45a1a4572edc0f0e032ec9bc6460bce",
+      "output_tokens_sha256_little_endian_int64": "bdfcf0a1b1d70b7bbf7e069d804d812b9635600c87322a4a9073bb275e0eb0cb"
+    },
+    {
+      "prompt_id": "math500-long-0126",
+      "split": "dev",
+      "condition": "long_thinking",
+      "length": 24576,
+      "old_repetition_dominated": false,
+      "new_repetition_dominated": false,
+      "changed": false,
+      "periodic_scan": {
+        "best": {
+          "length": 4,
+          "period": 1,
+          "start": 13471,
+          "end_exclusive": 13475,
+          "complete_cycles": 4
+        },
+        "old_limit_longest": 4,
+        "qualifying_periods": []
+      },
+      "sidecar_path": "/home/catid/drafter/artifacts/traces/rank4/0e1ab98348f3a80bdc7e0d1fc22b6647ddc7e51843a945eb37dbfbf6eae7a657.pt.json",
+      "sidecar_sha256": "55f9249a29e5cb319bd9d397b9b3e92c9696937162db4161a5c730eb149bfc07",
+      "trace_path": "/home/catid/drafter/artifacts/traces/rank4/0e1ab98348f3a80bdc7e0d1fc22b6647ddc7e51843a945eb37dbfbf6eae7a657.pt",
+      "trace_sha256_from_audit": "3612b51290ed8c6822833fa4a047ff76f918fdb982a28a09bf1ed183ccd4490f",
+      "output_tokens_sha256_little_endian_int64": "f848d580777de818af273e3e803def9e2483029ed7cb9cb948f9778b311f47df"
+    },
+    {
+      "prompt_id": "math500-long-0439",
+      "split": "test",
+      "condition": "long_thinking",
+      "length": 12068,
+      "old_repetition_dominated": false,
+      "new_repetition_dominated": false,
+      "changed": false,
+      "periodic_scan": {
+        "best": {
+          "length": 160,
+          "period": 18,
+          "start": 1992,
+          "end_exclusive": 2152,
+          "complete_cycles": 8
+        },
+        "old_limit_longest": 160,
+        "qualifying_periods": []
+      },
+      "sidecar_path": "/home/catid/drafter/artifacts/traces/rank4/c769cdc079e9cd0db108fb48f8289dd133f4633babcc1a628f9436cea7db70fe.pt.json",
+      "sidecar_sha256": "bad448e561cf534cf1c870adb822603bab018213bad6b110a4286b0e4729ab17",
+      "trace_path": "/home/catid/drafter/artifacts/traces/rank4/c769cdc079e9cd0db108fb48f8289dd133f4633babcc1a628f9436cea7db70fe.pt",
+      "trace_sha256_from_audit": "34d336758316f2e2ca0f5ac7b9518ee5c001f8c63e3a918502c72f78ce5560eb",
+      "output_tokens_sha256_little_endian_int64": "1e321d726ba44ae7689e59eee91e11b216f2853eb53e51418d5bbfd53bbca4b7"
+    },
+    {
+      "prompt_id": "math500-long-0233",
+      "split": "test",
+      "condition": "long_thinking",
+      "length": 11198,
+      "old_repetition_dominated": false,
+      "new_repetition_dominated": false,
+      "changed": false,
+      "periodic_scan": {
+        "best": {
+          "length": 0,
+          "period": null,
+          "start": null,
+          "end_exclusive": null,
+          "complete_cycles": 0
+        },
+        "old_limit_longest": 0,
+        "qualifying_periods": []
+      },
+      "sidecar_path": "/home/catid/drafter/artifacts/traces/rank4/872e4b6bc5ea0c7e714ea94ad598c2fabeebf54b134392656098ce74b00fc60d.pt.json",
+      "sidecar_sha256": "67177cb566d806135815960805647da6a97ec9345c4113419c1a0495118c7ecd",
+      "trace_path": "/home/catid/drafter/artifacts/traces/rank4/872e4b6bc5ea0c7e714ea94ad598c2fabeebf54b134392656098ce74b00fc60d.pt",
+      "trace_sha256_from_audit": "2622368a7e3ab2037eb3da2783e771156b9cac61e897d9708b796b1b91d49e66",
+      "output_tokens_sha256_little_endian_int64": "e8920451af4b75cd7ee955d12577316c976209c3417690eb89f27a887c0d7b4a"
+    },
+    {
+      "prompt_id": "math500-long-0350",
+      "split": "test",
+      "condition": "long_thinking",
+      "length": 9940,
+      "old_repetition_dominated": false,
+      "new_repetition_dominated": false,
+      "changed": false,
+      "periodic_scan": {
+        "best": {
+          "length": 0,
+          "period": null,
+          "start": null,
+          "end_exclusive": null,
+          "complete_cycles": 0
+        },
+        "old_limit_longest": 0,
+        "qualifying_periods": []
+      },
+      "sidecar_path": "/home/catid/drafter/artifacts/traces/rank4/44b2ec6b8eb836b8ec4954293c9e04a6952c80a932aad082a9005b7c1d86361a.pt.json",
+      "sidecar_sha256": "ef4be4ca795090d94db7c5f38ea13823b83cabd23864ad8f34a7b41b31af5532",
+      "trace_path": "/home/catid/drafter/artifacts/traces/rank4/44b2ec6b8eb836b8ec4954293c9e04a6952c80a932aad082a9005b7c1d86361a.pt",
+      "trace_sha256_from_audit": "f81e660be2eee8995749347f17fb4013853263cfe5c7c8a8d4f34c612b0babc1",
+      "output_tokens_sha256_little_endian_int64": "7ac590e042cc2818ab2ef86751499ee62479906698c84d3fd7ba3fc7e829eb22"
+    },
+    {
+      "prompt_id": "math500-long-0277",
+      "split": "test",
+      "condition": "long_thinking",
+      "length": 11371,
+      "old_repetition_dominated": false,
+      "new_repetition_dominated": false,
+      "changed": false,
+      "periodic_scan": {
+        "best": {
+          "length": 0,
+          "period": null,
+          "start": null,
+          "end_exclusive": null,
+          "complete_cycles": 0
+        },
+        "old_limit_longest": 0,
+        "qualifying_periods": []
+      },
+      "sidecar_path": "/home/catid/drafter/artifacts/traces/rank4/ce4167e31b8401cec491e214cf47ebe273680a58a45f1a95b36aeb187019c889.pt.json",
+      "sidecar_sha256": "de361b8752d48a1eada564174d6320f5989f65884778aab12a366570617c3e4c",
+      "trace_path": "/home/catid/drafter/artifacts/traces/rank4/ce4167e31b8401cec491e214cf47ebe273680a58a45f1a95b36aeb187019c889.pt",
+      "trace_sha256_from_audit": "03cf2d34288f455e6b84048498cc6a15a9ca7ac5bcb1ad0532a10bb5f9a85825",
+      "output_tokens_sha256_little_endian_int64": "49c928a4041febb17e5201e2772f50523ed4be0c95c98434dd245e8979bc39de"
+    },
+    {
+      "prompt_id": "math500-long-0137",
+      "split": "dev",
+      "condition": "long_thinking",
+      "length": 8230,
+      "old_repetition_dominated": false,
+      "new_repetition_dominated": false,
+      "changed": false,
+      "periodic_scan": {
+        "best": {
+          "length": 0,
+          "period": null,
+          "start": null,
+          "end_exclusive": null,
+          "complete_cycles": 0
+        },
+        "old_limit_longest": 0,
+        "qualifying_periods": []
+      },
+      "sidecar_path": "/home/catid/drafter/artifacts/traces/rank5/f2ef1d4e93d62db825d0335f7369b42709edd7a535682419f3b7045e0d0b2b52.pt.json",
+      "sidecar_sha256": "b31e0ecb2ab09f89869ae2ab16d9078f2dbf05b7dd90c15000ca58ed70ed1673",
+      "trace_path": "/home/catid/drafter/artifacts/traces/rank5/f2ef1d4e93d62db825d0335f7369b42709edd7a535682419f3b7045e0d0b2b52.pt",
+      "trace_sha256_from_audit": "47072efde6734f471348353911e69dab4914b161712b6171fcab8b9bd74bd19a",
+      "output_tokens_sha256_little_endian_int64": "d7dc3d49fd6f35107d45ac766cc33441f122798310ffde60a3ec6bd31e2bf1cd"
+    },
+    {
+      "prompt_id": "math500-long-0372",
+      "split": "test",
+      "condition": "long_thinking",
+      "length": 12742,
+      "old_repetition_dominated": false,
+      "new_repetition_dominated": false,
+      "changed": false,
+      "periodic_scan": {
+        "best": {
+          "length": 4,
+          "period": 1,
+          "start": 8067,
+          "end_exclusive": 8071,
+          "complete_cycles": 4
+        },
+        "old_limit_longest": 4,
+        "qualifying_periods": []
+      },
+      "sidecar_path": "/home/catid/drafter/artifacts/traces/rank5/cc78f9a72a9a286dd40830304887f23d876ce54a3159ab5ad8c423a75e64517b.pt.json",
+      "sidecar_sha256": "684c6c496b5e186d704275494bdac4dc34ed5e88d74f42e389cbbeef758d68d1",
+      "trace_path": "/home/catid/drafter/artifacts/traces/rank5/cc78f9a72a9a286dd40830304887f23d876ce54a3159ab5ad8c423a75e64517b.pt",
+      "trace_sha256_from_audit": "d8230e36e1481639cdab70851473773831a3f13acb82acd014564ae8d73df594",
+      "output_tokens_sha256_little_endian_int64": "2eb6b759535dbeae8788466dfbe0a5e4229ae86f3225623bf6f047fbd6437491"
+    },
+    {
+      "prompt_id": "math500-long-0060",
+      "split": "test",
+      "condition": "long_thinking",
+      "length": 13223,
+      "old_repetition_dominated": false,
+      "new_repetition_dominated": false,
+      "changed": false,
+      "periodic_scan": {
+        "best": {
+          "length": 0,
+          "period": null,
+          "start": null,
+          "end_exclusive": null,
+          "complete_cycles": 0
+        },
+        "old_limit_longest": 0,
+        "qualifying_periods": []
+      },
+      "sidecar_path": "/home/catid/drafter/artifacts/traces/rank5/de3e017700436aa63684f3f278e5b44e848d3c3555c4fd627f562550775a9911.pt.json",
+      "sidecar_sha256": "3ac32cd8b7b4506f434bc1fbb7101a15d02f7c0b10d3c82dab99c33a96551b51",
+      "trace_path": "/home/catid/drafter/artifacts/traces/rank5/de3e017700436aa63684f3f278e5b44e848d3c3555c4fd627f562550775a9911.pt",
+      "trace_sha256_from_audit": "ee823384ff283aa433f854ec2867703adca958e7378cb7c44a48ad2ffd84e3b6",
+      "output_tokens_sha256_little_endian_int64": "a78792e23735b76d27beef56bf16ac4303ea1897e859fffe0f683e364f393dfa"
+    },
+    {
+      "prompt_id": "math500-long-0428",
+      "split": "test",
+      "condition": "long_thinking",
+      "length": 15387,
+      "old_repetition_dominated": false,
+      "new_repetition_dominated": false,
+      "changed": false,
+      "periodic_scan": {
+        "best": {
+          "length": 4,
+          "period": 1,
+          "start": 2746,
+          "end_exclusive": 2750,
+          "complete_cycles": 4
+        },
+        "old_limit_longest": 4,
+        "qualifying_periods": []
+      },
+      "sidecar_path": "/home/catid/drafter/artifacts/traces/rank5/fad269f4cda57c175d15eec88e8f095d2c841506e91d9da5eff7edf6b6face7d.pt.json",
+      "sidecar_sha256": "0cc5c1b5a9a96128e6b813835f9a692cd74e950358ada891c2e6846e024354d8",
+      "trace_path": "/home/catid/drafter/artifacts/traces/rank5/fad269f4cda57c175d15eec88e8f095d2c841506e91d9da5eff7edf6b6face7d.pt",
+      "trace_sha256_from_audit": "214db73db7a263d9d28adef2c21bf17d30b4bdff72593feb64c8bece301d3de2",
+      "output_tokens_sha256_little_endian_int64": "c67f7196c6fc6a51f04d6ead1ee1d2dfe51c1157cdb1a341d491ffa4c309ab6a"
+    },
+    {
+      "prompt_id": "math500-long-0105",
+      "split": "test",
+      "condition": "long_thinking",
+      "length": 6990,
+      "old_repetition_dominated": false,
+      "new_repetition_dominated": false,
+      "changed": false,
+      "periodic_scan": {
+        "best": {
+          "length": 0,
+          "period": null,
+          "start": null,
+          "end_exclusive": null,
+          "complete_cycles": 0
+        },
+        "old_limit_longest": 0,
+        "qualifying_periods": []
+      },
+      "sidecar_path": "/home/catid/drafter/artifacts/traces/rank5/3ccc34e18bac963b86bc2fbff72c0b78920f603243b04fb333f156b40adb842c.pt.json",
+      "sidecar_sha256": "9b2fbb40dd18ee0cbe641ff7aef5aa4f73dc43b513b56776e1b63dd7e3ee8151",
+      "trace_path": "/home/catid/drafter/artifacts/traces/rank5/3ccc34e18bac963b86bc2fbff72c0b78920f603243b04fb333f156b40adb842c.pt",
+      "trace_sha256_from_audit": "fa3172249f75bb7c8e2d9b629b24ba92ee8d65d86a3bdb2f1f37ca48b8f08708",
+      "output_tokens_sha256_little_endian_int64": "67ca5b96fb088b26152456c28245cf3ec34c32fb8b135ecd6ee48a64c6b248d8"
+    },
+    {
+      "prompt_id": "math500-long-0193",
+      "split": "dev",
+      "condition": "long_thinking",
+      "length": 11871,
+      "old_repetition_dominated": false,
+      "new_repetition_dominated": false,
+      "changed": false,
+      "periodic_scan": {
+        "best": {
+          "length": 0,
+          "period": null,
+          "start": null,
+          "end_exclusive": null,
+          "complete_cycles": 0
+        },
+        "old_limit_longest": 0,
+        "qualifying_periods": []
+      },
+      "sidecar_path": "/home/catid/drafter/artifacts/traces/rank6/8cacc1a5395f85285cbcce4be10cad0c8ed6ed7677ce55ae59b662b1d4f6b6b3.pt.json",
+      "sidecar_sha256": "7873f3864fe80adf7d65613ea1f46fa7b5a9892f382bca11ca04ed9e2456ef61",
+      "trace_path": "/home/catid/drafter/artifacts/traces/rank6/8cacc1a5395f85285cbcce4be10cad0c8ed6ed7677ce55ae59b662b1d4f6b6b3.pt",
+      "trace_sha256_from_audit": "f3352236f5dca1e458c72a4c6c8fc02fc953710f1e5fbd471ce45f761f0e6b9e",
+      "output_tokens_sha256_little_endian_int64": "39f1bac61bc06d808e85c38a74e2603d437c0c17dd142c2bd19b8f66f43c68aa"
+    },
+    {
+      "prompt_id": "math500-long-0039",
+      "split": "test",
+      "condition": "long_thinking",
+      "length": 12553,
+      "old_repetition_dominated": false,
+      "new_repetition_dominated": false,
+      "changed": false,
+      "periodic_scan": {
+        "best": {
+          "length": 15,
+          "period": 2,
+          "start": 11271,
+          "end_exclusive": 11286,
+          "complete_cycles": 7
+        },
+        "old_limit_longest": 15,
+        "qualifying_periods": []
+      },
+      "sidecar_path": "/home/catid/drafter/artifacts/traces/rank6/31beee382463275602eca98e6b5e49c4c22f657e4fe875960cf8611e2d66f2d6.pt.json",
+      "sidecar_sha256": "d8cad4f35f95ef39f69797b584753f6e05d3effa8e8bcecd2dd5652dc2a495a2",
+      "trace_path": "/home/catid/drafter/artifacts/traces/rank6/31beee382463275602eca98e6b5e49c4c22f657e4fe875960cf8611e2d66f2d6.pt",
+      "trace_sha256_from_audit": "d55ab948c7dfab6b6f1582c5e3ddec3e8dd664fdce5b6cab8ca46ad7f8e94a32",
+      "output_tokens_sha256_little_endian_int64": "518c013e67d7721cf8239ddf896761a041d4add136d25614da3de31a4cbf28d5"
+    },
+    {
+      "prompt_id": "math500-long-0460",
+      "split": "test",
+      "condition": "long_thinking",
+      "length": 17738,
+      "old_repetition_dominated": false,
+      "new_repetition_dominated": false,
+      "changed": false,
+      "periodic_scan": {
+        "best": {
+          "length": 0,
+          "period": null,
+          "start": null,
+          "end_exclusive": null,
+          "complete_cycles": 0
+        },
+        "old_limit_longest": 0,
+        "qualifying_periods": []
+      },
+      "sidecar_path": "/home/catid/drafter/artifacts/traces/rank6/c58229a6c395c94027e6f172773b06c54324b6ea3090f80cb7609efe43dd271f.pt.json",
+      "sidecar_sha256": "f2a54dabb5c6cc323f99450c91e9a27584059a2272726d6921ada1ceac2a4fb7",
+      "trace_path": "/home/catid/drafter/artifacts/traces/rank6/c58229a6c395c94027e6f172773b06c54324b6ea3090f80cb7609efe43dd271f.pt",
+      "trace_sha256_from_audit": "067319a4a7bd416df3c53d8904644bbaf7373fb695cbd1a16b8be9c7fd910634",
+      "output_tokens_sha256_little_endian_int64": "7d55888fd3a084d142577c39cc3b9d0c5236f2741d126641f965ab790722c67d"
+    },
+    {
+      "prompt_id": "math500-long-0476",
+      "split": "test",
+      "condition": "long_thinking",
+      "length": 8448,
+      "old_repetition_dominated": false,
+      "new_repetition_dominated": false,
+      "changed": false,
+      "periodic_scan": {
+        "best": {
+          "length": 0,
+          "period": null,
+          "start": null,
+          "end_exclusive": null,
+          "complete_cycles": 0
+        },
+        "old_limit_longest": 0,
+        "qualifying_periods": []
+      },
+      "sidecar_path": "/home/catid/drafter/artifacts/traces/rank6/3346e30f003abb8ae6a0384c18ee27fd5b7556d82e79950985e2a84c66a2c50c.pt.json",
+      "sidecar_sha256": "8bc5e0b3a309c9aca846095e1c410470d21e2acb7b12f8d54307c2efc0305fc4",
+      "trace_path": "/home/catid/drafter/artifacts/traces/rank6/3346e30f003abb8ae6a0384c18ee27fd5b7556d82e79950985e2a84c66a2c50c.pt",
+      "trace_sha256_from_audit": "9b016e36d5b881ded8c260b03403b6ccbb990a0ea704be5915eb0ec9901bb24b",
+      "output_tokens_sha256_little_endian_int64": "08ec89e2f0b6b8849646e6ff8020ababf8e19ff93e1b8b5599f2f80bea4ba7b1"
+    },
+    {
+      "prompt_id": "math500-long-0284",
+      "split": "test",
+      "condition": "long_thinking",
+      "length": 19143,
+      "old_repetition_dominated": false,
+      "new_repetition_dominated": false,
+      "changed": false,
+      "periodic_scan": {
+        "best": {
+          "length": 0,
+          "period": null,
+          "start": null,
+          "end_exclusive": null,
+          "complete_cycles": 0
+        },
+        "old_limit_longest": 0,
+        "qualifying_periods": []
+      },
+      "sidecar_path": "/home/catid/drafter/artifacts/traces/rank6/8ccde31aac26ac31cbef663f5fb54d7c90b442b439c3b17c63968cbf44eb35ef.pt.json",
+      "sidecar_sha256": "2b5615a8d09f6c9f3c528398d26babb21b8ca6222f99495e4f37b3c007764990",
+      "trace_path": "/home/catid/drafter/artifacts/traces/rank6/8ccde31aac26ac31cbef663f5fb54d7c90b442b439c3b17c63968cbf44eb35ef.pt",
+      "trace_sha256_from_audit": "0bc78fc9dd3ea53742c907fc19e17741d07004ff6e6cd6c6a2e8bd235ec602cc",
+      "output_tokens_sha256_little_endian_int64": "90234cd28b0453f675b4427ca54cf3ac0cacf0a3ec7d49fae1f413c410f2bece"
+    },
+    {
+      "prompt_id": "math500-long-0361",
+      "split": "dev",
+      "condition": "long_thinking",
+      "length": 14632,
+      "old_repetition_dominated": false,
+      "new_repetition_dominated": false,
+      "changed": false,
+      "periodic_scan": {
+        "best": {
+          "length": 0,
+          "period": null,
+          "start": null,
+          "end_exclusive": null,
+          "complete_cycles": 0
+        },
+        "old_limit_longest": 0,
+        "qualifying_periods": []
+      },
+      "sidecar_path": "/home/catid/drafter/artifacts/traces/rank7/b337fe6bb264dbf654eb0663a1802486c60c0df6c22d70f609d2930dd7cb0235.pt.json",
+      "sidecar_sha256": "21b3236a929a2d52be5e3807aa1553bcdae6e1676ae0cbbb184df50dd63af87c",
+      "trace_path": "/home/catid/drafter/artifacts/traces/rank7/b337fe6bb264dbf654eb0663a1802486c60c0df6c22d70f609d2930dd7cb0235.pt",
+      "trace_sha256_from_audit": "f685c2e46a5ea4b8c0329e25aee16d4d43228d50d99de78efb69c7d72e113fe5",
+      "output_tokens_sha256_little_endian_int64": "c3b24bea92dac5f412f18639975f8a605266e5ddd2ae07a89a6c470839ca99e3"
+    },
+    {
+      "prompt_id": "math500-long-0252",
+      "split": "test",
+      "condition": "long_thinking",
+      "length": 9054,
+      "old_repetition_dominated": false,
+      "new_repetition_dominated": false,
+      "changed": false,
+      "periodic_scan": {
+        "best": {
+          "length": 0,
+          "period": null,
+          "start": null,
+          "end_exclusive": null,
+          "complete_cycles": 0
+        },
+        "old_limit_longest": 0,
+        "qualifying_periods": []
+      },
+      "sidecar_path": "/home/catid/drafter/artifacts/traces/rank7/0642ad5d0962e5cc91fc080f075cad8a5f613ebc2be80c00c37d0137822f9a98.pt.json",
+      "sidecar_sha256": "a35d1b1e0d344c77c0c460478aec9638c55b36308ff9ca877454b817e224e288",
+      "trace_path": "/home/catid/drafter/artifacts/traces/rank7/0642ad5d0962e5cc91fc080f075cad8a5f613ebc2be80c00c37d0137822f9a98.pt",
+      "trace_sha256_from_audit": "315095aab37e9f5c8086a68c11cff923cded4a4c3510d1be8662d67da49b1622",
+      "output_tokens_sha256_little_endian_int64": "4e7596f3a702f5ef6948709b1179525a45436c5d624591702f6cc3e6909c1951"
+    },
+    {
+      "prompt_id": "math500-long-0384",
+      "split": "test",
+      "condition": "long_thinking",
+      "length": 6581,
+      "old_repetition_dominated": false,
+      "new_repetition_dominated": false,
+      "changed": false,
+      "periodic_scan": {
+        "best": {
+          "length": 0,
+          "period": null,
+          "start": null,
+          "end_exclusive": null,
+          "complete_cycles": 0
+        },
+        "old_limit_longest": 0,
+        "qualifying_periods": []
+      },
+      "sidecar_path": "/home/catid/drafter/artifacts/traces/rank7/37c2ca5068bbf1a7cc0427f616beb8c047080e0c020ce15d88f1fb7052cab9d6.pt.json",
+      "sidecar_sha256": "c1133de590e3788371ff0fe9cd041f3ae618ba3652a768d12e16fb762e5c7266",
+      "trace_path": "/home/catid/drafter/artifacts/traces/rank7/37c2ca5068bbf1a7cc0427f616beb8c047080e0c020ce15d88f1fb7052cab9d6.pt",
+      "trace_sha256_from_audit": "3e559ebb78b4d3bbef9aca6034cefa063560937b671371948dec9e1389c6181c",
+      "output_tokens_sha256_little_endian_int64": "1c4bfa644c86213ef3d4b153cab0da508467e023bf19a6cf7cace69590703c2a"
+    },
+    {
+      "prompt_id": "math500-long-0132",
+      "split": "test",
+      "condition": "long_thinking",
+      "length": 2943,
+      "old_repetition_dominated": false,
+      "new_repetition_dominated": false,
+      "changed": false,
+      "periodic_scan": {
+        "best": {
+          "length": 0,
+          "period": null,
+          "start": null,
+          "end_exclusive": null,
+          "complete_cycles": 0
+        },
+        "old_limit_longest": 0,
+        "qualifying_periods": []
+      },
+      "sidecar_path": "/home/catid/drafter/artifacts/traces/rank7/86cadd4b5859720ee431bd28182bc15698057139e40582650ceeb07250575463.pt.json",
+      "sidecar_sha256": "1ce9ed0fce80eb56f47bfae41bfcd181dcd2ca0d476da50d9a8206580a03f4a5",
+      "trace_path": "/home/catid/drafter/artifacts/traces/rank7/86cadd4b5859720ee431bd28182bc15698057139e40582650ceeb07250575463.pt",
+      "trace_sha256_from_audit": "0e6696356dbee70617443164764b6e23efd7d757e626f0c465f6cd02ee5b82da",
+      "output_tokens_sha256_little_endian_int64": "dc14c3c514bb84448e7544d8cfb91475998a3ede75b5632bda59b2f49389ec99"
+    },
+    {
+      "prompt_id": "math500-long-0287",
+      "split": "test",
+      "condition": "long_thinking",
+      "length": 13875,
+      "old_repetition_dominated": false,
+      "new_repetition_dominated": false,
+      "changed": false,
+      "periodic_scan": {
+        "best": {
+          "length": 0,
+          "period": null,
+          "start": null,
+          "end_exclusive": null,
+          "complete_cycles": 0
+        },
+        "old_limit_longest": 0,
+        "qualifying_periods": []
+      },
+      "sidecar_path": "/home/catid/drafter/artifacts/traces/rank7/8a573ed492d956904b27435d537fd0dbefb0721e366ddf951ca9ae5e9855a9c5.pt.json",
+      "sidecar_sha256": "3df1146611451ebea0d88351c2d7d64f1a782a5e33c532bbbeee644335151451",
+      "trace_path": "/home/catid/drafter/artifacts/traces/rank7/8a573ed492d956904b27435d537fd0dbefb0721e366ddf951ca9ae5e9855a9c5.pt",
+      "trace_sha256_from_audit": "68c341ed71fe8541ca2dead3d863c9d9ba88285b8d7d4f8743cac4a09a798e47",
+      "output_tokens_sha256_little_endian_int64": "161f0a01e87d9cc2713c7a459c8abd96b60919ed80edeba7d08da2cd08489cd0"
+    }
+  ],
+  "elapsed_seconds": 3.6326113920658827
+}

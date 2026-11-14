@@ -477,6 +477,7 @@ def collect(args, prompts=None, backend=None):
 
 def audit(args):
     """Aggregate actual committed outputs; never count diagnostic/long tokens as training."""
+    from .diagnose import recompute_generation_diagnostics
     check_reference_gates(args)
     prompt_manifest = load_prompt_manifest(args)
     calibration_record = json.loads((args.output / "calibration.json").read_text())
@@ -515,7 +516,9 @@ def audit(args):
             sidecar = json.loads(sidecar_path.read_text())
             if sidecar["disk_bytes"] != path.stat().st_size or sidecar["sha256"] != sha256(path):
                 raise RuntimeError(f"blocked: corrupted committed trace shard {path}")
-            gen = sidecar["generation"]
+            # Derived diagnostics may have been corrected since collection.
+            # Keep the immutable shard/sidecar bytes and original flags intact.
+            gen = recompute_generation_diagnostics(sidecar["generation"])
             if gen["scale"] != args.scale:
                 continue
             if not gen["complete"]:

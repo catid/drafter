@@ -6,8 +6,10 @@ experiment specification is [prompt.md](prompt.md). M0 and all three M1 stages
 have passed at reference scale. M2 fitting and independent artifact validation
 are complete: both fitted adapters worsened grouped KL on train, dev, and test.
 The final dense+sparse dev loss is 76.3% above zero-weight DFlash; extra fitting
-stopped under the specified rule. M3 development selection is running; its test
-evaluation and timing, and the M4 experiments, remain pending.
+stopped under the specified rule. M3 development selection is stopped for a
+confirmed repetition-detector correction. One earlier M1 long-test output also
+needs exclusion from primary summaries; those diagnostics are being regenerated.
+M3 test evaluation and timing, and the M4 experiments, remain pending.
 No adapter improvement or end-to-end speedup claim is established. See
 [the research summary](reports/SUMMARY.md) and
 [milestone status](artifacts/milestones.json) for the recorded evidence.

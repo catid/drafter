@@ -11,6 +11,7 @@ import multiprocessing
 import os
 from pathlib import Path
 import statistics
+import numpy as np
 import torch
 
 from .runtime import common_parser, parse_config, record_run, atomic_json, Manifest, fingerprint
@@ -93,6 +94,36 @@ def live_block_diagnostics(record: dict, seed: int) -> dict:
             'off_policy_teacher_positions': list(range(first + 1, K))}
 
 
+def _longest_periodic_run(tokens):
+    """Find exact runs of at least four cycles, with no fixed period cutoff.
+
+    A qualifying period cannot exceed N/4. For each period, equality between
+    shifted token arrays gives every possible run, including runs inside a
+    nonrepeating prefix/suffix. The count check only skips impossible periods.
+    This uses O(N) working memory and O(N**2) vectorized comparisons; generation
+    caps bound N, and this diagnostic runs outside request timing.
+    """
+    values = np.asarray(tokens, dtype=np.int64)
+    best_length = 0
+    best = {'start': None, 'end': None, 'period': None, 'complete_cycles': 0}
+    for period in range(1, len(values) // 4 + 1):
+        equal = values[period:] == values[:-period]
+        if np.count_nonzero(equal) < 3 * period:
+            continue
+        boundaries = np.concatenate(([-1], np.flatnonzero(~equal), [len(equal)]))
+        lengths = np.diff(boundaries) - 1
+        index = int(lengths.argmax())
+        matching_length = int(lengths[index])
+        span = matching_length + period
+        if matching_length < 3 * period or span <= best_length:
+            continue
+        start = int(boundaries[index]) + 1
+        best_length = span
+        best = {'start': start, 'end': start + span, 'period': period,
+                'complete_cycles': span // period}
+    return best_length, best
+
+
 def generation_diagnostics(output_tokens) -> dict:
     """Report realized lengths and explicit repetition heuristics, without padding."""
     tokens = [int(token) for token in output_tokens]
@@ -104,21 +135,36 @@ def generation_diagnostics(output_tokens) -> dict:
         windows = max(0, length - n + 1)
         repeated[str(n)] = 1 - len(counts) / windows if windows else 0.
         dominant[str(n)] = min(1., max(counts.values(), default=0) * n / max(length, 1))
-    longest = 0
-    # A periodic token run is stronger evidence than repeated boilerplate ngrams.
-    for period in range(1, min(64, length // 2) + 1):
-        run = 0
-        for i in range(period, length):
-            run = run + 1 if tokens[i] == tokens[i - period] else 0
-            if run >= 3 * period:
-                longest = max(longest, run + period)
+    # Exact periodic spans distinguish loops from changing repeated boilerplate.
+    longest, periodic_run = _longest_periodic_run(tokens)
     repetition = length >= 256 and (longest >= max(256, .5 * length) or
                                     (repeated['8'] >= .8 and dominant['16'] >= .5))
     return {'realized_length': length, 'repeated_ngram_fraction': repeated,
             'dominant_ngram_token_coverage': dominant, 'longest_periodic_run_tokens': longest,
+            'periodic_run': periodic_run, 'repetition_detector_version': 2,
             'repetition_dominated': repetition,
-            'repetition_rule': 'length>=256 and (period<=64 repeated run >=max(256,50% length) or repeated8>=80% and dominant16 coverage>=50%)',
+            'repetition_rule': 'length>=256 and (exact repeated run with >=4 cycles, any period, spans >=max(256,50% length) or repeated8>=80% and dominant16 coverage>=50%)',
             'output_bins_reached': [label for edge, label in zip((0, *OUTPUT_EDGES), OUTPUT_LABELS) if length > edge]}
+
+
+def recompute_generation_diagnostics(generation):
+    """Refresh derived flags from stored tokens without changing trace evidence."""
+    if 'output_tokens' not in generation:
+        raise ValueError('Stored output_tokens are required to recompute generation diagnostics')
+    diagnostics = generation_diagnostics(generation['output_tokens'])
+    if generation.get('realized_length', diagnostics['realized_length']) != diagnostics['realized_length']:
+        raise ValueError('Stored realized_length disagrees with output_tokens')
+    previous = generation.get('diagnostic_recomputation', {})
+    stored_version = previous.get('stored_repetition_detector_version',
+                                  generation.get('repetition_detector_version', 'legacy_period_le_64'))
+    stored_rule = previous.get('stored_repetition_rule', generation.get('repetition_rule'))
+    stored_flag = previous.get('stored_repetition_dominated', generation.get('repetition_dominated'))
+    provenance = {'basis': 'stored_output_tokens',
+                  'stored_repetition_detector_version': stored_version,
+                  'stored_repetition_rule': stored_rule,
+                  'stored_repetition_dominated': stored_flag,
+                  'classification_changed': stored_flag != diagnostics['repetition_dominated']}
+    return {**generation, **diagnostics, 'diagnostic_recomputation': provenance}
 
 
 def bootstrap_prompt_means(observations, seed=2026, samples=2000):
@@ -406,10 +452,7 @@ def _accumulate_source(accumulator, source, scale):
         raise RuntimeError(f'{path}: generation metadata missing; realized length/repetition cannot be inferred from a cap')
     if not generation.get('complete', False):
         raise RuntimeError(f'{path}: generation is incomplete')
-    if 'repetition_dominated' not in generation:
-        if 'output_tokens' not in generation:
-            raise RuntimeError(f'{path}: repetition diagnostics and output tokens are both missing')
-        generation.update(generation_diagnostics(generation['output_tokens']))
+    generation = recompute_generation_diagnostics(generation)
     accumulator.add_generation(generation)
     for block in shard['blocks']:
         if block['scale'] != scale:

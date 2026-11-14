@@ -110,7 +110,8 @@
     },
     "shards": 2184,
     "serialized_head_checks": 16,
-    "long_generations": 44
+    "long_generations": 44,
+    "repetition_diagnostics_status": "correction_pending; one long test output must be excluded from primary summaries"
   },
   "M1b": {
     "status": "passed",
@@ -137,7 +138,8 @@
     "diagnostic_groups": 106,
     "source_shards": 2184,
     "elapsed_seconds": 312.9597408771515,
-    "ready_for_M2": true
+    "ready_for_M2": true,
+    "repetition_diagnostics_status": "correction_pending; one long test output must be excluded from primary summaries"
   },
   "M2": {
     "status": "passed",
@@ -250,18 +252,22 @@
         "dense": 2.858797020816987,
         "dense_sparse": 3.0154879521523266
       }
-    }
+    },
+    "repetition_correction_scope": "Fit/data/checkpoints remain unchanged; main artifact validator must rebind corrected M1 derived reports after regeneration."
   },
   "M3": {
-    "status": "running",
-    "current_phase": "development selection and runtime checks",
+    "status": "stopped_for_correction",
+    "current_phase": "repetition detector fix before development selection",
     "driver_pid": 2921664,
     "exec_session_id": 51502,
     "started_at_utc": "2026-11-14T01:35:09.965258+00:00",
     "continuation_state": "artifacts/reference_continuation_state.json",
     "required_evaluation_requests": 1920,
     "required_timing_requests": 5760,
-    "required_profile_requests": 1920
+    "required_profile_requests": 1920,
+    "interruption_evidence": "artifacts/repetition_detector_review/interruption.json",
+    "driver_terminal_exit_code": 1,
+    "child_terminal_exit_code": -15
   },
   "M4": {
     "status": "not_run"

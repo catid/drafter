@@ -1,0 +1,177 @@
+"""Archive independently reproducible evidence for one frozen-rule false negative.
+
+CPU/offline tokenizer only; no model weights, GPU operations, production edits,
+or run controls. The output is a bounded evidence record, not a replacement
+classification rule or a quality/speed comparison.
+"""
+import argparse
+import ast
+from collections import Counter
+from datetime import datetime, timezone
+import hashlib
+import json
+import os
+from pathlib import Path
+import tempfile
+import time
+
+parser = argparse.ArgumentParser(description=__doc__)
+parser.add_argument('--scale', choices=['reference'], default='reference')
+args = parser.parse_args()
+ROOT = Path('/home/catid/drafter')
+RAW = ROOT / 'artifacts/m3/tune/rank0/f3cd5559bf914c6d809243262867ede41a53dd778d5754c9bcea4644319f9677.json'
+EXPECTED_RAW_SHA256 = '3700727a670383dffcc9a0d96fdb077c014c857d66f8e0b1020cb1dfe9c18852'
+OUT = ROOT / 'artifacts/repetition_detector_review/evidence.json'
+TOKENIZER = Path('/home/catid/.cache/huggingface/hub/models--Qwen--Qwen3-8B/snapshots/b968826d9c46dd6066d109eabc6255188de91218')
+started = time.monotonic()
+
+
+def sha(data):
+    return hashlib.sha256(data).hexdigest()
+
+
+def fingerprint(value):
+    return sha(json.dumps(value, sort_keys=True, separators=(',', ':')).encode())
+
+
+def periodic_span(tokens, period):
+    best = run = end = 0
+    for i in range(period, len(tokens)):
+        run = run + 1 if tokens[i] == tokens[i - period] else 0
+        if run >= 3 * period and run + period > best:
+            best, end = run + period, i + 1
+    return {'period_tokens': period, 'start_inclusive': end - best,
+            'end_exclusive': end, 'span_tokens': best}
+
+
+def atomic_json(path, value):
+    temporary = None
+    try:
+        with tempfile.NamedTemporaryFile(mode='w', encoding='utf-8', dir=path.parent,
+                                         prefix=path.name + '.', suffix='.tmp', delete=False) as stream:
+            temporary = Path(stream.name)
+            json.dump(value, stream, indent=2, allow_nan=False)
+            stream.write('\n')
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.replace(temporary, path)
+    finally:
+        if temporary is not None:
+            temporary.unlink(missing_ok=True)
+
+
+raw_bytes = RAW.read_bytes()
+assert sha(raw_bytes) == EXPECTED_RAW_SHA256
+row = json.loads(raw_bytes)
+manifest_path = ROOT / 'artifacts/m3/tune/manifest-rank0.json'
+manifest_bytes = manifest_path.read_bytes()
+manifest = json.loads(manifest_bytes)
+entry = manifest['jobs'][RAW.stem]
+assert entry['status'] == 'complete' and entry['identity'] == row['identity']
+assert entry['result_sha256'] == EXPECTED_RAW_SHA256
+assert fingerprint(row['identity']) == RAW.stem
+assert row['prompt_id'] == 'math500-long-0176' and row['split'] == 'dev'
+assert row['arm'] == 'online_bigram'
+assert row['settings'] == {'lambda_tr': 0.2, 'alpha': 1.0, 'k_ret': None}
+tokens = row['output_tokens']
+assert len(tokens) == row['generated_tokens'] == 24576
+
+# Derive the longer period from offsets of the most frequent exact 128-token
+# window; then verify every token in the resulting periodic interval directly.
+# This is evidence measurement for this file, not a general detector proposal.
+windows = Counter(tuple(tokens[i:i + 128]) for i in range(len(tokens) - 127))
+anchor, count = windows.most_common(1)[0]
+positions = [i for i in range(len(tokens) - 127) if tuple(tokens[i:i + 128]) == anchor]
+spacings = Counter(b - a for a, b in zip(positions, positions[1:]))
+period, spacing_count = spacings.most_common(1)[0]
+assert period == 96 and count == 160 and spacing_count == 159
+span = periodic_span(tokens, period)
+assert span == {'period_tokens': 96, 'start_inclusive': 9099,
+                'end_exclusive': 24576, 'span_tokens': 15477}
+start, end = span['start_inclusive'], span['end_exclusive']
+assert all(tokens[i] == tokens[start + (i - start) % period] for i in range(start, end))
+span.update({'fraction_of_full_output': span['span_tokens'] / len(tokens),
+             'full_cycles': span['span_tokens'] // period,
+             'remainder_tokens': span['span_tokens'] % period,
+             'every_token_verified_exactly': True})
+
+repeated, dominant = {}, {}
+for n in (4, 8, 16):
+    counts = Counter(tuple(tokens[i:i + n]) for i in range(len(tokens) - n + 1))
+    repeated[str(n)] = 1 - len(counts) / (len(tokens) - n + 1)
+    dominant[str(n)] = min(1., max(counts.values()) * n / len(tokens))
+old_longest = max(periodic_span(tokens, p)['span_tokens'] for p in range(1, 65))
+old_flag = len(tokens) >= 256 and (old_longest >= max(256, .5 * len(tokens)) or
+                                  (repeated['8'] >= .8 and dominant['16'] >= .5))
+assert repeated == row['generation']['repeated_ngram_fraction']
+assert dominant == row['generation']['dominant_ngram_token_coverage']
+assert old_longest == row['generation']['longest_periodic_run_tokens'] == 7
+assert old_flag is row['generation']['repetition_dominated'] is False
+
+os.environ['HF_HUB_OFFLINE'] = '1'
+os.environ['TRANSFORMERS_OFFLINE'] = '1'
+os.environ['CUDA_VISIBLE_DEVICES'] = ''
+from transformers import AutoTokenizer
+tokenizer = AutoTokenizer.from_pretrained(TOKENIZER, local_files_only=True)
+text = tokenizer.decode(tokens, skip_special_tokens=False)
+motif = tokenizer.decode(tokens[start:start + period], skip_special_tokens=False)
+paragraphs = Counter(p.strip() for p in text.split('\n\n') if p.strip())
+headings = [line for line in text.splitlines() if line.startswith('#')]
+think_close = [i for i, token in enumerate(tokens) if token == 151668]
+assert think_close == [3435] and start > think_close[0]
+assert headings[-1] == '### Variation 1: $\\frac{5}{2^3 \\cdot 5^2}$'
+assert '### Variation 2:' not in text and '```python' not in text
+import torch
+assert torch.cuda.is_initialized() is False
+
+prompt_path = ROOT / 'prompt.md'
+prompt_bytes = prompt_path.read_bytes()
+requirement = next(p for p in prompt_bytes.decode().split('\n\n')
+                   if p.startswith('A `max_new_tokens` cap is not evidence'))
+source_path = ROOT / 'src/edraft/diagnose.py'
+source_bytes = source_path.read_bytes()
+module = ast.parse(source_bytes)
+function = next(n for n in module.body if isinstance(n, ast.FunctionDef) and n.name == 'generation_diagnostics')
+function_source = ast.get_source_segment(source_bytes.decode(), function)
+collector_path = Path(__file__).resolve()
+report = {
+    'status': 'confirmed_detector_false_negative', 'scale': args.scale,
+    'recorded_at_utc': datetime.now(timezone.utc).isoformat(),
+    'scope': 'One real completed reference M3 development candidate output; not a general performance or causal conclusion.',
+    'raw': {'path': str(RAW), 'sha256': EXPECTED_RAW_SHA256, 'bytes': len(raw_bytes),
+            'manifest_path': str(manifest_path), 'manifest_snapshot_sha256': sha(manifest_bytes),
+            'manifest_checksum_verified': True, 'identity': row['identity'],
+            'generated_tokens': len(tokens), 'output_tokens_sha256': fingerprint(tokens),
+            'elapsed_seconds': row['elapsed_seconds']},
+    'generation_record': row['generation'],
+    'exact_periodic_span': span,
+    'period_derivation': {'exact_anchor_length': 128, 'anchor_occurrences': count,
+                          'first_anchor_offset': positions[0], 'last_anchor_offset': positions[-1],
+                          'consecutive_offset_spacings': dict(spacings)},
+    'decoded_evidence': {'tokenizer_snapshot': str(TOKENIZER), 'local_files_only': True,
+                         'tokenizer_class': type(tokenizer).__name__, 'motif': motif,
+                         'think_close_offsets': think_close,
+                         'repeated_paragraphs': [{'count': count, 'text': paragraph}
+                                                 for paragraph, count in paragraphs.most_common(2)],
+                         'last_section_heading': headings[-1],
+                         'no_variation_2_heading_or_python_fence': True},
+    'independent_frozen_rule_recomputation': {
+        'repeated_ngram_fraction': repeated, 'dominant_ngram_token_coverage': dominant,
+        'longest_periodic_run_tokens_periods_1_to_64': old_longest,
+        'repetition_dominated': old_flag, 'matches_recorded_fields': True},
+    'specification': {'path': str(prompt_path), 'sha256': sha(prompt_bytes),
+                      'relevant_line': 776, 'full_requirement_paragraph': requirement},
+    'frozen_detector_source': {'path': str(source_path), 'sha256': sha(source_bytes),
+                               'function_start_line': function.lineno, 'function': function_source},
+    'collector_source': {'path': str(collector_path), 'sha256': sha(collector_path.read_bytes())},
+    'finding': 'A 96-token exact cycle occupies 62.9761% of the capped final answer. This is a pathological loop, not substantive variation structure. The frozen detector correctly computes its published rule but its period<=64 restriction misses this case; the global n-gram fallback also does not fire.',
+    'interpretation': 'Requirement-level repetition-detector coverage defect. Preserve the original flag and evidence; apply no post-hoc threshold change in this investigation. The capped tail is not evidence of useful long-output coverage.',
+    'limitations': ['Does not establish that the bigram candidate caused the loop.',
+                    'Does not establish a sampling/exactness defect or any quality/speed comparison.',
+                    'Does not select new detector parameters or replace primary analysis classifications.',
+                    'The exact-period proof is token-level; the decoded snippet is supporting semantic evidence.'],
+    'cuda_initialized': torch.cuda.is_initialized(), 'elapsed_seconds': time.monotonic() - started,
+}
+atomic_json(OUT, report)
+print(json.dumps({'status': report['status'], 'output': str(OUT), 'sha256': sha(OUT.read_bytes()),
+                  'exact_periodic_span': span, 'cuda_initialized': report['cuda_initialized']}))

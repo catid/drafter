@@ -1,5 +1,12 @@
 # Research status
 
+Correction in progress: the repetition detector missed exact cycles longer than
+64 tokens. A capped M3 dev output and one M1 long-test output are confirmed
+pathological loops. M3 has been stopped; the M1 long-condition summaries below
+still reflect the old rule and must be regenerated before use. Raw traces and
+trained M2 checkpoints are preserved. See the
+[confirmed evidence](../artifacts/repetition_detector_review/evidence.json).
+
 As of 2026-11-14, reference M0, M1-pre, M1a, M1b, and the M2 protocol have **passed**.
 M2 produced a **negative offline quality result**: dense and dense+bias+sparse
 fitting worsened grouped KL on train, dev, and test. M3 development selection is
