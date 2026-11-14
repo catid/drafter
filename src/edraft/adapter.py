@@ -187,19 +187,29 @@ class ProposalSnapshot:
                                      pair_matrix=self._pair_matrix())
         return l_unit_i - beta * correction
 
-    def score_slot_tensor(self, l_unit_i, U_i, offsets: torch.Tensor, prev_ids: torch.Tensor, i: int = 0,
-                          beta=1.0, proposal_mode='dense_full', timer=None):
+    def score_slot_tensor(self, l_unit_i, U_i, offsets: torch.Tensor, prev_ids: torch.Tensor,
+                          beta=1.0, proposal_mode='dense_full', timer=None, *,
+                          contiguous_offsets: bool = False):
         """Sync-free causal slot scoring when offsets [avail] or [avail, 1] and prev_ids [avail] reside on device."""
         if proposal_mode != 'dense_full':
             raise ValueError('score_slot_tensor requires dense_full proposal mode')
+        offs_1d = offsets.squeeze(-1) if offsets.ndim == 2 and offsets.shape[1] == 1 else offsets
+        if offs_1d.ndim != 1 or prev_ids.ndim != 1 or offs_1d.numel() != prev_ids.numel():
+            raise ValueError('offsets and prev_ids must be matching 1D predecessor tensors (or offsets [avail, 1])')
+        avail = prev_ids.numel()
+        if contiguous_offsets and avail > len(self.A):
+            raise ValueError('contiguous_offsets length exceeds adapter history depth')
         if beta == 0 or self.is_zero:
             return l_unit_i
-        avail = prev_ids.numel()
         with _phase(timer, 'dense_pair_score'):
             if avail:
                 r = self.E.shape[1]
-                E_prev = self.E.index_select(0, prev_ids).to(self.A.dtype).reshape(-1)
-                message = self._pair_matrix()[:, :avail * r] @ E_prev
+                E_prev_2d = self.E.index_select(0, prev_ids).to(self.A.dtype)
+                if contiguous_offsets:
+                    message = self._pair_matrix()[:, :avail * r] @ E_prev_2d.reshape(-1)
+                else:
+                    A_sel = self.A.index_select(0, offs_1d - 1)
+                    message = torch.bmm(A_sel, E_prev_2d.unsqueeze(-1)).squeeze(-1).sum(0)
                 dense = U_i + self.E.to(self.A.dtype) @ message
             else:
                 dense = U_i
@@ -208,7 +218,7 @@ class ProposalSnapshot:
         else:
             with _phase(timer, 'sparse_lookup'):
                 candidates = top_candidates(l_unit_i - beta * dense, self.M_sparse)
-                offs_2d = offsets[:, None] if offsets.ndim == 1 else offsets
+                offs_2d = offs_1d[:, None]
                 values = self.sparse.lookup(offs_2d, prev_ids[:, None], candidates[None, :]).to(dense.dtype).sum(0)
                 correction = dense.scatter_add(0, candidates, values)
         return l_unit_i - beta * correction

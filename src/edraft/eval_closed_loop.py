@@ -1058,14 +1058,32 @@ def audit_timing_evidence(runner, prompt_manifest, settings, report):
         expected_inner = {'frozen_settings_hash': frozen_hash,
             'prompt_manifest_hash': fingerprint(prompt_manifest), 'selected_prompts': report['prompt_ids'],
             'repeats': repeats, 'warmups': warmups}
-        if getattr(runner, 'fastpath', None) is not None:
-            expected_inner['fastpath'] = runner.fastpath.config.to_dict()
-        elif isinstance(config.get('configuration'), dict) and 'fastpath' in config['configuration'] and (
-                getattr(args, 'compile', False) or getattr(args, 'cuda_graph', False)):
+        report_fastpath = None
+        if 'fastpath' in report:
+            raw_fp = report['fastpath']
+            if (not isinstance(raw_fp, dict)
+                    or set(raw_fp.keys()) != {'compile', 'cuda_graph', 'compile_mode'}
+                    or type(raw_fp['compile']) is not bool
+                    or type(raw_fp['cuda_graph']) is not bool
+                    or type(raw_fp['compile_mode']) is not str):
+                raise ValueError('invalid fastpath metadata in timing report')
+            report_fastpath = raw_fp
+        if hasattr(runner, 'fastpath'):
+            expected_fp = runner.fastpath.config.to_dict() if runner.fastpath is not None else None
+            if report_fastpath != expected_fp:
+                raise ValueError('timing session configuration mismatch')
+            if expected_fp is not None:
+                expected_inner['fastpath'] = expected_fp
+        elif getattr(args, 'compile', False) or getattr(args, 'cuda_graph', False):
             from .fastpath import FastPathConfig
-            expected_inner['fastpath'] = FastPathConfig(
+            cli_fp = FastPathConfig(
                 compile=bool(getattr(args, 'compile', False)),
                 cuda_graph=bool(getattr(args, 'cuda_graph', False))).to_dict()
+            if report_fastpath != cli_fp:
+                raise ValueError('timing session configuration mismatch')
+            expected_inner['fastpath'] = cli_fp
+        elif report_fastpath is not None:
+            expected_inner['fastpath'] = report_fastpath
         expected_config = {'configuration': expected_inner, 'checkpoint_hashes': runner.checkpoint_hashes,
             'model_pair': runner.model_pair, 'model_revisions': runner.model_revisions,
             'generation_environment': getattr(runner, 'generation_environment', None),
@@ -1148,6 +1166,8 @@ def timing(runner, prompt_manifest, settings):
               'instrumentation_policy': 'Uninstrumented synchronized request wall time for speed; separate same-arm/same-prompt CUDA-event profile runs for phases.',
               'timing_scope': 'all required held-out test prompts and condition-specific seed counts' if full_coverage else 'pilot matched subset; cannot satisfy milestone throughput gate',
               'baseline_policy': 'all baselines remeasured in this same session; no M3/M4 throughput reuse'}
+    if getattr(runner, 'fastpath', None) is not None:
+        report['fastpath'] = runner.fastpath.config.to_dict()
     plain = {(g['condition'], g['temperature'], json.dumps(g['sampling_warp_config'], sort_keys=True)): g['metrics']['tokens_per_second']['mean']
              for g in report['groups'] if g['arm'] == 'plain_dflash'}
     paired_plain = {(row['condition'], row['temperature'], json.dumps(row['sampling_warp_config'], sort_keys=True), row['prompt_id'], row['seed'], row['repeat']): row

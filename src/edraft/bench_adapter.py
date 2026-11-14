@@ -192,7 +192,7 @@ def benchmark(args):
         for i in range(K):
             offs = slot_offsets[i]
             prev_ids = ctx_buf[len(prefix) + i - offs]
-            scores = snapshot.score_slot_tensor(l_unit[i], unary[i], offs, prev_ids)
+            scores = snapshot.score_slot_tensor(l_unit[i], unary[i], offs, prev_ids, contiguous_offsets=True)
             tok_t, _ = sample_token_tensor(scores, 1., warper, generator=sampler_rng, probs_fn=probs_fn)
             ctx_buf[len(prefix) + i] = tok_t
         return ctx_buf[len(prefix):].tolist()

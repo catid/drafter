@@ -12,12 +12,14 @@ All wrappers preserve exact mathematical semantics:
 """
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass
+from dataclasses import dataclass
+import math
+import types
 from typing import Callable
 import torch
 
 from .adapter import block_unary, full_kl
-from .sampler import SamplingWarper, probabilities as eager_probabilities
+from .sampler import SamplingWarper, probabilities as eager_probabilities, probability_dtype
 
 
 @dataclass(frozen=True)
@@ -110,8 +112,63 @@ class StaticGraphCallable:
         return entry["output"].clone()
 
 
-def _maybe_compile(fn: Callable, mode: str) -> Callable:
-    return torch.compile(fn, mode=mode, fullgraph=False)
+def _fresh_compile(fn: Callable, mode: str) -> Callable:
+    """Clone `fn.__code__` so each compiled specialization owns an isolated Dynamo guard cache."""
+    isolated = types.FunctionType(
+        fn.__code__.replace(), fn.__globals__, fn.__name__, fn.__defaults__, fn.__closure__
+    )
+    return torch.compile(isolated, mode=mode, fullgraph=False)
+
+
+def _make_compiled_unary(mode: str) -> Callable:
+    def _unary_impl(E: torch.Tensor, W: torch.Tensor, b: torch.Tensor, H: torch.Tensor) -> torch.Tensor:
+        return (H.to(W.dtype) @ W.T) @ E.to(W.dtype).T + b
+
+    return _fresh_compile(_unary_impl, mode)
+
+
+def _make_compiled_full_kl(mode: str) -> Callable:
+    def _full_kl_impl(scores: torch.Tensor, target_logits: torch.Tensor,
+                      weights: torch.Tensor | None = None) -> torch.Tensor:
+        p_log = torch.log_softmax(target_logits.float().detach(), -1)
+        q_log = torch.log_softmax(scores.float(), -1)
+        per_slot = (p_log.exp() * (p_log - q_log)).sum(-1)
+        if weights is None:
+            positions = torch.arange(scores.shape[0], device=scores.device, dtype=torch.float32)
+            weights = torch.exp(-positions / 5.0)
+        return (per_slot * weights).sum()
+
+    return _fresh_compile(_full_kl_impl, mode)
+
+
+def _make_compiled_probs(temperature: float, warper: SamplingWarper, mode: str) -> Callable:
+    temp = float(temperature)
+    top_k = int(warper.top_k)
+    top_p = float(warper.top_p)
+    min_p = float(warper.min_p)
+
+    def _probs_impl(scores: torch.Tensor) -> torch.Tensor:
+        s = probability_dtype(scores) / temp
+        V = s.shape[-1]
+        indices = None
+        if 0 < top_k < V:
+            s, indices = torch.topk(s, top_k, dim=-1)
+        probs = torch.softmax(s, dim=-1)
+        if top_p < 1.0:
+            sorted_probs, order = probs.sort(dim=-1, descending=True)
+            keep = sorted_probs.cumsum(dim=-1) - sorted_probs < top_p
+            probs = torch.zeros_like(probs).scatter(-1, order, sorted_probs * keep)
+            probs = probs / probs.sum(dim=-1, keepdim=True)
+        if min_p > 0.0:
+            keep = probs >= min_p * probs.amax(dim=-1, keepdim=True)
+            probs = probs * keep
+            probs = probs / probs.sum(dim=-1, keepdim=True)
+        if indices is not None:
+            full_shape = (*probs.shape[:-1], V)
+            probs = torch.zeros(full_shape, dtype=probs.dtype, device=probs.device).scatter(-1, indices, probs)
+        return probs
+
+    return _fresh_compile(_probs_impl, mode)
 
 
 class FastPathRuntime:
@@ -119,20 +176,20 @@ class FastPathRuntime:
     def __init__(self, config: FastPathConfig = FastPathConfig(), *, static_block_length: int | None = None):
         self.config = config
         self.static_block_length = static_block_length
-        unary_base = _maybe_compile(block_unary, config.compile_mode) if config.compile else block_unary
-        probs_base = _maybe_compile(eager_probabilities, config.compile_mode) if config.compile else eager_probabilities
-        self.full_kl_fn = _maybe_compile(full_kl, config.compile_mode) if config.compile else full_kl
-        self._unary_base = unary_base
-        self._probs_base = probs_base
+        self._unary_base = _make_compiled_unary(config.compile_mode) if config.compile else block_unary
+        self.full_kl_fn = _make_compiled_full_kl(config.compile_mode) if config.compile else full_kl
+        self._probs_compiled_cache: dict[tuple[int, float, SamplingWarper], Callable] = {}
         if config.cuda_graph or config.simulate_cpu_graph:
             allowed_unary = (static_block_length,) if static_block_length is not None else None
             self._unary_graph = StaticGraphCallable(
-                lambda E, W, b, H: unary_base(E, W, b, H),
+                lambda E, W, b, H: self._unary_base(E, W, b, H),
                 allowed_first_dims=allowed_unary,
                 simulate_cpu=config.simulate_cpu_graph,
             )
             self._probs_graph = StaticGraphCallable(
-                lambda scores, temperature, warper: probs_base(scores, temperature, warper),
+                lambda scores, temperature, warper: self._probs_callable_for(
+                    scores.ndim, temperature, warper
+                )(scores),
                 simulate_cpu=config.simulate_cpu_graph,
             )
         else:
@@ -143,16 +200,34 @@ class FastPathRuntime:
     def enabled(self) -> bool:
         return self.config.enabled
 
+    def _probs_callable_for(self, ndim: int, temperature: float, warper: SamplingWarper) -> Callable:
+        if not self.config.compile:
+            return lambda s: eager_probabilities(s, temperature, warper)
+        key = (int(ndim), float(temperature), warper)
+        fn = self._probs_compiled_cache.get(key)
+        if fn is None:
+            fn = _make_compiled_probs(temperature, warper, self.config.compile_mode)
+            self._probs_compiled_cache[key] = fn
+        return fn
+
     def unary(self, E: torch.Tensor, W: torch.Tensor, b: torch.Tensor, H: torch.Tensor) -> torch.Tensor:
+        grad_needed = torch.is_grad_enabled() and any(x.requires_grad for x in (E, W, b, H))
+        if self.static_block_length is not None and H.shape[0] != self.static_block_length:
+            if self._unary_graph is not None:
+                self._unary_graph.eager_fallbacks += 1
+            if grad_needed:
+                return block_unary(E, W, b, H)
+            with torch.no_grad():
+                return block_unary(E, W, b, H)
         if self._unary_graph is not None:
-            # Keep constant E bound via extra_args if unchanged; pass W, b, H as copied tensor inputs
-            # only when H matches static_block_length, avoiding copying large [V, r] E on replay.
-            if (self.static_block_length is None or H.shape[0] == self.static_block_length) and (
-                H.device.type == "cuda" or self.config.simulate_cpu_graph
-            ) and not (torch.is_grad_enabled() and any(x.requires_grad for x in (E, W, b, H))):
-                return self._unary_bound_E(E, W, b, H)
+            if (H.device.type == "cuda" or self.config.simulate_cpu_graph) and not grad_needed:
+                with torch.no_grad():
+                    return self._unary_bound_E(E, W, b, H)
             self._unary_graph.eager_fallbacks += 1
-        return self._unary_base(E, W, b, H)
+        if grad_needed:
+            return self._unary_base(E, W, b, H)
+        with torch.no_grad():
+            return self._unary_base(E, W, b, H)
 
     def _unary_bound_E(self, E: torch.Tensor, W: torch.Tensor, b: torch.Tensor, H: torch.Tensor) -> torch.Tensor:
         # Key by E's storage identity & version so E is never copied on every block replay.
@@ -174,7 +249,7 @@ class FastPathRuntime:
         _, graph_fn, allowed = cache[e_id]
         if allowed is not None and H.shape[0] not in allowed:
             self._unary_graph.eager_fallbacks += 1
-            return self._unary_base(E, W, b, H)
+            return block_unary(E, W, b, H)
         out = graph_fn(W, b, H)
         self._unary_graph.graph_captures = sum(g.graph_captures for _, g, _ in cache.values())
         self._unary_graph.graph_replays = sum(g.graph_replays for _, g, _ in cache.values())
@@ -182,13 +257,18 @@ class FastPathRuntime:
 
     def probabilities(self, scores: torch.Tensor, temperature: float,
                       warper: SamplingWarper = SamplingWarper()) -> torch.Tensor:
-        if self._probs_graph is not None:
-            if scores.ndim == 2 and self.static_block_length is not None:
-                if scores.shape[0] not in (self.static_block_length, self.static_block_length + 1):
-                    self._probs_graph.eager_fallbacks += 1
-                    return self._probs_base(scores, temperature, warper)
-            return self._probs_graph(scores, extra_args=(float(temperature), warper))
-        return self._probs_base(scores, temperature, warper)
+        if not math.isfinite(temperature) or temperature <= 0:
+            raise ValueError("sampling probabilities require finite temperature > 0")
+        if (scores.ndim == 2 and self.static_block_length is not None
+                and scores.shape[0] not in (self.static_block_length, self.static_block_length + 1)):
+            if self._probs_graph is not None:
+                self._probs_graph.eager_fallbacks += 1
+            with torch.no_grad():
+                return eager_probabilities(scores, temperature, warper)
+        with torch.no_grad():
+            if self._probs_graph is not None:
+                return self._probs_graph(scores, extra_args=(float(temperature), warper))
+            return self._probs_callable_for(scores.ndim, temperature, warper)(scores)
 
     def stats(self) -> dict:
         return {

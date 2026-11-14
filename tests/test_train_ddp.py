@@ -15,7 +15,7 @@ from edraft.dflash_loop import generate_toy
 from edraft.sampler import SamplingWarper
 from edraft.toy import ToyParallelDrafter, ToyTarget
 from edraft.traces import TraceShardWriter, compact_block
-from edraft.train import fit, load_adapter_checkpoint, trace_index
+from edraft.train import _setup_distributed, fit, load_adapter_checkpoint, trace_index
 
 
 def _free_port() -> int:
@@ -260,3 +260,60 @@ def test_launch_cli_supports_ddp_train_and_dynamic_schedules(tmp_path: Path, mon
     assert "edraft.eval_closed_loop" in m4_cmd
     assert "--schedule" in m4_cmd and "dynamic" in m4_cmd
     assert "--compile" in m4_cmd and "--cuda_graph" in m4_cmd
+
+
+def test_setup_distributed_torchrun_local_rank_and_nccl_device_id(monkeypatch):
+    set_device_calls: list[torch.device] = []
+    init_pg_calls: list[dict] = []
+
+    monkeypatch.setattr(torch.cuda, "is_available", lambda: True)
+    monkeypatch.setattr(torch.cuda, "set_device", lambda dev: set_device_calls.append(dev))
+    monkeypatch.setattr(dist, "is_initialized", lambda: False)
+    monkeypatch.setattr(dist, "init_process_group", lambda **kwargs: init_pg_calls.append(kwargs))
+
+    # 1. torchrun multi-GPU visibility (device_count=8, LOCAL_RANK=3, default device 'cuda:0' or 'cuda')
+    monkeypatch.setattr(torch.cuda, "device_count", lambda: 8)
+    monkeypatch.setenv("LOCAL_RANK", "3")
+    for initial_dev in ("cuda:0", "cuda"):
+        set_device_calls.clear()
+        init_pg_calls.clear()
+        args = SimpleNamespace(rank=3, world_size=8, device=initial_dev, dist_backend=None)
+        assert _setup_distributed(args) is True
+        assert args.device == "cuda:3"
+        assert set_device_calls == [torch.device("cuda", 3)]
+        assert init_pg_calls == [{
+            "backend": "nccl", "rank": 3, "world_size": 8, "device_id": torch.device("cuda", 3),
+        }]
+
+    # 2. launch.py single-visible-GPU per rank (CUDA_VISIBLE_DEVICES='5' -> device_count=1)
+    monkeypatch.setattr(torch.cuda, "device_count", lambda: 1)
+    monkeypatch.setenv("LOCAL_RANK", "3")
+    set_device_calls.clear()
+    init_pg_calls.clear()
+    args_launch = SimpleNamespace(rank=3, world_size=8, device="cuda:0", dist_backend=None)
+    assert _setup_distributed(args_launch) is True
+    assert args_launch.device == "cuda:0"
+    assert set_device_calls == [torch.device("cuda", 0)]
+    assert init_pg_calls == [{
+        "backend": "nccl", "rank": 3, "world_size": 8, "device_id": torch.device("cuda", 0),
+    }]
+
+    # 3. Explicit non-zero --device cuda:5 is preserved even when LOCAL_RANK is set
+    monkeypatch.setattr(torch.cuda, "device_count", lambda: 8)
+    monkeypatch.setenv("LOCAL_RANK", "2")
+    set_device_calls.clear()
+    init_pg_calls.clear()
+    args_explicit = SimpleNamespace(rank=2, world_size=8, device="cuda:5", dist_backend=None)
+    assert _setup_distributed(args_explicit) is True
+    assert args_explicit.device == "cuda:5"
+    assert set_device_calls == [torch.device("cuda", 5)]
+    assert init_pg_calls == [{
+        "backend": "nccl", "rank": 2, "world_size": 8, "device_id": torch.device("cuda", 5),
+    }]
+
+    # 4. Out-of-range LOCAL_RANK fails fast with ValueError
+    monkeypatch.setenv("LOCAL_RANK", "9")
+    args_bad = SimpleNamespace(rank=1, world_size=8, device="cuda:0", dist_backend=None)
+    with pytest.raises(ValueError, match="LOCAL_RANK=9"):
+        _setup_distributed(args_bad)
+

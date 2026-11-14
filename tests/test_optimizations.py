@@ -3,6 +3,7 @@ from __future__ import annotations
 import copy
 import importlib.util
 import json
+import logging
 import math
 from pathlib import Path
 from types import SimpleNamespace
@@ -10,14 +11,15 @@ from types import SimpleNamespace
 import pytest
 import torch
 
-from edraft.adapter import (DenseAdapter, block_correction, block_unary, full_kl,
+from edraft.adapter import (DenseAdapter, _pair_message, block_correction, block_unary, full_kl,
                             loss_weights, prev_token, slot_correction, top_candidates)
 from edraft.collect import audit as collect_audit, calibration as collect_calibration, collect as collect_traces, prepare_args as prepare_collect_args, parser as collect_parser
 from edraft.dflash_loop import generate_toy
 from edraft.diagnose import _longest_periodic_run
 from edraft.eval_closed_loop import (EvaluationRunner, aggregate as eval_aggregate, arms_for,
-                                     candidate_settings, evaluate as run_evaluate,
-                                     sampling_conditions, smoke_manifest, tune as run_tune)
+                                     audit_timing_evidence, candidate_settings, evaluate as run_evaluate,
+                                     main as eval_main, sampling_conditions, smoke_manifest,
+                                     timing as run_timing, tune as run_tune)
 from edraft.fastpath import FastPathConfig, FastPathRuntime
 from edraft.online import OnlineBigram, OnlineState, _TrainingSparse
 from edraft.runtime import WorkQueue, parse_config
@@ -319,7 +321,13 @@ def test_block_correction_and_score_slot_tensor_match_per_slot_reference(proposa
             avail = min(D, len(prefix) + i)
             offs = torch.arange(1, avail + 1, dtype=torch.long)
             prev_ids = ctx_buf[len(prefix) + i - offs]
-            sc_fast = snap.score_slot_tensor(l_test[i], unary[i], offs, prev_ids, proposal_mode=proposal_mode)
+            sc_fast = snap.score_slot_tensor(
+                l_test[i], unary[i], offs, prev_ids, proposal_mode=proposal_mode, contiguous_offsets=True,
+            )
+            sc_default = snap.score_slot_tensor(
+                l_test[i], unary[i], offs, prev_ids, proposal_mode=proposal_mode, contiguous_offsets=False,
+            )
+            torch.testing.assert_close(sc_fast, sc_default, atol=1e-6, rtol=1e-6)
             tok_t, prb_f = sample_token_tensor(sc_fast, temperature, warper, generator=rng_fast)
             ctx_buf[len(prefix) + i] = tok_t
             fast_probs.append(prb_f)
@@ -334,6 +342,7 @@ def test_block_correction_and_score_slot_tensor_match_per_slot_reference(proposa
 @pytest.mark.parametrize("cfg", [
     FastPathConfig(simulate_cpu_graph=True),
     FastPathConfig(compile=True),
+    FastPathConfig(compile=True, simulate_cpu_graph=True),
 ])
 def test_fastpath_static_graph_replay_fallback_cloning_and_rng_safety(cfg: FastPathConfig):
     gen = torch.Generator().manual_seed(2026)
@@ -523,4 +532,231 @@ def test_bench_adapter_includes_online_and_zero_sync_modes():
     assert "online_update_step_fastpath" in report["phases"]
     assert "batched_full_zero_sync" in report["modes"]
     assert "batched_full_fastpath" in report["modes"]
+
+
+def test_score_slot_tensor_non_contiguous_reordered_offsets_and_validation():
+    gen = torch.Generator().manual_seed(404)
+    V, r, p, D, M = 31, 6, 8, 4, 9
+    E = torch.randn(V, r, generator=gen) / math.sqrt(r)
+    offline_sparse = SignedHash(73)
+    with torch.no_grad():
+        offline_sparse.values.copy_(torch.randn(73, generator=gen) * 0.25)
+    lazy = LazySignedHash(67)
+    lazy.step(torch.tensor([1, 7, 19, 41]), torch.tensor([0.35, -0.5, 0.2, -0.3]), lr=0.4, lambda_l1=0.01)
+    combined_sparse = SumSparse((offline_sparse, lazy.snapshot()))
+
+    adapter = DenseAdapter(E, p=p, D=D, sparse=offline_sparse, M_sparse=M)
+    with torch.no_grad():
+        adapter.W.copy_(torch.randn(r, p, generator=gen) * 0.2)
+        adapter.A.copy_(torch.randn(D, r, r, generator=gen) * 0.35)
+        adapter.b.copy_(torch.randn(V, generator=gen) * 0.1)
+    base_snap = adapter.snapshot()
+    snap = type(base_snap)(
+        base_snap.E, base_snap.W, base_snap.A, base_snap.b, base_snap.version,
+        combined_sparse, base_snap.M_sparse, None, False,
+    )
+    l_unit_i = torch.randn(V, generator=gen).log_softmax(-1)
+    U_i = snap.unary(torch.randn(1, p, generator=gen))[0]
+
+    predecessor_cases = [
+        [],
+        [(3, 14)],
+        [(2, 7), (4, 19)],
+        [(2, 11), (1, 5)],
+        [(4, 3), (2, 22), (1, 9)],
+    ]
+    for beta in (1.0, 0.65, 0.0):
+        for preds in predecessor_cases:
+            offs_1d = torch.tensor([d for d, _ in preds], dtype=torch.long)
+            prev_1d = torch.tensor([tok for _, tok in preds], dtype=torch.long)
+            if beta == 0.0:
+                expected = l_unit_i
+            else:
+                if preds:
+                    msg = _pair_message(E, snap.A, preds)
+                    dense = U_i + E.to(snap.A.dtype) @ msg
+                    cands = top_candidates(l_unit_i - beta * dense, M)
+                    s_vals = combined_sparse.lookup(offs_1d[:, None], prev_1d[:, None], cands[None, :]).sum(0)
+                    corr = dense.scatter_add(0, cands, s_vals.to(dense.dtype))
+                else:
+                    corr = U_i
+                expected = l_unit_i - beta * corr
+
+            got_1d = snap.score_slot_tensor(l_unit_i, U_i, offs_1d, prev_1d, beta=beta)
+            got_2d = snap.score_slot_tensor(l_unit_i, U_i, offs_1d[:, None], prev_1d, beta=beta)
+            torch.testing.assert_close(got_1d, expected, atol=1e-6, rtol=1e-6)
+            torch.testing.assert_close(got_2d, expected, atol=1e-6, rtol=1e-6)
+
+        # Validation checks must trigger even when beta == 0.0
+        with pytest.raises(ValueError, match="matching 1D"):
+            snap.score_slot_tensor(l_unit_i, U_i, torch.tensor([1, 2]), torch.tensor([5]), beta=beta)
+        with pytest.raises(ValueError, match="matching 1D"):
+            snap.score_slot_tensor(l_unit_i, U_i, torch.tensor([[1, 2], [3, 4]]), torch.tensor([5, 6, 7, 8]), beta=beta)
+        with pytest.raises(ValueError, match="matching 1D"):
+            snap.score_slot_tensor(l_unit_i, U_i, torch.tensor(1), torch.tensor([5]), beta=beta)
+        with pytest.raises(ValueError, match="matching 1D"):
+            snap.score_slot_tensor(l_unit_i, U_i, torch.tensor([1, 2]), torch.tensor([[5], [6]]), beta=beta)
+        with pytest.raises(ValueError, match="exceeds adapter history depth"):
+            snap.score_slot_tensor(
+                l_unit_i, U_i, torch.arange(1, D + 2), torch.zeros(D + 1, dtype=torch.long),
+                beta=beta, contiguous_offsets=True,
+            )
+
+
+def test_standalone_summarize_succeeds_after_compiled_timing(tmp_path: Path):
+    p_manifest = smoke_manifest()
+    out_compiled = tmp_path / "compiled_m3"
+    base_kwargs = dict(
+        output=out_compiled, stage="m3", scale="smoke", seed=29, device="cpu",
+        max_new_tokens=12, long_max_new_tokens=16, smoke_tokens=12,
+        standard_dev_prompts=2, long_dev_prompts=2, timing_prompts=0,
+        timing_repeats=2, timing_warmups=1, fresh_session=False, schedule="modulo",
+        target="t", drafter="d", dense_checkpoint=None, sparse_checkpoint=None,
+        projection=None, prompts_manifest=None, feature_diagnostic=None,
+    )
+    settings = run_tune(
+        EvaluationRunner(SimpleNamespace(**base_kwargs, mode="tune", rank=0, world_size=1, compile=True, cuda_graph=False)),
+        p_manifest,
+    )
+    run_evaluate(
+        EvaluationRunner(SimpleNamespace(**base_kwargs, mode="evaluate", rank=0, world_size=1, compile=True, cuda_graph=False)),
+        p_manifest, settings,
+    )
+    timing_report = run_timing(
+        EvaluationRunner(SimpleNamespace(**base_kwargs, mode="timing", rank=0, world_size=1, compile=True, cuda_graph=False)),
+        p_manifest, settings,
+    )
+    assert timing_report["fastpath"] == {"compile": True, "cuda_graph": False, "compile_mode": "default"}
+
+    # Standalone --mode summarize with default flags (compile=False, cuda_graph=False) must succeed!
+    summary = eval_aggregate(
+        SimpleNamespace(**base_kwargs, mode="summarize", rank=0, world_size=1, compile=False, cuda_graph=False),
+        p_manifest, settings,
+    )
+    assert summary["status"] == "complete"
+    assert summary["isolated_timing_complete"] is True
+    assert summary["timing_evidence"]["status"] == "complete"
+
+    # Also test CLI main(["--mode", "summarize", ...]) with zero fastpath flags
+    eval_main([
+        "--scale", "smoke", "--stage", "m3", "--mode", "summarize",
+        "--output", str(out_compiled), "--seed", "29",
+        "--max_new_tokens", "12", "--long_max_new_tokens", "16", "--smoke_tokens", "12",
+    ])
+    cli_summary = json.loads((out_compiled / "m3" / "summary.json").read_text())
+    assert cli_summary["status"] == "complete"
+    assert cli_summary["isolated_timing_complete"] is True
+
+    # Passing a contradicting explicit CLI flag (--cuda_graph) to summarize must fail cleanly
+    bad_summary = eval_aggregate(
+        SimpleNamespace(**base_kwargs, mode="summarize", rank=0, world_size=1, compile=False, cuda_graph=True),
+        p_manifest, settings,
+    )
+    assert bad_summary["status"] == "incomplete"
+    assert "configuration mismatch" in bad_summary["timing_evidence"]["reason"]
+
+    # Auditing with a live eager EvaluationRunner(compile=False) must also reject the compiled timing report
+    eager_runner = EvaluationRunner(SimpleNamespace(**base_kwargs, mode="timing", rank=0, world_size=1, compile=False, cuda_graph=False))
+    live_mismatch = audit_timing_evidence(eager_runner, p_manifest, settings, timing_report)
+    assert live_mismatch["status"] == "incomplete"
+    assert "configuration mismatch" in live_mismatch["reason"]
+
+    # Baseline timing (compile=False, cuda_graph=False) omits 'fastpath' key completely
+    out_eager = tmp_path / "eager_m3"
+    eager_kwargs = dict(base_kwargs, output=out_eager)
+    eager_settings = run_tune(
+        EvaluationRunner(SimpleNamespace(**eager_kwargs, mode="tune", rank=0, world_size=1, compile=False, cuda_graph=False)),
+        p_manifest,
+    )
+    eager_timing = run_timing(
+        EvaluationRunner(SimpleNamespace(**eager_kwargs, mode="timing", rank=0, world_size=1, compile=False, cuda_graph=False)),
+        p_manifest, eager_settings,
+    )
+    assert "fastpath" not in eager_timing
+
+
+def test_fastpath_compile_zero_dynamo_recompile_limit_across_full_pipeline(tmp_path: Path):
+    recompile_messages: list[str] = []
+
+    class _RecompileWatcher(logging.Handler):
+        def emit(self, record: logging.LogRecord) -> None:
+            msg = record.getMessage()
+            if "recompile_limit" in msg:
+                recompile_messages.append(msg)
+
+    watcher = _RecompileWatcher()
+    dynamo_logger = logging.getLogger("torch._dynamo")
+    dynamo_logger.addHandler(watcher)
+    try:
+        torch._dynamo.reset()
+        gen = torch.Generator().manual_seed(5150)
+        V, r, p, D, K = 29, 6, 8, 3, 4
+        E = torch.randn(V, r, generator=gen) / math.sqrt(r)
+        adapter = DenseAdapter(E, p=p, D=D, sparse=SignedHash(64), M_sparse=6)
+        with torch.no_grad():
+            adapter.W.normal_(0, 0.02)
+            adapter.A.normal_(0, 0.02)
+            adapter.b.normal_(0, 0.01)
+
+        warpers = [
+            SamplingWarper(),
+            SamplingWarper(top_k=12, top_p=0.95),
+            SamplingWarper(top_k=8, top_p=0.8, min_p=0.05),
+            SamplingWarper(top_k=0, top_p=1.0, min_p=0.02),
+        ]
+        for cfg in (FastPathConfig(compile=True), FastPathConfig(compile=True, simulate_cpu_graph=True)):
+            fp = FastPathRuntime(cfg, static_block_length=K)
+            # Mix grad_mode True and False, 1D + static 2D (K, K+1) + cap-trimmed 2D (1, 2, 3), 4 temps, 4 warpers
+            for use_no_grad in (False, True):
+                ctx = torch.no_grad() if use_no_grad else torch.enable_grad()
+                with ctx:
+                    for shape in ((V,), (K, V), (K + 1, V), (1, V), (2, V), (3, V)):
+                        x = torch.randn(*shape, generator=gen)
+                        for T in (0.6, 0.7, 1.0, 0.85):
+                            for w in warpers:
+                                got = fp.probabilities(x, T, w)
+                                assert got.shape == shape
+                                assert abs(float(got.sum(-1).mean()) - 1.0) <= 1e-5
+                    # Static K=4 and cap-trimmed K=2 unary (both inference no-grad and requires_grad=True)
+                    H_static = torch.randn(K, p, generator=gen)
+                    H_trim = torch.randn(2, p, generator=gen)
+                    W_det, b_det = adapter.W.detach(), adapter.b.detach()
+                    torch.testing.assert_close(fp.unary(E, W_det, b_det, H_static), block_unary(E, W_det, b_det, H_static), atol=1e-5, rtol=1e-5)
+                    torch.testing.assert_close(fp.unary(E, W_det, b_det, H_trim), block_unary(E, W_det, b_det, H_trim), atol=1e-5, rtol=1e-5)
+                    if not use_no_grad:
+                        u_grad = fp.unary(E, adapter.W, adapter.b, H_static)
+                        assert u_grad.requires_grad
+                        torch.testing.assert_close(u_grad, block_unary(E, adapter.W, adapter.b, H_static), atol=1e-5, rtol=1e-5)
+            # OnlineState update with static K=4 and cap-trimmed K=2
+            online = OnlineState(adapter, lr=0.01, lambda_l2=1e-3, lambda_l1_b=1e-4, lambda_l1_s=1e-4, sparse_capacity=64, enable_sparse=True, fastpath=fp)
+            for r_idx, k_cur in ((1, K), (2, 2), (3, K), (4, 1)):
+                online.update(
+                    r_idx,
+                    torch.randn(k_cur, V, generator=gen).log_softmax(-1),
+                    torch.randn(k_cur, V, generator=gen),
+                    torch.randn(k_cur, p, generator=gen),
+                    [1, 2],
+                    [int(t) for t in torch.randint(V, (k_cur,), generator=gen).tolist()],
+                )
+
+        # Also exercise full tune + evaluate + timing with smoke_tokens=15 (forces cap-trimmed terminal blocks < K=4)
+        p_manifest = smoke_manifest()
+        out = tmp_path / "m3_compile_no_bailout"
+        base = dict(
+            output=out, stage="m3", scale="smoke", seed=61, device="cpu",
+            max_new_tokens=15, long_max_new_tokens=15, smoke_tokens=15,
+            standard_dev_prompts=1, long_dev_prompts=1, timing_prompts=1,
+            timing_repeats=2, timing_warmups=1, fresh_session=False, schedule="modulo",
+            compile=True, cuda_graph=False, target="t", drafter="d",
+            dense_checkpoint=None, sparse_checkpoint=None, projection=None,
+            prompts_manifest=None, feature_diagnostic=None,
+        )
+        settings = run_tune(EvaluationRunner(SimpleNamespace(**base, mode="tune", rank=0, world_size=1)), p_manifest)
+        run_evaluate(EvaluationRunner(SimpleNamespace(**base, mode="evaluate", rank=0, world_size=1)), p_manifest, settings)
+        run_timing(EvaluationRunner(SimpleNamespace(**base, mode="timing", rank=0, world_size=1)), p_manifest, settings)
+
+        assert recompile_messages == [], f"Unexpected Dynamo recompile_limit bailouts: {recompile_messages}"
+    finally:
+        dynamo_logger.removeHandler(watcher)
+
 

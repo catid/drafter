@@ -770,7 +770,34 @@ def smoke_bundle(args):
     return args.output / 'm2_smoke_traces', E, draft.draft_lm_head.weight, draft.draft_lm_head.bias, draft.head_metadata()
 
 
-def main():
+def _setup_distributed(args) -> bool:
+    """Bind per-rank CUDA device under torchrun/launch and initialize process group if needed."""
+    os.environ['RANK'] = str(args.rank)
+    cuda_dev = None
+    if str(args.device).startswith('cuda') and torch.cuda.is_available():
+        if str(args.device) == 'cuda':
+            args.device = 'cuda:0'
+        if (args.world_size > 1 and 'LOCAL_RANK' in os.environ
+                and str(args.device) == 'cuda:0' and torch.cuda.device_count() > 1):
+            local_rank = int(os.environ['LOCAL_RANK'])
+            if not 0 <= local_rank < torch.cuda.device_count():
+                raise ValueError(f'LOCAL_RANK={local_rank} out of range for {torch.cuda.device_count()} visible CUDA devices')
+            args.device = f'cuda:{local_rank}'
+        cuda_dev = torch.device(str(args.device))
+        if cuda_dev.index is None:
+            cuda_dev = torch.device('cuda', 0)
+        torch.cuda.set_device(cuda_dev)
+    if args.world_size > 1 and not dist.is_initialized():
+        backend = args.dist_backend or ('nccl' if str(args.device).startswith('cuda') else 'gloo')
+        init_kwargs = {'backend': backend, 'rank': args.rank, 'world_size': args.world_size}
+        if backend == 'nccl' and cuda_dev is not None:
+            init_kwargs['device_id'] = cuda_dev
+        dist.init_process_group(**init_kwargs)
+        return True
+    return False
+
+
+def main(argv=None):
     parser = common_parser(__doc__)
     parser.add_argument('--trace_dir', type=Path, default=ROOT / 'artifacts/traces')
     parser.add_argument('--m1_audit', type=Path, default=ROOT / 'artifacts/m1_audit.json')
@@ -799,7 +826,7 @@ def main():
     parser.add_argument('--stats_benchmark_entries', type=int, default=1_000_000)
     parser.add_argument('--resume', action='store_true', default=True)
     parser.add_argument('--no_resume', action='store_false', dest='resume')
-    args = parse_config(parser)
+    args = parse_config(parser, argv)
     if args.m1_diagnostic is None:
         args.m1_diagnostic = args.output / f'diagnostic_{args.scale}.json'
     if min(args.batch_blocks, args.vocab_chunk, args.epochs_dense, args.epochs_sparse, args.checkpoint_every) < 1:
@@ -810,12 +837,7 @@ def main():
         raise ValueError('rank must satisfy 0 <= rank < world_size')
     if min(args.learning_rate, args.sparse_learning_rate) <= 0 or min(args.weight_decay, args.bias_weight_decay, args.lambda_l1) < 0:
         raise ValueError('Learning rates must be positive and regularization nonnegative')
-    os.environ['RANK'] = str(args.rank)
-    initialized_dist = False
-    if args.world_size > 1 and not dist.is_initialized():
-        backend = args.dist_backend or ('nccl' if str(args.device).startswith('cuda') else 'gloo')
-        dist.init_process_group(backend=backend, rank=args.rank, world_size=args.world_size)
-        initialized_dist = True
+    initialized_dist = _setup_distributed(args)
     try:
         torch.manual_seed(args.seed)
         random.seed(args.seed)

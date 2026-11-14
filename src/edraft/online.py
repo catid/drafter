@@ -256,7 +256,9 @@ class OnlineState:
             correction = dense.scatter_add(1, candidates, slot_vals)
         else:
             correction = dense
-        kl_fn = full_kl if self.fastpath is None else self.fastpath.full_kl_fn
+        use_fast_kl = (self.fastpath is not None
+                       and (self.fastpath.static_block_length is None or K == self.fastpath.static_block_length))
+        kl_fn = self.fastpath.full_kl_fn if use_fast_kl else full_kl
         loss = kl_fn(l_unit - correction, target_logits, weights)
         loss.backward()
         with torch.no_grad():

@@ -128,8 +128,8 @@ def _sample_proposal(draft_logits, h_raw, prefix, *, temperature, warper, genera
             avail = min(D, L_ctx + i)
             prev_ids = ctx_buf[L_ctx + i - offsets_all[:avail]]
             score = snapshot.score_slot_tensor(
-                l_unit[i], U[i] if U is not None else None, offsets_all[:avail, None], prev_ids, i,
-                beta=beta, timer=timer)
+                l_unit[i], U[i] if U is not None else None, offsets_all[:avail, None], prev_ids,
+                beta=beta, timer=timer, contiguous_offsets=True)
             with timer.phase("sequential_sampling"):
                 tok_t, q_i = sample_token_tensor(score, temperature, warper, generator, probs_fn=probs_fn)
                 ctx_buf[L_ctx + i] = tok_t
