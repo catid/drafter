@@ -18,11 +18,12 @@ from .backend import crop_cache, extract_context_feature, make_cache
 from .sampler import (
     SamplingWarper,
     probabilities,
+    sample_from_top_scaled,
     sample_token,
-    sample_token_compact,
+    sample_token_compact_with_prob,
     sample_token_tensor,
 )
-from .verify import verify_block
+from .verify import CompactProposal, verify_block
 
 
 @dataclass
@@ -91,7 +92,7 @@ def _is_zero(snapshot):
 
 def _sample_proposal(draft_logits, h_raw, prefix, *, temperature, warper, generator,
                      snapshot, projection, beta, bigram, timer, need_training_tensors=True,
-                     fastpath=None, _return_token_tensor=False):
+                     fastpath=None, _return_token_tensor=False, _allow_compact_q=False):
     K = len(draft_logits)
     probs_fn = None if fastpath is None else fastpath.probabilities
     compact_probs_fn = None if fastpath is None else fastpath.compact_probabilities
@@ -108,6 +109,9 @@ def _sample_proposal(draft_logits, h_raw, prefix, *, temperature, warper, genera
     if need_training_tensors or adapter_active:
         with timer.phase('feature_projection'):
             H = projection(h_raw) if projection is not None else h_raw.float()
+    if K == 0:
+        empty_toks = draft_logits.new_empty((0,), dtype=torch.long) if _return_token_tensor else []
+        return empty_toks, None, l_unit, H
     if _is_zero(snapshot) and bigram_inactive:
         # Scores are independent in this case. Batch the categorical draws to
         # preserve the inspected upstream RNG stream. The mathematical causal
@@ -134,42 +138,126 @@ def _sample_proposal(draft_logits, h_raw, prefix, *, temperature, warper, genera
             ctx_buf[:L_ctx] = torch.tensor(prefix_tail, dtype=torch.long, device=device)
         offsets_all = torch.arange(1, D_hist + 1, dtype=torch.long, device=device) if adapter_active else None
         compact_k = warper.top_k if (temperature > 0 and 0 < warper.top_k < V) else 0
+        k_eff = 1 if (temperature == 0 and V > 0) else compact_k
         slot_probs: torch.Tensor | None = None
         slot_indices = torch.empty((K, compact_k), dtype=torch.long, device=device) if compact_k else None
+        q_selected_buf: torch.Tensor | None = None
         full_qs: list[torch.Tensor] | None = [] if (temperature > 0 and not compact_k) else None
+
+        use_bigram_compact = (
+            not adapter_active
+            and not bigram_inactive
+            and bigram.lambda_tr > 0
+            and k_eff > 0
+        )
+        use_sparse_compact = (
+            adapter_active
+            and beta != 0
+            and snapshot.sparse is not None
+            and bigram_inactive
+            and k_eff > 0
+            and snapshot.M_sparse >= 1
+            and snapshot.M_sparse + k_eff <= V
+        )
+
+        bg_state = None
+        bg_base_vals = None
+        bg_base_ids = None
+        if use_bigram_compact:
+            with timer.phase("bigram_score"):
+                bg_state = bigram._sync_device_table(device, l_unit.dtype)
+                if temperature == 0:
+                    bg_base_vals, bg_base_ids = torch.max(l_unit, dim=-1, keepdim=True)
+                else:
+                    prob_dt = l_unit.dtype if l_unit.dtype == torch.float64 else torch.float32
+                    _, bg_base_ids = torch.topk(l_unit.to(prob_dt) / temperature, k_eff, dim=-1)
+                    bg_base_vals = l_unit.gather(-1, bg_base_ids)
+
+        precomp_sparse = None
+        if use_sparse_compact and snapshot.pair_is_zero():
+            with timer.phase("sparse_lookup"):
+                precomp_sparse = snapshot.precompute_sparse_pool(
+                    l_unit, U, temperature=temperature, k_eff=k_eff, beta=beta
+                )
+
         for i in range(K):
-            if adapter_active:
-                avail = min(D_hist, L_ctx + i)
-                prev_ids = ctx_buf[L_ctx + i - offsets_all[:avail]]
-                score = snapshot.score_slot_tensor(
-                    l_unit[i], U[i], offsets_all[:avail, None], prev_ids,
-                    beta=beta, timer=timer, contiguous_offsets=True, bf16_gemm=bf16_gemm)
-            else:
-                score = l_unit[i]
-            if not bigram_inactive:
+            if use_bigram_compact:
                 with timer.phase("bigram_score"):
                     prev_tok_t = ctx_buf[L_ctx + i - 1] if (L_ctx + i) > 0 else None
-                    score = bigram.score_tensor(score, prev_tok_t)
-            with timer.phase("sequential_sampling"):
-                tok_t, p_sub, idx_sub = sample_token_compact(
-                    score, temperature, warper, generator, compact_probs_fn=compact_probs_fn
-                )
-                ctx_buf[L_ctx + i] = tok_t
-                if p_sub is not None:
-                    if compact_k:
-                        if slot_probs is None:
-                            slot_probs = torch.empty((K, compact_k), dtype=p_sub.dtype, device=device)
-                        slot_probs[i] = p_sub
-                        slot_indices[i] = idx_sub
+                    sel_scores, sel_ids = bigram.merge_compact_candidates(
+                        l_unit[i], bg_base_vals[i], bg_base_ids[i], prev_tok_t,
+                        temperature=temperature, k_eff=k_eff, state=bg_state,
+                    )
+                with timer.phase("sequential_sampling"):
+                    if temperature == 0:
+                        tok_t, p_sub, idx_sub, q_sel = sel_ids[0], None, None, None
                     else:
-                        full_qs.append(p_sub)
+                        tok_t, p_sub, idx_sub, q_sel = sample_from_top_scaled(
+                            sel_scores, sel_ids, warper, generator
+                        )
+            elif use_sparse_compact:
+                avail = min(D_hist, L_ctx + i)
+                prev_ids = ctx_buf[L_ctx + i - offsets_all[:avail]]
+                pre_i = (
+                    (precomp_sparse[0][i], precomp_sparse[1][i])
+                    if (precomp_sparse is not None and avail > 0)
+                    else None
+                )
+                sel_scores, sel_ids_or_full = snapshot.score_slot_compact_candidates(
+                    l_unit[i], U[i], offsets_all[:avail, None], prev_ids,
+                    temperature=temperature, k_eff=k_eff, beta=beta,
+                    timer=timer, contiguous_offsets=True, bf16_gemm=bf16_gemm,
+                    precomputed_ids=pre_i,
+                )
+                with timer.phase("sequential_sampling"):
+                    if sel_scores is None:
+                        tok_t, p_sub, idx_sub, q_sel = sample_token_compact_with_prob(
+                            sel_ids_or_full, temperature, warper, generator, compact_probs_fn=compact_probs_fn
+                        )
+                    elif temperature == 0:
+                        tok_t, p_sub, idx_sub, q_sel = sel_ids_or_full[0], None, None, None
+                    else:
+                        tok_t, p_sub, idx_sub, q_sel = sample_from_top_scaled(
+                            sel_scores, sel_ids_or_full, warper, generator
+                        )
+            else:
+                if adapter_active:
+                    avail = min(D_hist, L_ctx + i)
+                    prev_ids = ctx_buf[L_ctx + i - offsets_all[:avail]]
+                    score = snapshot.score_slot_tensor(
+                        l_unit[i], U[i], offsets_all[:avail, None], prev_ids,
+                        beta=beta, timer=timer, contiguous_offsets=True, bf16_gemm=bf16_gemm)
+                else:
+                    score = l_unit[i]
+                if not bigram_inactive:
+                    with timer.phase("bigram_score"):
+                        prev_tok_t = ctx_buf[L_ctx + i - 1] if (L_ctx + i) > 0 else None
+                        score = bigram.score_tensor(score, prev_tok_t)
+                with timer.phase("sequential_sampling"):
+                    tok_t, p_sub, idx_sub, q_sel = sample_token_compact_with_prob(
+                        score, temperature, warper, generator, compact_probs_fn=compact_probs_fn
+                    )
+
+            ctx_buf[L_ctx + i] = tok_t
+            if p_sub is not None:
+                if compact_k:
+                    if slot_probs is None:
+                        slot_probs = torch.empty((K, compact_k), dtype=p_sub.dtype, device=device)
+                        q_selected_buf = torch.empty((K,), dtype=p_sub.dtype, device=device)
+                    slot_probs[i] = p_sub
+                    slot_indices[i] = idx_sub
+                    q_selected_buf[i] = q_sel
+                else:
+                    full_qs.append(p_sub)
         if temperature == 0:
             q_out = None
         elif compact_k:
-            with timer.phase("sequential_sampling"):
-                if slot_probs is None:
-                    q_out = torch.empty((0, V), dtype=torch.float32, device=device)
-                else:
+            if slot_probs is None:
+                q_out = None
+            elif _allow_compact_q:
+                q_out = CompactProposal(slot_indices, slot_probs, q_selected_buf, V)
+            else:
+                with timer.phase("sequential_sampling"):
                     q_out = torch.zeros((K, V), dtype=slot_probs.dtype, device=device)
                     q_out.scatter_(-1, slot_indices, slot_probs)
         else:
@@ -333,7 +421,7 @@ def generate_reference(
                 draft_logits, h_raw, prefix, temperature=temperature, warper=warper,
                 generator=generator, snapshot=snapshot, projection=projection, beta=beta,
                 bigram=bigram, timer=timer, need_training_tensors=need_training_tensors,
-                fastpath=fastpath, _return_token_tensor=True,
+                fastpath=fastpath, _return_token_tensor=True, _allow_compact_q=True,
             )
         canvas[0, 1:] = token_tensor
         with torch.no_grad(), timer.phase("target_verification"):
@@ -400,7 +488,7 @@ def generate_toy(
                 drafted.logits, drafted.h_raw, proposal_prefix, temperature=temperature, warper=warper,
                 generator=generator, snapshot=snapshot, projection=projection, beta=beta,
                 bigram=bigram, timer=timer, need_training_tensors=need_training_tensors,
-                fastpath=fastpath,
+                fastpath=fastpath, _allow_compact_q=True,
             )
         with timer.phase("target_verification"):
             target_logits = target.verify_logits(context, tokens)

@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from contextlib import nullcontext
+import math
 from typing import Sequence
 import torch
 from torch import nn
@@ -135,6 +136,14 @@ class ProposalSnapshot:
     is_zero: bool = False
     _A_flat: torch.Tensor | None = field(default=None, init=False, repr=False, compare=False)
     _E_bf16: torch.Tensor | None = field(default=None, repr=False, compare=False, kw_only=True)
+    _pair_zero: bool | None = field(default=None, repr=False, compare=False, kw_only=True)
+
+    def pair_is_zero(self) -> bool:
+        cached = self._pair_zero
+        if cached is None:
+            cached = not bool(self.A.count_nonzero())
+            object.__setattr__(self, '_pair_zero', cached)
+        return cached
 
     def _pair_matrix(self) -> torch.Tensor:
         cached = self._A_flat
@@ -233,7 +242,7 @@ class ProposalSnapshot:
         if beta == 0 or self.is_zero:
             return l_unit_i
         with _phase(timer, 'dense_pair_score'):
-            if avail:
+            if avail and not self.pair_is_zero():
                 r = self.E.shape[1]
                 E_prev_2d = self.E.index_select(0, prev_ids).to(self.A.dtype)
                 if contiguous_offsets:
@@ -257,10 +266,150 @@ class ProposalSnapshot:
                 correction = dense.scatter_add(0, candidates, values)
         return l_unit_i - beta * correction
 
+    def precompute_sparse_pool(
+        self,
+        l_unit: torch.Tensor,
+        U: torch.Tensor,
+        *,
+        temperature: float,
+        k_eff: int,
+        beta: float = 1.0,
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        """Batched `[K, M_sparse]` + `[K, k_eff]` candidate extraction when `pair_is_zero()`."""
+        if self.M_sparse < 1:
+            raise ValueError('candidate count must be positive')
+        if not math.isfinite(temperature) or temperature < 0:
+            raise ValueError('temperature must be finite and nonnegative')
+        if k_eff < 1:
+            raise ValueError('k_eff must be positive')
+        V = l_unit.shape[-1]
+        m_eff = min(self.M_sparse, V)
+        r_need = 1 if temperature == 0 else k_eff
+        r_k = min(r_need, V - m_eff)
+        u_all = l_unit - beta * U
+        c_ids_all = torch.topk(u_all, m_eff, dim=-1).indices
+        if r_k == 0:
+            return c_ids_all, c_ids_all.new_empty((*c_ids_all.shape[:-1], 0))
+        if temperature == 0 or m_eff < k_eff or m_eff + r_k == V:
+            fmax = torch.finfo(u_all.dtype).max
+            u_all.clamp_min_(-fmax)
+        u_all.scatter_(-1, c_ids_all, -torch.inf)
+        if temperature == 0:
+            r_ids_all = torch.max(u_all, dim=-1, keepdim=True).indices
+        else:
+            r_ids_all = torch.topk(u_all, r_k, dim=-1).indices
+        return c_ids_all, r_ids_all
+
+    def score_slot_compact_candidates(
+        self,
+        l_unit_i: torch.Tensor,
+        U_i: torch.Tensor,
+        offsets: torch.Tensor,
+        prev_ids: torch.Tensor,
+        *,
+        temperature: float,
+        k_eff: int,
+        beta: float = 1.0,
+        timer=None,
+        contiguous_offsets: bool = False,
+        bf16_gemm: bool = False,
+        precomputed_ids: tuple[torch.Tensor, torch.Tensor] | None = None,
+    ) -> tuple[torch.Tensor | None, torch.Tensor]:
+        """Zero-sync `[M_sparse + k_eff]` sparse candidate scoring without `[V]` `scatter_add`.
+
+        Returns `(None, full_score)` when `avail == 0` (no sparse lookup) or `beta == 0`/`is_zero`,
+        or `(selected_scores[k_eff], selected_ids[k_eff])` (`k_eff == 1` at `temperature == 0`
+        with exact lowest-ID tie-breaking; `scaled_top_scores[k_eff]` at `temperature > 0`).
+        """
+        if not math.isfinite(temperature) or temperature < 0:
+            raise ValueError('temperature must be finite and nonnegative')
+        if k_eff < 1:
+            raise ValueError('k_eff must be positive')
+        offs_1d = offsets.squeeze(-1) if offsets.ndim == 2 and offsets.shape[1] == 1 else offsets
+        if offs_1d.ndim != 1 or prev_ids.ndim != 1 or offs_1d.numel() != prev_ids.numel():
+            raise ValueError('offsets and prev_ids must be matching 1D predecessor tensors (or offsets [avail, 1])')
+        avail = prev_ids.numel()
+        if contiguous_offsets and avail > len(self.A):
+            raise ValueError('contiguous_offsets length exceeds adapter history depth')
+        if beta == 0 or self.is_zero:
+            return None, l_unit_i
+        with _phase(timer, 'dense_pair_score'):
+            if avail and not self.pair_is_zero():
+                r = self.E.shape[1]
+                E_prev_2d = self.E.index_select(0, prev_ids).to(self.A.dtype)
+                if contiguous_offsets:
+                    message = self._pair_matrix()[:, :avail * r] @ E_prev_2d.reshape(-1)
+                else:
+                    A_sel = self.A.index_select(0, offs_1d - 1)
+                    message = torch.bmm(A_sel, E_prev_2d.unsqueeze(-1)).squeeze(-1).sum(0)
+                if bf16_gemm:
+                    dense = U_i + (self._token_features_bf16() @ message.bfloat16()).to(U_i.dtype)
+                else:
+                    dense = U_i + self.E.to(self.A.dtype) @ message
+            else:
+                dense = U_i
+        if self.sparse is None or avail == 0:
+            return None, l_unit_i - beta * dense
+        if self.M_sparse < 1:
+            raise ValueError('candidate count must be positive')
+        with _phase(timer, 'sparse_lookup'):
+            if precomputed_ids is not None:
+                c_ids, r_ids = precomputed_ids
+            else:
+                V = l_unit_i.shape[-1]
+                m_eff = min(self.M_sparse, V)
+                r_need = 1 if temperature == 0 else k_eff
+                r_k = min(r_need, V - m_eff)
+                u = l_unit_i - beta * dense
+                c_ids = torch.topk(u, m_eff, dim=-1).indices
+                if r_k == 0:
+                    r_ids = c_ids.new_empty((0,))
+                else:
+                    if temperature == 0 or m_eff < k_eff or m_eff + r_k == V:
+                        fmax = torch.finfo(u.dtype).max
+                        u.clamp_min_(-fmax)
+                    u.scatter_(-1, c_ids, -torch.inf)
+                    if temperature == 0:
+                        r_ids = torch.max(u, dim=-1, keepdim=True).indices
+                    else:
+                        r_ids = torch.topk(u, r_k, dim=-1).indices
+            offs_2d = offs_1d[:, None]
+            s_vals = self.sparse.lookup(offs_2d, prev_ids[:, None], c_ids[None, :]).to(dense.dtype).sum(0)
+            c_scores = l_unit_i.gather(0, c_ids) - beta * (dense.gather(0, c_ids) + s_vals)
+            if r_ids.numel():
+                r_scores = l_unit_i.gather(0, r_ids) - beta * dense.gather(0, r_ids)
+                cand_ids = torch.cat((c_ids, r_ids), dim=0)
+                cand_vals = torch.cat((c_scores, r_scores), dim=0)
+            else:
+                cand_ids = c_ids
+                cand_vals = c_scores
+            if temperature == 0:
+                cand_ids, perm = cand_ids.sort(dim=0)
+                cand_vals = cand_vals.gather(0, perm)
+                win_pos = torch.argmax(cand_vals, dim=0, keepdim=True)
+                return cand_vals.gather(0, win_pos), cand_ids.gather(0, win_pos)
+            if r_ids.numel():
+                valid_r = ~(r_ids[:, None] == c_ids[None, :]).any(dim=1)
+                all_valid = torch.cat((torch.ones_like(c_ids, dtype=torch.bool), valid_r), dim=0)
+            else:
+                all_valid = torch.ones_like(c_ids, dtype=torch.bool)
+            id_key = torch.where(all_valid, cand_ids, torch.full_like(cand_ids, self.E.shape[0]))
+            _, perm = id_key.sort(dim=0, stable=True)
+            cand_ids = cand_ids.gather(0, perm)
+            cand_vals = cand_vals.gather(0, perm)
+            valid_asc = all_valid.gather(0, perm)
+            prob_dtype = cand_vals.dtype if cand_vals.dtype == torch.float64 else torch.float32
+            scaled = cand_vals.to(prob_dtype) / temperature
+            fmax = torch.finfo(scaled.dtype).max
+            sel_key = torch.where(valid_asc, scaled.clamp_min(-fmax), -torch.inf)
+            _, order = torch.sort(sel_key, dim=0, descending=True, stable=True)
+            top_order = order[:min(k_eff, cand_ids.shape[0])]
+            return scaled.gather(0, top_order), cand_ids.gather(0, top_order)
+
     def with_candidates(self, C0):
         return ProposalSnapshot(self.E, self.W, self.A, self.b, self.version, self.sparse,
                                 self.M_sparse, tuple(c.detach().clone() for c in C0), self.is_zero,
-                                _E_bf16=self._E_bf16)
+                                _E_bf16=self._E_bf16, _pair_zero=self._pair_zero)
 
 
 class DenseAdapter(nn.Module):

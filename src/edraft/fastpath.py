@@ -235,13 +235,9 @@ def _make_compiled_probs(temperature: float, warper: SamplingWarper, mode: str) 
             s, indices = torch.topk(s, top_k, dim=-1)
         probs = torch.softmax(s, dim=-1)
         if top_p < 1.0:
-            if indices is not None:
-                keep = probs.cumsum(dim=-1) - probs < top_p
-                probs = probs * keep
-            else:
-                sorted_probs, order = probs.sort(dim=-1, descending=True)
-                keep = sorted_probs.cumsum(dim=-1) - sorted_probs < top_p
-                probs = torch.zeros_like(probs).scatter(-1, order, sorted_probs * keep)
+            sorted_probs, order = probs.sort(dim=-1, descending=True)
+            keep = sorted_probs.cumsum(dim=-1) - sorted_probs < top_p
+            probs = torch.zeros_like(probs).scatter(-1, order, sorted_probs * keep)
             probs = probs / probs.sum(dim=-1, keepdim=True)
         if min_p > 0.0:
             keep = probs >= min_p * probs.amax(dim=-1, keepdim=True)
@@ -269,13 +265,9 @@ def _make_compiled_compact_probs(temperature: float, warper: SamplingWarper, mod
             s, indices = torch.topk(s, top_k, dim=-1)
         probs = torch.softmax(s, dim=-1)
         if top_p < 1.0:
-            if indices is not None:
-                keep = probs.cumsum(dim=-1) - probs < top_p
-                probs = probs * keep
-            else:
-                sorted_probs, order = probs.sort(dim=-1, descending=True)
-                keep = sorted_probs.cumsum(dim=-1) - sorted_probs < top_p
-                probs = torch.zeros_like(probs).scatter(-1, order, sorted_probs * keep)
+            sorted_probs, order = probs.sort(dim=-1, descending=True)
+            keep = sorted_probs.cumsum(dim=-1) - sorted_probs < top_p
+            probs = torch.zeros_like(probs).scatter(-1, order, sorted_probs * keep)
             probs = probs / probs.sum(dim=-1, keepdim=True)
         if min_p > 0.0:
             keep = probs >= min_p * probs.amax(dim=-1, keepdim=True)

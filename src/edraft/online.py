@@ -94,10 +94,11 @@ class _BigramRowIndex:
 
 
 class _DeviceBigramState:
-    """Device-resident compact transition table for zero-sync `OnlineBigram.score_tensor`."""
+    """Device-resident compact transition table for zero-sync `OnlineBigram` scoring."""
     __slots__ = (
         'device', 'dtype', 'hyper_key', 'row_slot', 'base_shift', 'ret_ids', 'ret_shift',
-        'prev_to_slot', 'active_rows', 'max_ret', 'row_cap', 'col_cap', 'dirty_rows',
+        'ret_valid', 'prev_to_slot', 'first_prev', 'known_dict_len', 'active_rows',
+        'max_ret', 'row_cap', 'col_cap', 'dirty_rows',
     )
 
     def __init__(self, vocab_size: int, device: torch.device, dtype: torch.dtype,
@@ -113,7 +114,10 @@ class _DeviceBigramState:
         self.base_shift = torch.full((self.row_cap,), -0.0, device=device, dtype=dtype)
         self.ret_ids = torch.zeros((self.row_cap, self.col_cap), device=device, dtype=torch.long)
         self.ret_shift = torch.full((self.row_cap, self.col_cap), -0.0, device=device, dtype=dtype)
+        self.ret_valid = torch.zeros((self.row_cap, self.col_cap), device=device, dtype=torch.bool)
         self.prev_to_slot: dict[int, int] = {}
+        self.first_prev: int | None = None
+        self.known_dict_len = 0
         self.active_rows = 0
         self.max_ret = 0
         self.dirty_rows: set[int] = set()
@@ -129,17 +133,21 @@ class _DeviceBigramState:
             self.base_shift = new_base
         new_ids = torch.zeros((new_row_cap, new_col_cap), device=self.device, dtype=torch.long)
         new_shift = torch.full((new_row_cap, new_col_cap), -0.0, device=self.device, dtype=self.dtype)
+        new_valid = torch.zeros((new_row_cap, new_col_cap), device=self.device, dtype=torch.bool)
         if self.active_rows > 0:
             active_end = self.active_rows + 1
             new_ids[1:active_end, :self.col_cap].copy_(self.ret_ids[1:active_end, :self.col_cap])
             new_shift[1:active_end, :self.col_cap].copy_(self.ret_shift[1:active_end, :self.col_cap])
+            new_valid[1:active_end, :self.col_cap].copy_(self.ret_valid[1:active_end, :self.col_cap])
             if new_col_cap > self.col_cap:
                 # Pad newly grown columns of already-synced active rows with their column-0
-                # `(ids[0], ret_shift[0])` entry so non-dirty rows never scatter into token 0.
+                # `(ids[0], ret_shift[0])` entry so non-dirty `score_tensor` rows never scatter
+                # into token 0, while `new_valid` stays `False` on padded columns.
                 new_ids[1:active_end, self.col_cap:new_col_cap] = new_ids[1:active_end, 0:1]
                 new_shift[1:active_end, self.col_cap:new_col_cap] = new_shift[1:active_end, 0:1]
         self.ret_ids = new_ids
         self.ret_shift = new_shift
+        self.ret_valid = new_valid
         self.row_cap = new_row_cap
         self.col_cap = new_col_cap
 
@@ -284,16 +292,34 @@ class OnlineBigram:
         key = (device, dtype)
         hyper_key = (float(self.alpha), self.k_ret, float(self.lambda_tr))
         state = self._dev_tables.get(key)
-        if state is None or state.hyper_key != hyper_key:
+        need_rebuild = (
+            state is None
+            or state.hyper_key != hyper_key
+            or state.active_rows > len(self.counts)
+            or (state.first_prev is not None and not self.counts.get(state.first_prev))
+        )
+        if not need_rebuild and (
+            state.dirty_rows
+            or len(self.counts) != state.known_dict_len
+            or state.active_rows <= 64
+        ):
+            if any(not self.counts.get(p) for p in state.prev_to_slot):
+                need_rebuild = True
+        if need_rebuild:
+            for stale_p in [p for p in self._rows if not self.counts.get(p)]:
+                self._rows.pop(stale_p, None)
+                self._cache.pop(stale_p, None)
             col_init = min(max(self.k_ret, 1), 64) if self.k_ret is not None else 16
             state = _DeviceBigramState(self.vocab_size, device, dtype, hyper_key, col_cap=col_init)
             state.dirty_rows.update(p for p, c in self.counts.items() if c)
             self._dev_tables[key] = state
         if not state.dirty_rows:
+            state.known_dict_len = len(self.counts)
             return state
         dirty_list = [p for p in state.dirty_rows if self.counts.get(p)]
         state.dirty_rows.clear()
         if not dirty_list:
+            state.known_dict_len = len(self.counts)
             return state
 
         prepared = []
@@ -307,6 +333,8 @@ class OnlineBigram:
                 new_active += 1
                 slot = new_active
                 state.prev_to_slot[prev_int] = slot
+                if state.first_prev is None:
+                    state.first_prev = prev_int
                 new_prev_ids.append(prev_int)
                 new_prev_slots.append(slot)
             row = self._row_for(prev_int, self.counts[prev_int])
@@ -336,6 +364,7 @@ class OnlineBigram:
         base_cpu = torch.empty(n_dirty, dtype=dtype)
         ids_cpu = torch.empty((n_dirty, width), dtype=torch.long)
         shift_cpu = torch.empty((n_dirty, width), dtype=dtype)
+        valid_cpu = torch.zeros((n_dirty, width), dtype=torch.bool)
         lam = float(self.lambda_tr)
         alpha_f = float(self.alpha)
         for idx, (slot, base_lp, ids_list, counts_list, denom) in enumerate(prepared):
@@ -344,9 +373,13 @@ class OnlineBigram:
             rlen = len(ids_list)
             ids_t = torch.tensor(ids_list, dtype=torch.long)
             cnt_t = torch.tensor(counts_list, dtype=dtype)
+            if rlen > 1:
+                ids_t, id_order = ids_t.sort()
+                cnt_t = cnt_t.index_select(0, id_order)
             ret_val = lam * torch.log((cnt_t + alpha_f) / denom)
             ids_cpu[idx, :rlen] = ids_t
             shift_cpu[idx, :rlen] = ret_val
+            valid_cpu[idx, :rlen] = True
             if rlen < width:
                 ids_cpu[idx, rlen:] = ids_t[0]
                 shift_cpu[idx, rlen:] = ret_val[0]
@@ -359,6 +392,8 @@ class OnlineBigram:
         state.base_shift.index_copy_(0, slots_dev, base_cpu.to(device=device))
         state.ret_ids.index_copy_(0, slots_dev, ids_cpu.to(device=device))
         state.ret_shift.index_copy_(0, slots_dev, shift_cpu.to(device=device))
+        state.ret_valid.index_copy_(0, slots_dev, valid_cpu.to(device=device))
+        state.known_dict_len = len(self.counts)
         return state
 
     def score_tensor(self, l_unit: torch.Tensor, prev_token: torch.Tensor | None) -> torch.Tensor:
@@ -376,6 +411,80 @@ class OnlineBigram:
         vals = l_unit.gather(0, ids_row) + state.ret_shift[r, :state.max_ret]
         shifted.scatter_(0, ids_row, vals)
         return shifted
+
+    def merge_compact_candidates(
+        self,
+        l_unit_i: torch.Tensor,
+        base_vals_i: torch.Tensor,
+        base_ids_i: torch.Tensor,
+        prev_token: torch.Tensor | None,
+        *,
+        temperature: float,
+        k_eff: int,
+        state: _DeviceBigramState | None = None,
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        """Zero-sync, zero-`[V]`-allocation `[k_eff] U [R]` candidate merge (`lambda_tr >= 0`).
+
+        When `temperature == 0` (`k_eff == 1`), returns `(win_score[1], win_id[1])` with
+        exact lowest-ID tie-breaking. When `temperature > 0`, returns
+        `(scaled_top_scores[k_eff], top_ids[k_eff])` preserving `N_total=0` (`r == 0`)
+        bit-exact plain-DFlash tie-breaking via `stable=True` sort.
+        """
+        if self.lambda_tr < 0:
+            raise ValueError("merge_compact_candidates requires nonnegative lambda_tr")
+        if not math.isfinite(temperature) or temperature < 0:
+            raise ValueError("temperature must be finite and nonnegative")
+        if k_eff < 1 or k_eff > self.vocab_size:
+            raise ValueError("k_eff must satisfy 1 <= k_eff <= vocab_size")
+        prob_dtype = l_unit_i.dtype if l_unit_i.dtype == torch.float64 else torch.float32
+        if not self.counts and self._dev_tables:
+            self._dev_tables.clear()
+        if prev_token is None or self.lambda_tr == 0 or not self.counts:
+            if temperature == 0:
+                return base_vals_i, base_ids_i
+            return base_vals_i.to(prob_dtype) / temperature, base_ids_i
+        if state is None:
+            state = self._sync_device_table(l_unit_i.device, l_unit_i.dtype)
+        if state.active_rows == 0 or state.max_ret == 0:
+            if temperature == 0:
+                return base_vals_i, base_ids_i
+            return base_vals_i.to(prob_dtype) / temperature, base_ids_i
+
+        r = state.row_slot[prev_token]
+        base_s = state.base_shift[r]
+        m_ret = state.max_ret
+        r_ids = state.ret_ids[r, :m_ret]
+        r_val = state.ret_valid[r, :m_ret]
+        r_scores = l_unit_i.gather(0, r_ids) + state.ret_shift[r, :m_ret]
+        b_shifted = base_vals_i + base_s
+
+        overlap = (base_ids_i[:, None] == r_ids[None, :]) & r_val[None, :]
+        has_ov = overlap.any(dim=1)
+        ov_col = overlap.int().argmax(dim=1)
+        b_updated = torch.where(has_ov, r_scores.gather(0, ov_col), b_shifted)
+        valid_r = r_val & (~overlap.any(dim=0))
+
+        all_ids = torch.cat((base_ids_i, r_ids), dim=0)
+        all_valid = torch.cat((torch.ones_like(has_ov), valid_r), dim=0)
+
+        if temperature == 0:
+            all_scores = torch.cat((b_updated, r_scores), dim=0)
+            id_key = torch.where(all_valid, all_ids, torch.full_like(all_ids, self.vocab_size))
+            _, id_perm = id_key.sort(dim=0, stable=True)
+            ids_asc = all_ids.gather(0, id_perm)
+            scores_asc = all_scores.gather(0, id_perm)
+            valid_asc = all_valid.gather(0, id_perm)
+            fmax = torch.finfo(scores_asc.dtype).max
+            arg_key = torch.where(valid_asc, scores_asc.clamp_min(-fmax), -torch.inf)
+            win_pos = torch.argmax(arg_key, dim=0, keepdim=True)
+            return scores_asc.gather(0, win_pos), ids_asc.gather(0, win_pos)
+
+        all_scaled = torch.cat((b_updated, r_scores), dim=0).to(prob_dtype) / temperature
+        fmax = torch.finfo(all_scaled.dtype).max
+        sel_key = torch.where(all_valid, all_scaled.clamp_min(-fmax), -torch.inf)
+        _, sel_pos = torch.sort(sel_key, dim=0, descending=True, stable=True)
+        top_pos = sel_pos[:k_eff]
+        return all_scaled.gather(0, top_pos), all_ids.gather(0, top_pos)
 
     def metrics(self):
         retained = sum(min(len(c), self.k_ret) if self.k_ret is not None else len(c) for c in self.counts.values())
@@ -483,8 +592,9 @@ class OnlineState:
             is_zero = not bool(
                 torch.cat((self.db.reshape(-1), self.dW.reshape(-1), self.dA.reshape(-1))).any()
             )
+        pair_zero = self.offline.pair_is_zero() if self.bias_sparse_only else None
         return ProposalSnapshot(self.offline.E, W, A, b, self.version, sparse, self.offline.M_sparse, None, is_zero,
-                                _E_bf16=self.offline._E_bf16)
+                                _E_bf16=self.offline._E_bf16, _pair_zero=pair_zero)
 
     def snapshot(self, C0=None):
         return self._snapshot if C0 is None else self._snapshot.with_candidates(C0)

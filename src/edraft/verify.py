@@ -8,7 +8,28 @@ from collections.abc import Sequence
 
 import torch
 
-from .sampler import SamplingWarper, draw, probabilities, probability_dtype
+from .sampler import SamplingWarper, compact_probabilities, draw, probabilities, probability_dtype
+
+
+@dataclass(frozen=True)
+class CompactProposal:
+    """Compact `[K, top_k]` proposal distributions avoiding `[K, V]` materialization."""
+
+    slot_indices: torch.Tensor
+    slot_probs: torch.Tensor
+    q_selected: torch.Tensor
+    vocab_size: int
+
+    def to_dense(self) -> torch.Tensor:
+        K = self.slot_probs.shape[0]
+        out = torch.zeros(
+            (K, self.vocab_size),
+            dtype=self.slot_probs.dtype,
+            device=self.slot_probs.device,
+        )
+        if K > 0:
+            out.scatter_(-1, self.slot_indices, self.slot_probs)
+        return out
 
 
 @dataclass(frozen=True)
@@ -37,7 +58,7 @@ def residual_distribution(target_probs: torch.Tensor, proposal_probs: torch.Tens
 
 def verify_block(
     draft_tokens: Sequence[int] | torch.Tensor,
-    proposal_probs: torch.Tensor | Sequence[torch.Tensor] | None,
+    proposal_probs: torch.Tensor | Sequence[torch.Tensor] | CompactProposal | None,
     target_logits: torch.Tensor,
     temperature: float,
     warper: SamplingWarper = SamplingWarper(),
@@ -75,17 +96,65 @@ def verify_block(
 
     if proposal_probs is None:
         raise ValueError("stochastic ratio verification requires full proposal distributions")
-    q = proposal_probs if isinstance(proposal_probs, torch.Tensor) else torch.stack(list(proposal_probs))
-    q = probability_dtype(q)
-    if q.shape != (K, V):
-        raise ValueError("proposal_probs must have shape [K,V]")
-    P = (probabilities if probs_fn is None else probs_fn)(target_logits, temperature, warper)
-    if draft_tensor is not None and draft_tensor.device == q.device and draft_tensor.dtype == torch.long:
+    is_compact_q = isinstance(proposal_probs, CompactProposal)
+    if is_compact_q:
+        if (
+            proposal_probs.vocab_size != V
+            or proposal_probs.slot_probs.ndim != 2
+            or proposal_probs.slot_probs.shape[0] != K
+            or proposal_probs.slot_indices.shape != proposal_probs.slot_probs.shape
+            or proposal_probs.slot_indices.dtype != torch.long
+            or proposal_probs.q_selected.shape != (K,)
+            or proposal_probs.slot_indices.device != proposal_probs.slot_probs.device
+            or proposal_probs.q_selected.device != proposal_probs.slot_probs.device
+        ):
+            raise ValueError("CompactProposal shapes/dtypes/devices must match [K, top_k] and vocab_size=V")
+        q = None
+        q_selected = probability_dtype(proposal_probs.q_selected)
+        q_device = proposal_probs.slot_probs.device
+    else:
+        q = proposal_probs if isinstance(proposal_probs, torch.Tensor) else torch.stack(list(proposal_probs))
+        q = probability_dtype(q)
+        if q.shape != (K, V):
+            raise ValueError("proposal_probs must have shape [K,V]")
+        q_device = q.device
+
+    if probs_fn is None:
+        p_sub, p_idx = compact_probabilities(target_logits, temperature, warper)
+    else:
+        owner = getattr(probs_fn, "__self__", None)
+        if owner is not None and hasattr(owner, "compact_probabilities") and getattr(probs_fn, "__name__", None) == "probabilities":
+            p_sub, p_idx = owner.compact_probabilities(target_logits, temperature, warper)
+        else:
+            p_sub, p_idx = probs_fn(target_logits, temperature, warper), None
+
+    if draft_tensor is not None and draft_tensor.device == q_device and draft_tensor.dtype == torch.long:
         token_indices = draft_tensor[:, None]
     else:
-        token_indices = torch.tensor(tokens, device=q.device, dtype=torch.long)[:, None]
-    q_selected = q.gather(-1, token_indices)[:, 0]
-    p_selected = P[:K].gather(-1, token_indices)[:, 0]
+        token_indices = torch.tensor(tokens, device=q_device, dtype=torch.long)[:, None]
+    if not is_compact_q:
+        q_selected = q.gather(-1, token_indices)[:, 0]
+    if K == 0:
+        p_selected = p_sub.new_empty((0,))
+    elif p_idx is None:
+        p_tok_idx = token_indices if token_indices.device == p_sub.device else token_indices.to(p_sub.device)
+        p_selected = p_sub[:K].gather(-1, p_tok_idx)[:, 0]
+    else:
+        p_tok_idx = token_indices if token_indices.device == p_idx.device else token_indices.to(p_idx.device)
+        match = p_idx[:K] == p_tok_idx
+        has_match = match.any(dim=-1)
+        match_col = match.int().argmax(dim=-1, keepdim=True)
+        p_selected = torch.where(
+            has_match,
+            p_sub[:K].gather(-1, match_col).squeeze(-1),
+            torch.zeros_like(p_sub[:K, 0]),
+        )
+
+    def _materialize_p_row(row_idx: int) -> torch.Tensor:
+        if p_idx is None:
+            return p_sub[row_idx]
+        return torch.zeros(V, dtype=p_sub.dtype, device=p_sub.device).scatter_(0, p_idx[row_idx], p_sub[row_idx])
+
     # Transfer both [K] vectors in one host sync and validate before touching RNG.
     qp_cpu = torch.stack((q_selected, p_selected)).tolist()
     proposal_token_probs, target_token_probs = qp_cpu[0], qp_cpu[1]
@@ -93,12 +162,18 @@ def verify_block(
         raise ValueError("a realized draft token must have positive finite proposal mass")
     # Draw every slot's acceptance uniform before any residual draw, matching
     # the inspected upstream ratio sampler's seeded RNG consumption.
-    uniforms = torch.rand((K,), device=P.device, dtype=P.dtype, generator=generator)
+    uniforms = torch.rand((K,), device=p_sub.device, dtype=p_sub.dtype, generator=generator)
     # u*q < P is algebraically u < min(1,P/q), matching upstream.
     decisions_all = (uniforms * q_selected < p_selected).tolist()
     for i, accepted in enumerate(decisions_all):
         if not accepted:
-            pi, qi = P[i], q[i]
+            pi = _materialize_p_row(i)
+            if is_compact_q:
+                qi_idx = proposal_probs.slot_indices[i]
+                qi_probs = probability_dtype(proposal_probs.slot_probs[i])
+                qi = torch.zeros(V, dtype=qi_probs.dtype, device=qi_probs.device).scatter_(0, qi_idx, qi_probs)
+            else:
+                qi = q[i]
             if not bool((pi - qi).clamp_min(0).sum() > 0):
                 p64 = pi.double()
                 q64 = qi.double()
@@ -112,12 +187,12 @@ def verify_block(
                     if u64 * float(q64[tokens[i]].item()) < float(p64[tokens[i]].item()) or not bool((p64 - q64).clamp_min(0).sum() > 0):
                         decisions_all[i] = True
                         continue
-                    replacement = draw(residual_distribution(p64, q64).to(P.dtype), generator)
+                    replacement = draw(residual_distribution(p64, q64).to(p_sub.dtype), generator)
                     return VerificationResult(tokens[:i] + [replacement], i, i, replacement, None,
                                               decisions_all[:i + 1], proposal_token_probs, target_token_probs)
             replacement = draw(residual_distribution(pi, qi), generator)
             return VerificationResult(tokens[:i] + [replacement], i, i, replacement, None,
                                       decisions_all[:i + 1], proposal_token_probs, target_token_probs)
-    bonus = draw(P[K], generator)
+    bonus = draw(_materialize_p_row(K), generator)
     return VerificationResult(tokens + [bonus], K, K, None, bonus, decisions_all,
                               proposal_token_probs, target_token_probs)

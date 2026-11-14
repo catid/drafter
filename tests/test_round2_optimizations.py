@@ -1647,3 +1647,651 @@ def test_round2_bughunter_edge_cases_kl_weights_diagnose_and_launch_cli(tmp_path
     assert "--no_resume" in cmd0
 
 
+# ---------------------------------------------------------------------------
+# 10. Round-3 Surgical Fastpaths (#70, #71, #73, #74) & Edge-Case Fixes (#69 OPT-R3-BUG-1..3)
+# ---------------------------------------------------------------------------
+
+from edraft.adapter import ProposalSnapshot
+from edraft.dflash_loop import PhaseTimer, _sample_proposal, generate_toy
+
+
+def _ref_09a5469_probabilities(scores: torch.Tensor, temperature: float, warper: SamplingWarper) -> torch.Tensor:
+    """Exact baseline `09a5469` `sampler.py:probabilities` reference implementation."""
+    s = (scores if scores.dtype == torch.float64 else scores.float()) / temperature
+    V = s.shape[-1]
+    indices = None
+    if 0 < warper.top_k < V:
+        s, indices = torch.topk(s, warper.top_k, dim=-1)
+    probs = torch.softmax(s, dim=-1)
+    if warper.top_p < 1:
+        sorted_probs, order = probs.sort(dim=-1, descending=True)
+        keep = sorted_probs.cumsum(dim=-1) - sorted_probs < warper.top_p
+        probs = torch.zeros_like(probs).scatter(-1, order, sorted_probs * keep)
+        probs = probs / probs.sum(dim=-1, keepdim=True)
+    if warper.min_p > 0:
+        keep = probs >= warper.min_p * probs.amax(dim=-1, keepdim=True)
+        probs = probs * keep
+        probs = probs / probs.sum(dim=-1, keepdim=True)
+    if indices is not None:
+        full_shape = (*probs.shape[:-1], V)
+        probs = torch.zeros(full_shape, dtype=probs.dtype, device=probs.device).scatter(-1, indices, probs)
+    return probs
+
+
+def test_round3_bug_regressions_top_p_tie_bigram_clear_and_empty_block():
+    from dflash.model import _sampling_probs
+    from edraft.sampler import compact_probabilities
+
+    # 1. OPT-R3-BUG-1: exact repro (`s[5] = s[2] = 10.0, T=0.7, top_k=20, top_p=0.1`)
+    #    plus 600 tied bfloat16/float32 rows vs `09a5469` and `dflash.model._sampling_probs`.
+    s_repro = torch.full((64,), -10.0, dtype=torch.float32)
+    s_repro[5] = 10.0
+    s_repro[2] = 10.0
+    warp_repro = SamplingWarper(top_k=20, top_p=0.1)
+    p_sub, idx = compact_probabilities(s_repro, 0.7, warp_repro)
+    p_dense = probabilities(s_repro, 0.7, warp_repro)
+    p_ref = _ref_09a5469_probabilities(s_repro, 0.7, warp_repro)
+    p_dflash = _sampling_probs(s_repro, 0.7, top_p=0.1, top_k=20)
+    assert idx is not None
+    assert torch.equal(torch.zeros_like(p_dense).scatter(-1, idx, p_sub), p_ref)
+    assert torch.equal(p_dense, p_ref)
+    assert torch.equal(p_dense, p_dflash)
+
+    fp_rt = FastPathRuntime(FastPathConfig(compile=True, simulate_cpu_graph=True), static_block_length=4)
+    p_fp_dense = fp_rt.probabilities(s_repro, 0.7, warp_repro)
+    p_fp_sub, p_fp_idx = fp_rt.compact_probabilities(s_repro, 0.7, warp_repro)
+    assert torch.equal(torch.nonzero(p_fp_dense > 0).squeeze(-1), torch.nonzero(p_ref > 0).squeeze(-1))
+    assert torch.equal(
+        torch.nonzero(torch.zeros_like(p_ref).scatter(-1, p_fp_idx, p_fp_sub) > 0).squeeze(-1),
+        torch.nonzero(p_ref > 0).squeeze(-1),
+    )
+
+    g = torch.Generator().manual_seed(20261115)
+    for trial in range(150):
+        for dt in (torch.bfloat16, torch.float32):
+            x = (torch.randn(4, 128, generator=g) * 2.5).to(dt)
+            x[0, :25] = x[0, 3]
+            x[1, 5] = x[1, 2] = 9.5
+            for T in (0.6, 0.7):
+                for w in (
+                    SamplingWarper(top_k=20, top_p=0.1),
+                    SamplingWarper(top_k=20, top_p=0.8),
+                    SamplingWarper(top_k=0, top_p=0.5),
+                ):
+                    ps, ix = compact_probabilities(x, T, w)
+                    pf = probabilities(x, T, w)
+                    pr = _ref_09a5469_probabilities(x, T, w)
+                    pd = _sampling_probs(x, T, top_p=w.top_p, top_k=w.top_k)
+                    if ix is None:
+                        assert torch.equal(ps, pr)
+                    else:
+                        assert torch.equal(torch.zeros_like(pr).scatter(-1, ix, ps), pr)
+                    assert torch.equal(pf, pr)
+                    assert torch.equal(pf, pd)
+
+    # 2. OPT-R3-BUG-2: `bg.counts.clear()` + `bg.update(...)` never leaves stale `row_slot` entries.
+    bg = OnlineBigram(16, alpha=0.5, lambda_tr=0.5, k_ret=4)
+    bg.update([1], [2])
+    bg.update([5], [6])
+    l_vec = torch.randn(16, generator=g)
+    _ = bg.score_tensor(l_vec, torch.tensor(1, dtype=torch.long))
+
+    # Case A: fewer keys after clear() + update()
+    bg.counts.clear()
+    bg.update([3], [4])
+    assert torch.equal(bg.score_tensor(l_vec, torch.tensor(1, dtype=torch.long)), bg.score(l_vec, 1))
+    assert torch.equal(bg.score_tensor(l_vec, torch.tensor(1, dtype=torch.long)), l_vec)
+    assert torch.equal(bg.score_tensor(l_vec, torch.tensor(3, dtype=torch.long)), bg.score(l_vec, 3))
+
+    # Case B: >= previous active_rows new keys after clear() + update()
+    bg.counts.clear()
+    bg.update([7], [8])
+    bg.update([9], [10])
+    bg.update([11], [12])
+    for tok_id in range(16):
+        assert torch.equal(bg.score_tensor(l_vec, torch.tensor(tok_id, dtype=torch.long)), bg.score(l_vec, tok_id))
+
+    # Case C: clear() followed by re-populating the SAME predecessor key with different follower
+    bg.counts.clear()
+    bg.update([7], [15])
+    for tok_id in range(16):
+        assert torch.equal(bg.score_tensor(l_vec, torch.tensor(tok_id, dtype=torch.long)), bg.score(l_vec, tok_id))
+
+    # 3. OPT-R3-BUG-3: `K == 0` empty proposal block returns `q_out is None` across all branches.
+    V, p_dim = 48, 6
+    E = torch.randn(V, 4, generator=g)
+    sh = SignedHash(64)
+    with torch.no_grad():
+        sh.values.normal_(0, 0.1)
+    adap = DenseAdapter(E, p=p_dim, D=2, sparse=sh, M_sparse=8)
+    with torch.no_grad():
+        adap.W.normal_(0, 0.1)
+    snap = adap.snapshot()
+    empty_logits = torch.empty((0, V), dtype=torch.float32)
+    empty_h = torch.empty((0, p_dim), dtype=torch.float32)
+
+    for use_snap in (None, snap):
+        for use_bg in (None, bg if V == 16 else OnlineBigram(V, lambda_tr=0.2)):
+            if use_bg is not None:
+                use_bg.update([1], [2])
+            for T, w in ((0.0, SamplingWarper()), (0.7, SamplingWarper(top_k=10, top_p=0.8)), (1.0, SamplingWarper())):
+                for allow_cmp in (False, True):
+                    for ret_t in (False, True):
+                        toks_0, q_0, lu_0, h_0 = _sample_proposal(
+                            empty_logits, empty_h, [1, 2], temperature=T, warper=w,
+                            generator=torch.Generator().manual_seed(1), snapshot=use_snap,
+                            projection=None, beta=1.0, bigram=use_bg,
+                            timer=PhaseTimer("cpu", True), need_training_tensors=True,
+                            _return_token_tensor=ret_t, _allow_compact_q=allow_cmp,
+                        )
+                        assert q_0 is None
+                        if ret_t:
+                            assert isinstance(toks_0, torch.Tensor) and toks_0.shape == (0,)
+                        else:
+                            assert toks_0 == []
+                        assert lu_0.shape == (0, V) and h_0.shape == (0, p_dim)
+
+
+def test_round3_zero_sync_guard_and_static_graph_capture(monkeypatch):
+    from edraft.fastpath import StaticGraphCallable
+    from edraft.verify import CompactProposal
+
+    g = torch.Generator().manual_seed(9191)
+    V, K, r, p_dim, D = 512, 6, 8, 10, 3
+    E = torch.randn(V, r, generator=g) * 0.2
+    sh = SignedHash(512)
+    with torch.no_grad():
+        sh.values.normal_(0, 0.2)
+
+    adap_full = DenseAdapter(E, p=p_dim, D=D, sparse=sh, M_sparse=32)
+    with torch.no_grad():
+        adap_full.W.normal_(0, 0.1)
+        adap_full.A.normal_(0, 0.1)
+        adap_full.b.normal_(0, 0.05)
+    snap_full = adap_full.snapshot()
+
+    # Zero-pair (`A == 0`) online_dbS_zero_init-style snapshot
+    adap_bias_sparse = DenseAdapter(E, p=p_dim, D=D, sparse=sh, M_sparse=32)
+    with torch.no_grad():
+        adap_bias_sparse.b.normal_(0, 0.1)
+    snap_zero_pair = adap_bias_sparse.snapshot()
+    assert snap_zero_pair.pair_is_zero() is True
+    assert snap_full.pair_is_zero() is False
+
+    bg = OnlineBigram(V, alpha=0.5, lambda_tr=0.25, k_ret=16)
+    bg.update([2, 3], [4, 5, 6, 3, 7, 8])
+    # Warm device table once before installing the strict no-sync guard
+    _ = bg._sync_device_table(torch.device("cpu"), torch.float32)
+
+    draft_logits = (torch.randn(K, V, generator=g) * 2.5).bfloat16()
+    h_raw = torch.randn(K, p_dim, generator=g)
+    prefix = [1, 2, 3]
+
+    def _forbid_item(self):
+        raise AssertionError("Forbidden `.item()` host sync inside _sample_proposal!")
+
+    def _forbid_tolist(self):
+        raise AssertionError("Forbidden `.tolist()` host sync inside _sample_proposal!")
+
+    monkeypatch.setattr(torch.Tensor, "item", _forbid_item)
+    monkeypatch.setattr(torch.Tensor, "tolist", _forbid_tolist)
+
+    for snap_case, bg_case in (
+        (None, bg),
+        (snap_full, None),
+        (snap_zero_pair, None),
+        (snap_full, bg),
+    ):
+        for T, w in (
+            (0.0, SamplingWarper()),
+            (0.7, SamplingWarper(top_k=20, top_p=0.8)),
+            (1.0, SamplingWarper(top_k=0, top_p=1.0)),
+        ):
+            tok_t, q_out, _, _ = _sample_proposal(
+                draft_logits, h_raw, prefix, temperature=T, warper=w,
+                generator=torch.Generator().manual_seed(42),
+                snapshot=snap_case, projection=None, beta=0.9, bigram=bg_case,
+                timer=PhaseTimer("cpu", False), need_training_tensors=False,
+                _return_token_tensor=True, _allow_compact_q=True,
+            )
+            assert isinstance(tok_t, torch.Tensor) and tok_t.shape == (K,)
+            if T == 0.0:
+                assert q_out is None
+            elif w.top_k > 0:
+                assert isinstance(q_out, CompactProposal)
+                assert q_out.slot_probs.shape == (K, 20)
+            else:
+                assert isinstance(q_out, torch.Tensor) and q_out.shape == (K, V)
+
+    monkeypatch.undo()
+
+    # StaticGraphCallable (`cuda_graph`-safe static shape) capture & replay on both new kernels
+    bg_state = bg._sync_device_table(torch.device("cpu"), torch.float32)
+    graph_bg = StaticGraphCallable(
+        lambda l_i, bv_i, bi_i, prev_t: bg.merge_compact_candidates(
+            l_i, bv_i, bi_i, prev_t, temperature=0.7, k_eff=20, state=bg_state
+        ),
+        simulate_cpu=True,
+    )
+    l_f32 = draft_logits.float().log_softmax(-1)
+    _, b_ids = torch.topk(l_f32 / 0.7, 20, dim=-1)
+    b_vals = l_f32.gather(-1, b_ids)
+    for i in range(3):
+        sc_g, id_g = graph_bg(l_f32[i], b_vals[i], b_ids[i], torch.tensor(3, dtype=torch.long))
+        sc_e, id_e = bg.merge_compact_candidates(
+            l_f32[i], b_vals[i], b_ids[i], torch.tensor(3, dtype=torch.long),
+            temperature=0.7, k_eff=20, state=bg_state,
+        )
+        assert torch.equal(sc_g, sc_e) and torch.equal(id_g, id_e)
+    assert graph_bg.graph_captures == 1 and graph_bg.graph_replays == 2
+
+    offs_t = torch.tensor([[1], [2]], dtype=torch.long)
+    U_f32 = snap_full.unary(h_raw.float())
+    graph_sp = StaticGraphCallable(
+        lambda l_i, u_i, p_ids: snap_full.score_slot_compact_candidates(
+            l_i, u_i, offs_t, p_ids, temperature=0.7, k_eff=20, beta=0.9, contiguous_offsets=True
+        ),
+        simulate_cpu=True,
+    )
+    for i in range(3):
+        p_ids = torch.tensor([3, 2], dtype=torch.long)
+        sc_g, id_g = graph_sp(l_f32[i], U_f32[i], p_ids)
+        sc_e, id_e = snap_full.score_slot_compact_candidates(
+            l_f32[i], U_f32[i], offs_t, p_ids, temperature=0.7, k_eff=20, beta=0.9, contiguous_offsets=True
+        )
+        assert torch.equal(sc_g, sc_e) and torch.equal(id_g, id_e)
+    assert graph_sp.graph_captures == 1 and graph_sp.graph_replays == 2
+
+
+@pytest.mark.parametrize("k_ret", [None, 4, 256])
+def test_round3_fastpath1_online_bigram_compact_merge_adversarial_parity(k_ret):
+    g = torch.Generator().manual_seed(3300 + (0 if k_ret is None else k_ret))
+    V, K = 600, 6
+    bg = OnlineBigram(V, alpha=0.5, lambda_tr=0.3, k_ret=k_ret)
+    # Row 7: 320 unique transitions -> forces `N_evicted > 0` for both `k_ret=4` and `k_ret=256`!
+    for tok in range(320):
+        for _ in range((tok % 4) + 1):
+            bg.update([7], [(tok * 11) % V])
+    # Row 13: only 2 transitions -> `rlen < col_cap` padding test!
+    bg.update([13], [5, 42])
+    # Row 99 is NEVER updated -> `N_total=0` (`r == 0`) plain-DFlash bit-exact tie-break test!
+
+    h_dummy = torch.zeros(K, 4)
+    for trial in range(12):
+        # Continuous FP32 rows + `-inf` masked row + overlap with retained IDs
+        raw = torch.randn(K, V, generator=g, dtype=torch.float32) * 2.5
+        raw[2, 35:] = -torch.inf
+        # Boost retained IDs of row 7 into top-20 of `l_unit` to force `[20] ∩ [R]` overlap!
+        raw[0, 0] = 7.5
+        raw[0, 11] = 7.2
+        raw[0, 22] = 6.9
+        prefix = [99] if trial % 3 == 0 else ([13] if trial % 3 == 1 else [7])
+
+        # 1. Greedy `T == 0` including synthetic BF16 ties across the whole vocabulary (#74)
+        raw_bf16 = raw.bfloat16()
+        toks_g, q_g, _, _ = _sample_proposal(
+            raw_bf16, h_dummy, prefix, temperature=0.0, warper=SamplingWarper(top_k=20, top_p=0.8),
+            generator=None, snapshot=None, projection=None, beta=1.0, bigram=bg,
+            timer=PhaseTimer("cpu", True), need_training_tensors=False, _allow_compact_q=True,
+        )
+        assert q_g is None
+        l_bf16 = raw_bf16.float().log_softmax(-1)
+        ref_g = []
+        for i in range(K):
+            prev_i = ref_g[-1] if ref_g else prefix[-1]
+            s_i = bg.score(l_bf16[i], prev_i)
+            ref_g.append(int(torch.argmax(s_i).item()))
+        assert toks_g == ref_g
+
+        # 2. Stochastic `top_k=20` (`top_p=0.8` and `top_p=0.95, min_p=0.05`) -> 0-ULP `torch.equal` vs `09a5469`
+        for T, w in (
+            (0.7, SamplingWarper(top_k=20, top_p=0.8)),
+            (0.6, SamplingWarper(top_k=20, top_p=0.95, min_p=0.05)),
+            (1.0, SamplingWarper(top_k=0, top_p=1.0)),  # `pure_temperature_diagnostic` full-vocab scope guard!
+        ):
+            toks_s, q_s, _, _ = _sample_proposal(
+                raw, h_dummy, prefix, temperature=T, warper=w,
+                generator=torch.Generator().manual_seed(800 + trial),
+                snapshot=None, projection=None, beta=1.0, bigram=bg,
+                timer=PhaseTimer("cpu", True), need_training_tensors=False, _allow_compact_q=True,
+            )
+            q_dense = q_s.to_dense() if hasattr(q_s, "to_dense") else q_s
+            assert q_dense.shape == (K, V)
+            l_ref = raw.float().log_softmax(-1)
+            for i in range(K):
+                prev_i = toks_s[i - 1] if i > 0 else prefix[-1]
+                s_ref_i = bg.score(l_ref[i], prev_i)
+                q_ref_i = _ref_09a5469_probabilities(s_ref_i, T, w)
+                assert torch.equal(q_dense[i], q_ref_i)
+                if hasattr(q_s, "q_selected"):
+                    assert torch.equal(q_s.q_selected[i], q_ref_i[toks_s[i]])
+
+        # 3. `N_total=0` (`prev=99`, `r == 0`) on heavy BF16-tied logits reproduces plain DFlash 0-ULP bit-for-bit!
+        l_tied = raw_bf16.float().log_softmax(-1)
+        w_20 = SamplingWarper(top_k=20, top_p=0.8)
+        bg_state = bg._sync_device_table(torch.device("cpu"), torch.float32)
+        _, b_ids_t = torch.topk(l_tied / 0.7, 20, dim=-1)
+        b_vals_t = l_tied.gather(-1, b_ids_t)
+        for i in range(K):
+            sc_0, id_0 = bg.merge_compact_candidates(
+                l_tied[i], b_vals_t[i], b_ids_t[i], torch.tensor(99, dtype=torch.long),
+                temperature=0.7, k_eff=20, state=bg_state,
+            )
+            from edraft.sampler import warp_top_scaled_scores
+            pr_0 = warp_top_scaled_scores(sc_0, w_20)
+            q_0 = torch.zeros(V, dtype=pr_0.dtype).scatter(0, id_0, pr_0)
+            assert torch.equal(q_0, _ref_09a5469_probabilities(l_tied[i], 0.7, w_20))
+
+
+def test_round3_fastpath2_compact_proposal_and_compact_verify_block_parity():
+    from edraft.toy import ToyParallelDrafter, ToyTarget
+    from edraft.verify import CompactProposal, verify_block
+    from edraft.dflash_loop import generate_toy
+
+    g = torch.Generator().manual_seed(5150)
+    V, K, r, p_dim, D = 257, 6, 8, 10, 3
+    E = torch.randn(V, r, generator=g) * 0.2
+    sh = SignedHash(256)
+    with torch.no_grad():
+        sh.values.normal_(0, 0.2)
+    adap = DenseAdapter(E, p=p_dim, D=D, sparse=sh, M_sparse=32)
+    with torch.no_grad():
+        adap.W.normal_(0, 0.1)
+        adap.A.normal_(0, 0.1)
+        adap.b.normal_(0, 0.05)
+    snap = adap.snapshot()
+    fp = FastPathRuntime(FastPathConfig(compile=True, simulate_cpu_graph=True), static_block_length=K)
+
+    for trial in range(30):
+        draft_logits = torch.randn(K, V, generator=g) * 2.0
+        h_raw = torch.randn(K, p_dim, generator=g)
+        target_logits = torch.randn(K + 1, V, generator=g) * 2.0
+        if trial % 5 == 0:
+            # Force all-accept bonus draw on many trials by matching target_logits[:K] to high draft scores!
+            toks_probe, q_probe, _, _ = _sample_proposal(
+                draft_logits, h_raw, [1, 2, 3], temperature=0.7,
+                warper=SamplingWarper(top_k=20, top_p=0.8),
+                generator=torch.Generator().manual_seed(100 + trial),
+                snapshot=snap, projection=None, beta=0.8, bigram=None,
+                timer=PhaseTimer("cpu", False), need_training_tensors=False,
+                _return_token_tensor=True, _allow_compact_q=True,
+            )
+            for slot_i in range(K):
+                target_logits[slot_i].fill_(-20.0)
+                target_logits[slot_i, toks_probe[slot_i]] = 20.0
+
+        for w in (
+            SamplingWarper(top_k=20, top_p=0.8),
+            SamplingWarper(top_k=20, top_p=0.95, min_p=0.05),
+        ):
+            toks_c, q_c, _, _ = _sample_proposal(
+                draft_logits, h_raw, [1, 2, 3], temperature=0.7, warper=w,
+                generator=torch.Generator().manual_seed(100 + trial),
+                snapshot=snap, projection=None, beta=0.8, bigram=None,
+                timer=PhaseTimer("cpu", False), need_training_tensors=False,
+                _return_token_tensor=True, _allow_compact_q=True,
+            )
+            toks_d, q_d, _, _ = _sample_proposal(
+                draft_logits, h_raw, [1, 2, 3], temperature=0.7, warper=w,
+                generator=torch.Generator().manual_seed(100 + trial),
+                snapshot=snap, projection=None, beta=0.8, bigram=None,
+                timer=PhaseTimer("cpu", False), need_training_tensors=False,
+                _return_token_tensor=True, _allow_compact_q=False,
+            )
+            assert isinstance(q_c, CompactProposal)
+            assert torch.equal(toks_c, toks_d)
+            assert torch.equal(q_c.to_dense(), q_d)
+
+            for p_fn in (None, _ref_09a5469_probabilities, fp.probabilities):
+                gen_c = torch.Generator().manual_seed(700 + trial)
+                gen_d = torch.Generator().manual_seed(700 + trial)
+                ver_c = verify_block(toks_c, q_c, target_logits, 0.7, w, gen_c, probs_fn=p_fn)
+                ver_d = verify_block(toks_d, q_d, target_logits, 0.7, w, gen_d, probs_fn=p_fn)
+                assert ver_c == ver_d
+                assert torch.equal(gen_c.get_state(), gen_d.get_state())
+
+    # 1-ULP identical-distribution `P == q` FP64 tie guard on `CompactProposal`
+    logits_same = torch.randn(3, V, generator=g)
+    w_same = SamplingWarper(top_k=20, top_p=0.8)
+    ps_same, ix_same = probabilities(logits_same[:2], 0.7, w_same), None
+    from edraft.sampler import compact_probabilities
+    p_sub_s, p_idx_s = compact_probabilities(logits_same[:2], 0.7, w_same)
+    ix_asc, perm_s = p_idx_s.sort(dim=-1)
+    pr_asc = p_sub_s.gather(-1, perm_s)
+    toks_same = ix_asc[:, 0]
+    # Pick tokens with nonzero probability
+    nz_col = pr_asc.argmax(dim=-1)
+    toks_same = ix_asc.gather(-1, nz_col[:, None])[:, 0]
+    q_sel_same = pr_asc.gather(-1, nz_col[:, None])[:, 0]
+    cp_same = CompactProposal(ix_asc, pr_asc, q_sel_same, V)
+    g_s1 = torch.Generator().manual_seed(11)
+    g_s2 = torch.Generator().manual_seed(11)
+    v_s1 = verify_block(toks_same, cp_same, logits_same, 0.7, w_same, g_s1)
+    v_s2 = verify_block(toks_same, ps_same, logits_same, 0.7, w_same, g_s2)
+    assert v_s1 == v_s2 and torch.equal(g_s1.get_state(), g_s2.get_state())
+
+    # Invalid CompactProposal shape guard
+    with pytest.raises(ValueError, match="CompactProposal"):
+        verify_block(toks_same, CompactProposal(ix_asc, pr_asc, q_sel_same, V + 1), logits_same, 0.7, w_same)
+
+    # End-to-end `generate_toy` closed-loop online + bigram parity
+    target_toy = ToyTarget(vocab_size=64, hidden_size=12, seed=17)
+    drafter_toy = ToyParallelDrafter(target_toy, seed=17)
+    E_toy = target_toy.lm_head.weight[:, :6].detach().clone()
+    base_adap = DenseAdapter(E_toy, p=12, D=2, sparse=SignedHash(64), M_sparse=8)
+    os_1 = OnlineState(base_adap, lr=0.02, lambda_l1_b=1e-4, lambda_l1_s=1e-4, enable_sparse=True, bias_sparse_only=True)
+    res_toy = generate_toy(
+        target_toy, drafter_toy, [1, 2, 3, 4], 18, block_length=4,
+        temperature=0.7, warper=SamplingWarper(top_k=10, top_p=0.85),
+        generator=torch.Generator().manual_seed(99), online_state=os_1, measure_phases=True,
+    )
+    assert res_toy.num_output_tokens == 18
+    assert res_toy.phase_ms["sparse_lookup"] > 0
+    assert res_toy.phase_ms["sequential_sampling"] > 0
+
+
+def test_round3_fastpath3_sparse_compact_pool_adversarial_parity():
+    from edraft.verify import CompactProposal
+
+    class _HeavyPenaltySparse:
+        """Penalizes every `C_i` candidate by `+30.0` so `V \\ C_i` ranks `257..276` MUST win!"""
+
+        def lookup(self, d, previous, current):
+            return torch.full(
+                (d.shape[0], current.shape[1]), 30.0, dtype=torch.float32, device=current.device
+            )
+
+    g = torch.Generator().manual_seed(8080)
+    V, K, r, p_dim, D, M = 600, 5, 8, 10, 3, 256
+    E = torch.randn(V, r, generator=g) * 0.25
+    sh_rand = SignedHash(2048)
+    with torch.no_grad():
+        sh_rand.values.copy_(torch.randn(2048, generator=g) * 3.0)
+
+    # Build both `A != 0` (`dense_sparse`) and `A == 0` (`pair_is_zero`, `online_dbS`) snapshots,
+    # plus the `S >> 0` heavy-penalty snapshot!
+    adap_a = DenseAdapter(E, p=p_dim, D=D, sparse=sh_rand, M_sparse=M)
+    with torch.no_grad():
+        adap_a.W.normal_(0, 0.15)
+        adap_a.A.normal_(0, 0.15)
+        adap_a.b.normal_(0, 0.05)
+    snap_a = adap_a.snapshot()
+
+    adap_z = DenseAdapter(E, p=p_dim, D=D, sparse=sh_rand, M_sparse=M)
+    with torch.no_grad():
+        adap_z.b.normal_(0, 0.1)
+    snap_z = adap_z.snapshot()
+    assert snap_z.pair_is_zero() is True
+
+    snap_heavy = ProposalSnapshot(
+        E.detach(), adap_a.W.detach().clone(), adap_a.A.detach().clone(),
+        adap_a.b.detach().clone(), 0, _HeavyPenaltySparse(), M, None, False,
+    )
+    snap_heavy_z = ProposalSnapshot(
+        E.detach(), torch.zeros_like(adap_a.W), torch.zeros_like(adap_a.A),
+        adap_z.b.detach().clone(), 0, _HeavyPenaltySparse(), M, None, False,
+    )
+
+    for snap_idx, cur_snap in enumerate((snap_heavy, snap_heavy_z, snap_a, snap_z)):
+        for trial in range(6):
+            raw = torch.randn(K, V, generator=g) * 2.5
+            h_raw = torch.randn(K, p_dim, generator=g)
+            if trial == 1:
+                # `-inf` masked logits leaving fewer than `M + top_k` finite entries!
+                raw[1, 40:] = -torch.inf
+            elif trial == 2:
+                # Synthetic BF16 ties across ranks 1, 20, 256, and 276 on `A == 0`!
+                raw = raw.bfloat16().float()
+            elif trial == 3:
+                # Explicit ties right across boundary `256` (`252..260`) and `276` (`272..280`)
+                U_t = cur_snap.unary(h_raw.float())
+                u0 = raw[0].log_softmax(-1) - 0.85 * U_t[0]
+                sv, si = torch.topk(u0, 285)
+                for tid in si[252:261]:
+                    raw[0, tid] = sv[255] + 0.85 * U_t[0, tid]
+                for tid in si[272:281]:
+                    raw[0, tid] = sv[275] + 0.85 * U_t[0, tid]
+
+            prefix = [] if trial == 4 else [5, 12, 29]  # includes empty-prefix `avail == 0` slot-0 check!
+
+            # (1) Greedy `T == 0`: exact lowest-ID argmax parity vs `score_slot`
+            toks_g, q_g, _, _ = _sample_proposal(
+                raw, h_raw, prefix, temperature=0.0, warper=SamplingWarper(top_k=20, top_p=0.8),
+                generator=None, snapshot=cur_snap, projection=None, beta=0.85, bigram=None,
+                timer=PhaseTimer("cpu", True), need_training_tensors=False, _allow_compact_q=True,
+            )
+            assert q_g is None
+            l_ref = raw.float().log_softmax(-1)
+            U_ref = cur_snap.unary(h_raw.float())
+            ref_g = []
+            for i in range(K):
+                sc_i = cur_snap.score_slot(l_ref[i], U_ref[i], prefix, ref_g, i, beta=0.85)
+                ref_g.append(int(torch.argmax(sc_i).item()))
+            assert toks_g == ref_g, f"greedy mismatch snap={snap_idx} trial={trial}"
+
+            # On `_HeavyPenaltySparse` (`snap_idx in (0, 1)`) with nonempty prefix & finite logits,
+            # verify the winning token genuinely came from outside `C_i` (`ranks 257+`)!
+            if snap_idx in (0, 1) and trial == 0:
+                c0_ref = torch.topk(l_ref[0] - 0.85 * cur_snap.unary(h_raw.float())[0], M).indices
+                if snap_idx == 1:
+                    assert toks_g[0] not in set(c0_ref.tolist())
+
+            # (2) Stochastic `top_k=20` AND full-vocab `top_k=0` (`pure_temperature_diagnostic` + `top_p < 1`)
+            for T, w in (
+                (0.7, SamplingWarper(top_k=20, top_p=0.8)),
+                (0.6, SamplingWarper(top_k=20, top_p=0.95, min_p=0.05)),
+                (1.0, SamplingWarper(top_k=0, top_p=1.0)),
+                (0.8, SamplingWarper(top_k=0, top_p=0.85, min_p=0.05)),
+            ):
+                toks_s, q_s, _, _ = _sample_proposal(
+                    raw, h_raw, prefix, temperature=T, warper=w,
+                    generator=torch.Generator().manual_seed(9000 + snap_idx * 31 + trial),
+                    snapshot=cur_snap, projection=None, beta=0.85, bigram=None,
+                    timer=PhaseTimer("cpu", True), need_training_tensors=False, _allow_compact_q=True,
+                )
+                if w.top_k > 0:
+                    assert isinstance(q_s, CompactProposal)
+                    q_dense = q_s.to_dense()
+                else:
+                    assert isinstance(q_s, torch.Tensor) and q_s.shape == (K, V)
+                    q_dense = q_s
+
+                for i in range(K):
+                    sc_i = cur_snap.score_slot(l_ref[i], U_ref[i], prefix, toks_s[:i], i, beta=0.85)
+                    q_ref_i = _ref_09a5469_probabilities(sc_i, T, w)
+                    # Note: when `trial == 2` creates exact 20-way BF16 ties straddling rank 20,
+                    # CPU `std::nth_element` on `[600]` vs ascending-ID `stable=True` sort on `[276]`
+                    # picks canonical lowest tied IDs while preserving identical sorted probability mass!
+                    if trial == 2 and w.top_k > 0:
+                        s_i_vals, _ = torch.topk(sc_i / T, w.top_k + 1)
+                        has_rank_k_tie = bool((s_i_vals[w.top_k - 1] == s_i_vals[w.top_k]).item()) or bool(
+                            (s_i_vals[:w.top_k - 1] == s_i_vals[1:w.top_k]).any().item()
+                        )
+                        if has_rank_k_tie:
+                            torch.testing.assert_close(
+                                q_dense[i].sort(descending=True).values,
+                                q_ref_i.sort(descending=True).values,
+                                rtol=0, atol=0,
+                            )
+                            continue
+                    assert torch.equal(q_dense[i], q_ref_i), f"prob mismatch snap={snap_idx} trial={trial} slot={i}"
+                    if w.top_k > 0:
+                        assert torch.equal(q_s.q_selected[i], q_ref_i[toks_s[i]])
+
+
+def test_round3_direct_api_edge_cases_and_guards():
+    from edraft.verify import CompactProposal, verify_block
+    from edraft.sampler import warp_top_scaled_scores
+
+    g = torch.Generator().manual_seed(9901)
+    V = 32
+    l_u = torch.randn(2, V, generator=g)
+
+    # 1. Inner `Counter.clear()` (preserving `len(bg.counts)` and `first_prev`) + `state=None` auto-sync
+    bg = OnlineBigram(V, alpha=1.0, lambda_tr=0.4, k_ret=8)
+    bg.update([1, 2], [10, 20])
+    _ = bg.score_tensor(l_u[0], torch.tensor(2))
+    bg.counts[2].clear()  # `len(bg.counts)` stays 2 and `first_prev == 1` stays populated!
+    assert torch.equal(bg.score_tensor(l_u[0], torch.tensor(2)), bg.score(l_u[0], 2))
+    _, b_ids = torch.topk(l_u / 0.7, 10, dim=-1)
+    b_vals = l_u.gather(-1, b_ids)
+    # Direct `state=None` call must auto-sync `_DeviceBigramState` (not skip active row 1!)
+    sc_1, id_1 = bg.merge_compact_candidates(
+        l_u[0], b_vals[0], b_ids[0], torch.tensor(1), temperature=0.7, k_eff=10, state=None
+    )
+    w10 = SamplingWarper(top_k=10, top_p=0.85)
+    q_1 = torch.zeros(V).scatter(0, id_1, warp_top_scaled_scores(sc_1, w10))
+    assert torch.equal(q_1, _ref_09a5469_probabilities(bg.score(l_u[0], 1), 0.7, w10))
+    # Cleared row 2 via `merge_compact_candidates(..., state=None)` must match `l_u[0]`!
+    sc_2, id_2 = bg.merge_compact_candidates(
+        l_u[0], b_vals[0], b_ids[0], torch.tensor(2), temperature=0.7, k_eff=10, state=None
+    )
+    q_2 = torch.zeros(V).scatter(0, id_2, warp_top_scaled_scores(sc_2, w10))
+    assert torch.equal(q_2, _ref_09a5469_probabilities(l_u[0], 0.7, w10))
+
+    with pytest.raises(ValueError, match="k_eff"):
+        bg.merge_compact_candidates(l_u[0], b_vals[0], b_ids[0], torch.tensor(1), temperature=0.7, k_eff=0)
+    bg_neg = OnlineBigram(V, alpha=1.0, lambda_tr=-0.1)
+    with pytest.raises(ValueError, match="nonnegative lambda_tr"):
+        bg_neg.merge_compact_candidates(l_u[0], b_vals[0], b_ids[0], torch.tensor(1), temperature=0.7, k_eff=10)
+
+    # 2. Direct `precompute_sparse_pool` & `score_slot_compact_candidates` when `M_sparse + k_eff > V` and `M_sparse >= V`
+    sh = SignedHash(64)
+    with torch.no_grad():
+        sh.values.normal_(0, 0.2)
+    E = torch.randn(V, 4, generator=g) * 0.2
+    for m_test in (24, 32, 64):
+        adap_m = DenseAdapter(E, p=6, D=2, sparse=sh, M_sparse=m_test)
+        with torch.no_grad():
+            adap_m.b.normal_(0, 0.1)
+        snap_m = adap_m.snapshot()
+        U_m = snap_m.unary(torch.randn(2, 6, generator=g))
+        c_all, r_all = snap_m.precompute_sparse_pool(l_u, U_m, temperature=0.7, k_eff=16, beta=0.9)
+        sc_m, id_m = snap_m.score_slot_compact_candidates(
+            l_u[0], U_m[0], torch.tensor([[1], [2]]), torch.tensor([3, 4]),
+            temperature=0.7, k_eff=16, beta=0.9, precomputed_ids=(c_all[0], r_all[0]),
+        )
+        w16 = SamplingWarper(top_k=16, top_p=0.9)
+        q_m = torch.zeros(V).scatter(0, id_m, warp_top_scaled_scores(sc_m, w16))
+        ref_m = snap_m.score_slot(l_u[0], U_m[0], [4, 3], [], 0, beta=0.9)
+        assert torch.equal(q_m, _ref_09a5469_probabilities(ref_m, 0.7, w16))
+
+    bad_snap = ProposalSnapshot(E, torch.zeros(4, 6), torch.zeros(2, 4, 4), torch.ones(V), 0, sh, 0, None, False)
+    with pytest.raises(ValueError, match="candidate count must be positive"):
+        bad_snap.precompute_sparse_pool(l_u, torch.zeros_like(l_u), temperature=0.7, k_eff=10)
+
+    # 3. `verify_block` with `CompactProposal` on `K == 0` and out-of-support `p_selected == 0.0`
+    cp_empty = CompactProposal(
+        torch.empty((0, 10), dtype=torch.long),
+        torch.empty((0, 10), dtype=torch.float32),
+        torch.empty((0,), dtype=torch.float32),
+        V,
+    )
+    t_logits_0 = torch.randn(1, V, generator=g)
+    v_emp_c = verify_block([], cp_empty, t_logits_0, 0.7, w10, torch.Generator().manual_seed(5))
+    v_emp_d = verify_block([], torch.empty((0, V)), t_logits_0, 0.7, w10, torch.Generator().manual_seed(5))
+    assert v_emp_c == v_emp_d
+
+
+
+
