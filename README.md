@@ -175,6 +175,11 @@ tokenization, proposals, verification, and online updates, with a separate CUDA
 event pass for phase profiles. Confidence intervals resample prompt IDs after
 aggregating seeds, and seed variability is reported separately.
 
+Accepted length counts verified draft proposals, excluding replacement and bonus
+tokens. Verification precedes EOS trimming, so a terminal block can count accepted
+proposals beyond the emitted EOS. Output length, tokens/sec, and target forwards
+per generated token use the actual committed output after trimming.
+
 Restart an interrupted command with the same configuration. Completed collection
 and evaluation jobs are reused; keep collection GPU order and worker count fixed
 to avoid duplicate work. Timing resumes complete all-arm comparison bundles and

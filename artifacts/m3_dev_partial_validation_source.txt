@@ -1,0 +1,349 @@
+"""Read-only bounded audit of the first eight completed real M3 standard dev bundles.
+
+Uses the Python standard library only. It reads immutable result files and captures
+the mutable manifest/session snapshots used. It never imports the experiment code,
+loads tensors, initializes CUDA, changes source, or controls the running job.
+"""
+import argparse
+import collections
+import datetime
+import hashlib
+import json
+import math
+import os
+from pathlib import Path
+import statistics
+import tempfile
+import time
+
+parser = argparse.ArgumentParser(description=__doc__)
+parser.add_argument('--scale', choices=['reference'], default='reference',
+                    help='This bounded artifact audit supports reference evidence only.')
+args = parser.parse_args()
+ROOT = Path('/home/catid/drafter')
+OUTPUT = ROOT / 'artifacts/m3_dev_partial_validation_reference.json'
+started = time.monotonic()
+checks = collections.Counter()
+evidence = {}
+
+
+def sha(data):
+    return hashlib.sha256(data).hexdigest()
+
+
+def fingerprint(value):
+    return sha(json.dumps(value, sort_keys=True, separators=(',', ':')).encode())
+
+
+def file_sha(path):
+    digest = hashlib.sha256()
+    with path.open('rb') as stream:
+        for chunk in iter(lambda: stream.read(8 * 1024 * 1024), b''):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def read(path, mutable=False):
+    data = path.read_bytes()
+    evidence[str(path.relative_to(ROOT))] = {
+        'sha256': sha(data), 'bytes': len(data), 'mutable_while_run_active': mutable}
+    return json.loads(data)
+
+
+def require(condition, label):
+    if not condition:
+        raise AssertionError(label)
+    checks[label] += 1
+
+
+def close(actual, expected):
+    return math.isclose(actual, expected, rel_tol=1e-12, abs_tol=1e-12)
+
+
+def finite(value):
+    if isinstance(value, float):
+        require(math.isfinite(value), 'all_recorded_numeric_values_finite')
+    elif isinstance(value, dict):
+        for child in value.values():
+            finite(child)
+    elif isinstance(value, list):
+        for child in value:
+            finite(child)
+
+
+source = Path(__file__).resolve()
+evidence[str(source.relative_to(ROOT))] = {'sha256': file_sha(source), 'bytes': source.stat().st_size}
+prompt_spec = ROOT / 'prompt.md'
+evidence['prompt.md'] = {'sha256': file_sha(prompt_spec), 'bytes': prompt_spec.stat().st_size}
+inspection = ROOT / 'artifacts/dflash_inspection.md'
+evidence['artifacts/dflash_inspection.md'] = {'sha256': file_sha(inspection), 'bytes': inspection.stat().st_size}
+manifest = read(ROOT / 'artifacts/m3/tune/manifest-rank0.json', mutable=True)
+session_path = ROOT / 'artifacts/m3/tune/sessions/a05ebfa5ed86894c202a53c95e600d634ee2c2edd0d46c30071b8049d010c03d.json'
+session = read(session_path, mutable=True)
+run = read(ROOT / 'artifacts/runs/m3-tune-d53884c1af6ef0b8-rank0.json', mutable=True)
+prompts = read(ROOT / 'artifacts/prompts.json')
+m2 = read(ROOT / 'artifacts/m2.json')
+require(read(ROOT / 'artifacts/m2_validation_reference.json')['status'] == 'passed', 'm2_main_validator_passed')
+require(read(ROOT / 'artifacts/m2_recovery_validation_reference.json')['status'] == 'passed', 'm2_recovery_validator_passed')
+cfg = session['configuration']
+plan = cfg['configuration']
+require(fingerprint(cfg) == session_path.stem, 'session_filename_matches_configuration_hash')
+require(fingerprint(prompts) == plan['prompt_manifest_hash'], 'session_prompt_manifest_binding')
+by_prompt = {p['prompt_id']: p for p in prompts['prompts']}
+require(len(by_prompt) == len(prompts['prompts']), 'prompt_ids_unique')
+planned = [by_prompt[pid] for pid in plan['dev_ids']]
+require(all(p['split'] == 'dev' for p in planned), 'all_planned_prompts_are_dev')
+standard = [p for p in planned if p['condition'] == 'standard_nonthinking']
+require(len(standard) == run['config']['standard_dev_prompts'] == 8, 'eight_planned_standard_dev_prompts')
+require(len([p for p in planned if p['condition'] == 'long_thinking']) == 12, 'twelve_long_dev_prompts_planned_not_audited')
+expected_candidates = {
+    'plain_dflash': [{}],
+    'online_bigram': [{'lambda_tr': 0.05, 'alpha': 0.5, 'k_ret': None},
+                      {'lambda_tr': 0.2, 'alpha': 1.0, 'k_ret': None}],
+    'dense': [{'beta': 0.5}, {'beta': 1.0}],
+    'dense_sparse': [{'beta': 0.5}, {'beta': 1.0}],
+}
+require(plan['candidates'] == expected_candidates, 'seven_predeclared_candidates')
+candidate_list = [(arm, setting) for arm, settings in expected_candidates.items() for setting in settings]
+expected_set = {(arm, fingerprint(setting)) for arm, setting in candidate_list}
+require(cfg['stage'] == 'm3' and cfg['scale'] == 'reference', 'reference_m3_session')
+require(cfg['seed'] == run['config']['seed'] == 2026, 'session_run_seed_binding')
+require(cfg['model_pair'] == m2['model_pair'] and cfg['model_revisions'] == m2['model_revisions'], 'session_model_binding_to_m2')
+require(cfg['generation_caps'] == {'standard': 2048, 'long': 24576, 'smoke': 32}, 'session_generation_caps')
+for key, path in [('dense', ROOT / 'artifacts/m2/dense.pt'),
+                  ('dense_sparse', ROOT / 'artifacts/m2/dense_sparse.pt'),
+                  ('projection', ROOT / 'artifacts/h_proj.pt')]:
+    digest = file_sha(path)
+    evidence[str(path.relative_to(ROOT))] = {'sha256': digest, 'bytes': path.stat().st_size}
+    require(digest == cfg['checkpoint_hashes'][key], 'actual_checkpoint_or_projection_hash_binding')
+digest = hashlib.sha256()
+for name in ('adapter.py', 'online.py', 'features.py', 'dflash_loop.py', 'sampler.py',
+             'verify.py', 'backend.py', 'sparse.py', 'toy.py', 'diagnose.py', 'eval_closed_loop.py'):
+    path = ROOT / 'src/edraft' / name
+    digest.update(path.name.encode())
+    digest.update(path.read_bytes())
+require(digest.hexdigest() == cfg['checkpoint_hashes']['implementation'], 'current_evaluation_implementation_hash_binding')
+for rel, expected in run['source_files_sha256'].items():
+    require(file_sha(ROOT / rel) == expected, 'current_source_matches_started_run')
+require(fingerprint(run['source_files_sha256']) == run['source_tree_sha256'], 'run_source_tree_hash_algebra')
+
+totals = collections.Counter()
+rows_out = []
+bundles_out = []
+bigram_out = []
+termination_rows = []
+stop_ids = set(cfg['generation_environment']['stop_token_ids'])
+environment_hash = fingerprint(cfg['generation_environment'])
+epoch_ids = {epoch['epoch'] for epoch in session['epochs']}
+warper = {'top_k': 20, 'top_p': 0.8, 'min_p': 0.0}
+audited_paths = set()
+
+for prompt in standard:
+    pid = prompt['prompt_id']
+    entries = [(key, entry) for key, entry in manifest['jobs'].items()
+               if entry['identity']['prompt'] == pid]
+    require(len(entries) == 7, 'seven_rows_per_audited_prompt')
+    actual_set = {(e['identity']['proposal_mode'], fingerprint(e['identity']['setting'])) for _, e in entries}
+    require(actual_set == expected_set, 'complete_candidate_set_per_audited_prompt')
+    paths = {e['result_path'] for _, e in entries}
+    matches = [(key, bundle) for key, bundle in session['bundles'].items()
+               if set(bundle['result_paths']) == paths]
+    require(len(matches) == 1, 'exact_one_completed_session_bundle_per_prompt')
+    bundle_key, bundle = matches[0]
+    require(bundle['status'] == 'complete' and bundle['epoch'] in epoch_ids, 'bundle_complete_known_epoch')
+    require(len(bundle['result_paths']) == len(set(bundle['result_paths'])) == 7, 'bundle_paths_unique')
+    ordered_rows = []
+    for path in bundle['result_paths']:
+        key = Path(path).stem
+        entry = manifest['jobs'][key]
+        row = read(Path(path))
+        identity = entry['identity']
+        require(entry['status'] == 'complete', 'manifest_row_complete')
+        require(evidence[str(Path(path).relative_to(ROOT))]['sha256'] == entry['result_sha256'], 'raw_checksum_matches_manifest')
+        require(fingerprint(identity) == key and row['identity'] == identity, 'raw_manifest_filename_identity_binding')
+        require(str((ROOT / 'artifacts/m3/tune/rank0' / (key + '.json')).resolve()) == path, 'expected_raw_path')
+        require(identity['prompt_payload_hash'] == fingerprint(prompt), 'raw_prompt_payload_hash_binding')
+        require(row['split'] == 'dev' and row['scale'] == row['label'] == 'reference', 'raw_is_real_reference_dev')
+        aliases = {'prompt_id': 'prompt', 'arm': 'proposal_mode', 'settings': 'setting', 'checkpoint_hashes': 'checkpoint'}
+        for row_key, identity_key in aliases.items():
+            require(row[row_key] == identity[identity_key], 'raw_metadata_matches_identity')
+        for field in ('condition', 'seed', 'temperature', 'sampling_name', 'verification_rule',
+                      'model_pair', 'model_revisions', 'stage', 'sampling_warp_config', 'timing_session', 'repeat', 'phase_profile'):
+            require(row[field] == identity[field], 'raw_metadata_matches_identity')
+        require(identity['mode'] == 'tune' and identity['stage'] == 'm3', 'raw_identity_tune_stage')
+        require(identity['model_pair'] == cfg['model_pair'] and identity['model_revisions'] == cfg['model_revisions'], 'raw_session_model_binding')
+        require(identity['checkpoint'] == cfg['checkpoint_hashes'], 'raw_session_checkpoint_binding')
+        require(identity['timing_session'] == session['logical_session'], 'raw_logical_session_binding')
+        require(identity['repeat'] == 'dev:epoch=' + bundle['epoch'], 'raw_bundle_epoch_binding')
+        require(identity['condition'] == 'standard_nonthinking' and identity['seed'] == 2026,
+                'standard_condition_and_seed')
+        require(identity['temperature'] == 0.7 and identity['sampling_name'] == 'nonthinking_recommended'
+                and identity['sampling_warp_config'] == warper and identity['verification_rule'] == 'ratio',
+                'recommended_sampling_and_ratio_verification')
+        require(identity['generation_cap'] == 2048 and identity['generation_caps'] == cfg['generation_caps'], 'raw_caps_match_session')
+        require(identity['adapter_version'] == 0 and identity['frozen_settings_hash'] == '', 'tune_identity_version_and_not_yet_frozen')
+        require(row['phase_profile'] is False and row['phase_ms'] == {} and row['timing_isolated'] is False,
+                'dev_timings_not_claimed_as_isolated_profile')
+        meta = row['input_metadata']
+        require(meta['generation_environment_sha256'] == environment_hash, 'raw_tokenizer_environment_binding')
+        require(meta['enable_thinking'] is False and meta['requested_generation_cap'] == 2048
+                and meta['effective_generation_cap'] == min(2048, cfg['generation_environment']['context_limit'] - meta['input_token_count']),
+                'effective_context_cap_and_thinking_mode')
+        finite(row)
+        out = row['output_tokens']
+        blocks = row['blocks']
+        require(len(out) == row['generated_tokens'] == row['generation']['realized_length'], 'generated_token_count_algebra')
+        require(0 < len(out) <= meta['effective_generation_cap'] and all(type(t) is int and 0 <= t < 151936 for t in out), 'output_token_range_and_cap')
+        require(row['generation']['complete'] is True, 'generation_complete')
+        require(row['generation']['eos_reached'] == (out[-1] in stop_ids)
+                and not any(t in stop_ids for t in out[:-1]), 'first_eos_terminates_output')
+        require(row['generation']['capped'] == (len(out) == meta['effective_generation_cap']), 'cap_flag_algebra')
+        require(row['elapsed_seconds'] >= row['generation_loop_elapsed_seconds'] > 0, 'positive_nested_latency')
+        require(close(row['tokens_per_second'], len(out) / row['elapsed_seconds']), 'throughput_algebra')
+        require(close(row['target_forwards_per_generated_token'], (len(blocks) + 1) / len(out)), 'target_forward_algebra_one_initial_plus_rounds')
+        lengths = [b['accepted_length'] for b in blocks]
+        require(close(row['mean_accepted_length'], statistics.mean(lengths))
+                and close(row['median_accepted_length'], statistics.median(lengths)), 'acceptance_summary_algebra')
+        require(0 < row['peak_allocated_bytes'] <= row['peak_reserved_bytes'], 'peak_memory_ordering')
+        require(row['online'] is None and row['online_invariants'] is None, 'no_online_adapter_state_in_m3_static_arms')
+        if row['arm'] in ('dense', 'dense_sparse'):
+            params = m2['stages'][row['arm']]['parameters']
+            require(row['parameter_norms'] == {k: params[k]['norm'] for k in ('W', 'A', 'b')}, 'recorded_dense_norms_match_m2')
+            require(row['effective_beta'] == row['settings']['beta'], 'effective_beta_matches_candidate')
+        else:
+            require(row['parameter_norms'] == {}, 'baseline_parameter_norms_empty')
+        offset = 1
+        initial_tail = blocks[0]['verified_prefix_tail']
+        require(initial_tail[-1] == out[0], 'first_prefix_contains_initial_target_token')
+        initial_prompt_tail = initial_tail[:-1]
+        stream = []
+        row_truncations = 0
+        for index, block in enumerate(blocks, 1):
+            K = len(block['draft_tokens'])
+            a = block['accepted_length']
+            require(K == 15 and block['physical_to_logical'] == {'anchor_physical_index': 0, 'logical_to_physical': list(range(1, 16))}, 'sixteen_physical_fifteen_logical_block')
+            require(block['round_idx'] == index and block['absolute_output_offset'] == offset, 'round_index_and_offset_continuity')
+            require(block['input_context_length'] == meta['input_token_count'] + offset, 'context_length_algebra')
+            require(block['verified_prefix_tail'] == (initial_prompt_tail + out[:offset])[-4:], 'verified_prefix_tail_matches_committed_stream')
+            require(type(a) is int and 0 <= a <= K and block['first_rejection_index'] == a, 'accepted_length_and_first_rejection')
+            require(block['decisions'] == [True] * a + ([False] if a < K else []), 'decision_prefix_algebra')
+            require((block['replacement_token'] is not None) == (a < K)
+                    and (block['bonus_token'] is not None) == (a == K), 'replacement_bonus_exclusive')
+            expected = block['draft_tokens'][:a] + [block['replacement_token'] if a < K else block['bonus_token']]
+            cut = next((i for i, token in enumerate(expected) if token in stop_ids), None)
+            if cut is not None:
+                expected = expected[:cut + 1]
+            expected = expected[:meta['effective_generation_cap'] - offset]
+            require(block['committed_tokens'] == expected, 'committed_tokens_acceptance_eos_cap_algebra')
+            require(block['committed_tokens'] == out[offset:offset + len(expected)], 'committed_tokens_match_output_slice')
+            require(block['target_cache_length_after_rollback'] == block['input_context_length'] + len(expected) - 1, 'cache_rollback_length_algebra')
+            require(block['off_policy_teacher_positions'] == list(range(a + 1, K)), 'off_policy_positions_algebra')
+            require(block['adapter_version'] == block['next_adapter_version'] == 0, 'static_adapter_versions')
+            require(block['collection_temperature'] == 0.7 and block['loss_temperature'] == 1
+                    and block['sampling_warp_config'] == warper and block['verification_rule'] == 'ratio', 'block_sampling_metadata')
+            expected_mode = 'dense_full' if row['arm'] in ('dense', 'dense_sparse') else 'plain_dflash'
+            require(block['proposal_mode'] == expected_mode, 'recorded_block_mode_schema')
+            for field in ('proposal_token_probs', 'target_token_probs'):
+                require(len(block[field]) == K and all(0 <= v <= 1 for v in block[field]), 'recorded_token_probability_bounds')
+            for slot, decision in enumerate(block['decisions']):
+                p = block['target_token_probs'][slot]
+                q = block['proposal_token_probs'][slot]
+                require(q > 0 and ((p > 0) if decision else (p < q)), 'ratio_decision_necessary_conditions')
+            if len(expected) < a + 1:
+                row_truncations += 1
+                require(index == len(blocks), 'termination_truncation_only_in_final_block')
+            offset += len(expected)
+            stream.extend(expected)
+            totals['blocks'] += 1
+            totals['verified_accepted_slots'] += a
+            totals['committed_after_initial_target_token'] += len(expected)
+        require(out[1:] == stream and offset == len(out), 'complete_output_reconstruction')
+        if row_truncations:
+            termination_rows.append({'path': path, 'accepted_length': blocks[-1]['accepted_length'],
+                                     'committed_tokens': len(blocks[-1]['committed_tokens'])})
+        totals['terminal_truncation_blocks'] += row_truncations
+        totals['rows'] += 1
+        totals['generated_tokens'] += len(out)
+        totals['eos_rows'] += row['generation']['eos_reached']
+        totals['capped_rows'] += row['generation']['capped']
+        totals['repetition_dominated_rows'] += row['generation']['repetition_dominated']
+        if row['arm'] == 'online_bigram':
+            b = row['bigram']
+            pairs = set(zip([initial_prompt_tail[-1]] + out[:-1], out))
+            require(b['counted_transitions'] == len(out), 'bigram_request_transition_count')
+            require(b['exact_ledger_pairs'] == b['retained_prior_pairs'] == len(pairs), 'bigram_distinct_pair_count_reconstruction')
+            require(b['k_ret'] is None and b['ledger_retained_for_exact_counts'] is True
+                    and row['settings']['alpha'] > 0, 'bigram_exact_un_evicted_positive_smoothing')
+            bigram_out.append({'path': path, 'prompt_id': pid, 'settings': row['settings'],
+                               'transitions': len(out), 'reconstructed_unique_pairs': len(pairs)})
+        else:
+            require(row['bigram'] is None, 'non_bigram_rows_have_no_bigram_metrics')
+        ordered_rows.append(row)
+        audited_paths.add(path)
+        rows_out.append({'path': path, 'sha256': entry['result_sha256'], 'identity_sha256': key,
+                         'prompt_id': pid, 'arm': row['arm'], 'settings': row['settings'],
+                         'generated_tokens': len(out), 'blocks': len(blocks)})
+    comparable = ('seed', 'condition', 'temperature', 'sampling_name', 'sampling_warp_config',
+                  'verification_rule', 'input_metadata', 'checkpoint_hashes', 'model_pair',
+                  'model_revisions', 'timing_session', 'repeat', 'phase_profile')
+    for field in comparable:
+        require(all(r[field] == ordered_rows[0][field] for r in ordered_rows), 'matched_request_metadata_across_all_seven_candidates')
+    require(len({r['output_tokens'][0] for r in ordered_rows}) == 1, 'matched_initial_target_token_across_candidates')
+    jobs = [(prompt, r['arm'], r['sampling_name'], r['seed'], r['settings']) for r in ordered_rows]
+    require(fingerprint({'jobs': jobs, 'repeat': 'dev', 'profile': False}) == bundle_key, 'session_bundle_key_hash')
+    index = plan['dev_ids'].index(pid)
+    offset = index % len(candidate_list)
+    expected_order = candidate_list[offset:] + candidate_list[:offset]
+    require([(r['arm'], r['settings']) for r in ordered_rows] == expected_order, 'candidate_execution_order_rotates_by_prompt')
+    bundles_out.append({'prompt_id': pid, 'bundle_key': bundle_key, 'epoch': bundle['epoch'],
+                        'result_paths': bundle['result_paths']})
+
+require(totals['rows'] == len(audited_paths) == 56 and len(bigram_out) == 16, 'bounded_audit_coverage')
+report = {
+    'status': 'passed', 'scale': args.scale,
+    'resolved_config': {'scale': args.scale, 'audited_standard_dev_prompts': 8,
+                        'audited_candidate_rows': 56, 'output': str(OUTPUT)},
+    'validation_kind': 'partial_completed_m3_standard_dev_artifact_audit',
+    'recorded_at_utc': datetime.datetime.now(datetime.timezone.utc).isoformat(),
+    'scope': 'Eight completed standard dev prompts, all seven predeclared candidates each; does not complete M3.',
+    'snapshot': {'logical_session': session['logical_session'],
+                 'manifest_jobs_observed': len(manifest['jobs']),
+                 'session_bundles_observed': len(session['bundles']),
+                 'planned_dev_ids': plan['dev_ids'], 'planned_candidate_rows': len(plan['dev_ids']) * 7,
+                 'audited_prompt_ids': [p['prompt_id'] for p in standard]},
+    'checks': dict(checks), 'totals': dict(totals), 'evidence': evidence,
+    'audited_bundles': bundles_out, 'audited_rows': rows_out,
+    'bigram_request_accounting': bigram_out,
+    'bigram_interpretation': 'All 16 final counters match each request output, including the recorded prompt-boundary transition. Consistent with request-local reset; no initial-empty-state event or complete ledger is recorded.',
+    'acceptance_termination_note': f"Acceptance means use full verified proposal accepted_length, consistent with artifacts/dflash_inspection.md:103-105. In {totals['terminal_truncation_blocks']} terminal blocks this exceeds the EOS-trimmed committed length. This is documented metric semantics, not an identified bug; token conservation was checked after EOS/cap trimming, not by blindly summing accepted_length+1.",
+    'terminal_truncations': termination_rows,
+    'limitations': [
+        'Only eight standard development prompts are audited. Twelve long development prompts and full frozen test evaluation/timing remain outside this audit.',
+        'The active manifest and session are mutable. Their hashes describe captured snapshots; the audit records the exact immutable raw paths and checksums included.',
+        'Matching input-token hashes and tokenizer-environment metadata do not independently retokenize prompts or replay model inference.',
+        'Checkpoints were hashed as bytes; runtime model tensors and sparse state were not independently inspected. Runtime W/A/b norms match M2; S norm is absent from these tuning rows.',
+        'Raw stochastic uniforms and full probability vectors are absent. Recorded probability bounds and necessary ratio-decision conditions cannot prove normalization, correct residual sampling, or distributional exactness.',
+        'Bigram terminal aggregate counts do not prove an empty starting ledger, every key/count, exact between-round update timing, or absence of all possible hidden state leakage.',
+        'Bigram blocks use the generic plain_dflash proposal_mode label; bigram candidate identity and final counters are row-level metadata.',
+        'Dev phase_ms is empty and timing_isolated is false. These are development comparisons, not final isolated throughput/profile results.',
+        'No statistical quality, selected-setting, generalization, online-adaptation, or speedup claim follows from this partial audit.',
+    ],
+    'cuda_initialized': False, 'execution': 'Python standard library only; no tensor/model imports',
+    'elapsed_seconds': time.monotonic() - started,
+}
+temporary_path = None
+try:
+    with tempfile.NamedTemporaryFile(mode='w', encoding='utf-8', dir=OUTPUT.parent,
+                                     prefix=OUTPUT.name + '.', suffix='.tmp', delete=False) as stream:
+        temporary_path = Path(stream.name)
+        json.dump(report, stream, indent=2)
+        stream.write('\n')
+        stream.flush()
+        os.fsync(stream.fileno())
+    os.replace(temporary_path, OUTPUT)
+finally:
+    if temporary_path is not None:
+        temporary_path.unlink(missing_ok=True)
+print(json.dumps({'status': report['status'], 'output': str(OUTPUT), 'sha256': file_sha(OUTPUT),
+                  'totals': report['totals'], 'checks': sum(checks.values()),
+                  'elapsed_seconds': report['elapsed_seconds']}))

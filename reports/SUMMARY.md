@@ -63,6 +63,9 @@ condition's sampling distribution; at greedy temperature it is argmax agreement.
 Overlap and target-mass means aggregate positions within prompts before the
 prompt-ID bootstrap. Accepted length is the mean over draft rounds, excluding
 replacement and bonus tokens; the maximum full block has 15 unknown proposals.
+It counts verified proposals before EOS trimming; a terminal block can therefore
+count accepted proposals that are not emitted. Output-length and throughput
+metrics use the actual committed output.
 M1 uses one collection seed per prompt and condition, so it does not estimate
 seed-to-seed variability.
 
