@@ -1,0 +1,174 @@
+{
+  "status": "measured_intermediate",
+  "scale": "reference",
+  "checkpoint": "artifacts/m2/dense.pt",
+  "checkpoint_sha256": "53ed0f23458bceb44842d2598a51b78604897347915df5be01c6f1a16a8229da",
+  "identity": "a68a4d614bc2a4960f2d8ce292c3611b2ce2328b2bbd81428b697372a31eed6e",
+  "stage": "dense",
+  "epoch": 1,
+  "baseline": {
+    "train": {
+      "loss_mode": "union_rest_grouped",
+      "weighted_mean_kl": 1.1652534761328495,
+      "weighted_kl_sum": 514974.3994215131,
+      "weight_sum": 441941.9550933838,
+      "logical_slots": 1264587,
+      "union_overlap_lower_bound": 0.490937476344443,
+      "grouped_overlap_upper_bound": 0.4925084108710852,
+      "live_full_diagnostic": {
+        "logical_slots": 0,
+        "mean_overlap": null,
+        "top1_agreement": null,
+        "weighted_mean_full_kl": null,
+        "weighted_mean_grouped_kl": null,
+        "full_minus_grouped_kl": null,
+        "proposal_source": "same reconstructed full-vocabulary q for both objectives"
+      },
+      "T_train": 1.0,
+      "beta_train": 1.0,
+      "warpers_used_for_training": false
+    },
+    "dev": {
+      "loss_mode": "union_rest_grouped",
+      "weighted_mean_kl": 1.168452997781549,
+      "weighted_kl_sum": 42048.31686925888,
+      "weight_sum": 35986.314339637756,
+      "logical_slots": 102975,
+      "union_overlap_lower_bound": 0.4857595873094322,
+      "grouped_overlap_upper_bound": 0.4877242329383547,
+      "live_full_diagnostic": {
+        "logical_slots": 120,
+        "mean_overlap": 0.36872031092643737,
+        "top1_agreement": 0.4166666666666667,
+        "weighted_mean_full_kl": 1.4216966436543972,
+        "weighted_mean_grouped_kl": 1.4208993771732623,
+        "full_minus_grouped_kl": 0.0007972664811349057,
+        "proposal_source": "same reconstructed full-vocabulary q for both objectives"
+      },
+      "T_train": 1.0,
+      "beta_train": 1.0,
+      "warpers_used_for_training": false
+    },
+    "test": {
+      "loss_mode": "union_rest_grouped",
+      "weighted_mean_kl": 1.2170184435730338,
+      "weighted_kl_sum": 40472.23254907131,
+      "weight_sum": 33255.23352813721,
+      "logical_slots": 95160,
+      "union_overlap_lower_bound": 0.4810569463545144,
+      "grouped_overlap_upper_bound": 0.4823430389857333,
+      "live_full_diagnostic": {
+        "logical_slots": 120,
+        "mean_overlap": 0.3729512969652812,
+        "top1_agreement": 0.4166666666666667,
+        "weighted_mean_full_kl": 1.2143611598227497,
+        "weighted_mean_grouped_kl": 1.2140635458106808,
+        "full_minus_grouped_kl": 0.00029761401206884286,
+        "proposal_source": "same reconstructed full-vocabulary q for both objectives"
+      },
+      "T_train": 1.0,
+      "beta_train": 1.0,
+      "warpers_used_for_training": false
+    }
+  },
+  "dense": {
+    "train": {
+      "loss_mode": "union_rest_grouped",
+      "weighted_mean_kl": 1.9282377928090635,
+      "weighted_kl_sum": 852169.1800389886,
+      "weight_sum": 441941.9550933838,
+      "logical_slots": 1264587,
+      "union_overlap_lower_bound": 0.4908678477716907,
+      "grouped_overlap_upper_bound": 0.49270872400005034,
+      "live_full_diagnostic": {
+        "logical_slots": 0,
+        "mean_overlap": null,
+        "top1_agreement": null,
+        "weighted_mean_full_kl": null,
+        "weighted_mean_grouped_kl": null,
+        "full_minus_grouped_kl": null,
+        "proposal_source": "same reconstructed full-vocabulary q for both objectives"
+      },
+      "T_train": 1.0,
+      "beta_train": 1.0,
+      "warpers_used_for_training": false
+    },
+    "dev": {
+      "loss_mode": "union_rest_grouped",
+      "weighted_mean_kl": 2.018092362937402,
+      "weighted_kl_sum": 72623.70613908768,
+      "weight_sum": 35986.314339637756,
+      "logical_slots": 102975,
+      "union_overlap_lower_bound": 0.4784381611945817,
+      "grouped_overlap_upper_bound": 0.4807571841927814,
+      "live_full_diagnostic": {
+        "logical_slots": 120,
+        "mean_overlap": 0.4325031419595083,
+        "top1_agreement": 0.45,
+        "weighted_mean_full_kl": 1.688588041078966,
+        "weighted_mean_grouped_kl": 1.6868640083847695,
+        "full_minus_grouped_kl": 0.001724032694196611,
+        "proposal_source": "same reconstructed full-vocabulary q for both objectives"
+      },
+      "T_train": 1.0,
+      "beta_train": 1.0,
+      "warpers_used_for_training": false
+    },
+    "test": {
+      "loss_mode": "union_rest_grouped",
+      "weighted_mean_kl": 2.858797020816987,
+      "weighted_kl_sum": 95069.96253681183,
+      "weight_sum": 33255.23352813721,
+      "logical_slots": 95160,
+      "union_overlap_lower_bound": 0.3732014475985318,
+      "grouped_overlap_upper_bound": 0.3749980851273457,
+      "live_full_diagnostic": {
+        "logical_slots": 120,
+        "mean_overlap": 0.16316726704438528,
+        "top1_agreement": 0.16666666666666666,
+        "weighted_mean_full_kl": 4.07608102996871,
+        "weighted_mean_grouped_kl": 4.075017788162317,
+        "full_minus_grouped_kl": 0.0010632418063931137,
+        "proposal_source": "same reconstructed full-vocabulary q for both objectives"
+      },
+      "T_train": 1.0,
+      "beta_train": 1.0,
+      "warpers_used_for_training": false
+    },
+    "parameters": {
+      "W": {
+        "norm": 1.9648338556289673,
+        "exact_zero_fraction": 0.0,
+        "shape": [
+          64,
+          256
+        ],
+        "dtype": "torch.float32"
+      },
+      "A": {
+        "norm": 2.332287549972534,
+        "exact_zero_fraction": 0.0,
+        "shape": [
+          4,
+          64,
+          64
+        ],
+        "dtype": "torch.float32"
+      },
+      "b": {
+        "norm": 0.0,
+        "exact_zero_fraction": 1.0,
+        "shape": [
+          151936
+        ],
+        "dtype": "torch.float32"
+      }
+    }
+  },
+  "training_complete_for_stage": true,
+  "full_M2_complete": false,
+  "stopped_additional_epochs": [
+    "dense"
+  ],
+  "observed_at_utc": "2026-11-14T00:40:58.872529+00:00"
+}

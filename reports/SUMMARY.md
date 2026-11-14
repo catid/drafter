@@ -105,9 +105,13 @@ M2 is fitting only the primary standard train traces; long-thinking traces
 remain reserved for evaluation. After the single predeclared dense epoch, dev
 weighted grouped KL rose from **1.16845 to 2.01809**, a **72.7% deterioration**.
 Values remain finite. This negative intermediate result triggered the under-1%
-rule stopping extra dense epochs. The required bias/sparse phase remains pending;
-no settings or optimizer state were changed in response. Complete train/test
-comparisons and final fitting results will determine the reported offline outcome.
+rule stopping extra dense epochs. Completed dense evaluation also worsened train
+KL from 1.16525 to 1.92824 and test KL from 1.21702 to 2.85880. The negative result
+therefore spans all three splits. The required bias/sparse phase remains pending;
+no settings or optimizer state were changed in response. The
+[dense phase record](../artifacts/m2_dense_interim.json) includes the checkpoint
+checksum, parameter statistics, and separate live-full diagnostics from 120 dev
+and 120 test slots. Final fitting results remain pending.
 Progress is recorded in [NOTES.md](../NOTES.md); the process log is
 [m2-reference.log](../artifacts/m2-reference.log). Closed-loop quality and speed
 results are pending. The planned M3/M4 timing retains full held-out prompt coverage

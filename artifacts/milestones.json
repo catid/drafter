@@ -161,6 +161,24 @@
       "relative_improvement_over_zero": -0.7271489454595071,
       "extra_dense_epochs_stopped": true,
       "status": "intermediate; full dense split evaluation and sparse phase pending"
+    },
+    "dense_phase": {
+      "status": "complete",
+      "evidence": "artifacts/m2_dense_interim.json",
+      "losses": {
+        "train": {
+          "baseline": 1.1652534761328495,
+          "dense": 1.9282377928090635
+        },
+        "dev": {
+          "baseline": 1.168452997781549,
+          "dense": 2.018092362937402
+        },
+        "test": {
+          "baseline": 1.2170184435730338,
+          "dense": 2.858797020816987
+        }
+      }
     }
   },
   "M3": {
