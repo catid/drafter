@@ -119,14 +119,24 @@ M1b checksum coverage of the eligible traces. It fits dense unary/pair parameter
 first, then adds bias and sparse parameters. Extra epochs/tuning stop when dev
 improvement is below 1%; both required stages and their results are reported.
 
+For a new reference fit with sufficient host RAM, this command sets a 32 GB
+host-memory limit for exact sparse accounting:
+
 ```bash
-CUDA_VISIBLE_DEVICES="$EDRAFT_SINGLE_GPU" uv run --frozen python -m edraft.train --scale reference --device cuda:0 --m1_audit artifacts/m1_audit.json --m1_diagnostic artifacts/diagnostic_reference.json
+CUDA_VISIBLE_DEVICES="$EDRAFT_SINGLE_GPU" uv run --frozen python -m edraft.train --scale reference --device cuda:0 --m1_audit artifacts/m1_audit.json --m1_diagnostic artifacts/diagnostic_reference.json --stats_memory_limit 32GB
 ```
 
 M2 writes `artifacts/m2.json`, `artifacts/m2/dense.pt`, and
 `artifacts/m2/dense_sparse.pt`, including loss, held-out grouped/full-KL gap,
 parameter sparsity, and sparse collision statistics. Its checkpoint resumes by
 default; keep the same fitting configuration when restarting.
+
+The recorded fit used the original 512 MB setting. Both optimizer epochs finished
+before exact accounting exhausted that limit. Guarded finalization repeated sparse
+evaluation/accounting with 32 GB, preserving the saved fit configuration and making
+zero optimizer updates; see the [recovery record](artifacts/m2_finalize_recovery/execution.json)
+and [research summary](reports/SUMMARY.md). Existing checkpoints must resume with
+their original configuration: changing this option changes the fit identity.
 
 M3 tunes only on dev prompts, freezes settings, evaluates test prompts across GPUs,
 then measures every arm back-to-back on one idle GPU. The four arms are plain
@@ -247,7 +257,9 @@ gap must be measured.
 The signed pair hash is approximate memory with deterministic collision
 interference. Online lazy L1 tracks optimizer counter `u` and cumulative thresholds
 `cum_thresh[u]`. A read shrinks by `cum_thresh[u]-cum_thresh[last_u]` without mutation;
-a write catches up decay and updates only active entries between rounds.
+a write catches up decay and applies the gradient/proximal step to deduplicated
+buckets touched by the firing block, including newly encountered buckets. The
+active list is compacted between rounds.
 
 Each request starts with independent zero deltas. Proposal snapshots remain fixed
 through draft, sampling, and verification. Online stride `S` updates on every S-th
