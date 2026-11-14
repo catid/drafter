@@ -288,7 +288,16 @@
     }
   },
   "M4": {
-    "status": "not_run"
+    "status": "not_run",
+    "independent_validation_preparation": {
+      "status": "prepared_smoke_validated",
+      "actual_reference_audit": "pending",
+      "source": "artifacts/m4_evidence_validator/validate.py",
+      "smoke_evidence": "artifacts/m4_evidence_validator/validation_smoke.json",
+      "wrapper_fault_evidence": "artifacts/m4_evidence_validator/fault_validation.json",
+      "online_fault_evidence": "artifacts/m4_evidence_validator/online_probe_validation.json",
+      "reference_command": "CUDA_VISIBLE_DEVICES='' .venv/bin/python artifacts/m4_evidence_validator/validate.py --scale reference --artifacts artifacts --output artifacts/m4_validation_reference.json"
+    }
   },
   "M5": {
     "status": "not_run",

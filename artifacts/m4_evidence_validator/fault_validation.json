@@ -1,0 +1,329 @@
+{
+  "status": "passed",
+  "scale": "smoke",
+  "label": "synthetic",
+  "cases": [
+    {
+      "case": "valid_online_row",
+      "expected_pass": true,
+      "actual_pass": true,
+      "matched_expectation": true,
+      "detail": []
+    },
+    {
+      "case": "valid_reused_row",
+      "expected_pass": true,
+      "actual_pass": true,
+      "matched_expectation": true,
+      "detail": []
+    },
+    {
+      "case": "valid_profile_row",
+      "expected_pass": true,
+      "actual_pass": true,
+      "matched_expectation": true,
+      "detail": []
+    },
+    {
+      "case": "valid_baseline_profile_row",
+      "expected_pass": true,
+      "actual_pass": true,
+      "matched_expectation": true,
+      "detail": []
+    },
+    {
+      "case": "reused_generation_loop_elapsed_seconds",
+      "expected_pass": false,
+      "actual_pass": false,
+      "matched_expectation": true,
+      "detail": [
+        "364404a766ff6ff5e452184865ba62969c9c68449d2c28197abc9d53e9ce7c0b: reused performance field retained"
+      ]
+    },
+    {
+      "case": "reused_estimated_online_state_bandwidth_GBps",
+      "expected_pass": false,
+      "actual_pass": false,
+      "matched_expectation": true,
+      "detail": [
+        "364404a766ff6ff5e452184865ba62969c9c68449d2c28197abc9d53e9ce7c0b: reused performance field retained"
+      ]
+    },
+    {
+      "case": "unrelated_reuse_settings",
+      "expected_pass": false,
+      "actual_pass": false,
+      "matched_expectation": true,
+      "detail": [
+        "364404a766ff6ff5e452184865ba62969c9c68449d2c28197abc9d53e9ce7c0b: M3 source settings path"
+      ]
+    },
+    {
+      "case": "phase_profile_numeric_false",
+      "expected_pass": false,
+      "actual_pass": false,
+      "matched_expectation": true,
+      "detail": [
+        "f4242db42323fed46f6ce5ceda380f5923dac2741ad8f91a02b727cf794a76ad: row phase_profile mismatch"
+      ]
+    },
+    {
+      "case": "wrong_thinking_flag",
+      "expected_pass": false,
+      "actual_pass": false,
+      "matched_expectation": true,
+      "detail": [
+        "f4242db42323fed46f6ce5ceda380f5923dac2741ad8f91a02b727cf794a76ad: input count/thinking flag"
+      ]
+    },
+    {
+      "case": "invalid_input_hash",
+      "expected_pass": false,
+      "actual_pass": false,
+      "matched_expectation": true,
+      "detail": [
+        "f4242db42323fed46f6ce5ceda380f5923dac2741ad8f91a02b727cf794a76ad: malformed input-token hash"
+      ]
+    },
+    {
+      "case": "wrong_rank",
+      "expected_pass": false,
+      "actual_pass": false,
+      "matched_expectation": true,
+      "detail": [
+        "f4242db42323fed46f6ce5ceda380f5923dac2741ad8f91a02b727cf794a76ad: rank/path/manifest mismatch"
+      ]
+    },
+    {
+      "case": "incomplete_generation",
+      "expected_pass": false,
+      "actual_pass": false,
+      "matched_expectation": true,
+      "detail": [
+        "f4242db42323fed46f6ce5ceda380f5923dac2741ad8f91a02b727cf794a76ad: generation incomplete"
+      ]
+    },
+    {
+      "case": "wrong_eos_flag",
+      "expected_pass": false,
+      "actual_pass": false,
+      "matched_expectation": true,
+      "detail": [
+        "f4242db42323fed46f6ce5ceda380f5923dac2741ad8f91a02b727cf794a76ad: termination/cap flags contradict output"
+      ]
+    },
+    {
+      "case": "numeric_capped_flag",
+      "expected_pass": false,
+      "actual_pass": false,
+      "matched_expectation": true,
+      "detail": [
+        "f4242db42323fed46f6ce5ceda380f5923dac2741ad8f91a02b727cf794a76ad: termination/cap flags contradict output"
+      ]
+    },
+    {
+      "case": "invalid_output_token",
+      "expected_pass": false,
+      "actual_pass": false,
+      "matched_expectation": true,
+      "detail": [
+        "f4242db42323fed46f6ce5ceda380f5923dac2741ad8f91a02b727cf794a76ad: output token type/range"
+      ]
+    },
+    {
+      "case": "wrong_block_warper",
+      "expected_pass": false,
+      "actual_pass": false,
+      "matched_expectation": true,
+      "detail": [
+        "f4242db42323fed46f6ce5ceda380f5923dac2741ad8f91a02b727cf794a76ad: block sampling settings"
+      ]
+    },
+    {
+      "case": "wrong_update_count",
+      "expected_pass": false,
+      "actual_pass": false,
+      "matched_expectation": true,
+      "detail": [
+        "f4242db42323fed46f6ce5ceda380f5923dac2741ad8f91a02b727cf794a76ad: online.u differs from derived update count"
+      ]
+    },
+    {
+      "case": "bias_only_dense_delta",
+      "expected_pass": false,
+      "actual_pass": false,
+      "matched_expectation": true,
+      "detail": [
+        "f4242db42323fed46f6ce5ceda380f5923dac2741ad8f91a02b727cf794a76ad: online_dbS must leave dW and dA exactly zero"
+      ]
+    },
+    {
+      "case": "missing_nullable_loss",
+      "expected_pass": false,
+      "actual_pass": false,
+      "matched_expectation": true,
+      "detail": [
+        "f4242db42323fed46f6ce5ceda380f5923dac2741ad8f91a02b727cf794a76ad: online.last_full_loss: explicit field required even when null",
+        "f4242db42323fed46f6ce5ceda380f5923dac2741ad8f91a02b727cf794a76ad: updated request: finite last_full_loss required"
+      ]
+    },
+    {
+      "case": "missing_profile_dflash_draft",
+      "expected_pass": false,
+      "actual_pass": false,
+      "matched_expectation": true,
+      "detail": [
+        "c88a8def49940b6e7cd8bf61c880a15e413166ef9f7cf9e94098dd5f1a2d5d73: required measured phase dflash_draft"
+      ]
+    },
+    {
+      "case": "missing_profile_dense_adapter_score",
+      "expected_pass": false,
+      "actual_pass": false,
+      "matched_expectation": true,
+      "detail": [
+        "c88a8def49940b6e7cd8bf61c880a15e413166ef9f7cf9e94098dd5f1a2d5d73: required measured phase dense_adapter_score"
+      ]
+    },
+    {
+      "case": "missing_profile_sparse_lookup",
+      "expected_pass": false,
+      "actual_pass": false,
+      "matched_expectation": true,
+      "detail": [
+        "c88a8def49940b6e7cd8bf61c880a15e413166ef9f7cf9e94098dd5f1a2d5d73: required measured phase sparse_lookup"
+      ]
+    },
+    {
+      "case": "missing_profile_sequential_sampling",
+      "expected_pass": false,
+      "actual_pass": false,
+      "matched_expectation": true,
+      "detail": [
+        "c88a8def49940b6e7cd8bf61c880a15e413166ef9f7cf9e94098dd5f1a2d5d73: required measured phase sequential_sampling"
+      ]
+    },
+    {
+      "case": "missing_profile_target_verification",
+      "expected_pass": false,
+      "actual_pass": false,
+      "matched_expectation": true,
+      "detail": [
+        "c88a8def49940b6e7cd8bf61c880a15e413166ef9f7cf9e94098dd5f1a2d5d73: required measured phase target_verification"
+      ]
+    },
+    {
+      "case": "missing_profile_online_update",
+      "expected_pass": false,
+      "actual_pass": false,
+      "matched_expectation": true,
+      "detail": [
+        "c88a8def49940b6e7cd8bf61c880a15e413166ef9f7cf9e94098dd5f1a2d5d73: required measured phase online_update"
+      ]
+    },
+    {
+      "case": "missing_baseline_profile_dflash_draft",
+      "expected_pass": false,
+      "actual_pass": false,
+      "matched_expectation": true,
+      "detail": [
+        "38e0ab791b4b71ccdb16b4c3fcab806ecfbd537a7324a5e479527b6a37ef5de8: required measured phase dflash_draft"
+      ]
+    },
+    {
+      "case": "missing_baseline_profile_sequential_sampling",
+      "expected_pass": false,
+      "actual_pass": false,
+      "matched_expectation": true,
+      "detail": [
+        "38e0ab791b4b71ccdb16b4c3fcab806ecfbd537a7324a5e479527b6a37ef5de8: required measured phase sequential_sampling"
+      ]
+    },
+    {
+      "case": "missing_baseline_profile_target_verification",
+      "expected_pass": false,
+      "actual_pass": false,
+      "matched_expectation": true,
+      "detail": [
+        "38e0ab791b4b71ccdb16b4c3fcab806ecfbd537a7324a5e479527b6a37ef5de8: required measured phase target_verification"
+      ]
+    },
+    {
+      "case": "valid_complete_smoke",
+      "expected_pass": true,
+      "actual_pass": true,
+      "matched_expectation": true,
+      "detail": []
+    },
+    {
+      "case": "allowed_historical_identity",
+      "expected_pass": true,
+      "actual_pass": true,
+      "matched_expectation": true,
+      "detail": []
+    },
+    {
+      "case": "bundle_missing",
+      "expected_pass": false,
+      "actual_pass": false,
+      "matched_expectation": true,
+      "detail": [
+        "tune: missing completed all-arm bundle f89b9e91205fac6fefd212c93b5e828b95d15ec5a92251c6aaed371ca09ff1a8"
+      ]
+    },
+    {
+      "case": "bundle_swap_paths",
+      "expected_pass": false,
+      "actual_pass": false,
+      "matched_expectation": true,
+      "detail": [
+        "56e56b61b87db6442a18b7b361d00e1e4b1c387ddc320903057d23a86a5f31b8: bundle path mismatch"
+      ]
+    },
+    {
+      "case": "bundle_unknown_epoch",
+      "expected_pass": false,
+      "actual_pass": false,
+      "matched_expectation": true,
+      "detail": [
+        "tune: unknown bundle epoch"
+      ]
+    },
+    {
+      "case": "extra_current_identity",
+      "expected_pass": false,
+      "actual_pass": false,
+      "matched_expectation": true,
+      "detail": [
+        "evaluation population differs for frozen settings"
+      ]
+    },
+    {
+      "case": "missing_evaluation_row",
+      "expected_pass": false,
+      "actual_pass": false,
+      "matched_expectation": true,
+      "detail": [
+        "evaluate: missing expected request 364404a766ff6ff5e452184865ba62969c9c68449d2c28197abc9d53e9ce7c0b"
+      ]
+    },
+    {
+      "case": "changed_input_at_final_recheck",
+      "expected_pass": false,
+      "actual_pass": false,
+      "matched_expectation": true,
+      "detail": [
+        "artifact changed during audit: /home/catid/drafter/artifacts/repetition_detector_review/integration_final/m4/settings.json"
+      ]
+    }
+  ],
+  "source_sha256": {
+    "fault_checks.py": "b5727efb25e0faca783505f4fa804923b4a387cb864e9bce80208a8a2e5f86ff",
+    "online_checks.py": "7fa764b57265ae4041c1c000597ce9238bc58ab5731be5057dc59f2aa092e5d6",
+    "validate.py": "e6cb4d7c5382ef16a7debdce76f65010d3c832cc97a0965b4c56e77edb3978e6"
+  },
+  "limitations": [
+    "Virtual in-memory row/session/manifest mutations; original experiment artifacts remain unchanged.",
+    "Row probes check rejection at the row boundary; full probes exercise schedule and final hash checks."
+  ]
+}

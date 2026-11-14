@@ -1,0 +1,2489 @@
+{
+  "schema_version": 1,
+  "label": "synthetic",
+  "status": "passed",
+  "created_at_utc": "2026-11-14T02:48:47.309971+00:00",
+  "source_path": "/home/catid/drafter/artifacts/m4_evidence_validator/online_checks.py",
+  "source_sha256": "7fa764b57265ae4041c1c000597ce9238bc58ab5731be5057dc59f2aa092e5d6",
+  "source_unchanged": true,
+  "input_artifacts": [
+    {
+      "path": "/home/catid/drafter/artifacts/repetition_detector_review/integration_final/m4/timing/manifest-rank0.json",
+      "sha256": "729f18b949dbe338dc6e01fe1dcca93dc05cbb3d7432218da2f05f256d758b7f"
+    },
+    {
+      "path": "/home/catid/drafter/artifacts/repetition_detector_review/integration_final/m4/timing/rank0/455d94e491d4b0e61c2ed4f9b22501291b3312f913f36f92a5e83a572c660afe.json",
+      "sha256": "a17c53f052dc8ad6eeffaeaaefd9db8a321dc30c84d9de632df2a678ff5292d5"
+    },
+    {
+      "path": "/home/catid/drafter/artifacts/repetition_detector_review/integration_final/m4/timing/rank0/c88a8def49940b6e7cd8bf61c880a15e413166ef9f7cf9e94098dd5f1a2d5d73.json",
+      "sha256": "b156fc8b99adf9ce7f3c37e860f3eb0ea4af57dbb65f35c5a7015723727e8537"
+    }
+  ],
+  "case_count": 182,
+  "passing_cases": 182,
+  "cases": [
+    {
+      "name": "valid profiled online smoke row",
+      "expected_failure": false,
+      "detected_failure": false,
+      "check_count": 197,
+      "failures": [],
+      "input_unchanged": true,
+      "passed": true
+    },
+    {
+      "name": "row=None",
+      "expected_failure": true,
+      "detected_failure": true,
+      "check_count": 1,
+      "failures": [
+        "row: object required"
+      ],
+      "input_unchanged": true,
+      "passed": true
+    },
+    {
+      "name": "row=False",
+      "expected_failure": true,
+      "detected_failure": true,
+      "check_count": 1,
+      "failures": [
+        "row: object required"
+      ],
+      "input_unchanged": true,
+      "passed": true
+    },
+    {
+      "name": "row=3.5",
+      "expected_failure": true,
+      "detected_failure": true,
+      "check_count": 1,
+      "failures": [
+        "row: object required"
+      ],
+      "input_unchanged": true,
+      "passed": true
+    },
+    {
+      "name": "row='wrong'",
+      "expected_failure": true,
+      "detected_failure": true,
+      "check_count": 1,
+      "failures": [
+        "row: object required"
+      ],
+      "input_unchanged": true,
+      "passed": true
+    },
+    {
+      "name": "row=[]",
+      "expected_failure": true,
+      "detected_failure": true,
+      "check_count": 1,
+      "failures": [
+        "row: object required"
+      ],
+      "input_unchanged": true,
+      "passed": true
+    },
+    {
+      "name": "online=None",
+      "expected_failure": true,
+      "detected_failure": true,
+      "check_count": 189,
+      "failures": [
+        "online: object required",
+        "online.last_full_loss: explicit field required even when null",
+        "online.active_buckets_min_over_updates: explicit field required even when null",
+        "online.u: integer >= 0 required",
+        "online.u differs from derived update count",
+        "online.adapter_version: integer >= 0 required",
+        "online.adapter_version differs from derived update count",
+        "online.last_round: integer >= 0 required",
+        "online.last_round differs from block count",
+        "online.loss_mode must be live_full",
+        "online.T_train must be 1",
+        "online.beta_train must be 1",
+        "online.dW_norm: finite nonnegative norm required",
+        "online.dA_norm: finite nonnegative norm required",
+        "online.db_norm: finite nonnegative norm required",
+        "online.dS_norm: finite nonnegative norm required",
+        "db_exact_zero_fraction outside [0,1]",
+        "online.sparse_capacity: integer >= 1 required",
+        "online sparse capacity differs from run policy",
+        "online.active_buckets: integer >= 0 required",
+        "online.active_buckets_max_over_updates: integer >= 0 required",
+        "online.active_buckets_min_over_updates: integer >= 0 required",
+        "updated request: finite last_full_loss required",
+        "online.state_bytes_estimate_total: integer >= 0 required",
+        "online.sparse_update_bytes_estimate: integer >= 0 required",
+        "online.sparse_snapshot_bytes: integer >= 0 required",
+        "online.dense_snapshot_bytes: integer >= 0 required",
+        "state_bytes_estimate_by_operation: object required",
+        "state-byte operation keys differ from schema",
+        "state_bytes_estimate_by_operation.dense_activation_clone: integer >= 0 required",
+        "state_bytes_estimate_by_operation.dense_optimizer: integer >= 0 required",
+        "state_bytes_estimate_by_operation.dense_snapshot: integer >= 0 required",
+        "state_bytes_estimate_by_operation.sparse_snapshot: integer >= 0 required",
+        "state_bytes_estimate_by_operation.sparse_update: integer >= 0 required",
+        "unexpected sparse snapshot strategy",
+        "unexpected sparse update strategy",
+        "online.dS_norm_definition: definition required",
+        "online.state_bytes_definition: definition required",
+        "absent or zero update duration requires null bandwidth"
+      ],
+      "input_unchanged": true,
+      "passed": true
+    },
+    {
+      "name": "online=False",
+      "expected_failure": true,
+      "detected_failure": true,
+      "check_count": 189,
+      "failures": [
+        "online: object required",
+        "online.last_full_loss: explicit field required even when null",
+        "online.active_buckets_min_over_updates: explicit field required even when null",
+        "online.u: integer >= 0 required",
+        "online.u differs from derived update count",
+        "online.adapter_version: integer >= 0 required",
+        "online.adapter_version differs from derived update count",
+        "online.last_round: integer >= 0 required",
+        "online.last_round differs from block count",
+        "online.loss_mode must be live_full",
+        "online.T_train must be 1",
+        "online.beta_train must be 1",
+        "online.dW_norm: finite nonnegative norm required",
+        "online.dA_norm: finite nonnegative norm required",
+        "online.db_norm: finite nonnegative norm required",
+        "online.dS_norm: finite nonnegative norm required",
+        "db_exact_zero_fraction outside [0,1]",
+        "online.sparse_capacity: integer >= 1 required",
+        "online sparse capacity differs from run policy",
+        "online.active_buckets: integer >= 0 required",
+        "online.active_buckets_max_over_updates: integer >= 0 required",
+        "online.active_buckets_min_over_updates: integer >= 0 required",
+        "updated request: finite last_full_loss required",
+        "online.state_bytes_estimate_total: integer >= 0 required",
+        "online.sparse_update_bytes_estimate: integer >= 0 required",
+        "online.sparse_snapshot_bytes: integer >= 0 required",
+        "online.dense_snapshot_bytes: integer >= 0 required",
+        "state_bytes_estimate_by_operation: object required",
+        "state-byte operation keys differ from schema",
+        "state_bytes_estimate_by_operation.dense_activation_clone: integer >= 0 required",
+        "state_bytes_estimate_by_operation.dense_optimizer: integer >= 0 required",
+        "state_bytes_estimate_by_operation.dense_snapshot: integer >= 0 required",
+        "state_bytes_estimate_by_operation.sparse_snapshot: integer >= 0 required",
+        "state_bytes_estimate_by_operation.sparse_update: integer >= 0 required",
+        "unexpected sparse snapshot strategy",
+        "unexpected sparse update strategy",
+        "online.dS_norm_definition: definition required",
+        "online.state_bytes_definition: definition required",
+        "absent or zero update duration requires null bandwidth"
+      ],
+      "input_unchanged": true,
+      "passed": true
+    },
+    {
+      "name": "online=3.5",
+      "expected_failure": true,
+      "detected_failure": true,
+      "check_count": 189,
+      "failures": [
+        "online: object required",
+        "online.last_full_loss: explicit field required even when null",
+        "online.active_buckets_min_over_updates: explicit field required even when null",
+        "online.u: integer >= 0 required",
+        "online.u differs from derived update count",
+        "online.adapter_version: integer >= 0 required",
+        "online.adapter_version differs from derived update count",
+        "online.last_round: integer >= 0 required",
+        "online.last_round differs from block count",
+        "online.loss_mode must be live_full",
+        "online.T_train must be 1",
+        "online.beta_train must be 1",
+        "online.dW_norm: finite nonnegative norm required",
+        "online.dA_norm: finite nonnegative norm required",
+        "online.db_norm: finite nonnegative norm required",
+        "online.dS_norm: finite nonnegative norm required",
+        "db_exact_zero_fraction outside [0,1]",
+        "online.sparse_capacity: integer >= 1 required",
+        "online sparse capacity differs from run policy",
+        "online.active_buckets: integer >= 0 required",
+        "online.active_buckets_max_over_updates: integer >= 0 required",
+        "online.active_buckets_min_over_updates: integer >= 0 required",
+        "updated request: finite last_full_loss required",
+        "online.state_bytes_estimate_total: integer >= 0 required",
+        "online.sparse_update_bytes_estimate: integer >= 0 required",
+        "online.sparse_snapshot_bytes: integer >= 0 required",
+        "online.dense_snapshot_bytes: integer >= 0 required",
+        "state_bytes_estimate_by_operation: object required",
+        "state-byte operation keys differ from schema",
+        "state_bytes_estimate_by_operation.dense_activation_clone: integer >= 0 required",
+        "state_bytes_estimate_by_operation.dense_optimizer: integer >= 0 required",
+        "state_bytes_estimate_by_operation.dense_snapshot: integer >= 0 required",
+        "state_bytes_estimate_by_operation.sparse_snapshot: integer >= 0 required",
+        "state_bytes_estimate_by_operation.sparse_update: integer >= 0 required",
+        "unexpected sparse snapshot strategy",
+        "unexpected sparse update strategy",
+        "online.dS_norm_definition: definition required",
+        "online.state_bytes_definition: definition required",
+        "absent or zero update duration requires null bandwidth"
+      ],
+      "input_unchanged": true,
+      "passed": true
+    },
+    {
+      "name": "online='wrong'",
+      "expected_failure": true,
+      "detected_failure": true,
+      "check_count": 189,
+      "failures": [
+        "online: object required",
+        "online.last_full_loss: explicit field required even when null",
+        "online.active_buckets_min_over_updates: explicit field required even when null",
+        "online.u: integer >= 0 required",
+        "online.u differs from derived update count",
+        "online.adapter_version: integer >= 0 required",
+        "online.adapter_version differs from derived update count",
+        "online.last_round: integer >= 0 required",
+        "online.last_round differs from block count",
+        "online.loss_mode must be live_full",
+        "online.T_train must be 1",
+        "online.beta_train must be 1",
+        "online.dW_norm: finite nonnegative norm required",
+        "online.dA_norm: finite nonnegative norm required",
+        "online.db_norm: finite nonnegative norm required",
+        "online.dS_norm: finite nonnegative norm required",
+        "db_exact_zero_fraction outside [0,1]",
+        "online.sparse_capacity: integer >= 1 required",
+        "online sparse capacity differs from run policy",
+        "online.active_buckets: integer >= 0 required",
+        "online.active_buckets_max_over_updates: integer >= 0 required",
+        "online.active_buckets_min_over_updates: integer >= 0 required",
+        "updated request: finite last_full_loss required",
+        "online.state_bytes_estimate_total: integer >= 0 required",
+        "online.sparse_update_bytes_estimate: integer >= 0 required",
+        "online.sparse_snapshot_bytes: integer >= 0 required",
+        "online.dense_snapshot_bytes: integer >= 0 required",
+        "state_bytes_estimate_by_operation: object required",
+        "state-byte operation keys differ from schema",
+        "state_bytes_estimate_by_operation.dense_activation_clone: integer >= 0 required",
+        "state_bytes_estimate_by_operation.dense_optimizer: integer >= 0 required",
+        "state_bytes_estimate_by_operation.dense_snapshot: integer >= 0 required",
+        "state_bytes_estimate_by_operation.sparse_snapshot: integer >= 0 required",
+        "state_bytes_estimate_by_operation.sparse_update: integer >= 0 required",
+        "unexpected sparse snapshot strategy",
+        "unexpected sparse update strategy",
+        "online.dS_norm_definition: definition required",
+        "online.state_bytes_definition: definition required",
+        "absent or zero update duration requires null bandwidth"
+      ],
+      "input_unchanged": true,
+      "passed": true
+    },
+    {
+      "name": "online=[]",
+      "expected_failure": true,
+      "detected_failure": true,
+      "check_count": 189,
+      "failures": [
+        "online: object required",
+        "online.last_full_loss: explicit field required even when null",
+        "online.active_buckets_min_over_updates: explicit field required even when null",
+        "online.u: integer >= 0 required",
+        "online.u differs from derived update count",
+        "online.adapter_version: integer >= 0 required",
+        "online.adapter_version differs from derived update count",
+        "online.last_round: integer >= 0 required",
+        "online.last_round differs from block count",
+        "online.loss_mode must be live_full",
+        "online.T_train must be 1",
+        "online.beta_train must be 1",
+        "online.dW_norm: finite nonnegative norm required",
+        "online.dA_norm: finite nonnegative norm required",
+        "online.db_norm: finite nonnegative norm required",
+        "online.dS_norm: finite nonnegative norm required",
+        "db_exact_zero_fraction outside [0,1]",
+        "online.sparse_capacity: integer >= 1 required",
+        "online sparse capacity differs from run policy",
+        "online.active_buckets: integer >= 0 required",
+        "online.active_buckets_max_over_updates: integer >= 0 required",
+        "online.active_buckets_min_over_updates: integer >= 0 required",
+        "updated request: finite last_full_loss required",
+        "online.state_bytes_estimate_total: integer >= 0 required",
+        "online.sparse_update_bytes_estimate: integer >= 0 required",
+        "online.sparse_snapshot_bytes: integer >= 0 required",
+        "online.dense_snapshot_bytes: integer >= 0 required",
+        "state_bytes_estimate_by_operation: object required",
+        "state-byte operation keys differ from schema",
+        "state_bytes_estimate_by_operation.dense_activation_clone: integer >= 0 required",
+        "state_bytes_estimate_by_operation.dense_optimizer: integer >= 0 required",
+        "state_bytes_estimate_by_operation.dense_snapshot: integer >= 0 required",
+        "state_bytes_estimate_by_operation.sparse_snapshot: integer >= 0 required",
+        "state_bytes_estimate_by_operation.sparse_update: integer >= 0 required",
+        "unexpected sparse snapshot strategy",
+        "unexpected sparse update strategy",
+        "online.dS_norm_definition: definition required",
+        "online.state_bytes_definition: definition required",
+        "absent or zero update duration requires null bandwidth"
+      ],
+      "input_unchanged": true,
+      "passed": true
+    },
+    {
+      "name": "online_invariants=None",
+      "expected_failure": true,
+      "detected_failure": true,
+      "check_count": 197,
+      "failures": [
+        "online_invariants: object required",
+        "online_invariants.stride: integer >= 1 required",
+        "online_invariants.executed_updates: integer >= 0 required",
+        "online_invariants.stride differs from expected",
+        "online_invariants.executed_updates differs from derived count",
+        "online_invariants.request_reset: true declaration required",
+        "online_invariants.version_only_between_rounds: true declaration required",
+        "online_invariants.single_round_no_buffering: true declaration required"
+      ],
+      "input_unchanged": true,
+      "passed": true
+    },
+    {
+      "name": "online_invariants=False",
+      "expected_failure": true,
+      "detected_failure": true,
+      "check_count": 197,
+      "failures": [
+        "online_invariants: object required",
+        "online_invariants.stride: integer >= 1 required",
+        "online_invariants.executed_updates: integer >= 0 required",
+        "online_invariants.stride differs from expected",
+        "online_invariants.executed_updates differs from derived count",
+        "online_invariants.request_reset: true declaration required",
+        "online_invariants.version_only_between_rounds: true declaration required",
+        "online_invariants.single_round_no_buffering: true declaration required"
+      ],
+      "input_unchanged": true,
+      "passed": true
+    },
+    {
+      "name": "online_invariants=3.5",
+      "expected_failure": true,
+      "detected_failure": true,
+      "check_count": 197,
+      "failures": [
+        "online_invariants: object required",
+        "online_invariants.stride: integer >= 1 required",
+        "online_invariants.executed_updates: integer >= 0 required",
+        "online_invariants.stride differs from expected",
+        "online_invariants.executed_updates differs from derived count",
+        "online_invariants.request_reset: true declaration required",
+        "online_invariants.version_only_between_rounds: true declaration required",
+        "online_invariants.single_round_no_buffering: true declaration required"
+      ],
+      "input_unchanged": true,
+      "passed": true
+    },
+    {
+      "name": "online_invariants='wrong'",
+      "expected_failure": true,
+      "detected_failure": true,
+      "check_count": 197,
+      "failures": [
+        "online_invariants: object required",
+        "online_invariants.stride: integer >= 1 required",
+        "online_invariants.executed_updates: integer >= 0 required",
+        "online_invariants.stride differs from expected",
+        "online_invariants.executed_updates differs from derived count",
+        "online_invariants.request_reset: true declaration required",
+        "online_invariants.version_only_between_rounds: true declaration required",
+        "online_invariants.single_round_no_buffering: true declaration required"
+      ],
+      "input_unchanged": true,
+      "passed": true
+    },
+    {
+      "name": "online_invariants=[]",
+      "expected_failure": true,
+      "detected_failure": true,
+      "check_count": 197,
+      "failures": [
+        "online_invariants: object required",
+        "online_invariants.stride: integer >= 1 required",
+        "online_invariants.executed_updates: integer >= 0 required",
+        "online_invariants.stride differs from expected",
+        "online_invariants.executed_updates differs from derived count",
+        "online_invariants.request_reset: true declaration required",
+        "online_invariants.version_only_between_rounds: true declaration required",
+        "online_invariants.single_round_no_buffering: true declaration required"
+      ],
+      "input_unchanged": true,
+      "passed": true
+    },
+    {
+      "name": "parameter_norms=None",
+      "expected_failure": true,
+      "detected_failure": true,
+      "check_count": 197,
+      "failures": [
+        "parameter_norms: object required",
+        "parameter_norms.W: finite nonnegative norm required",
+        "parameter_norms.A: finite nonnegative norm required",
+        "parameter_norms.b: finite nonnegative norm required"
+      ],
+      "input_unchanged": true,
+      "passed": true
+    },
+    {
+      "name": "parameter_norms=False",
+      "expected_failure": true,
+      "detected_failure": true,
+      "check_count": 197,
+      "failures": [
+        "parameter_norms: object required",
+        "parameter_norms.W: finite nonnegative norm required",
+        "parameter_norms.A: finite nonnegative norm required",
+        "parameter_norms.b: finite nonnegative norm required"
+      ],
+      "input_unchanged": true,
+      "passed": true
+    },
+    {
+      "name": "parameter_norms=3.5",
+      "expected_failure": true,
+      "detected_failure": true,
+      "check_count": 197,
+      "failures": [
+        "parameter_norms: object required",
+        "parameter_norms.W: finite nonnegative norm required",
+        "parameter_norms.A: finite nonnegative norm required",
+        "parameter_norms.b: finite nonnegative norm required"
+      ],
+      "input_unchanged": true,
+      "passed": true
+    },
+    {
+      "name": "parameter_norms='wrong'",
+      "expected_failure": true,
+      "detected_failure": true,
+      "check_count": 197,
+      "failures": [
+        "parameter_norms: object required",
+        "parameter_norms.W: finite nonnegative norm required",
+        "parameter_norms.A: finite nonnegative norm required",
+        "parameter_norms.b: finite nonnegative norm required"
+      ],
+      "input_unchanged": true,
+      "passed": true
+    },
+    {
+      "name": "parameter_norms=[]",
+      "expected_failure": true,
+      "detected_failure": true,
+      "check_count": 197,
+      "failures": [
+        "parameter_norms: object required",
+        "parameter_norms.W: finite nonnegative norm required",
+        "parameter_norms.A: finite nonnegative norm required",
+        "parameter_norms.b: finite nonnegative norm required"
+      ],
+      "input_unchanged": true,
+      "passed": true
+    },
+    {
+      "name": "blocks=None",
+      "expected_failure": true,
+      "detected_failure": true,
+      "check_count": 81,
+      "failures": [
+        "blocks: array required"
+      ],
+      "input_unchanged": true,
+      "passed": true
+    },
+    {
+      "name": "blocks=False",
+      "expected_failure": true,
+      "detected_failure": true,
+      "check_count": 81,
+      "failures": [
+        "blocks: array required"
+      ],
+      "input_unchanged": true,
+      "passed": true
+    },
+    {
+      "name": "blocks=3.5",
+      "expected_failure": true,
+      "detected_failure": true,
+      "check_count": 81,
+      "failures": [
+        "blocks: array required"
+      ],
+      "input_unchanged": true,
+      "passed": true
+    },
+    {
+      "name": "blocks='wrong'",
+      "expected_failure": true,
+      "detected_failure": true,
+      "check_count": 81,
+      "failures": [
+        "blocks: array required"
+      ],
+      "input_unchanged": true,
+      "passed": true
+    },
+    {
+      "name": "blocks=[]",
+      "expected_failure": true,
+      "detected_failure": true,
+      "check_count": 94,
+      "failures": [
+        "online.u differs from derived update count",
+        "online.adapter_version differs from derived update count",
+        "online.last_round differs from block count",
+        "online_invariants.executed_updates differs from derived count",
+        "no updates: minimum active count must be null",
+        "no updates: active counts must be zero",
+        "no updates: last_full_loss must be null",
+        "no updates: all delta norms must be zero",
+        "no updates: db must be entirely zero",
+        "sparse snapshot-byte algebra mismatch",
+        "dense activation-clone byte algebra mismatch",
+        "dense snapshot cumulative byte algebra mismatch",
+        "no updates: update-state byte estimates must be zero"
+      ],
+      "input_unchanged": true,
+      "passed": true
+    },
+    {
+      "name": "phase_ms=None",
+      "expected_failure": true,
+      "detected_failure": true,
+      "check_count": 188,
+      "failures": [
+        "phase_ms: object required",
+        "profile requires positive dense_adapter_score ms",
+        "profile requires positive dflash_draft ms",
+        "profile requires positive sequential_sampling ms",
+        "profile requires positive sparse_lookup ms",
+        "profile requires positive target_verification ms",
+        "profile with executed updates requires positive online_update ms",
+        "absent or zero update duration requires null bandwidth"
+      ],
+      "input_unchanged": true,
+      "passed": true
+    },
+    {
+      "name": "phase_ms=False",
+      "expected_failure": true,
+      "detected_failure": true,
+      "check_count": 188,
+      "failures": [
+        "phase_ms: object required",
+        "profile requires positive dense_adapter_score ms",
+        "profile requires positive dflash_draft ms",
+        "profile requires positive sequential_sampling ms",
+        "profile requires positive sparse_lookup ms",
+        "profile requires positive target_verification ms",
+        "profile with executed updates requires positive online_update ms",
+        "absent or zero update duration requires null bandwidth"
+      ],
+      "input_unchanged": true,
+      "passed": true
+    },
+    {
+      "name": "phase_ms=3.5",
+      "expected_failure": true,
+      "detected_failure": true,
+      "check_count": 188,
+      "failures": [
+        "phase_ms: object required",
+        "profile requires positive dense_adapter_score ms",
+        "profile requires positive dflash_draft ms",
+        "profile requires positive sequential_sampling ms",
+        "profile requires positive sparse_lookup ms",
+        "profile requires positive target_verification ms",
+        "profile with executed updates requires positive online_update ms",
+        "absent or zero update duration requires null bandwidth"
+      ],
+      "input_unchanged": true,
+      "passed": true
+    },
+    {
+      "name": "phase_ms='wrong'",
+      "expected_failure": true,
+      "detected_failure": true,
+      "check_count": 188,
+      "failures": [
+        "phase_ms: object required",
+        "profile requires positive dense_adapter_score ms",
+        "profile requires positive dflash_draft ms",
+        "profile requires positive sequential_sampling ms",
+        "profile requires positive sparse_lookup ms",
+        "profile requires positive target_verification ms",
+        "profile with executed updates requires positive online_update ms",
+        "absent or zero update duration requires null bandwidth"
+      ],
+      "input_unchanged": true,
+      "passed": true
+    },
+    {
+      "name": "phase_ms=[]",
+      "expected_failure": true,
+      "detected_failure": true,
+      "check_count": 188,
+      "failures": [
+        "phase_ms: object required",
+        "profile requires positive dense_adapter_score ms",
+        "profile requires positive dflash_draft ms",
+        "profile requires positive sequential_sampling ms",
+        "profile requires positive sparse_lookup ms",
+        "profile requires positive target_verification ms",
+        "profile with executed updates requires positive online_update ms",
+        "absent or zero update duration requires null bandwidth"
+      ],
+      "input_unchanged": true,
+      "passed": true
+    },
+    {
+      "name": "settings=None",
+      "expected_failure": true,
+      "detected_failure": true,
+      "check_count": 197,
+      "failures": [
+        "settings: object required",
+        "settings differ from expected",
+        "settings.beta: JSON type differs from expected",
+        "settings.lr: JSON type differs from expected",
+        "settings.update_stride: JSON type differs from expected",
+        "settings.lambda_l2: JSON type differs from expected",
+        "settings.lambda_l1_b: JSON type differs from expected",
+        "settings.lambda_l1_s: JSON type differs from expected",
+        "settings.weighting_mode: JSON type differs from expected"
+      ],
+      "input_unchanged": true,
+      "passed": true
+    },
+    {
+      "name": "settings=False",
+      "expected_failure": true,
+      "detected_failure": true,
+      "check_count": 197,
+      "failures": [
+        "settings: object required",
+        "settings differ from expected",
+        "settings.beta: JSON type differs from expected",
+        "settings.lr: JSON type differs from expected",
+        "settings.update_stride: JSON type differs from expected",
+        "settings.lambda_l2: JSON type differs from expected",
+        "settings.lambda_l1_b: JSON type differs from expected",
+        "settings.lambda_l1_s: JSON type differs from expected",
+        "settings.weighting_mode: JSON type differs from expected"
+      ],
+      "input_unchanged": true,
+      "passed": true
+    },
+    {
+      "name": "settings=3.5",
+      "expected_failure": true,
+      "detected_failure": true,
+      "check_count": 197,
+      "failures": [
+        "settings: object required",
+        "settings differ from expected",
+        "settings.beta: JSON type differs from expected",
+        "settings.lr: JSON type differs from expected",
+        "settings.update_stride: JSON type differs from expected",
+        "settings.lambda_l2: JSON type differs from expected",
+        "settings.lambda_l1_b: JSON type differs from expected",
+        "settings.lambda_l1_s: JSON type differs from expected",
+        "settings.weighting_mode: JSON type differs from expected"
+      ],
+      "input_unchanged": true,
+      "passed": true
+    },
+    {
+      "name": "settings='wrong'",
+      "expected_failure": true,
+      "detected_failure": true,
+      "check_count": 197,
+      "failures": [
+        "settings: object required",
+        "settings differ from expected",
+        "settings.beta: JSON type differs from expected",
+        "settings.lr: JSON type differs from expected",
+        "settings.update_stride: JSON type differs from expected",
+        "settings.lambda_l2: JSON type differs from expected",
+        "settings.lambda_l1_b: JSON type differs from expected",
+        "settings.lambda_l1_s: JSON type differs from expected",
+        "settings.weighting_mode: JSON type differs from expected"
+      ],
+      "input_unchanged": true,
+      "passed": true
+    },
+    {
+      "name": "settings=[]",
+      "expected_failure": true,
+      "detected_failure": true,
+      "check_count": 197,
+      "failures": [
+        "settings: object required",
+        "settings differ from expected",
+        "settings.beta: JSON type differs from expected",
+        "settings.lr: JSON type differs from expected",
+        "settings.update_stride: JSON type differs from expected",
+        "settings.lambda_l2: JSON type differs from expected",
+        "settings.lambda_l1_b: JSON type differs from expected",
+        "settings.lambda_l1_s: JSON type differs from expected",
+        "settings.weighting_mode: JSON type differs from expected"
+      ],
+      "input_unchanged": true,
+      "passed": true
+    },
+    {
+      "name": "online.u=None",
+      "expected_failure": true,
+      "detected_failure": true,
+      "check_count": 197,
+      "failures": [
+        "online.u: integer >= 0 required",
+        "online.u differs from derived update count"
+      ],
+      "input_unchanged": true,
+      "passed": true
+    },
+    {
+      "name": "online.u=False",
+      "expected_failure": true,
+      "detected_failure": true,
+      "check_count": 197,
+      "failures": [
+        "online.u: integer >= 0 required",
+        "online.u differs from derived update count"
+      ],
+      "input_unchanged": true,
+      "passed": true
+    },
+    {
+      "name": "online.u=True",
+      "expected_failure": true,
+      "detected_failure": true,
+      "check_count": 197,
+      "failures": [
+        "online.u: integer >= 0 required",
+        "online.u differs from derived update count"
+      ],
+      "input_unchanged": true,
+      "passed": true
+    },
+    {
+      "name": "online.u='wrong'",
+      "expected_failure": true,
+      "detected_failure": true,
+      "check_count": 197,
+      "failures": [
+        "online.u: integer >= 0 required",
+        "online.u differs from derived update count"
+      ],
+      "input_unchanged": true,
+      "passed": true
+    },
+    {
+      "name": "online.u=[]",
+      "expected_failure": true,
+      "detected_failure": true,
+      "check_count": 197,
+      "failures": [
+        "online.u: integer >= 0 required",
+        "online.u differs from derived update count"
+      ],
+      "input_unchanged": true,
+      "passed": true
+    },
+    {
+      "name": "online.u={}",
+      "expected_failure": true,
+      "detected_failure": true,
+      "check_count": 197,
+      "failures": [
+        "online.u: integer >= 0 required",
+        "online.u differs from derived update count"
+      ],
+      "input_unchanged": true,
+      "passed": true
+    },
+    {
+      "name": "online.u=nan",
+      "expected_failure": true,
+      "detected_failure": true,
+      "check_count": 197,
+      "failures": [
+        "online.u: integer >= 0 required",
+        "online.u differs from derived update count"
+      ],
+      "input_unchanged": true,
+      "passed": true
+    },
+    {
+      "name": "online.u=inf",
+      "expected_failure": true,
+      "detected_failure": true,
+      "check_count": 197,
+      "failures": [
+        "online.u: integer >= 0 required",
+        "online.u differs from derived update count"
+      ],
+      "input_unchanged": true,
+      "passed": true
+    },
+    {
+      "name": "online.adapter_version=None",
+      "expected_failure": true,
+      "detected_failure": true,
+      "check_count": 197,
+      "failures": [
+        "online.adapter_version: integer >= 0 required",
+        "online.adapter_version differs from derived update count"
+      ],
+      "input_unchanged": true,
+      "passed": true
+    },
+    {
+      "name": "online.adapter_version=False",
+      "expected_failure": true,
+      "detected_failure": true,
+      "check_count": 197,
+      "failures": [
+        "online.adapter_version: integer >= 0 required",
+        "online.adapter_version differs from derived update count"
+      ],
+      "input_unchanged": true,
+      "passed": true
+    },
+    {
+      "name": "online.adapter_version=True",
+      "expected_failure": true,
+      "detected_failure": true,
+      "check_count": 197,
+      "failures": [
+        "online.adapter_version: integer >= 0 required",
+        "online.adapter_version differs from derived update count"
+      ],
+      "input_unchanged": true,
+      "passed": true
+    },
+    {
+      "name": "online.adapter_version='wrong'",
+      "expected_failure": true,
+      "detected_failure": true,
+      "check_count": 197,
+      "failures": [
+        "online.adapter_version: integer >= 0 required",
+        "online.adapter_version differs from derived update count"
+      ],
+      "input_unchanged": true,
+      "passed": true
+    },
+    {
+      "name": "online.adapter_version=[]",
+      "expected_failure": true,
+      "detected_failure": true,
+      "check_count": 197,
+      "failures": [
+        "online.adapter_version: integer >= 0 required",
+        "online.adapter_version differs from derived update count"
+      ],
+      "input_unchanged": true,
+      "passed": true
+    },
+    {
+      "name": "online.adapter_version={}",
+      "expected_failure": true,
+      "detected_failure": true,
+      "check_count": 197,
+      "failures": [
+        "online.adapter_version: integer >= 0 required",
+        "online.adapter_version differs from derived update count"
+      ],
+      "input_unchanged": true,
+      "passed": true
+    },
+    {
+      "name": "online.adapter_version=nan",
+      "expected_failure": true,
+      "detected_failure": true,
+      "check_count": 197,
+      "failures": [
+        "online.adapter_version: integer >= 0 required",
+        "online.adapter_version differs from derived update count"
+      ],
+      "input_unchanged": true,
+      "passed": true
+    },
+    {
+      "name": "online.adapter_version=inf",
+      "expected_failure": true,
+      "detected_failure": true,
+      "check_count": 197,
+      "failures": [
+        "online.adapter_version: integer >= 0 required",
+        "online.adapter_version differs from derived update count"
+      ],
+      "input_unchanged": true,
+      "passed": true
+    },
+    {
+      "name": "online.last_round=None",
+      "expected_failure": true,
+      "detected_failure": true,
+      "check_count": 197,
+      "failures": [
+        "online.last_round: integer >= 0 required",
+        "online.last_round differs from block count"
+      ],
+      "input_unchanged": true,
+      "passed": true
+    },
+    {
+      "name": "online.last_round=False",
+      "expected_failure": true,
+      "detected_failure": true,
+      "check_count": 197,
+      "failures": [
+        "online.last_round: integer >= 0 required",
+        "online.last_round differs from block count"
+      ],
+      "input_unchanged": true,
+      "passed": true
+    },
+    {
+      "name": "online.last_round=True",
+      "expected_failure": true,
+      "detected_failure": true,
+      "check_count": 197,
+      "failures": [
+        "online.last_round: integer >= 0 required",
+        "online.last_round differs from block count"
+      ],
+      "input_unchanged": true,
+      "passed": true
+    },
+    {
+      "name": "online.last_round='wrong'",
+      "expected_failure": true,
+      "detected_failure": true,
+      "check_count": 197,
+      "failures": [
+        "online.last_round: integer >= 0 required",
+        "online.last_round differs from block count"
+      ],
+      "input_unchanged": true,
+      "passed": true
+    },
+    {
+      "name": "online.last_round=[]",
+      "expected_failure": true,
+      "detected_failure": true,
+      "check_count": 197,
+      "failures": [
+        "online.last_round: integer >= 0 required",
+        "online.last_round differs from block count"
+      ],
+      "input_unchanged": true,
+      "passed": true
+    },
+    {
+      "name": "online.last_round={}",
+      "expected_failure": true,
+      "detected_failure": true,
+      "check_count": 197,
+      "failures": [
+        "online.last_round: integer >= 0 required",
+        "online.last_round differs from block count"
+      ],
+      "input_unchanged": true,
+      "passed": true
+    },
+    {
+      "name": "online.last_round=nan",
+      "expected_failure": true,
+      "detected_failure": true,
+      "check_count": 197,
+      "failures": [
+        "online.last_round: integer >= 0 required",
+        "online.last_round differs from block count"
+      ],
+      "input_unchanged": true,
+      "passed": true
+    },
+    {
+      "name": "online.last_round=inf",
+      "expected_failure": true,
+      "detected_failure": true,
+      "check_count": 197,
+      "failures": [
+        "online.last_round: integer >= 0 required",
+        "online.last_round differs from block count"
+      ],
+      "input_unchanged": true,
+      "passed": true
+    },
+    {
+      "name": "online.active_buckets=None",
+      "expected_failure": true,
+      "detected_failure": true,
+      "check_count": 193,
+      "failures": [
+        "online.active_buckets: integer >= 0 required"
+      ],
+      "input_unchanged": true,
+      "passed": true
+    },
+    {
+      "name": "online.active_buckets=False",
+      "expected_failure": true,
+      "detected_failure": true,
+      "check_count": 193,
+      "failures": [
+        "online.active_buckets: integer >= 0 required"
+      ],
+      "input_unchanged": true,
+      "passed": true
+    },
+    {
+      "name": "online.active_buckets=True",
+      "expected_failure": true,
+      "detected_failure": true,
+      "check_count": 193,
+      "failures": [
+        "online.active_buckets: integer >= 0 required"
+      ],
+      "input_unchanged": true,
+      "passed": true
+    },
+    {
+      "name": "online.active_buckets='wrong'",
+      "expected_failure": true,
+      "detected_failure": true,
+      "check_count": 193,
+      "failures": [
+        "online.active_buckets: integer >= 0 required"
+      ],
+      "input_unchanged": true,
+      "passed": true
+    },
+    {
+      "name": "online.active_buckets=[]",
+      "expected_failure": true,
+      "detected_failure": true,
+      "check_count": 193,
+      "failures": [
+        "online.active_buckets: integer >= 0 required"
+      ],
+      "input_unchanged": true,
+      "passed": true
+    },
+    {
+      "name": "online.active_buckets={}",
+      "expected_failure": true,
+      "detected_failure": true,
+      "check_count": 193,
+      "failures": [
+        "online.active_buckets: integer >= 0 required"
+      ],
+      "input_unchanged": true,
+      "passed": true
+    },
+    {
+      "name": "online.active_buckets=nan",
+      "expected_failure": true,
+      "detected_failure": true,
+      "check_count": 193,
+      "failures": [
+        "online.active_buckets: integer >= 0 required"
+      ],
+      "input_unchanged": true,
+      "passed": true
+    },
+    {
+      "name": "online.active_buckets=inf",
+      "expected_failure": true,
+      "detected_failure": true,
+      "check_count": 193,
+      "failures": [
+        "online.active_buckets: integer >= 0 required"
+      ],
+      "input_unchanged": true,
+      "passed": true
+    },
+    {
+      "name": "online.sparse_capacity=None",
+      "expected_failure": true,
+      "detected_failure": true,
+      "check_count": 194,
+      "failures": [
+        "online.sparse_capacity: integer >= 1 required",
+        "online sparse capacity differs from run policy"
+      ],
+      "input_unchanged": true,
+      "passed": true
+    },
+    {
+      "name": "online.sparse_capacity=False",
+      "expected_failure": true,
+      "detected_failure": true,
+      "check_count": 194,
+      "failures": [
+        "online.sparse_capacity: integer >= 1 required",
+        "online sparse capacity differs from run policy"
+      ],
+      "input_unchanged": true,
+      "passed": true
+    },
+    {
+      "name": "online.sparse_capacity=True",
+      "expected_failure": true,
+      "detected_failure": true,
+      "check_count": 194,
+      "failures": [
+        "online.sparse_capacity: integer >= 1 required",
+        "online sparse capacity differs from run policy"
+      ],
+      "input_unchanged": true,
+      "passed": true
+    },
+    {
+      "name": "online.sparse_capacity='wrong'",
+      "expected_failure": true,
+      "detected_failure": true,
+      "check_count": 194,
+      "failures": [
+        "online.sparse_capacity: integer >= 1 required",
+        "online sparse capacity differs from run policy"
+      ],
+      "input_unchanged": true,
+      "passed": true
+    },
+    {
+      "name": "online.sparse_capacity=[]",
+      "expected_failure": true,
+      "detected_failure": true,
+      "check_count": 194,
+      "failures": [
+        "online.sparse_capacity: integer >= 1 required",
+        "online sparse capacity differs from run policy"
+      ],
+      "input_unchanged": true,
+      "passed": true
+    },
+    {
+      "name": "online.sparse_capacity={}",
+      "expected_failure": true,
+      "detected_failure": true,
+      "check_count": 194,
+      "failures": [
+        "online.sparse_capacity: integer >= 1 required",
+        "online sparse capacity differs from run policy"
+      ],
+      "input_unchanged": true,
+      "passed": true
+    },
+    {
+      "name": "online.sparse_capacity=nan",
+      "expected_failure": true,
+      "detected_failure": true,
+      "check_count": 194,
+      "failures": [
+        "online.sparse_capacity: integer >= 1 required",
+        "online sparse capacity differs from run policy"
+      ],
+      "input_unchanged": true,
+      "passed": true
+    },
+    {
+      "name": "online.sparse_capacity=inf",
+      "expected_failure": true,
+      "detected_failure": true,
+      "check_count": 194,
+      "failures": [
+        "online.sparse_capacity: integer >= 1 required",
+        "online sparse capacity differs from run policy"
+      ],
+      "input_unchanged": true,
+      "passed": true
+    },
+    {
+      "name": "online.state_bytes_estimate_total=None",
+      "expected_failure": true,
+      "detected_failure": true,
+      "check_count": 197,
+      "failures": [
+        "online.state_bytes_estimate_total: integer >= 0 required",
+        "state-byte total differs from operation sum",
+        "absent or zero update duration requires null bandwidth"
+      ],
+      "input_unchanged": true,
+      "passed": true
+    },
+    {
+      "name": "online.state_bytes_estimate_total=False",
+      "expected_failure": true,
+      "detected_failure": true,
+      "check_count": 197,
+      "failures": [
+        "online.state_bytes_estimate_total: integer >= 0 required",
+        "state-byte total differs from operation sum",
+        "absent or zero update duration requires null bandwidth"
+      ],
+      "input_unchanged": true,
+      "passed": true
+    },
+    {
+      "name": "online.state_bytes_estimate_total=True",
+      "expected_failure": true,
+      "detected_failure": true,
+      "check_count": 197,
+      "failures": [
+        "online.state_bytes_estimate_total: integer >= 0 required",
+        "state-byte total differs from operation sum",
+        "absent or zero update duration requires null bandwidth"
+      ],
+      "input_unchanged": true,
+      "passed": true
+    },
+    {
+      "name": "online.state_bytes_estimate_total='wrong'",
+      "expected_failure": true,
+      "detected_failure": true,
+      "check_count": 197,
+      "failures": [
+        "online.state_bytes_estimate_total: integer >= 0 required",
+        "state-byte total differs from operation sum",
+        "absent or zero update duration requires null bandwidth"
+      ],
+      "input_unchanged": true,
+      "passed": true
+    },
+    {
+      "name": "online.state_bytes_estimate_total=[]",
+      "expected_failure": true,
+      "detected_failure": true,
+      "check_count": 197,
+      "failures": [
+        "online.state_bytes_estimate_total: integer >= 0 required",
+        "state-byte total differs from operation sum",
+        "absent or zero update duration requires null bandwidth"
+      ],
+      "input_unchanged": true,
+      "passed": true
+    },
+    {
+      "name": "online.state_bytes_estimate_total={}",
+      "expected_failure": true,
+      "detected_failure": true,
+      "check_count": 197,
+      "failures": [
+        "online.state_bytes_estimate_total: integer >= 0 required",
+        "state-byte total differs from operation sum",
+        "absent or zero update duration requires null bandwidth"
+      ],
+      "input_unchanged": true,
+      "passed": true
+    },
+    {
+      "name": "online.state_bytes_estimate_total=nan",
+      "expected_failure": true,
+      "detected_failure": true,
+      "check_count": 197,
+      "failures": [
+        "online.state_bytes_estimate_total: integer >= 0 required",
+        "state-byte total differs from operation sum",
+        "absent or zero update duration requires null bandwidth"
+      ],
+      "input_unchanged": true,
+      "passed": true
+    },
+    {
+      "name": "online.state_bytes_estimate_total=inf",
+      "expected_failure": true,
+      "detected_failure": true,
+      "check_count": 197,
+      "failures": [
+        "online.state_bytes_estimate_total: integer >= 0 required",
+        "state-byte total differs from operation sum",
+        "absent or zero update duration requires null bandwidth"
+      ],
+      "input_unchanged": true,
+      "passed": true
+    },
+    {
+      "name": "online.sparse_snapshot_bytes=None",
+      "expected_failure": true,
+      "detected_failure": true,
+      "check_count": 197,
+      "failures": [
+        "online.sparse_snapshot_bytes: integer >= 0 required",
+        "sparse snapshot-byte algebra mismatch"
+      ],
+      "input_unchanged": true,
+      "passed": true
+    },
+    {
+      "name": "online.sparse_snapshot_bytes=False",
+      "expected_failure": true,
+      "detected_failure": true,
+      "check_count": 197,
+      "failures": [
+        "online.sparse_snapshot_bytes: integer >= 0 required",
+        "sparse snapshot-byte algebra mismatch"
+      ],
+      "input_unchanged": true,
+      "passed": true
+    },
+    {
+      "name": "online.sparse_snapshot_bytes=True",
+      "expected_failure": true,
+      "detected_failure": true,
+      "check_count": 197,
+      "failures": [
+        "online.sparse_snapshot_bytes: integer >= 0 required",
+        "sparse snapshot-byte algebra mismatch"
+      ],
+      "input_unchanged": true,
+      "passed": true
+    },
+    {
+      "name": "online.sparse_snapshot_bytes='wrong'",
+      "expected_failure": true,
+      "detected_failure": true,
+      "check_count": 197,
+      "failures": [
+        "online.sparse_snapshot_bytes: integer >= 0 required",
+        "sparse snapshot-byte algebra mismatch"
+      ],
+      "input_unchanged": true,
+      "passed": true
+    },
+    {
+      "name": "online.sparse_snapshot_bytes=[]",
+      "expected_failure": true,
+      "detected_failure": true,
+      "check_count": 197,
+      "failures": [
+        "online.sparse_snapshot_bytes: integer >= 0 required",
+        "sparse snapshot-byte algebra mismatch"
+      ],
+      "input_unchanged": true,
+      "passed": true
+    },
+    {
+      "name": "online.sparse_snapshot_bytes={}",
+      "expected_failure": true,
+      "detected_failure": true,
+      "check_count": 197,
+      "failures": [
+        "online.sparse_snapshot_bytes: integer >= 0 required",
+        "sparse snapshot-byte algebra mismatch"
+      ],
+      "input_unchanged": true,
+      "passed": true
+    },
+    {
+      "name": "online.sparse_snapshot_bytes=nan",
+      "expected_failure": true,
+      "detected_failure": true,
+      "check_count": 197,
+      "failures": [
+        "online.sparse_snapshot_bytes: integer >= 0 required",
+        "sparse snapshot-byte algebra mismatch"
+      ],
+      "input_unchanged": true,
+      "passed": true
+    },
+    {
+      "name": "online.sparse_snapshot_bytes=inf",
+      "expected_failure": true,
+      "detected_failure": true,
+      "check_count": 197,
+      "failures": [
+        "online.sparse_snapshot_bytes: integer >= 0 required",
+        "sparse snapshot-byte algebra mismatch"
+      ],
+      "input_unchanged": true,
+      "passed": true
+    },
+    {
+      "name": "online.dense_snapshot_bytes=None",
+      "expected_failure": true,
+      "detected_failure": true,
+      "check_count": 194,
+      "failures": [
+        "online.dense_snapshot_bytes: integer >= 0 required"
+      ],
+      "input_unchanged": true,
+      "passed": true
+    },
+    {
+      "name": "online.dense_snapshot_bytes=False",
+      "expected_failure": true,
+      "detected_failure": true,
+      "check_count": 194,
+      "failures": [
+        "online.dense_snapshot_bytes: integer >= 0 required"
+      ],
+      "input_unchanged": true,
+      "passed": true
+    },
+    {
+      "name": "online.dense_snapshot_bytes=True",
+      "expected_failure": true,
+      "detected_failure": true,
+      "check_count": 194,
+      "failures": [
+        "online.dense_snapshot_bytes: integer >= 0 required"
+      ],
+      "input_unchanged": true,
+      "passed": true
+    },
+    {
+      "name": "online.dense_snapshot_bytes='wrong'",
+      "expected_failure": true,
+      "detected_failure": true,
+      "check_count": 194,
+      "failures": [
+        "online.dense_snapshot_bytes: integer >= 0 required"
+      ],
+      "input_unchanged": true,
+      "passed": true
+    },
+    {
+      "name": "online.dense_snapshot_bytes=[]",
+      "expected_failure": true,
+      "detected_failure": true,
+      "check_count": 194,
+      "failures": [
+        "online.dense_snapshot_bytes: integer >= 0 required"
+      ],
+      "input_unchanged": true,
+      "passed": true
+    },
+    {
+      "name": "online.dense_snapshot_bytes={}",
+      "expected_failure": true,
+      "detected_failure": true,
+      "check_count": 194,
+      "failures": [
+        "online.dense_snapshot_bytes: integer >= 0 required"
+      ],
+      "input_unchanged": true,
+      "passed": true
+    },
+    {
+      "name": "online.dense_snapshot_bytes=nan",
+      "expected_failure": true,
+      "detected_failure": true,
+      "check_count": 194,
+      "failures": [
+        "online.dense_snapshot_bytes: integer >= 0 required"
+      ],
+      "input_unchanged": true,
+      "passed": true
+    },
+    {
+      "name": "online.dense_snapshot_bytes=inf",
+      "expected_failure": true,
+      "detected_failure": true,
+      "check_count": 194,
+      "failures": [
+        "online.dense_snapshot_bytes: integer >= 0 required"
+      ],
+      "input_unchanged": true,
+      "passed": true
+    },
+    {
+      "name": "online.last_full_loss=None",
+      "expected_failure": true,
+      "detected_failure": true,
+      "check_count": 197,
+      "failures": [
+        "updated request: finite last_full_loss required"
+      ],
+      "input_unchanged": true,
+      "passed": true
+    },
+    {
+      "name": "online.last_full_loss=False",
+      "expected_failure": true,
+      "detected_failure": true,
+      "check_count": 197,
+      "failures": [
+        "updated request: finite last_full_loss required"
+      ],
+      "input_unchanged": true,
+      "passed": true
+    },
+    {
+      "name": "online.last_full_loss=True",
+      "expected_failure": true,
+      "detected_failure": true,
+      "check_count": 197,
+      "failures": [
+        "updated request: finite last_full_loss required"
+      ],
+      "input_unchanged": true,
+      "passed": true
+    },
+    {
+      "name": "online.last_full_loss='wrong'",
+      "expected_failure": true,
+      "detected_failure": true,
+      "check_count": 197,
+      "failures": [
+        "updated request: finite last_full_loss required"
+      ],
+      "input_unchanged": true,
+      "passed": true
+    },
+    {
+      "name": "online.last_full_loss=[]",
+      "expected_failure": true,
+      "detected_failure": true,
+      "check_count": 197,
+      "failures": [
+        "updated request: finite last_full_loss required"
+      ],
+      "input_unchanged": true,
+      "passed": true
+    },
+    {
+      "name": "online.last_full_loss={}",
+      "expected_failure": true,
+      "detected_failure": true,
+      "check_count": 197,
+      "failures": [
+        "updated request: finite last_full_loss required"
+      ],
+      "input_unchanged": true,
+      "passed": true
+    },
+    {
+      "name": "online.last_full_loss=nan",
+      "expected_failure": true,
+      "detected_failure": true,
+      "check_count": 197,
+      "failures": [
+        "updated request: finite last_full_loss required"
+      ],
+      "input_unchanged": true,
+      "passed": true
+    },
+    {
+      "name": "online.last_full_loss=inf",
+      "expected_failure": true,
+      "detected_failure": true,
+      "check_count": 197,
+      "failures": [
+        "updated request: finite last_full_loss required"
+      ],
+      "input_unchanged": true,
+      "passed": true
+    },
+    {
+      "name": "online.dW_norm=None",
+      "expected_failure": true,
+      "detected_failure": true,
+      "check_count": 197,
+      "failures": [
+        "online.dW_norm: finite nonnegative norm required"
+      ],
+      "input_unchanged": true,
+      "passed": true
+    },
+    {
+      "name": "online.dW_norm=False",
+      "expected_failure": true,
+      "detected_failure": true,
+      "check_count": 197,
+      "failures": [
+        "online.dW_norm: finite nonnegative norm required"
+      ],
+      "input_unchanged": true,
+      "passed": true
+    },
+    {
+      "name": "online.dW_norm=True",
+      "expected_failure": true,
+      "detected_failure": true,
+      "check_count": 197,
+      "failures": [
+        "online.dW_norm: finite nonnegative norm required"
+      ],
+      "input_unchanged": true,
+      "passed": true
+    },
+    {
+      "name": "online.dW_norm='wrong'",
+      "expected_failure": true,
+      "detected_failure": true,
+      "check_count": 197,
+      "failures": [
+        "online.dW_norm: finite nonnegative norm required"
+      ],
+      "input_unchanged": true,
+      "passed": true
+    },
+    {
+      "name": "online.dW_norm=[]",
+      "expected_failure": true,
+      "detected_failure": true,
+      "check_count": 197,
+      "failures": [
+        "online.dW_norm: finite nonnegative norm required"
+      ],
+      "input_unchanged": true,
+      "passed": true
+    },
+    {
+      "name": "online.dW_norm={}",
+      "expected_failure": true,
+      "detected_failure": true,
+      "check_count": 197,
+      "failures": [
+        "online.dW_norm: finite nonnegative norm required"
+      ],
+      "input_unchanged": true,
+      "passed": true
+    },
+    {
+      "name": "online.dW_norm=nan",
+      "expected_failure": true,
+      "detected_failure": true,
+      "check_count": 197,
+      "failures": [
+        "online.dW_norm: finite nonnegative norm required"
+      ],
+      "input_unchanged": true,
+      "passed": true
+    },
+    {
+      "name": "online.dW_norm=inf",
+      "expected_failure": true,
+      "detected_failure": true,
+      "check_count": 197,
+      "failures": [
+        "online.dW_norm: finite nonnegative norm required"
+      ],
+      "input_unchanged": true,
+      "passed": true
+    },
+    {
+      "name": "online.db_exact_zero_fraction=None",
+      "expected_failure": true,
+      "detected_failure": true,
+      "check_count": 197,
+      "failures": [
+        "db_exact_zero_fraction outside [0,1]"
+      ],
+      "input_unchanged": true,
+      "passed": true
+    },
+    {
+      "name": "online.db_exact_zero_fraction=False",
+      "expected_failure": true,
+      "detected_failure": true,
+      "check_count": 197,
+      "failures": [
+        "db_exact_zero_fraction outside [0,1]"
+      ],
+      "input_unchanged": true,
+      "passed": true
+    },
+    {
+      "name": "online.db_exact_zero_fraction=True",
+      "expected_failure": true,
+      "detected_failure": true,
+      "check_count": 197,
+      "failures": [
+        "db_exact_zero_fraction outside [0,1]"
+      ],
+      "input_unchanged": true,
+      "passed": true
+    },
+    {
+      "name": "online.db_exact_zero_fraction='wrong'",
+      "expected_failure": true,
+      "detected_failure": true,
+      "check_count": 197,
+      "failures": [
+        "db_exact_zero_fraction outside [0,1]"
+      ],
+      "input_unchanged": true,
+      "passed": true
+    },
+    {
+      "name": "online.db_exact_zero_fraction=[]",
+      "expected_failure": true,
+      "detected_failure": true,
+      "check_count": 197,
+      "failures": [
+        "db_exact_zero_fraction outside [0,1]"
+      ],
+      "input_unchanged": true,
+      "passed": true
+    },
+    {
+      "name": "online.db_exact_zero_fraction={}",
+      "expected_failure": true,
+      "detected_failure": true,
+      "check_count": 197,
+      "failures": [
+        "db_exact_zero_fraction outside [0,1]"
+      ],
+      "input_unchanged": true,
+      "passed": true
+    },
+    {
+      "name": "online.db_exact_zero_fraction=nan",
+      "expected_failure": true,
+      "detected_failure": true,
+      "check_count": 197,
+      "failures": [
+        "db_exact_zero_fraction outside [0,1]"
+      ],
+      "input_unchanged": true,
+      "passed": true
+    },
+    {
+      "name": "online.db_exact_zero_fraction=inf",
+      "expected_failure": true,
+      "detected_failure": true,
+      "check_count": 197,
+      "failures": [
+        "db_exact_zero_fraction outside [0,1]"
+      ],
+      "input_unchanged": true,
+      "passed": true
+    },
+    {
+      "name": "block.round_idx=None",
+      "expected_failure": true,
+      "detected_failure": true,
+      "check_count": 197,
+      "failures": [
+        "blocks[0].round_idx: integer >= 1 required",
+        "blocks[0]: rounds must be contiguous and one-based"
+      ],
+      "input_unchanged": true,
+      "passed": true
+    },
+    {
+      "name": "block.round_idx=False",
+      "expected_failure": true,
+      "detected_failure": true,
+      "check_count": 197,
+      "failures": [
+        "blocks[0].round_idx: integer >= 1 required",
+        "blocks[0]: rounds must be contiguous and one-based"
+      ],
+      "input_unchanged": true,
+      "passed": true
+    },
+    {
+      "name": "block.round_idx=True",
+      "expected_failure": true,
+      "detected_failure": true,
+      "check_count": 197,
+      "failures": [
+        "blocks[0].round_idx: integer >= 1 required",
+        "blocks[0]: rounds must be contiguous and one-based"
+      ],
+      "input_unchanged": true,
+      "passed": true
+    },
+    {
+      "name": "block.round_idx=1.5",
+      "expected_failure": true,
+      "detected_failure": true,
+      "check_count": 197,
+      "failures": [
+        "blocks[0].round_idx: integer >= 1 required",
+        "blocks[0]: rounds must be contiguous and one-based"
+      ],
+      "input_unchanged": true,
+      "passed": true
+    },
+    {
+      "name": "block.round_idx='wrong'",
+      "expected_failure": true,
+      "detected_failure": true,
+      "check_count": 197,
+      "failures": [
+        "blocks[0].round_idx: integer >= 1 required",
+        "blocks[0]: rounds must be contiguous and one-based"
+      ],
+      "input_unchanged": true,
+      "passed": true
+    },
+    {
+      "name": "block.round_idx={}",
+      "expected_failure": true,
+      "detected_failure": true,
+      "check_count": 197,
+      "failures": [
+        "blocks[0].round_idx: integer >= 1 required",
+        "blocks[0]: rounds must be contiguous and one-based"
+      ],
+      "input_unchanged": true,
+      "passed": true
+    },
+    {
+      "name": "block.round_idx=[]",
+      "expected_failure": true,
+      "detected_failure": true,
+      "check_count": 197,
+      "failures": [
+        "blocks[0].round_idx: integer >= 1 required",
+        "blocks[0]: rounds must be contiguous and one-based"
+      ],
+      "input_unchanged": true,
+      "passed": true
+    },
+    {
+      "name": "block.adapter_version=None",
+      "expected_failure": true,
+      "detected_failure": true,
+      "check_count": 197,
+      "failures": [
+        "blocks[0].adapter_version: integer >= 0 required",
+        "blocks[0]: incorrect pre-update version"
+      ],
+      "input_unchanged": true,
+      "passed": true
+    },
+    {
+      "name": "block.adapter_version=False",
+      "expected_failure": true,
+      "detected_failure": true,
+      "check_count": 197,
+      "failures": [
+        "blocks[0].adapter_version: integer >= 0 required",
+        "blocks[0]: incorrect pre-update version"
+      ],
+      "input_unchanged": true,
+      "passed": true
+    },
+    {
+      "name": "block.adapter_version=True",
+      "expected_failure": true,
+      "detected_failure": true,
+      "check_count": 197,
+      "failures": [
+        "blocks[0].adapter_version: integer >= 0 required",
+        "blocks[0]: incorrect pre-update version"
+      ],
+      "input_unchanged": true,
+      "passed": true
+    },
+    {
+      "name": "block.adapter_version=1.5",
+      "expected_failure": true,
+      "detected_failure": true,
+      "check_count": 197,
+      "failures": [
+        "blocks[0].adapter_version: integer >= 0 required",
+        "blocks[0]: incorrect pre-update version"
+      ],
+      "input_unchanged": true,
+      "passed": true
+    },
+    {
+      "name": "block.adapter_version='wrong'",
+      "expected_failure": true,
+      "detected_failure": true,
+      "check_count": 197,
+      "failures": [
+        "blocks[0].adapter_version: integer >= 0 required",
+        "blocks[0]: incorrect pre-update version"
+      ],
+      "input_unchanged": true,
+      "passed": true
+    },
+    {
+      "name": "block.adapter_version={}",
+      "expected_failure": true,
+      "detected_failure": true,
+      "check_count": 197,
+      "failures": [
+        "blocks[0].adapter_version: integer >= 0 required",
+        "blocks[0]: incorrect pre-update version"
+      ],
+      "input_unchanged": true,
+      "passed": true
+    },
+    {
+      "name": "block.adapter_version=[]",
+      "expected_failure": true,
+      "detected_failure": true,
+      "check_count": 197,
+      "failures": [
+        "blocks[0].adapter_version: integer >= 0 required",
+        "blocks[0]: incorrect pre-update version"
+      ],
+      "input_unchanged": true,
+      "passed": true
+    },
+    {
+      "name": "block.next_adapter_version=None",
+      "expected_failure": true,
+      "detected_failure": true,
+      "check_count": 197,
+      "failures": [
+        "blocks[0].next_adapter_version: integer >= 0 required",
+        "blocks[0]: incorrect post-update version"
+      ],
+      "input_unchanged": true,
+      "passed": true
+    },
+    {
+      "name": "block.next_adapter_version=False",
+      "expected_failure": true,
+      "detected_failure": true,
+      "check_count": 197,
+      "failures": [
+        "blocks[0].next_adapter_version: integer >= 0 required",
+        "blocks[0]: incorrect post-update version"
+      ],
+      "input_unchanged": true,
+      "passed": true
+    },
+    {
+      "name": "block.next_adapter_version=True",
+      "expected_failure": true,
+      "detected_failure": true,
+      "check_count": 197,
+      "failures": [
+        "blocks[0].next_adapter_version: integer >= 0 required",
+        "blocks[0]: incorrect post-update version"
+      ],
+      "input_unchanged": true,
+      "passed": true
+    },
+    {
+      "name": "block.next_adapter_version=1.5",
+      "expected_failure": true,
+      "detected_failure": true,
+      "check_count": 197,
+      "failures": [
+        "blocks[0].next_adapter_version: integer >= 0 required",
+        "blocks[0]: incorrect post-update version"
+      ],
+      "input_unchanged": true,
+      "passed": true
+    },
+    {
+      "name": "block.next_adapter_version='wrong'",
+      "expected_failure": true,
+      "detected_failure": true,
+      "check_count": 197,
+      "failures": [
+        "blocks[0].next_adapter_version: integer >= 0 required",
+        "blocks[0]: incorrect post-update version"
+      ],
+      "input_unchanged": true,
+      "passed": true
+    },
+    {
+      "name": "block.next_adapter_version={}",
+      "expected_failure": true,
+      "detected_failure": true,
+      "check_count": 197,
+      "failures": [
+        "blocks[0].next_adapter_version: integer >= 0 required",
+        "blocks[0]: incorrect post-update version"
+      ],
+      "input_unchanged": true,
+      "passed": true
+    },
+    {
+      "name": "block.next_adapter_version=[]",
+      "expected_failure": true,
+      "detected_failure": true,
+      "check_count": 197,
+      "failures": [
+        "blocks[0].next_adapter_version: integer >= 0 required",
+        "blocks[0]: incorrect post-update version"
+      ],
+      "input_unchanged": true,
+      "passed": true
+    },
+    {
+      "name": "missing online",
+      "expected_failure": true,
+      "detected_failure": true,
+      "check_count": 189,
+      "failures": [
+        "online: object required",
+        "online.last_full_loss: explicit field required even when null",
+        "online.active_buckets_min_over_updates: explicit field required even when null",
+        "online.u: integer >= 0 required",
+        "online.u differs from derived update count",
+        "online.adapter_version: integer >= 0 required",
+        "online.adapter_version differs from derived update count",
+        "online.last_round: integer >= 0 required",
+        "online.last_round differs from block count",
+        "online.loss_mode must be live_full",
+        "online.T_train must be 1",
+        "online.beta_train must be 1",
+        "online.dW_norm: finite nonnegative norm required",
+        "online.dA_norm: finite nonnegative norm required",
+        "online.db_norm: finite nonnegative norm required",
+        "online.dS_norm: finite nonnegative norm required",
+        "db_exact_zero_fraction outside [0,1]",
+        "online.sparse_capacity: integer >= 1 required",
+        "online sparse capacity differs from run policy",
+        "online.active_buckets: integer >= 0 required",
+        "online.active_buckets_max_over_updates: integer >= 0 required",
+        "online.active_buckets_min_over_updates: integer >= 0 required",
+        "updated request: finite last_full_loss required",
+        "online.state_bytes_estimate_total: integer >= 0 required",
+        "online.sparse_update_bytes_estimate: integer >= 0 required",
+        "online.sparse_snapshot_bytes: integer >= 0 required",
+        "online.dense_snapshot_bytes: integer >= 0 required",
+        "state_bytes_estimate_by_operation: object required",
+        "state-byte operation keys differ from schema",
+        "state_bytes_estimate_by_operation.dense_activation_clone: integer >= 0 required",
+        "state_bytes_estimate_by_operation.dense_optimizer: integer >= 0 required",
+        "state_bytes_estimate_by_operation.dense_snapshot: integer >= 0 required",
+        "state_bytes_estimate_by_operation.sparse_snapshot: integer >= 0 required",
+        "state_bytes_estimate_by_operation.sparse_update: integer >= 0 required",
+        "unexpected sparse snapshot strategy",
+        "unexpected sparse update strategy",
+        "online.dS_norm_definition: definition required",
+        "online.state_bytes_definition: definition required",
+        "absent or zero update duration requires null bandwidth"
+      ],
+      "input_unchanged": true,
+      "passed": true
+    },
+    {
+      "name": "missing online_invariants",
+      "expected_failure": true,
+      "detected_failure": true,
+      "check_count": 197,
+      "failures": [
+        "online_invariants: object required",
+        "online_invariants.stride: integer >= 1 required",
+        "online_invariants.executed_updates: integer >= 0 required",
+        "online_invariants.stride differs from expected",
+        "online_invariants.executed_updates differs from derived count",
+        "online_invariants.request_reset: true declaration required",
+        "online_invariants.version_only_between_rounds: true declaration required",
+        "online_invariants.single_round_no_buffering: true declaration required"
+      ],
+      "input_unchanged": true,
+      "passed": true
+    },
+    {
+      "name": "missing parameter_norms",
+      "expected_failure": true,
+      "detected_failure": true,
+      "check_count": 197,
+      "failures": [
+        "parameter_norms: object required",
+        "parameter_norms.W: finite nonnegative norm required",
+        "parameter_norms.A: finite nonnegative norm required",
+        "parameter_norms.b: finite nonnegative norm required"
+      ],
+      "input_unchanged": true,
+      "passed": true
+    },
+    {
+      "name": "missing blocks",
+      "expected_failure": true,
+      "detected_failure": true,
+      "check_count": 81,
+      "failures": [
+        "blocks: array required"
+      ],
+      "input_unchanged": true,
+      "passed": true
+    },
+    {
+      "name": "missing phase_ms",
+      "expected_failure": true,
+      "detected_failure": true,
+      "check_count": 188,
+      "failures": [
+        "phase_ms: object required",
+        "profile requires positive dense_adapter_score ms",
+        "profile requires positive dflash_draft ms",
+        "profile requires positive sequential_sampling ms",
+        "profile requires positive sparse_lookup ms",
+        "profile requires positive target_verification ms",
+        "profile with executed updates requires positive online_update ms",
+        "absent or zero update duration requires null bandwidth"
+      ],
+      "input_unchanged": true,
+      "passed": true
+    },
+    {
+      "name": "missing estimated_online_state_bandwidth_GBps",
+      "expected_failure": true,
+      "detected_failure": true,
+      "check_count": 197,
+      "failures": [
+        "estimated_online_state_bandwidth_GBps: explicit field required even when null",
+        "online state bandwidth differs from bytes/update duration"
+      ],
+      "input_unchanged": true,
+      "passed": true
+    },
+    {
+      "name": "missing phase dflash_draft",
+      "expected_failure": true,
+      "detected_failure": true,
+      "check_count": 196,
+      "failures": [
+        "profile requires positive dflash_draft ms"
+      ],
+      "input_unchanged": true,
+      "passed": true
+    },
+    {
+      "name": "zero phase dflash_draft",
+      "expected_failure": true,
+      "detected_failure": true,
+      "check_count": 197,
+      "failures": [
+        "profile requires positive dflash_draft ms"
+      ],
+      "input_unchanged": true,
+      "passed": true
+    },
+    {
+      "name": "missing phase dense_adapter_score",
+      "expected_failure": true,
+      "detected_failure": true,
+      "check_count": 196,
+      "failures": [
+        "profile requires positive dense_adapter_score ms"
+      ],
+      "input_unchanged": true,
+      "passed": true
+    },
+    {
+      "name": "zero phase dense_adapter_score",
+      "expected_failure": true,
+      "detected_failure": true,
+      "check_count": 197,
+      "failures": [
+        "profile requires positive dense_adapter_score ms"
+      ],
+      "input_unchanged": true,
+      "passed": true
+    },
+    {
+      "name": "missing phase sparse_lookup",
+      "expected_failure": true,
+      "detected_failure": true,
+      "check_count": 196,
+      "failures": [
+        "profile requires positive sparse_lookup ms"
+      ],
+      "input_unchanged": true,
+      "passed": true
+    },
+    {
+      "name": "zero phase sparse_lookup",
+      "expected_failure": true,
+      "detected_failure": true,
+      "check_count": 197,
+      "failures": [
+        "profile requires positive sparse_lookup ms"
+      ],
+      "input_unchanged": true,
+      "passed": true
+    },
+    {
+      "name": "missing phase sequential_sampling",
+      "expected_failure": true,
+      "detected_failure": true,
+      "check_count": 196,
+      "failures": [
+        "profile requires positive sequential_sampling ms"
+      ],
+      "input_unchanged": true,
+      "passed": true
+    },
+    {
+      "name": "zero phase sequential_sampling",
+      "expected_failure": true,
+      "detected_failure": true,
+      "check_count": 197,
+      "failures": [
+        "profile requires positive sequential_sampling ms"
+      ],
+      "input_unchanged": true,
+      "passed": true
+    },
+    {
+      "name": "missing phase target_verification",
+      "expected_failure": true,
+      "detected_failure": true,
+      "check_count": 196,
+      "failures": [
+        "profile requires positive target_verification ms"
+      ],
+      "input_unchanged": true,
+      "passed": true
+    },
+    {
+      "name": "zero phase target_verification",
+      "expected_failure": true,
+      "detected_failure": true,
+      "check_count": 197,
+      "failures": [
+        "profile requires positive target_verification ms"
+      ],
+      "input_unchanged": true,
+      "passed": true
+    },
+    {
+      "name": "missing phase online_update",
+      "expected_failure": true,
+      "detected_failure": true,
+      "check_count": 196,
+      "failures": [
+        "profile with executed updates requires positive online_update ms"
+      ],
+      "input_unchanged": true,
+      "passed": true
+    },
+    {
+      "name": "zero phase online_update",
+      "expected_failure": true,
+      "detected_failure": true,
+      "check_count": 197,
+      "failures": [
+        "profile with executed updates requires positive online_update ms"
+      ],
+      "input_unchanged": true,
+      "passed": true
+    },
+    {
+      "name": "settings.update_stride=True",
+      "expected_failure": true,
+      "detected_failure": true,
+      "check_count": 197,
+      "failures": [
+        "settings.update_stride: JSON type differs from expected"
+      ],
+      "input_unchanged": true,
+      "passed": true
+    },
+    {
+      "name": "settings.update_stride=1.0",
+      "expected_failure": true,
+      "detected_failure": true,
+      "check_count": 197,
+      "failures": [
+        "settings.update_stride: JSON type differs from expected"
+      ],
+      "input_unchanged": true,
+      "passed": true
+    },
+    {
+      "name": "settings.beta=True",
+      "expected_failure": true,
+      "detected_failure": true,
+      "check_count": 197,
+      "failures": [
+        "settings.beta: JSON type differs from expected"
+      ],
+      "input_unchanged": true,
+      "passed": true
+    },
+    {
+      "name": "dbS nonzero dW",
+      "expected_failure": true,
+      "detected_failure": true,
+      "check_count": 198,
+      "failures": [
+        "online_dbS must leave dW and dA exactly zero"
+      ],
+      "input_unchanged": true,
+      "passed": true
+    },
+    {
+      "name": "baseline reuse",
+      "expected_failure": true,
+      "detected_failure": true,
+      "check_count": 197,
+      "failures": [
+        "online row cannot reuse baseline evidence"
+      ],
+      "input_unchanged": true,
+      "passed": true
+    },
+    {
+      "name": "sparse dirty byte nonmultiple",
+      "expected_failure": true,
+      "detected_failure": true,
+      "check_count": 197,
+      "failures": [
+        "sparse update bytes must represent deduplicated dirty buckets plus active-list traffic"
+      ],
+      "input_unchanged": true,
+      "passed": true
+    },
+    {
+      "name": "wrong state total",
+      "expected_failure": true,
+      "detected_failure": true,
+      "check_count": 197,
+      "failures": [
+        "state-byte total differs from operation sum",
+        "online state bandwidth differs from bytes/update duration"
+      ],
+      "input_unchanged": true,
+      "passed": true
+    },
+    {
+      "name": "wrong bandwidth",
+      "expected_failure": true,
+      "detected_failure": true,
+      "check_count": 197,
+      "failures": [
+        "online state bandwidth differs from bytes/update duration"
+      ],
+      "input_unchanged": true,
+      "passed": true
+    },
+    {
+      "name": "duplicate round",
+      "expected_failure": true,
+      "detected_failure": true,
+      "check_count": 197,
+      "failures": [
+        "blocks[1]: rounds must be contiguous and one-based"
+      ],
+      "input_unchanged": true,
+      "passed": true
+    },
+    {
+      "name": "nonzero initial version",
+      "expected_failure": true,
+      "detected_failure": true,
+      "check_count": 197,
+      "failures": [
+        "blocks[0]: incorrect pre-update version"
+      ],
+      "input_unchanged": true,
+      "passed": true
+    },
+    {
+      "name": "valid zero-round smoke",
+      "expected_failure": false,
+      "detected_failure": false,
+      "check_count": 86,
+      "failures": [],
+      "input_unchanged": true,
+      "passed": true
+    },
+    {
+      "name": "valid zero-round reference",
+      "expected_failure": false,
+      "detected_failure": false,
+      "check_count": 88,
+      "failures": [],
+      "input_unchanged": true,
+      "passed": true
+    },
+    {
+      "name": "missing reference prefill phase",
+      "expected_failure": true,
+      "detected_failure": true,
+      "check_count": 87,
+      "failures": [
+        "profile requires positive target_feature_extraction ms"
+      ],
+      "input_unchanged": true,
+      "passed": true
+    },
+    {
+      "name": "zero reference prefill phase",
+      "expected_failure": true,
+      "detected_failure": true,
+      "check_count": 88,
+      "failures": [
+        "profile requires positive target_feature_extraction ms"
+      ],
+      "input_unchanged": true,
+      "passed": true
+    },
+    {
+      "name": "valid stride5 four skipped rounds",
+      "expected_failure": false,
+      "detected_failure": false,
+      "check_count": 133,
+      "failures": [],
+      "input_unchanged": true,
+      "passed": true
+    },
+    {
+      "name": "stride5 premature update",
+      "expected_failure": true,
+      "detected_failure": true,
+      "check_count": 133,
+      "failures": [
+        "blocks[3]: incorrect post-update version"
+      ],
+      "input_unchanged": true,
+      "passed": true
+    },
+    {
+      "name": "zero-offline fast-path phase exemption (synthetic structure)",
+      "expected_failure": false,
+      "detected_failure": false,
+      "check_count": 129,
+      "failures": [],
+      "input_unchanged": true,
+      "passed": true
+    },
+    {
+      "name": "zero-round missing null loss",
+      "expected_failure": true,
+      "detected_failure": true,
+      "check_count": 86,
+      "failures": [
+        "online.last_full_loss: explicit field required even when null"
+      ],
+      "input_unchanged": true,
+      "passed": true
+    },
+    {
+      "name": "zero-round nonzero delta",
+      "expected_failure": true,
+      "detected_failure": true,
+      "check_count": 86,
+      "failures": [
+        "no updates: all delta norms must be zero"
+      ],
+      "input_unchanged": true,
+      "passed": true
+    }
+  ],
+  "limitations": [
+    "In-memory structural/corruption fixtures only; no model execution or real M4 result validation.",
+    "Synthetic zero-round/stride fixtures are metadata constructions, not measured trajectories.",
+    "Parent independently owns complete schedule, identity, checksum, and integration validation.",
+    "Version counters do not prove tensor snapshot immutability.",
+    "Request-reset and no-buffering flags are declarations; initial tensors and intermediate gradients are not serialized.",
+    "Final norms do not independently prove unchanged offline tensors, correct gradients, or exact generation distributions.",
+    "State bytes and bandwidth are algorithmic estimates, not hardware traffic."
+  ]
+}
