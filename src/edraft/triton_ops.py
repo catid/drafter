@@ -83,7 +83,7 @@ if TRITON_AVAILABLE:
         out_ptr,
         n_elements,
         capacity: tl.int64,
-        thresh_u: tl.float32,
+        u_step: tl.int64,
         has_lazy: tl.constexpr,
         BLOCK_SIZE: tl.constexpr,
     ):
@@ -103,6 +103,7 @@ if TRITON_AVAILABLE:
 
         raw = tl.load(values_ptr + bucket, mask=mask, other=0.0).to(tl.float32)
         if has_lazy:
+            thresh_u = tl.load(cum_thresh_ptr + u_step).to(tl.float32)
             lu = tl.load(last_u_ptr + bucket, mask=mask, other=0).to(tl.int64)
             base_t = tl.load(cum_thresh_ptr + lu, mask=mask, other=0.0).to(tl.float32)
             delta_t = thresh_u - base_t
@@ -129,7 +130,7 @@ if TRITON_AVAILABLE:
         s_row = scores_ptr + row * stride_s_row
         t_row = target_ptr + row * stride_t_row
 
-        # Pass 1: online logsumexp for both target_logits and scores.
+        # Pass 1: online logsumexp for both target_logits and scores (safe on all-`-inf` tiles).
         m_t = -float('inf')
         d_t = 0.0
         m_s = -float('inf')
@@ -142,28 +143,36 @@ if TRITON_AVAILABLE:
 
             mt_blk = tl.max(tv, axis=0)
             mt_new = tl.maximum(m_t, mt_blk)
-            d_t = d_t * tl.exp(m_t - mt_new) + tl.sum(tl.exp(tv - mt_new), axis=0)
+            mt_safe = tl.where(mt_new > -float('inf'), mt_new, 0.0)
+            alpha_t = tl.where(m_t > -float('inf'), tl.exp(m_t - mt_safe), 0.0)
+            sum_t = tl.sum(tl.where(mask & (tv > -float('inf')), tl.exp(tv - mt_safe), 0.0), axis=0)
+            d_t = d_t * alpha_t + sum_t
             m_t = mt_new
 
             ms_blk = tl.max(sv, axis=0)
             ms_new = tl.maximum(m_s, ms_blk)
-            d_s = d_s * tl.exp(m_s - ms_new) + tl.sum(tl.exp(sv - ms_new), axis=0)
+            ms_safe = tl.where(ms_new > -float('inf'), ms_new, 0.0)
+            alpha_s = tl.where(m_s > -float('inf'), tl.exp(m_s - ms_safe), 0.0)
+            sum_s = tl.sum(tl.where(mask & (sv > -float('inf')), tl.exp(sv - ms_safe), 0.0), axis=0)
+            d_s = d_s * alpha_s + sum_s
             m_s = ms_new
 
-        lse_t = m_t + tl.log(d_t)
-        lse_s = m_s + tl.log(d_s)
+        lse_t = tl.where(d_t > 0.0, m_t + tl.log(d_t), -float('inf'))
+        lse_s = tl.where(d_s > 0.0, m_s + tl.log(d_s), -float('inf'))
 
-        # Pass 2: exact sum_v exp(tv - lse_t) * ((tv - lse_t) - (sv - lse_s)).
+        # Pass 2: exact sum_{v: P(v) > 0} exp(tv - lse_t) * ((tv - lse_t) - (sv - lse_s)).
         kl_acc = 0.0
         for start in range(0, n_cols, BLOCK_V):
             cols = start + tl.arange(0, BLOCK_V)
             mask = cols < n_cols
             tv = tl.load(t_row + cols, mask=mask, other=-float('inf')).to(tl.float32)
-            sv = tl.load(s_row + cols, mask=mask, other=0.0).to(tl.float32)
-            log_p = tv - lse_t
-            log_q = sv - lse_s
-            p = tl.where(mask, tl.exp(log_p), 0.0)
-            term = tl.where(mask, p * (log_p - log_q), 0.0)
+            sv = tl.load(s_row + cols, mask=mask, other=-float('inf')).to(tl.float32)
+            valid_t = mask & (tv > -float('inf')) & (lse_t > -float('inf'))
+            lp = tl.where(valid_t, tv - lse_t, 0.0)
+            p = tl.where(valid_t, tl.exp(lp), 0.0)
+            lq = tl.where(mask & (lse_s > -float('inf')), sv - lse_s, 0.0)
+            diff = tl.where(p > 0.0, lp - lq, 0.0)
+            term = tl.where(p > 0.0, p * diff, 0.0)
             kl_acc += tl.sum(term, axis=0)
 
         tl.store(out_lse_s_ptr + row, lse_s)
@@ -191,14 +200,17 @@ if TRITON_AVAILABLE:
         lse_s = tl.load(lse_s_ptr + row).to(tl.float32)
         lse_t = tl.load(lse_t_ptr + row).to(tl.float32)
         scale = tl.load(row_scale_ptr + row).to(tl.float32)
+        row_valid = tl.where(lse_t > -float('inf'), 1.0, 0.0)
         for start in range(0, n_cols, BLOCK_V):
             cols = start + tl.arange(0, BLOCK_V)
             mask = cols < n_cols
             sv = tl.load(s_row + cols, mask=mask, other=-float('inf')).to(tl.float32)
             tv = tl.load(t_row + cols, mask=mask, other=-float('inf')).to(tl.float32)
-            q = tl.exp(sv - lse_s)
-            p = tl.exp(tv - lse_t)
-            tl.store(g_row + cols, scale * (q - p), mask=mask)
+            valid_s = mask & (sv > -float('inf')) & (lse_s > -float('inf'))
+            valid_t = mask & (tv > -float('inf')) & (lse_t > -float('inf'))
+            q = tl.where(valid_s, tl.exp(tl.where(valid_s, sv - lse_s, 0.0)), 0.0)
+            p = tl.where(valid_t, tl.exp(tl.where(valid_t, tv - lse_t, 0.0)), 0.0)
+            tl.store(g_row + cols, scale * (row_valid * q - p), mask=mask)
 
 
 def emulate_signed_hash_kernel_cpu(
@@ -213,6 +225,13 @@ def emulate_signed_hash_kernel_cpu(
     u: int = 0,
 ) -> torch.Tensor:
     """Exact int64/fp32 mirror of `_signed_hash_lookup_kernel`'s register equations for CPU parity verification."""
+    if int(capacity) <= 0:
+        raise ValueError('hash capacity must be positive')
+    if (last_u is None) != (cum_thresh is None):
+        raise ValueError('last_u and cum_thresh must be provided together')
+    u_int = int(u)
+    if cum_thresh is not None and (u_int < 0 or u_int >= cum_thresh.numel()):
+        raise ValueError('step index u out of bounds for cum_thresh')
     d_t, prev_t, curr_t = torch.broadcast_tensors(
         torch.as_tensor(d, dtype=torch.int64, device=values.device),
         torch.as_tensor(previous, dtype=torch.int64, device=values.device),
@@ -226,7 +245,7 @@ def emulate_signed_hash_kernel_cpu(
     sign = (1 - 2 * bit).to(torch.float32)
     raw = values[bucket].to(torch.float32)
     if last_u is not None and cum_thresh is not None:
-        delta_t = cum_thresh[u] - cum_thresh[last_u[bucket].long()]
+        delta_t = cum_thresh[u_int] - cum_thresh[last_u[bucket].long()]
         eff = proximal_l1(raw, delta_t)
     else:
         eff = raw
@@ -246,6 +265,14 @@ def triton_signed_hash_lookup(
 ) -> torch.Tensor:
     if not TRITON_AVAILABLE or values.device.type != 'cuda':
         raise RuntimeError('triton_signed_hash_lookup requires CUDA tensors and installed triton')
+    if int(capacity) <= 0:
+        raise ValueError('hash capacity must be positive')
+    if (last_u is None) != (cum_thresh is None):
+        raise ValueError('last_u and cum_thresh must be provided together')
+    has_lazy = last_u is not None and cum_thresh is not None
+    u_int = int(u)
+    if has_lazy and (u_int < 0 or u_int >= cum_thresh.numel()):
+        raise ValueError('step index u out of bounds for cum_thresh')
     d_t, prev_t, curr_t = torch.broadcast_tensors(
         torch.as_tensor(d, dtype=torch.int64, device=values.device),
         torch.as_tensor(previous, dtype=torch.int64, device=values.device),
@@ -259,37 +286,30 @@ def triton_signed_hash_lookup(
     out = torch.empty(n_el, dtype=torch.float32, device=values.device)
     if n_el == 0:
         return out.reshape(out_shape)
-    has_lazy = last_u is not None and cum_thresh is not None
-    dummy_i32 = last_u if has_lazy else torch.empty(1, dtype=torch.int32, device=values.device)
-    dummy_f32 = cum_thresh if has_lazy else torch.empty(1, dtype=torch.float32, device=values.device)
-    thresh_u = float(cum_thresh[u].item()) if has_lazy else 0.0
+    vals_c = values.contiguous()
+    lu_buf = last_u.contiguous() if has_lazy else torch.empty(1, dtype=torch.int32, device=values.device)
+    ct_buf = cum_thresh.contiguous() if has_lazy else torch.empty(1, dtype=torch.float32, device=values.device)
     block = 256
     grid = ((n_el + block - 1) // block,)
     _signed_hash_lookup_kernel[grid](
-        d_flat, prev_flat, curr_flat, values, dummy_i32, dummy_f32, out,
-        n_el, int(capacity), thresh_u, has_lazy=has_lazy, BLOCK_SIZE=block,
+        d_flat, prev_flat, curr_flat, vals_c, lu_buf, ct_buf, out,
+        n_el, int(capacity), u_int if has_lazy else 0, has_lazy=has_lazy, BLOCK_SIZE=block,
     )
     return out.reshape(out_shape)
 
 
-def _canonical_row_weights(weights: torch.Tensor | float | None, n_rows: int, device: torch.device) -> torch.Tensor:
-    if weights is None:
-        return loss_weights(n_rows, device)
-    w = torch.as_tensor(weights, device=device, dtype=torch.float32).detach()
-    if w.shape == (n_rows,):
-        return w.contiguous()
-    bshape = torch.broadcast_shapes((n_rows,), w.shape)
-    w_exp = w.expand(bshape)
-    return (w_exp.sum(dim=tuple(range(w_exp.ndim - 1))) if w_exp.ndim > 1 else w_exp.clone()).contiguous()
+def _non_inference_tensor(x: torch.Tensor) -> torch.Tensor:
+    if x.is_inference() and not torch.is_inference_mode_enabled():
+        with torch.inference_mode(False):
+            return x.clone()
+    return x
 
 
 class _TritonRowwiseKLFunction(torch.autograd.Function):
     @staticmethod
-    def forward(ctx, scores: torch.Tensor, target_logits: torch.Tensor,
-                weights_1d: torch.Tensor, emulate_cpu: bool = False) -> torch.Tensor:
-        s = scores.detach().float().contiguous()
-        t = target_logits.detach().float().contiguous()
-        w = weights_1d.detach().float().contiguous()
+    def forward(ctx, scores: torch.Tensor, target_logits: torch.Tensor, emulate_cpu: bool = False) -> torch.Tensor:
+        s = _non_inference_tensor(scores.detach().float().contiguous())
+        t = _non_inference_tensor(target_logits.detach().float().contiguous())
         n_rows, n_cols = s.shape
         if not emulate_cpu:
             row_kl = torch.empty(n_rows, dtype=torch.float32, device=s.device)
@@ -299,26 +319,60 @@ class _TritonRowwiseKLFunction(torch.autograd.Function):
                 s, t, row_kl, lse_s, lse_t, n_cols, s.stride(0), t.stride(0), BLOCK_V=1024,
             )
         else:
-            # Tiled online LSE + KL CPU mirror for CPU exactness verification of the autograd Function.
-            lse_s = torch.logsumexp(s, dim=-1)
-            lse_t = torch.logsumexp(t, dim=-1)
+            # Exact 1024-column tiled online LSE + KL CPU mirror of `_rowwise_kl_forward_kernel`.
+            m_t = torch.full((n_rows,), -float('inf'), dtype=torch.float32, device=s.device)
+            d_t = torch.zeros(n_rows, dtype=torch.float32, device=s.device)
+            m_s = torch.full((n_rows,), -float('inf'), dtype=torch.float32, device=s.device)
+            d_s = torch.zeros(n_rows, dtype=torch.float32, device=s.device)
+            for start in range(0, n_cols, 1024):
+                tc = t[:, start:start + 1024]
+                sc = s[:, start:start + 1024]
+                mt_blk = tc.max(dim=-1).values
+                mt_new = torch.maximum(m_t, mt_blk)
+                mt_safe = torch.where(mt_new > -float('inf'), mt_new, torch.zeros_like(mt_new))
+                alpha_t = torch.where(m_t > -float('inf'), torch.exp(m_t - mt_safe), torch.zeros_like(m_t))
+                sum_t = torch.where(tc > -float('inf'), torch.exp(tc - mt_safe[:, None]), torch.zeros_like(tc)).sum(dim=-1)
+                d_t = d_t * alpha_t + sum_t
+                m_t = mt_new
+
+                ms_blk = sc.max(dim=-1).values
+                ms_new = torch.maximum(m_s, ms_blk)
+                ms_safe = torch.where(ms_new > -float('inf'), ms_new, torch.zeros_like(ms_new))
+                alpha_s = torch.where(m_s > -float('inf'), torch.exp(m_s - ms_safe), torch.zeros_like(m_s))
+                sum_s = torch.where(sc > -float('inf'), torch.exp(sc - ms_safe[:, None]), torch.zeros_like(sc)).sum(dim=-1)
+                d_s = d_s * alpha_s + sum_s
+                m_s = ms_new
+            lse_t = torch.where(d_t > 0.0, m_t + torch.log(d_t), torch.full_like(m_t, -float('inf')))
+            lse_s = torch.where(d_s > 0.0, m_s + torch.log(d_s), torch.full_like(m_s, -float('inf')))
             row_kl = torch.zeros(n_rows, dtype=torch.float32, device=s.device)
             for start in range(0, n_cols, 1024):
                 sc = s[:, start:start + 1024]
                 tc = t[:, start:start + 1024]
-                lp = tc - lse_t[:, None]
-                lq = sc - lse_s[:, None]
-                p = torch.exp(lp)
-                row_kl = row_kl + torch.where(torch.isfinite(tc), p * (lp - lq), torch.zeros_like(p)).sum(-1)
-        ctx.save_for_backward(s, t, lse_s, lse_t, w)
+                valid_t = (tc > -float('inf')) & (lse_t[:, None] > -float('inf'))
+                lp = torch.where(valid_t, tc - lse_t[:, None], torch.zeros_like(tc))
+                p = torch.where(valid_t, torch.exp(lp), torch.zeros_like(tc))
+                lq = torch.where(lse_s[:, None] > -float('inf'), sc - lse_s[:, None], torch.zeros_like(sc))
+                diff = torch.where(p > 0.0, lp - lq, torch.zeros_like(p))
+                row_kl = row_kl + torch.where(p > 0.0, p * diff, torch.zeros_like(p)).sum(-1)
+        if ctx.needs_input_grad[0]:
+            ctx.save_for_backward(scores, t, lse_s, lse_t)
         ctx.orig_dtype = scores.dtype
         ctx.emulate_cpu = emulate_cpu
-        return (row_kl * w).sum()
+        return row_kl
 
     @staticmethod
-    def backward(ctx, grad_output: torch.Tensor):
-        s, t, lse_s, lse_t, w = ctx.saved_tensors
-        row_scale = (grad_output.to(torch.float32) * w).contiguous()
+    def backward(ctx, grad_row_kl: torch.Tensor):
+        scores, t, lse_s, lse_t = ctx.saved_tensors
+        row_scale = grad_row_kl.to(torch.float32).contiguous()
+        if torch.is_grad_enabled():
+            # Differentiable backward when `create_graph=True` (2nd-order HVPs).
+            q = torch.softmax(scores.float(), dim=-1)
+            valid_t = (t > -float('inf')) & (lse_t[:, None] > -float('inf'))
+            p = torch.where(valid_t, torch.exp(torch.where(valid_t, t - lse_t[:, None], torch.zeros_like(t))), torch.zeros_like(t))
+            row_valid = (lse_t > -float('inf')).to(torch.float32)[:, None]
+            grad_s = row_scale[:, None] * (row_valid * q - p)
+            return grad_s.to(ctx.orig_dtype), None, None
+        s = _non_inference_tensor(scores.detach().float().contiguous())
         n_rows, n_cols = s.shape
         if not ctx.emulate_cpu:
             grad_s = torch.empty_like(s)
@@ -328,32 +382,46 @@ class _TritonRowwiseKLFunction(torch.autograd.Function):
             )
         else:
             grad_s = torch.empty_like(s)
+            row_valid = (lse_t > -float('inf')).to(torch.float32)[:, None]
             for start in range(0, n_cols, 1024):
                 sc = s[:, start:start + 1024]
                 tc = t[:, start:start + 1024]
-                q = torch.exp(sc - lse_s[:, None])
-                p = torch.exp(tc - lse_t[:, None])
-                grad_s[:, start:start + 1024] = row_scale[:, None] * (q - p)
-        return grad_s.to(ctx.orig_dtype), None, None, None
+                valid_s = (sc > -float('inf')) & (lse_s[:, None] > -float('inf'))
+                valid_t = (tc > -float('inf')) & (lse_t[:, None] > -float('inf'))
+                q = torch.where(valid_s, torch.exp(torch.where(valid_s, sc - lse_s[:, None], torch.zeros_like(sc))), torch.zeros_like(sc))
+                p = torch.where(valid_t, torch.exp(torch.where(valid_t, tc - lse_t[:, None], torch.zeros_like(tc))), torch.zeros_like(tc))
+                grad_s[:, start:start + 1024] = row_scale[:, None] * (row_valid * q - p)
+        return grad_s.to(ctx.orig_dtype), None, None
+
+
+def _run_rowwise_kl(scores: torch.Tensor, target_logits: torch.Tensor,
+                    weights: torch.Tensor | float | None, *, emulate_cpu: bool) -> torch.Tensor:
+    if scores.ndim != 2 or target_logits.shape != scores.shape:
+        raise ValueError('scores and target_logits must share 2D shape [K, V]')
+    if scores.shape[1] == 0:
+        raise ValueError('vocab dimension must be positive')
+    w = loss_weights(len(scores), scores.device) if weights is None else weights
+    if isinstance(w, torch.Tensor):
+        w = _non_inference_tensor(w)
+    if scores.shape[0] == 0:
+        s_clean = _non_inference_tensor(scores)
+        per_slot = s_clean.float().sum(dim=-1) * 0.0
+        return (per_slot * w).sum()
+    row_kl = _TritonRowwiseKLFunction.apply(_non_inference_tensor(scores), target_logits, emulate_cpu)
+    return (row_kl * w).sum()
 
 
 def emulate_rowwise_kl_cpu(scores: torch.Tensor, target_logits: torch.Tensor,
                            weights: torch.Tensor | float | None = None) -> torch.Tensor:
     """CPU mirror of differentiable `triton_rowwise_kl` (`_TritonRowwiseKLFunction`)."""
-    if scores.ndim != 2 or target_logits.shape != scores.shape:
-        raise ValueError('scores and target_logits must share 2D shape [K, V]')
-    w_1d = _canonical_row_weights(weights, scores.shape[0], scores.device)
-    return _TritonRowwiseKLFunction.apply(scores, target_logits, w_1d, True)
+    return _run_rowwise_kl(scores, target_logits, weights, emulate_cpu=True)
 
 
 def triton_rowwise_kl(scores: torch.Tensor, target_logits: torch.Tensor,
                       weights: torch.Tensor | float | None = None) -> torch.Tensor:
     if not TRITON_AVAILABLE or scores.device.type != 'cuda':
         raise RuntimeError('triton_rowwise_kl requires CUDA tensors and installed triton')
-    if scores.ndim != 2 or target_logits.shape != scores.shape:
-        raise ValueError('scores and target_logits must share 2D shape [K, V]')
-    w_1d = _canonical_row_weights(weights, scores.shape[0], scores.device)
-    return _TritonRowwiseKLFunction.apply(scores, target_logits, w_1d, False)
+    return _run_rowwise_kl(scores, target_logits, weights, emulate_cpu=False)
 
 
 def _bench_fn_ms(fn: Callable[[], torch.Tensor], device: torch.device, *, warmups: int = 3, repeats: int = 11) -> float:
@@ -393,6 +461,7 @@ def evaluate_kernel_gate(
     repeats: int = 11,
     measured_times_ms: tuple[float, float] | None = None,
     grad_parity_fn: Callable[[], tuple[torch.Tensor, torch.Tensor]] | None = None,
+    extra_parity_fn: Callable[[], tuple[torch.Tensor, torch.Tensor]] | None = None,
 ) -> tuple[Callable[[], torch.Tensor], TritonGateReport]:
     """Run mandatory numerical parity + speed gates; return `(winning_fn, report)`."""
     dev = torch.device(device)
@@ -416,6 +485,13 @@ def evaluate_kernel_gate(
         cand_out = candidate_fn().detach().float()
         max_err = float((ref_out - cand_out).abs().max().item()) if ref_out.numel() else 0.0
         parity_ok = bool(torch.allclose(cand_out, ref_out, atol=atol, rtol=rtol))
+        if extra_parity_fn is not None:
+            ref_ex, cand_ex = extra_parity_fn()
+            ref_e = ref_ex.detach().float()
+            cand_e = cand_ex.detach().float()
+            ex_err = float((ref_e - cand_e).abs().max().item()) if ref_e.numel() else 0.0
+            max_err = max(max_err, ex_err)
+            parity_ok = parity_ok and bool(torch.allclose(cand_e, ref_e, atol=atol, rtol=rtol))
     if grad_parity_fn is not None:
         ref_grad, cand_grad = grad_parity_fn()
         ref_g = ref_grad.detach().float()
@@ -505,6 +581,8 @@ def build_gated_m5_kernels(
     prev_q = torch.randint(0, vocab_size, (D, 1), generator=gen, device=dev, dtype=torch.int64)
     curr_q = torch.randint(0, vocab_size, (1, M_sparse), generator=gen, device=dev, dtype=torch.int64)
     vals = torch.randn(sparse_capacity, generator=gen, device=dev, dtype=torch.float32)
+    last_u = torch.randint(0, 4, (sparse_capacity,), generator=gen, device=dev, dtype=torch.int32)
+    cum_thresh = torch.tensor([0.0, 0.05, 0.12, 0.25], device=dev, dtype=torch.float32)
 
     def ref_hash():
         b, s = hash_keys(d_q, prev_q, curr_q, sparse_capacity, dev)
@@ -513,8 +591,18 @@ def build_gated_m5_kernels(
     def cand_hash():
         return triton_signed_hash_lookup(d_q, prev_q, curr_q, vals, sparse_capacity)
 
+    def lazy_hash_pair():
+        b, s = hash_keys(d_q, prev_q, curr_q, sparse_capacity, dev)
+        ref_lazy = proximal_l1(vals[b], cum_thresh[3] - cum_thresh[last_u[b].long()]) * s
+        cand_lazy = triton_signed_hash_lookup(
+            d_q, prev_q, curr_q, vals, sparse_capacity,
+            last_u=last_u, cum_thresh=cum_thresh, u=3,
+        )
+        return ref_lazy, cand_lazy
+
     _, hash_rep = evaluate_kernel_gate('signed_hash_lookup', ref_hash, cand_hash, device=dev,
-                                       atol=1e-6, rtol=1e-6, strict=strict)
+                                       atol=1e-6, rtol=1e-6, strict=strict,
+                                       extra_parity_fn=lazy_hash_pair)
     scores_base = torch.randn((K, int(vocab_size)), generator=gen, device=dev, dtype=torch.float32)
     targets = torch.randn_like(scores_base)
     weights = loss_weights(K, dev)

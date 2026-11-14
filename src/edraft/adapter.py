@@ -265,8 +265,11 @@ def loss_weights(K, device=None, mode='exponential', gamma=5., first_rejection=N
 
 def full_kl(scores, target_logits, weights=None):
     p_log = torch.log_softmax(target_logits.float().detach(), -1)
+    p = p_log.exp()
     q_log = torch.log_softmax(scores.float(), -1)
-    per_slot = (p_log.exp() * (p_log - q_log)).sum(-1)
+    p_log_safe = torch.where(p > 0, p_log, torch.zeros_like(p_log))
+    q_log_safe = torch.where(p > 0, q_log, torch.zeros_like(q_log))
+    per_slot = torch.where(p > 0, p * (p_log_safe - q_log_safe), torch.zeros_like(q_log)).sum(-1)
     if weights is None:
         weights = loss_weights(len(scores), scores.device)
     return (per_slot * weights).sum()

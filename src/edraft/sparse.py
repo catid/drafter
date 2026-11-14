@@ -34,7 +34,7 @@ class FrozenHash:
     lookup_fn: object | None = None
 
     def lookup(self, d, previous, current):
-        if self.lookup_fn is not None:
+        if self.lookup_fn is not None and not (torch.is_grad_enabled() and self.values.requires_grad):
             return self.lookup_fn(d, previous, current, self.values, self.capacity)
         buckets, signs = hash_keys(d, previous, current, self.capacity, self.values.device)
         return self.values[buckets] * signs
@@ -50,7 +50,7 @@ class SignedHash(nn.Module):
         self.lookup_fn = lookup_fn
 
     def lookup(self, d, previous, current):
-        if self.lookup_fn is not None:
+        if self.lookup_fn is not None and not (torch.is_grad_enabled() and self.values.requires_grad):
             return self.lookup_fn(d, previous, current, self.values, self.capacity)
         buckets, signs = hash_keys(d, previous, current, self.capacity, self.values.device)
         return self.values[buckets] * signs

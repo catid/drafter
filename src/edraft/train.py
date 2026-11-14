@@ -597,6 +597,7 @@ DEFAULT_BETA_CALIBRATION_GRID = (
 
 
 @torch.no_grad()
+@torch.no_grad()
 def scale_adapter_inplace(adapter, scale: float):
     """Scale linear energy parameters `(W, A, b, sparse.values)` by `scale` while keeping frozen `E` untouched."""
     if isinstance(scale, bool) or not isinstance(scale, (int, float)) or not math.isfinite(float(scale)) or float(scale) < 0.0:
@@ -610,7 +611,14 @@ def scale_adapter_inplace(adapter, scale: float):
     return adapter
 
 
-def scale_adapter_checkpoint(src_path: Path | str, dst_path: Path | str, scale: float, *, extra_report: dict | None = None) -> dict:
+def scale_adapter_checkpoint(
+    src_path: Path | str,
+    dst_path: Path | str,
+    scale: float,
+    *,
+    extra_report: dict | None = None,
+    preserve_fit_identity: bool = False,
+) -> dict:
     """Create a scaled copy of a saved adapter checkpoint (`scale * (W, A, b, sparse.values)`)."""
     if isinstance(scale, bool) or not isinstance(scale, (int, float)) or not math.isfinite(float(scale)) or float(scale) < 0.0:
         raise ValueError('checkpoint scale must be a finite nonnegative scalar')
@@ -627,7 +635,20 @@ def scale_adapter_checkpoint(src_path: Path | str, dst_path: Path | str, scale: 
     checkpoint['adapter_state'] = state
     prev_scale = float(checkpoint.get('checkpoint_scale', 1.0))
     eff_scale = prev_scale * s
+    non_unit = bool(checkpoint.get('non_unit_scaled', False) or s != 1.0)
     checkpoint['checkpoint_scale'] = eff_scale
+    checkpoint['non_unit_scaled'] = non_unit
+    base_identity = checkpoint.get('base_identity', checkpoint.get('identity'))
+    checkpoint['base_identity'] = base_identity
+    if not preserve_fit_identity:
+        if eff_scale != 1.0 or non_unit:
+            checkpoint['identity'] = fingerprint({
+                'base_identity': base_identity,
+                'checkpoint_scale': eff_scale,
+                'non_unit_scaled': non_unit,
+            })
+        else:
+            checkpoint['identity'] = base_identity
     checkpoint['adapter_version'] = fingerprint({
         'base_version': checkpoint.get('adapter_version'),
         'checkpoint_scale': eff_scale,
@@ -642,6 +663,7 @@ def scale_adapter_checkpoint(src_path: Path | str, dst_path: Path | str, scale: 
         'destination': str(dst),
         'scale': s,
         'effective_checkpoint_scale': eff_scale,
+        'identity': checkpoint.get('identity'),
         'sha256': file_digest(dst),
     }
 
@@ -1073,10 +1095,12 @@ def fit(entries, index_report, E, head, bias, head_metadata, args, *, stop_after
             scale_adapter_checkpoint(
                 unscaled_path, cal_path, cal['optimal_beta'],
                 extra_report={'calibrated_stage': stage, 'applied_beta': cal['optimal_beta']},
+                preserve_fit_identity=True,
             )
             scale_adapter_checkpoint(
                 unscaled_path, outdir / f'{stage}.pt', cal['optimal_beta'],
                 extra_report={'calibrated_stage': stage, 'applied_beta': cal['optimal_beta']},
+                preserve_fit_identity=True,
             )
             cal_adapter, _ = load_adapter_checkpoint(outdir / f'{stage}.pt', E.device)
             report['stages'][stage]['calibrated_eval'] = {
@@ -1090,10 +1114,12 @@ def fit(entries, index_report, E, head, bias, head_metadata, args, *, stop_after
             scale_adapter_checkpoint(
                 unscaled_path, cal_path, cal['optimal_beta'],
                 extra_report={'calibrated_stage': stage, 'applied_beta': cal['optimal_beta']},
+                preserve_fit_identity=True,
             )
             scale_adapter_checkpoint(
                 unscaled_path, outdir / f'{stage}.pt', cal['optimal_beta'],
                 extra_report={'calibrated_stage': stage, 'applied_beta': cal['optimal_beta']},
+                preserve_fit_identity=True,
             )
         else:
             atomic_torch_save(outdir / f'{stage}.pt', stage_payload)
@@ -1101,6 +1127,7 @@ def fit(entries, index_report, E, head, bias, head_metadata, args, *, stop_after
                 scale_adapter_checkpoint(
                     outdir / f'{stage}.pt', outdir / f'{stage}_calibrated.pt', cal['optimal_beta'],
                     extra_report={'calibrated_stage': stage, 'applied_beta': cal['optimal_beta']},
+                    preserve_fit_identity=True,
                 )
         resumed = None
     do_cal_beta = bool(getattr(args, 'calibrate_beta', False) or getattr(args, 'apply_calibrated_beta', False))

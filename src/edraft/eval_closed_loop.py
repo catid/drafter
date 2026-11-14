@@ -349,7 +349,15 @@ class EvaluationRunner:
             if args.stage == 'm5':
                 if self.dense_metadata.get('identity') != self.sparse_metadata.get('identity'):
                     raise ValueError('M5 dense and dense_sparse checkpoints must originate from the same fit identity')
-                self.is_m5_custom_checkpoint = self.dense_metadata.get('identity') != m2.get('identity')
+                dense_cal = bool(self.dense_metadata.get('report', {}).get('calibrated_stage'))
+                sparse_cal = bool(self.sparse_metadata.get('report', {}).get('calibrated_stage'))
+                if dense_cal != sparse_cal:
+                    raise ValueError('M5 dense and dense_sparse checkpoints cannot mix calibrated and uncalibrated variants')
+                self.is_m5_custom_checkpoint = (
+                    self.dense_metadata.get('identity') != m2.get('identity')
+                    or bool(self.dense_metadata.get('non_unit_scaled', False))
+                    or float(self.dense_metadata.get('checkpoint_scale', 1.0)) != 1.0
+                )
             if args.stage == 'm5' and getattr(args, 'm5_oracle_checkpoint', None):
                 self.long_oracle, oracle_meta = load_adapter_checkpoint(args.m5_oracle_checkpoint, args.device)
                 oracle_report = oracle_meta.get('report', {})
@@ -365,6 +373,8 @@ class EvaluationRunner:
             scale_val = float(args.checkpoint_scale)
             scale_adapter_inplace(self.dense, scale_val)
             scale_adapter_inplace(self.dense_sparse, scale_val)
+            if scale_val != 1.0:
+                self.is_m5_custom_checkpoint = True
             if self.tiny:
                 self.checkpoint_hashes['dense'] = adapter_tensor_hash(self.dense)
                 self.checkpoint_hashes['dense_sparse'] = adapter_tensor_hash(self.dense_sparse)

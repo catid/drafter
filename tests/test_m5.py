@@ -1704,3 +1704,285 @@ def test_m5_exact_observed_pairs_zero_collision_reporting_and_beta_calibration(t
     assert scaled_summary['settings']['checkpoint_hashes']['checkpoint_scale'] == pytest.approx(0.20)
 
 
+def test_m5_r2_triton_kl_inference_mode_hvp_neginf_and_signed_hash_grad():
+    """Regression suite for M5-R2-BUG-1 and M5-R2-BUG-2 (#77)."""
+    import inspect
+    from edraft import triton_ops
+    from edraft.adapter import full_kl
+    from edraft.sparse import hash_keys, proximal_l1
+
+    torch.manual_seed(2026)
+
+    # 1a. target_logits and weights created inside torch.inference_mode() + call inside inference_mode():
+    with torch.inference_mode():
+        t_inf = torch.randn(4, 32)
+        w_inf = torch.tensor([1.0, 0.8, 0.6, 0.4])
+        s_inf = torch.randn(4, 32)
+        val_inf = triton_ops.emulate_rowwise_kl_cpu(s_inf, t_inf, w_inf)
+        assert torch.isfinite(val_inf)
+
+    s_grad = torch.randn(4, 32, requires_grad=True)
+    s_ref = s_grad.detach().clone().requires_grad_(True)
+    loss_cand = triton_ops.emulate_rowwise_kl_cpu(s_grad, t_inf, w_inf)
+    loss_ref = full_kl(s_ref, t_inf.clone(), w_inf.clone())
+    torch.testing.assert_close(loss_cand, loss_ref, atol=1e-6, rtol=1e-6)
+    loss_cand.backward()
+    loss_ref.backward()
+    torch.testing.assert_close(s_grad.grad, s_ref.grad, atol=1e-6, rtol=1e-6)
+
+    # 1b. create_graph=True 2nd-order HVP parity (including weights requiring grad):
+    s2 = torch.randn(3, 24, requires_grad=True)
+    w2 = torch.tensor([1.0, 0.7, 0.5], requires_grad=True)
+    s2_ref = s2.detach().clone().requires_grad_(True)
+    w2_ref = w2.detach().clone().requires_grad_(True)
+    t2 = torch.randn(3, 24)
+    g_s, g_w = torch.autograd.grad(
+        triton_ops.emulate_rowwise_kl_cpu(s2, t2, w2), (s2, w2), create_graph=True
+    )
+    g_s_ref, g_w_ref = torch.autograd.grad(
+        full_kl(s2_ref, t2, w2_ref), (s2_ref, w2_ref), create_graph=True
+    )
+    assert g_s.requires_grad is True
+    torch.testing.assert_close(g_s, g_s_ref, atol=1e-6, rtol=1e-6)
+    torch.testing.assert_close(g_w, g_w_ref, atol=1e-6, rtol=1e-6)
+    vec = torch.randn_like(s2)
+    hvp_cand = torch.autograd.grad((g_s * vec).sum(), s2)[0]
+    hvp_ref = torch.autograd.grad((g_s_ref * vec).sum(), s2_ref)[0]
+    torch.testing.assert_close(hvp_cand, hvp_ref, atol=1e-6, rtol=1e-6)
+
+    # 1c. Leading 1024-column -inf tile + scattered in-bounds -inf target logits + n_rows == 0:
+    s_tile = torch.randn(2, 2048)
+    s_tile[0, :1024] = -float('inf')
+    s_tile.requires_grad_(True)
+    s_tile_ref = s_tile.detach().clone().requires_grad_(True)
+    t_tile = torch.randn(2, 2048)
+    t_tile[0, :1024] = -float('inf')
+    t_tile[1, :1024] = -float('inf')
+    t_tile[1, 1500] = -float('inf')
+    out_tile = triton_ops.emulate_rowwise_kl_cpu(s_tile, t_tile)
+    out_tile_ref = full_kl(s_tile_ref, t_tile)
+    assert torch.isfinite(out_tile)
+    torch.testing.assert_close(out_tile, out_tile_ref, atol=1e-5, rtol=1e-5)
+    out_tile.backward()
+    out_tile_ref.backward()
+    assert torch.isfinite(s_tile.grad).all()
+    torch.testing.assert_close(s_tile.grad, s_tile_ref.grad, atol=1e-5, rtol=1e-5)
+
+    s_empty = torch.empty(0, 16, requires_grad=True)
+    s_empty_ref = torch.empty(0, 16, requires_grad=True)
+    t_empty = torch.empty(0, 16)
+    out_empty = triton_ops.emulate_rowwise_kl_cpu(s_empty, t_empty)
+    out_empty_ref = full_kl(s_empty_ref, t_empty)
+    assert float(out_empty.detach()) == 0.0 and float(out_empty_ref.detach()) == 0.0
+    g_empty = torch.autograd.grad(out_empty, s_empty, create_graph=True)[0]
+    g_empty_ref = torch.autograd.grad(out_empty_ref, s_empty_ref, create_graph=True)[0]
+    assert g_empty.shape == (0, 16) and g_empty_ref.shape == (0, 16)
+    with pytest.raises(ValueError, match='vocab dimension must be positive'):
+        triton_ops.emulate_rowwise_kl_cpu(torch.empty(2, 0), torch.empty(2, 0))
+
+    # 2a. SignedHash.lookup preserves gradients when lookup_fn is attached and grad is enabled:
+    calls = {'n': 0}
+
+    def custom_lookup(d, prev, curr, vals, cap):
+        calls['n'] += 1
+        return triton_ops.emulate_signed_hash_kernel_cpu(d, prev, curr, vals.detach(), cap)
+
+    sh = SignedHash(64, lookup_fn=custom_lookup)
+    with torch.no_grad():
+        sh.values.normal_(0.0, 0.2)
+    d_q = torch.tensor([[1], [2]], dtype=torch.int64)
+    p_q = torch.tensor([[3], [5]], dtype=torch.int64)
+    c_q = torch.tensor([[2, 4, 6, 7]], dtype=torch.int64)
+
+    out_train = sh.lookup(d_q, p_q, c_q)
+    assert calls['n'] == 0
+    out_train.sum().backward()
+    assert sh.values.grad is not None and float(sh.values.grad.abs().sum()) > 0.0
+
+    with torch.no_grad():
+        out_eval = sh.lookup(d_q, p_q, c_q)
+    assert calls['n'] == 1
+    torch.testing.assert_close(out_eval, out_train.detach(), atol=1e-6, rtol=1e-6)
+
+    snap = sh.snapshot()
+    out_snap = snap.lookup(d_q, p_q, c_q)
+    assert calls['n'] == 2
+    torch.testing.assert_close(out_snap, out_train.detach(), atol=1e-6, rtol=1e-6)
+
+    # 2b. Zero host sync (.item()) in triton_signed_hash_lookup + has_lazy=True parity gate:
+    src_text = inspect.getsource(triton_ops.triton_signed_hash_lookup)
+    assert '.item()' not in src_text
+    lu = torch.randint(0, 4, (64,), dtype=torch.int32)
+    ct = torch.tensor([0.0, 0.04, 0.11, 0.22], dtype=torch.float32)
+    lazy_cpu = triton_ops.emulate_signed_hash_kernel_cpu(
+        d_q, p_q, c_q, sh.values.detach(), 64, last_u=lu, cum_thresh=ct, u=3
+    )
+    b_idx, signs = hash_keys(d_q, p_q, c_q, 64, sh.values.device)
+    lazy_ref = proximal_l1(sh.values.detach()[b_idx], ct[3] - ct[lu[b_idx].long()]) * signs
+    torch.testing.assert_close(lazy_cpu, lazy_ref, atol=1e-6, rtol=1e-6)
+    with pytest.raises(ValueError, match='provided together'):
+        triton_ops.emulate_signed_hash_kernel_cpu(d_q, p_q, c_q, sh.values.detach(), 64, last_u=lu)
+    with pytest.raises(ValueError, match='out of bounds'):
+        triton_ops.emulate_signed_hash_kernel_cpu(
+            d_q, p_q, c_q, sh.values.detach(), 64, last_u=lu, cum_thresh=ct, u=4
+        )
+    # Verify extra_parity_fn rejects lazy mismatch even when non-lazy parity passes:
+    _, bad_lazy_rep = triton_ops.evaluate_kernel_gate(
+        'signed_hash_lookup',
+        lambda: out_eval,
+        lambda: out_eval,
+        device='cpu',
+        strict=False,
+        measured_times_ms=(0.1, 1.0),
+        extra_parity_fn=lambda: (lazy_ref, lazy_ref + 1.0),
+    )
+    assert bad_lazy_rep.enabled is False
+    assert bad_lazy_rep.status == 'rejected_parity_failure'
+
+
+def test_m5_r2_checkpoint_scale_provenance_and_m3_m4_gate_enforcement(tmp_path):
+    """Regression suite for M5-R2-BUG-3 (#78): scaled checkpoints cannot bypass M3/M4 or mix scales."""
+    from unittest.mock import patch
+    from edraft import eval_closed_loop, train
+    from edraft.features import HiddenProjection
+
+    torch.manual_seed(11)
+    E = torch.nn.functional.normalize(torch.randn(16, 4), dim=-1)
+    # Also verify scale_adapter_inplace works when grad is enabled on leaf nn.Parameters:
+    ad_leaf = DenseAdapter(E, 6, 4, sparse=SignedHash(64), M_sparse=4)
+    with torch.no_grad():
+        ad_leaf.W.fill_(2.0)
+        ad_leaf.sparse.values.fill_(1.0)
+    train.scale_adapter_inplace(ad_leaf, 0.25)
+    assert float(ad_leaf.W.detach()[0, 0]) == pytest.approx(0.5)
+    assert float(ad_leaf.sparse.values.detach()[0]) == pytest.approx(0.25)
+
+    proj = HiddenProjection(
+        matrix=torch.randn(6, 8),
+        mean=torch.zeros(6),
+        std=torch.ones(6),
+        metadata={'p': 6},
+    )
+    proj_path = tmp_path / 'h_proj.pt'
+    proj.save(proj_path)
+    proj_sha = eval_closed_loop.file_sha256(proj_path)
+    env = json.loads((eval_closed_loop.ROOT / 'artifacts/environment.json').read_text())
+    revs = [env['model_artifacts'][n]['revision'] for n in ('Qwen/Qwen3-8B', 'z-lab/Qwen3-8B-DFlash-b16')]
+
+    m2_identity = 'gated_m2_fit_identity_r2'
+    rep = {
+        'model_pair': ['Qwen/Qwen3-8B', 'z-lab/Qwen3-8B-DFlash-b16'],
+        'model_revisions': revs,
+        'frozen_artifacts': {'hidden_projection_sha256': proj_sha},
+    }
+    (tmp_path / 'm2').mkdir(parents=True)
+    for stage_label in ('dense', 'dense_sparse'):
+        sp = SignedHash(64) if stage_label == 'dense_sparse' else None
+        ad = DenseAdapter(E, 6, 4, sparse=sp, M_sparse=4)
+        with torch.no_grad():
+            ad.W.fill_(1.0)
+            ad.A.fill_(0.5)
+            ad.b.fill_(0.25)
+            if sp is not None:
+                ad.sparse.values.fill_(0.75)
+        ckpt = {
+            'schema_version': 1,
+            'scale': 'reference',
+            'identity': m2_identity,
+            'stage': stage_label,
+            'epoch': 2,
+            'next_batch': 0,
+            'adapter_state': {k: v.clone() for k, v in ad.state_dict().items()},
+            'adapter_config': {'p': 6, 'r': 4, 'D': 4, 'M_sparse': 4, 'sparse_capacity': 64 if sp else None},
+            'report': rep,
+            'adapter_version': f'v_{stage_label}',
+        }
+        torch.save(ckpt, tmp_path / 'm2' / f'{stage_label}.pt')
+
+    (tmp_path / 'm2.json').write_text(json.dumps({'status': 'passed', 'scale': 'reference', 'identity': m2_identity}))
+    for prior in ('m3', 'm4'):
+        (tmp_path / prior).mkdir(parents=True)
+        (tmp_path / prior / 'summary.json').write_text(json.dumps({'status': 'complete', 'scale': 'reference'}))
+
+    scaled_d_0p2 = tmp_path / 'dense_0p2.pt'
+    scaled_s_0p2 = tmp_path / 'sparse_0p2.pt'
+    scaled_s_0p8 = tmp_path / 'sparse_0p8.pt'
+    scaled_d_re1 = tmp_path / 'dense_0p2_times_5.pt'
+    scaled_s_re1 = tmp_path / 'sparse_0p2_times_5.pt'
+    train.scale_adapter_checkpoint(tmp_path / 'm2/dense.pt', scaled_d_0p2, 0.2)
+    train.scale_adapter_checkpoint(tmp_path / 'm2/dense_sparse.pt', scaled_s_0p2, 0.2)
+    train.scale_adapter_checkpoint(tmp_path / 'm2/dense_sparse.pt', scaled_s_0p8, 0.8)
+    train.scale_adapter_checkpoint(scaled_d_0p2, scaled_d_re1, 5.0)
+    train.scale_adapter_checkpoint(scaled_s_0p2, scaled_s_re1, 5.0)
+
+    class DummyBackend:
+        block_size = 5
+        stop_token_ids = [15]
+
+        class tokenizer:
+            chat_template = 'tpl'
+            special_tokens_map = {}
+
+            class backend_tokenizer:
+                @staticmethod
+                def to_str():
+                    return '{}'
+
+            @staticmethod
+            def get_vocab():
+                return {'a': 0}
+
+        class target:
+            dtype = torch.bfloat16
+
+            class config:
+                max_position_embeddings = 256
+
+                @staticmethod
+                def to_dict():
+                    return {'v': 16}
+
+            class generation_config:
+                @staticmethod
+                def to_dict():
+                    return {}
+
+    def make_args(stage, d_ckpt, s_ckpt, ckpt_scale=None):
+        p = eval_closed_loop.common_parser('repro')
+        p.add_argument('--stage', default=stage)
+        p.add_argument('--dense_checkpoint', type=Path, default=d_ckpt)
+        p.add_argument('--sparse_checkpoint', type=Path, default=s_ckpt)
+        p.add_argument('--projection', type=Path, default=proj_path)
+        p.add_argument('--checkpoint_scale', type=float, default=ckpt_scale)
+        return eval_closed_loop.parse_config(p, ['--scale', 'reference', '--device', 'cpu', '--output', str(tmp_path)])
+
+    with patch('edraft.download.fetch_model', return_value=tmp_path), \
+         patch('edraft.backend.ReferenceBackend.from_pretrained', return_value=DummyBackend()):
+        # 3a. M3 and M4 strictly reject scaled checkpoints (including 0.2 * 5.0 round-trip):
+        for bad_stage in ('m3', 'm4'):
+            with pytest.raises(ValueError, match='accepted M2 fit'):
+                eval_closed_loop.EvaluationRunner(make_args(bad_stage, scaled_d_0p2, scaled_s_0p2))
+            with pytest.raises(ValueError, match='accepted M2 fit'):
+                eval_closed_loop.EvaluationRunner(make_args(bad_stage, scaled_d_re1, scaled_s_re1))
+
+        # 3b. M5 rejects mismatched 0.2x dense + 0.8x dense_sparse:
+        with pytest.raises(ValueError, match='same fit identity'):
+            eval_closed_loop.EvaluationRunner(make_args('m5', scaled_d_0p2, scaled_s_0p8))
+
+        # 3c. M5 accepts matched 0.2x pair and CLI --checkpoint_scale 0.2 with is_m5_custom_checkpoint == True:
+        r_file = eval_closed_loop.EvaluationRunner(make_args('m5', scaled_d_0p2, scaled_s_0p2))
+        assert r_file.is_m5_custom_checkpoint is True
+        r_cli = eval_closed_loop.EvaluationRunner(
+            make_args('m5', tmp_path / 'm2/dense.pt', tmp_path / 'm2/dense_sparse.pt', ckpt_scale=0.2)
+        )
+        assert r_cli.is_m5_custom_checkpoint is True
+        assert float(r_cli.dense.W.detach()[0, 0]) == pytest.approx(0.2)
+
+        # Unscaled gated M2 checkpoints (and explicit no-op --checkpoint_scale 1.0) remain False:
+        r_m2 = eval_closed_loop.EvaluationRunner(
+            make_args('m5', tmp_path / 'm2/dense.pt', tmp_path / 'm2/dense_sparse.pt', ckpt_scale=1.0)
+        )
+        assert r_m2.is_m5_custom_checkpoint is False
+
+
+
