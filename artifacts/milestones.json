@@ -152,7 +152,16 @@
     "pid": 2882467,
     "exec_session_id": 93943,
     "started_at_utc": "2026-11-14T00:04:21.743103+00:00",
-    "configuration": "predeclared CLI defaults; one epoch per required phase"
+    "configuration": "predeclared CLI defaults; one epoch per required phase",
+    "intermediate_dense_dev": {
+      "observed_at_utc": "2026-11-14T00:27:00.519+00:00",
+      "epoch": 1,
+      "weighted_mean_kl": 2.018092362937402,
+      "baseline_weighted_mean_kl": 1.168452997781549,
+      "relative_improvement_over_zero": -0.7271489454595071,
+      "extra_dense_epochs_stopped": true,
+      "status": "intermediate; full dense split evaluation and sparse phase pending"
+    }
   },
   "M3": {
     "status": "not_run"

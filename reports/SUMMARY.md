@@ -1,8 +1,9 @@
 # Research status
 
 As of 2026-11-14, reference M0, M1-pre, M1a, and M1b have **passed**. Reference M2
-offline fitting is **running**; reference M3 and M4 are **not_run**. There is no measured
-conclusion about adapter quality, online adaptation, or end-to-end speed yet.
+offline fitting is **running**; reference M3 and M4 are **not_run**. The completed
+dense epoch worsened offline dev loss; final fitting results, closed-loop quality,
+online adaptation, and end-to-end speed are still pending.
 Synthetic tests and smoke results do not satisfy the real reference gates.
 
 | Milestone | Reference status | Evidence or remaining work |
@@ -100,11 +101,17 @@ settings, so their feature and acceptance differences do not isolate a causal
 effect of thinking or output length. Long-thinking feature shift does not appear
 as a higher standardized outlier rate in these measurements.
 
-M2 is now fitting only the primary standard train traces; long-thinking traces
-remain reserved for evaluation. Progress is logged in
-[m2-reference.log](../artifacts/m2-reference.log). Completed reference adapter
-losses, quality gains, and speed results are pending. The planned M3/M4 timing
-retains full held-out prompt coverage and fresh matched baseline measurements.
+M2 is fitting only the primary standard train traces; long-thinking traces
+remain reserved for evaluation. After the single predeclared dense epoch, dev
+weighted grouped KL rose from **1.16845 to 2.01809**, a **72.7% deterioration**.
+Values remain finite. This negative intermediate result triggered the under-1%
+rule stopping extra dense epochs. The required bias/sparse phase remains pending;
+no settings or optimizer state were changed in response. Complete train/test
+comparisons and final fitting results will determine the reported offline outcome.
+Progress is recorded in [NOTES.md](../NOTES.md); the process log is
+[m2-reference.log](../artifacts/m2-reference.log). Closed-loop quality and speed
+results are pending. The planned M3/M4 timing retains full held-out prompt coverage
+and fresh matched baseline measurements.
 
 All 222 CPU tests pass. Complete M3 and M4 smoke runs also pass, including verified
 baseline reuse, direct greedy comparisons, fresh isolated timing, sparse norms,
