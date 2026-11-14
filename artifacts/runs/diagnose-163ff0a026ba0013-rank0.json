@@ -23,20 +23,20 @@
     "outlier_threshold": 5.0,
     "workers": 8
   },
-  "project_git_commit": "0cb50a863037c8105cfa2bb9a72ba83cadc07386",
+  "project_git_commit": "4b9c3c6dd157dc1fd762924e15c81635e8d1224c",
   "git_dirty": true,
-  "source_tree_sha256": "c6a09ae5ef9ca7b61273ac5034d0f7f36b8eeafea50645e44dddecf7bbc7e96e",
+  "source_tree_sha256": "6af5b4dcff1bde28f860137cd929e0ad8151714a7466767eb0ca6b9005398480",
   "source_files_sha256": {
     "src/edraft/__init__.py": "23a9df4a3e6afe2c976090479dccaaaed2f9224c606b557ef8d73b001b6123b5",
     "src/edraft/adapter.py": "b8960babc3f3b126a11e1f990ef144b2a9be6331a181bdbeea3da2f4c0c5b9d5",
     "src/edraft/backend.py": "7f9b59880136f5de0ff63ce6b13e8351d81f3f2b15eaeac0a8a365f6a7a5ee78",
     "src/edraft/bench_adapter.py": "8107e239feaabd8fc59537c398647cc7cd73bd0d188798cb74ab61e7cdc6d79a",
     "src/edraft/bench_grouped.py": "b2db348dd76a18e9920f10063f63fa0138fa1900c8a1b7f0852e41917317cc61",
-    "src/edraft/collect.py": "e8c1d984c9a259f33769e0c87057b7773b89cacc24def3521d6c55ea4bf2df62",
+    "src/edraft/collect.py": "b1c4b64ec08727b9ee2a353c8e5b9c25c7bb5d6d80c7a768d2588499bc98207f",
     "src/edraft/dflash_loop.py": "06001ce2fd529475e1c31e3aa2bfae69d203e70d72ab2a09b41ad794d8fa60d2",
-    "src/edraft/diagnose.py": "371dada16bf41510c02a99954c9f1e96c8b36370f0a5967f061a6dc19b06d013",
+    "src/edraft/diagnose.py": "bf10bb17b3a26872591407f634f1948a492badf3731e2ad4e92312bb828584ff",
     "src/edraft/download.py": "013d796de195dd38858e5cdaee597443c1228835a07e6cc2cfd47847ef127977",
-    "src/edraft/eval_closed_loop.py": "1032e04bf097ea623bd729f2a6e2cf4846366296e9f8795766f0b4312dde5b62",
+    "src/edraft/eval_closed_loop.py": "23114ad8091af90ec902a6b556d3a21c2106de0dfc249bc5f661081fdf9c0556",
     "src/edraft/features.py": "adfbfa21ab6622f730df33513142c65a7d3c5adc6079ddb7f444d6471e5a6bff",
     "src/edraft/investigate_m0.py": "ead0c8e6abff9932455d34186652e3ca787b7da6d01e36242ee36d6a8095bbb8",
     "src/edraft/launch.py": "9daaa032d00cc18a615c76184369028195f4b85c484e952536043b74d5f69233",
@@ -53,8 +53,8 @@
     "src/edraft/train.py": "a859ba54cf2410c659b45ceb97c08364353a1cce1949d35bb70339342bf9526e",
     "src/edraft/verify.py": "0f664b84a4dbe963432386b5d8732aff112271ef341422eda254da08f39f3fea"
   },
-  "started_at_unix": 1794614201.8703084,
+  "started_at_unix": 1794622122.8845782,
   "rank": 0,
-  "pid": 2880094,
+  "pid": 2943519,
   "visible_devices": ""
 }

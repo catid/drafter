@@ -6,10 +6,10 @@ experiment specification is [prompt.md](prompt.md). M0 and all three M1 stages
 have passed at reference scale. M2 fitting and independent artifact validation
 are complete: both fitted adapters worsened grouped KL on train, dev, and test.
 The final dense+sparse dev loss is 76.3% above zero-weight DFlash; extra fitting
-stopped under the specified rule. M3 development selection is stopped for a
-confirmed repetition-detector correction. One earlier M1 long-test output also
-needs exclusion from primary summaries; those diagnostics are being regenerated.
-M3 test evaluation and timing, and the M4 experiments, remain pending.
+stopped under the specified rule. A repetition-detector correction excluded one
+M1 long-test loop from primary summaries; the complete regenerated reports and
+M2 artifact checks passed. Fresh M3 development selection is running. M3 test
+evaluation and timing, and the M4 experiments, remain pending.
 No adapter improvement or end-to-end speedup claim is established. See
 [the research summary](reports/SUMMARY.md) and
 [milestone status](artifacts/milestones.json) for the recorded evidence.
@@ -181,6 +181,12 @@ Accepted length counts verified draft proposals, excluding replacement and bonus
 tokens. Verification precedes EOS trimming, so a terminal block can count accepted
 proposals beyond the emitted EOS. Output length, tokens/sec, and target forwards
 per generated token use the actual committed output after trimming.
+
+Repetition diagnostics check exact cycles of any period with at least four
+repetitions. A run must cover at least 256 tokens and half the output, or satisfy
+the separately recorded n-gram rule, to trigger exclusion from primary long-output
+analysis. Reports recompute these derived flags from stored output tokens while
+preserving the original trace metadata and recording changed classifications.
 
 Restart an interrupted command with the same configuration. Completed collection
 and evaluation jobs are reused; keep collection GPU order and worker count fixed

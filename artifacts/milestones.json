@@ -64,7 +64,7 @@
       "artifacts/m1_audit.json",
       "artifacts/collection-processes.json"
     ],
-    "audit_sha256": "f5bbaa23b13db411069f29d19185d7a481b63007fde5183d4ab3bea3204c5279",
+    "audit_sha256": "d25db4b425bb1de84a8901c1624283b882075307bcb28b1222e3080ce8d61dd7",
     "requirements": {
       "primary_train_floor": true,
       "each_primary_temperature_floor": true,
@@ -111,7 +111,12 @@
     "shards": 2184,
     "serialized_head_checks": 16,
     "long_generations": 44,
-    "repetition_diagnostics_status": "correction_pending; one long test output must be excluded from primary summaries"
+    "repetition_diagnostics_status": "corrected_and_validated",
+    "corrected_at_utc": "2026-11-14T02:15:26.518593+00:00",
+    "repetition_excluded_long_test": 1,
+    "primary_long_test_generations": 31,
+    "primary_long_test_above_8K": 24,
+    "primary_long_test_above_16K": 2
   },
   "M1b": {
     "status": "passed",
@@ -134,12 +139,17 @@
       "artifacts/diagnostic_reference.json",
       "artifacts/m1b_validation.json"
     ],
-    "diagnostic_report_sha256": "5830c3b2d936240b0a2ee320cb8db9b47701221fe7f851356f96b8b406f8b950",
-    "diagnostic_groups": 106,
+    "diagnostic_report_sha256": "857e048f6f4a91310ace919e5dabcfb0ad5bb74acd794600c75794e2b84fee6c",
+    "diagnostic_groups": 128,
     "source_shards": 2184,
     "elapsed_seconds": 312.9597408771515,
     "ready_for_M2": true,
-    "repetition_diagnostics_status": "correction_pending; one long test output must be excluded from primary summaries"
+    "repetition_diagnostics_status": "corrected_and_validated",
+    "corrected_at_utc": "2026-11-14T02:15:26.518593+00:00",
+    "correction_validation": "artifacts/m1b_validation.json",
+    "correction_execution": "artifacts/repetition_detector_review/m1_correction_execution.json",
+    "corrected_diagnosis_launch_to_final_log_seconds": 331.078172,
+    "correction_validation_elapsed_seconds": 57.84249703702517
   },
   "M2": {
     "status": "passed",
@@ -253,21 +263,29 @@
         "dense_sparse": 3.0154879521523266
       }
     },
-    "repetition_correction_scope": "Fit/data/checkpoints remain unchanged; main artifact validator must rebind corrected M1 derived reports after regeneration."
+    "repetition_correction_scope": "Complete report/checkpoints and six fitting modules unchanged; renewed main validator passed with corrected M1 report hashes.",
+    "current_validation_sha256": "e73c573814df719d6c61482f619a3d0c0027caca0bea4b014fa95bd9c5b48772"
   },
   "M3": {
-    "status": "stopped_for_correction",
-    "current_phase": "repetition detector fix before development selection",
-    "driver_pid": 2921664,
-    "exec_session_id": 51502,
-    "started_at_utc": "2026-11-14T01:35:09.965258+00:00",
+    "status": "running",
+    "current_phase": "fresh development selection after repetition correction",
+    "driver_pid": 2946860,
+    "exec_session_id": 12898,
+    "started_at_utc": "2026-11-14T02:16:38.558762+00:00",
     "continuation_state": "artifacts/reference_continuation_state.json",
     "required_evaluation_requests": 1920,
     "required_timing_requests": 5760,
     "required_profile_requests": 1920,
     "interruption_evidence": "artifacts/repetition_detector_review/interruption.json",
-    "driver_terminal_exit_code": 1,
-    "child_terminal_exit_code": -15
+    "child_pid": 2946875,
+    "correction_restart_preparation": "artifacts/repetition_detector_review/continuation_restart_preparation.json",
+    "previous_attempt_terminal": {
+      "driver_pid": 2921664,
+      "child_pid": 2921703,
+      "driver_exit_code": 1,
+      "child_exit_code": -15,
+      "reason": "intentional stop for confirmed detector defect; evidence preserved"
+    }
   },
   "M4": {
     "status": "not_run"

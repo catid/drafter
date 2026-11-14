@@ -1,16 +1,18 @@
 # Research status
 
-Correction in progress: the repetition detector missed exact cycles longer than
-64 tokens. A capped M3 dev output and one M1 long-test output are confirmed
-pathological loops. M3 has been stopped; the M1 long-condition summaries below
-still reflect the old rule and must be regenerated before use. Raw traces and
-trained M2 checkpoints are preserved. See the
-[confirmed evidence](../artifacts/repetition_detector_review/evidence.json).
+The repetition detector now checks exact cycles of any eligible length while
+preserving the four-cycle minimum and 50% dominance threshold. Corrected M1
+reports exclude one pathological long-test output; all raw traces and trained M2
+checkpoints are preserved. A capped M3 dev loop exposed the defect, and those
+development comparisons have restarted under the corrected implementation.
+See the [confirmed evidence](../artifacts/repetition_detector_review/evidence.json)
+and [correction validation](../artifacts/repetition_detector_review/m1_correction_validation.json).
 
 As of 2026-11-14, reference M0, M1-pre, M1a, M1b, and the M2 protocol have **passed**.
 M2 produced a **negative offline quality result**: dense and dense+bias+sparse
-fitting worsened grouped KL on train, dev, and test. M3 development selection is
-**running**; its test evaluation and isolated timing are pending. M4 is **not_run**.
+fitting worsened grouped KL on train, dev, and test. Fresh M3 development selection
+is **running** after renewed M2 artifact validation; test evaluation and isolated
+timing are pending. M4 is **not_run**.
 Closed-loop quality, online adaptation, and end-to-end speed conclusions remain pending.
 Synthetic tests and smoke results do not satisfy the real reference gates.
 
@@ -19,9 +21,9 @@ Synthetic tests and smoke results do not satisfy the real reference gates.
 | M0 | passed | Upstream/local reproduction and target-only mismatch investigation |
 | M1-pre | passed | 64 train calibration prompts; 22,377 hidden vectors; frozen hidden and token features |
 | M1a | passed | 2,184 checksummed shards; 256,836 blocks; all 12 audit requirements pass |
-| M1b | passed | 106 diagnostic groups from all 2,184 audited shards; source and calibration provenance validated |
+| M1b | passed | 128 corrected diagnostic groups from all 2,184 audited shards; one long-test output separately excluded |
 | M2 | passed (protocol); negative quality | Both epochs, complete split evaluation, sparse accounting, and two validators complete |
-| M3 | in_progress | Dev selection running; four-arm test evaluation and isolated timing pending |
+| M3 | in_progress | Fresh dev selection running; four-arm test evaluation and isolated timing pending |
 | M4 | not_run | Dev selection, five-arm online evaluation, and separate isolated timing pending |
 
 The authoritative status snapshot is
@@ -51,18 +53,27 @@ M1a has collected 501,510 primary train output tokens: 250,790 greedy and 250,72
 at the model-card warped `T=0.7` setting. Standard dev/test and pure-temperature
 diagnostic generations are also collected. The independent long-thinking set has
 12 dev and 32 test generations at `T=0.6, top_k=20, top_p=0.95, min_p=0`, with
-thinking enabled. This is out of distribution for the drafter. Long dev/test outputs
-contain 151,225/361,144 tokens; none are repetition-dominated, and two reached the
-24,576-token cap. All 12 dev and 25 test outputs exceed 8K. Only 2 dev and 3 test
-outputs exceed 16K, so that bin has sparse coverage. No adaptation benefit is
-established by these lengths. See [m1_audit.json](../artifacts/m1_audit.json).
+thinking enabled. This is out of distribution for the drafter. Collected long
+dev/test outputs contain 151,225/361,144 tokens, and two reached the 24,576-token
+cap. The corrected [M1 audit](../artifacts/m1_audit.json) identifies one pathological
+test loop (`math500-long-0346`): a 1,508-token cycle occupies 19,806 tokens.
+Excluding that entire output leaves **12 dev and 31 test primary generations**,
+with 151,225/336,568 tokens. All 12 dev and 24 primary test outputs exceed 8K;
+only 2 dev and 2 primary test outputs exceed 16K, so that bin remains sparse.
+These lengths establish no adaptation benefit.
 
-M1b completed in 313 seconds using eight CPU workers. Its
-[validation record](../artifacts/m1b_validation.json) confirms the ordered source
-paths and checksums, accepted audit, frozen calibration, prompt manifest, and
-recorded source code. The [full diagnostic report](../artifacts/diagnostic_reference.json)
-separates conditions, temperatures, splits, output/context bins, and post-rejection
-teacher positions.
+M1b was regenerated using eight CPU workers in **331.0782 seconds** from launch
+to final log output; the separate validation took **57.8425 seconds**. The
+[execution record](../artifacts/repetition_detector_review/m1_correction_execution.json)
+distinguishes those timings. The
+[correction validator](../artifacts/repetition_detector_review/m1_correction_validation.json)
+passed 16,255 checks covering provenance, trace and M2 byte preservation, and
+reclassification. The [full diagnostic report](../artifacts/diagnostic_reference.json)
+contains 128 groups: all 84 standard and long-dev groups are exactly unchanged;
+22 long-test primary groups were recomputed and 22 repetition-excluded groups
+were added. The excluded output contributes 67,775 logical slots across on-policy
+and teacher positions. The validator did not independently recompute the changed
+bootstrap intervals, feature moments, acceptance summaries, or rejection metrics.
 
 The following plain-DFlash results use the **test split, on-policy positions,
 primary inclusion, and all output offsets**. Overlap is `sum(min(P, q0))` for the
@@ -81,19 +92,19 @@ seed-to-seed variability.
 | Standard greedy | 64 | 5.218 | 0.8517 [0.8442, 0.8587] | 99.843% |
 | Standard recommended: T=0.7, top-k=20, top-p=0.8 | 64 | 4.873 | 0.8413 [0.8332, 0.8491] | 99.824% |
 | Standard pure-temperature T=1 diagnostic | 64 | 4.192 | 0.8183 [0.8077, 0.8282] | 99.830% |
-| Long thinking recommended: T=0.6, top-k=20, top-p=0.95 | 32 | 2.499 | 0.7149 [0.6995, 0.7308] | 99.833% |
+| Long thinking recommended: T=0.6, top-k=20, top-p=0.95 | 31 | 2.411 | 0.7115 [0.6973, 0.7256] | 99.829% |
 
 All listed arms use `min_p=0`. In the recommended standard and long conditions,
-the target's top token has mean draft rank 3.649 and 4.259, respectively. At first
-rejection it lies within the draft top-256 in 98.95% and 99.50% of cases. These
+the target's top token has mean draft rank 3.649 and 4.333, respectively. At first
+rejection it lies within the draft top-256 in 98.95% and 99.49% of cases. These
 coverage measurements describe potential reranking/calibration headroom; they do
 not establish an adapter improvement or its net compute benefit.
 
-Within long-thinking test traces, on-policy overlap is 0.7397 [0.7199, 0.7620]
-at output offsets 4K–8K (31 prompts), and 0.6344 [0.5994, 0.6727] at 8K–16K
-(25 prompts). Later bins include only prompts whose outputs reach those offsets.
-Only three test prompts reach
-16K+, where overlap is 0.6130 [0.5171, 0.7480]; that bin is too sparse for a stable
+Within primary long-thinking test traces, on-policy overlap is 0.7336 [0.7159, 0.7518]
+at output offsets 4K–8K (30 prompts), and 0.6245 [0.5927, 0.6547] at 8K–16K
+(24 prompts). Later bins include only prompts whose outputs reach those offsets.
+Only two primary test prompts reach
+16K+, where overlap is 0.5455 [0.5171, 0.5740]; that bin is too sparse for a stable
 long-context conclusion. The full report also bins realized input-context length
 at 1K, 4K, 8K, 16K, and 32K.
 
@@ -105,7 +116,7 @@ coordinate has absolute value above 5.
 | Condition | Coordinate mean-vector norm | Mean variance / calibration | Median feature L2 norm | Outlier slots |
 | --- | ---: | ---: | ---: | ---: |
 | Standard non-thinking, T=0.7 | 11.302 | 1.347 | 20.839 | 11.389% |
-| Long thinking, T=0.6 | 8.306 | 0.847 | 16.563 | 0.439% |
+| Long thinking, T=0.6 | 8.314 | 0.851 | 16.600 | 0.461% |
 
 Calibration uses GSM8K train prompts, standard test uses held-out HumanEval, and
 long test uses MATH-500. The conditions also differ in thinking mode and sampling
@@ -239,15 +250,19 @@ rerun model losses, regroup raw chunks, or prove every key-to-bucket assignment
 and key's uniqueness. These offline teacher-forced results establish neither
 closed-loop acceptance nor speed.
 
-M3 development selection is running; test evaluation and timing remain pending.
-M4 has not run. Planned M3/M4 timing retains all held-out prompts, three timing
-repeats, a separate full phase-profile pass, and fresh matched baseline measurements.
+Fresh M3 development selection is running after renewed M2 artifact validation;
+test evaluation and timing remain pending. The
+[earlier partial M3 audit](../artifacts/m3_dev_partial_validation_reference.json)
+is historical evidence for eight standard dev bundles under the old detector,
+not validation of the corrected run. M4 has not run. Planned M3/M4 timing retains
+all held-out prompts, three timing repeats, a separate full phase-profile pass,
+and fresh matched baseline measurements.
 Progress is recorded in [NOTES.md](../NOTES.md).
 
-All 243 CPU tests pass. Complete M3 and M4 smoke runs also pass, including verified
+All 263 CPU tests pass. Complete M3 and M4 smoke runs also pass, including verified
 baseline reuse, direct greedy comparisons, fresh isolated timing, sparse norms,
 version boundaries, feature-context linkage, and parallel diagnostic parity;
-see [validation.json](../artifacts/integrity_smoke_pipeline/validation.json).
+see the [current integration validation](../artifacts/repetition_detector_review/integration_final/validation.json).
 The [fresh prompt audit](../artifacts/prompt_followup_audit.json) found and fixed
 a timing-resume integrity gap: completion now requires checksummed raw bundles
 covering every expected timing and phase-profile request. The six fit-hashed M2
