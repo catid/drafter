@@ -151,7 +151,7 @@
     ],
     "pid": 2882467,
     "exec_session_id": 93943,
-    "started_at_utc": "2026-11-14T00:04:21.743103+00:00",
+    "started_at_utc": "2026-11-14T00:03:33.137548+00:00",
     "configuration": "predeclared CLI defaults; one epoch per required phase",
     "intermediate_dense_dev": {
       "observed_at_utc": "2026-11-14T00:27:00.519+00:00",
@@ -179,7 +179,10 @@
           "dense": 2.858797020816987
         }
       }
-    }
+    },
+    "first_status_recorded_at_utc": "2026-11-14T00:04:21.743103+00:00",
+    "run_record": "artifacts/runs/train-23b97943b68176e4-rank0.json",
+    "current_phase": "dense_sparse"
   },
   "M3": {
     "status": "not_run"
