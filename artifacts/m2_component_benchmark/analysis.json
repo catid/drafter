@@ -1,0 +1,108 @@
+{
+  "scope": "sampled component costs and arithmetic sensitivity only; not a measured full-fit forecast",
+  "primary_blocks": {
+    "train": 84310,
+    "dev": 6865,
+    "test": 6344
+  },
+  "batches_per_pass": {
+    "train": 10539,
+    "dev": 859,
+    "test": 793
+  },
+  "default_training_batch_calls": 21078,
+  "default_evaluation_batch_calls": 38291,
+  "cases": [
+    {
+      "name": "train_T0.0",
+      "current_in_memory_ms": 24.705358082428575,
+      "candidate_in_memory_ms": 7.6835728250443935,
+      "estimated_read_validation_ms_per8blocks": 35.63250176781832,
+      "estimated_with_amortized_io_current_ms": 60.33785985024689,
+      "estimated_with_amortized_io_candidate_ms": 43.31607459286271,
+      "estimated_with_amortized_io_speedup": 1.3929669393493218,
+      "estimated_with_amortized_io_fraction_saved": 0.2821078722319736,
+      "current_target_and_repeat_target_overlap_fraction": 0.7013510531487497,
+      "deferred_all_fields_bitwise_equal": true
+    },
+    {
+      "name": "train_T0.7",
+      "current_in_memory_ms": 28.313355054706335,
+      "candidate_in_memory_ms": 8.040355984121561,
+      "estimated_read_validation_ms_per8blocks": 34.904823109910296,
+      "estimated_with_amortized_io_current_ms": 63.21817816461663,
+      "estimated_with_amortized_io_candidate_ms": 42.94517909403186,
+      "estimated_with_amortized_io_speedup": 1.4720669350614524,
+      "estimated_with_amortized_io_fraction_saved": 0.3206830639408021,
+      "current_target_and_repeat_target_overlap_fraction": 0.7296605086763996,
+      "deferred_all_fields_bitwise_equal": true
+    },
+    {
+      "name": "dev_T0.0",
+      "current_in_memory_ms": 30.942125944420695,
+      "candidate_in_memory_ms": 11.046750005334616,
+      "estimated_read_validation_ms_per8blocks": 117.72206863171833,
+      "estimated_with_amortized_io_current_ms": 148.66419457613904,
+      "estimated_with_amortized_io_candidate_ms": 128.76881863705296,
+      "estimated_with_amortized_io_speedup": 1.1545046087217983,
+      "estimated_with_amortized_io_fraction_saved": 0.1338276240342228,
+      "current_target_and_repeat_target_overlap_fraction": 0.6649930950592059,
+      "deferred_all_fields_bitwise_equal": true
+    }
+  ],
+  "gross_whole_fit_savings_sensitivity_minutes": {
+    "evaluation_only": [
+      10.863019654841628,
+      12.93789012352936
+    ],
+    "training_target_preparation_only": [
+      1.3845455960836262,
+      1.626879743230529
+    ],
+    "sum": [
+      12.247565250925254,
+      14.564769866759889
+    ]
+  },
+  "live_fit_seconds_since_run_record": 567.1885724067688,
+  "latest_checkpoint_exists": false,
+  "limits": [
+    "Three batches are not a distributional performance sample; all use the current zero-adapter baseline, not trained or sparse stages.",
+    "Shard read/validation sampled once each from warm OS cache, then amortized assuming sequential traversal of the same shard.",
+    "Gross savings multiply measured per-batch deltas across default counts; sparse/backward/checkpoint/statistics wall costs were not measured.",
+    "Initial baseline has no checkpoint; a restart discards its completed work and any implementation/validation time adds to restart cost.",
+    "CUDA profiler timings are instrumented; only operator counts are compared, and reported latencies come from separate synchronized measurements."
+  ],
+  "recommendation": "Leave current M2 running unchanged. The sampled vectorized whole-fit savings envelope is12.25-14.57minutes gross, leaving only a few minutes after discarding current uncheckpointed work, before safe implementation/validation/restart costs. The bitwise deferred candidate has less gross benefit than already elapsed work. Preserve this candidate/evidence for a separately authorized future implementation.",
+  "restart_break_even": {
+    "live_fit_elapsed_minutes_at_analysis": 10.090391325950623,
+    "latest_checkpoint_exists": false,
+    "formula": "net saved minutes = hypothetical complete-run savings - discarded elapsed work - implementation/validation/restart delay",
+    "vectorized_net_with_zero_extra_delay_minutes": [
+      2.1571739249746305,
+      4.474378540809266
+    ],
+    "vectorized_net_with_5min_delay_minutes": [
+      -2.8428260750253695,
+      -0.5256214591907344
+    ],
+    "vectorized_net_with_10min_delay_minutes": [
+      -7.8428260750253695,
+      -5.525621459190734
+    ],
+    "bitwise_deferred_gross_minutes": [
+      7.07637313028099,
+      7.582554187198791
+    ]
+  },
+  "independent_review": {
+    "reviewer": "sampling_core",
+    "method": "CPU/read-only verification of benchmark script SHA, reported math, operator counts and IO amortization",
+    "passed": true
+  },
+  "scale": "reference",
+  "label": "reference",
+  "measurement_report": "report.json",
+  "result_kind": "arithmetic_estimate",
+  "full_fit_runtime_measurement": "not_run"
+}

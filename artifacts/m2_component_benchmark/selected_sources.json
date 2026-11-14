@@ -1,0 +1,26 @@
+{
+  "scope": "audited primary component benchmark sources, no optimizer updates",
+  "sources": [
+    {
+      "path": "/home/catid/drafter/artifacts/traces/rank0/cdee23a34beed94237390df408eaeaa37c5a2f6956855c0cda03909d7fcc395a.pt",
+      "sha256": "04071e976822f8143ba93923e2688deded098bb8b4a8bfbd141c59a848df02a3",
+      "identity_sha256": "cdee23a34beed94237390df408eaeaa37c5a2f6956855c0cda03909d7fcc395a",
+      "split": "train",
+      "temperature": 0.0
+    },
+    {
+      "path": "/home/catid/drafter/artifacts/traces/rank0/d22f94c5065c61243cd82ade5bf318d6ee065655e5b7a5c22059a3a65cce15c5.pt",
+      "sha256": "9d7276ed5060d7b9e1a888b49f3644ac3489e77bc6018e70cde688c45c4f15f5",
+      "identity_sha256": "d22f94c5065c61243cd82ade5bf318d6ee065655e5b7a5c22059a3a65cce15c5",
+      "split": "train",
+      "temperature": 0.7
+    },
+    {
+      "path": "/home/catid/drafter/artifacts/traces/rank0/675e2be83eaf0d525b8c702d44db0371b5b7fd0ba2bd5e6633cb786ceaf05412.pt",
+      "sha256": "cb79f0eebb36ead93344718b9f29bdb081998a0a2f726ac4d5ddf05efa611a26",
+      "identity_sha256": "675e2be83eaf0d525b8c702d44db0371b5b7fd0ba2bd5e6633cb786ceaf05412",
+      "split": "dev",
+      "temperature": 0.0
+    }
+  ]
+}

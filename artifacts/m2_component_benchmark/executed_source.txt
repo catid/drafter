@@ -1,0 +1,315 @@
+"""Audited-trace component benchmark only; no fitting, optimizer, or quality claim."""
+from __future__ import annotations
+
+import contextlib
+import hashlib
+import json
+import math
+import os
+from pathlib import Path
+import statistics
+import time
+from types import SimpleNamespace
+from unittest.mock import patch
+
+import torch
+
+from edraft import train
+from edraft.adapter import DenseAdapter, union_rest_grouped
+from edraft.bench_adapter import assert_idle, assert_no_external_gpu_processes, measure
+from edraft.runtime import atomic_json, fingerprint, source_provenance
+from edraft.traces import read_shard
+
+ROOT = Path('/home/catid/drafter')
+OUT = ROOT / 'artifacts/m2_component_benchmark'
+EXPECTED_UUID = 'GPU-8704476f-8b1a-ebbb-9fe4-9a4084ae8209'
+SEED, WARMUPS, REPEATS = 2026, 3, 15
+
+
+def packed_targets(blocks, device):
+    ids = [row for block in blocks for row in block['union_ids']]
+    probs = [row for block in blocks for row in block['target_probs_union']]
+    rest = [row for block in blocks for row in block['target_rest_mass']]
+    lengths = [len(row) for row in ids]
+    flat_ids = torch.cat(ids).to(device)
+    flat_probs = torch.cat(probs).to(device)
+    rest = torch.stack(rest).to(device)
+    positions = torch.cat([torch.arange(block['block_length'], dtype=torch.float32) for block in blocks]).to(device)
+    weights = torch.exp(-positions / 5.)
+    return dict(ids=flat_ids.split(lengths), probabilities=flat_probs.split(lengths), rest=rest, weights=weights,
+                flat_ids=flat_ids, flat_probabilities=flat_probs, lengths=lengths)
+
+
+def overlap_current(blocks, q):
+    lower, upper = [], []
+    cursor = 0
+    for block in blocks:
+        ids, probabilities, rest, _ = train.batch_targets([block], q.device)
+        for i in range(block['block_length']):
+            qi = q[cursor + i, ids[i]]
+            lo = float(torch.minimum(probabilities[i], qi).sum())
+            hi = lo + min(float(rest[i]), max(0., 1. - float(qi.double().sum())))
+            lower.append(lo)
+            upper.append(hi)
+        cursor += block['block_length']
+    return lower, upper
+
+
+def overlap_deferred(q, packed):
+    # Identical per-row GPU reductions, with one final host copy instead of 3N.
+    lower, upper = [], []
+    for i, (ids, p) in enumerate(zip(packed['ids'], packed['probabilities'])):
+        qi = q[i, ids]
+        lo = torch.minimum(p, qi).sum()
+        hi = lo.double() + torch.minimum(packed['rest'][i].double(), (1. - qi.double().sum()).clamp_min(0))
+        lower.append(lo.double())
+        upper.append(hi)
+    return torch.stack([torch.stack(lower), torch.stack(upper)]).cpu().tolist()
+
+
+def overlap_vectorized(q, packed):
+    lengths = torch.tensor(packed['lengths'], device=q.device)
+    row = torch.repeat_interleave(torch.arange(len(lengths), device=q.device), lengths,
+                                  output_size=sum(packed['lengths']))
+    qi = q[row, packed['flat_ids']]
+    # FP32 union lower; FP64 complement, matching the reference precision policy.
+    lower = torch.segment_reduce(torch.minimum(packed['flat_probabilities'], qi), 'sum', lengths=lengths)
+    rest_q = (1. - torch.segment_reduce(qi.double(), 'sum', lengths=lengths)).clamp_min(0)
+    upper = lower.double() + torch.minimum(packed['rest'].double(), rest_q)
+    return torch.stack([lower.double(), upper]).cpu().tolist()
+
+
+def empty_sums():
+    return dict(loss=0., weight=0., slots=0, union_overlap_lower=0., grouped_overlap_upper=0.,
+                full_overlap=0., full_top1=0., full_slots=0, full_loss=0., full_grouped_loss=0., full_weight=0.)
+
+
+def live_full_stats(blocks, scores, q_log, q, packed):
+    sums = empty_sums()
+    cursor = 0
+    for block in blocks:
+        K = block['block_length']
+        if 'live_full' in block:
+            rows, log_rows = q[cursor:cursor + K], q_log[cursor:cursor + K]
+            ids = packed['ids'][cursor:cursor + K]
+            probabilities = packed['probabilities'][cursor:cursor + K]
+            rest, weights = packed['rest'][cursor:cursor + K], packed['weights'][cursor:cursor + K]
+            P = block['live_full']['target_probs'].to(q.device)
+            full_kl = (torch.xlogy(P, P) - P * log_rows).sum(-1)
+            grouped = union_rest_grouped(scores[cursor:cursor + K], ids, probabilities, rest, weights)
+            # Preserve every original block-wide FP32 reduction and host sum.
+            sums['full_loss'] += float((full_kl * weights).sum())
+            sums['full_grouped_loss'] += float(grouped)
+            sums['full_weight'] += float(weights.sum())
+            sums['full_overlap'] += float(torch.minimum(P, rows).sum())
+            sums['full_top1'] += int((P.argmax(-1) == rows.argmax(-1)).sum())
+            sums['full_slots'] += K
+        cursor += K
+    return sums
+
+
+def summarize(sums):
+    full = sums['full_slots']
+    return {'loss_mode': 'union_rest_grouped', 'weighted_mean_kl': sums['loss'] / sums['weight'],
+            'weighted_kl_sum': sums['loss'], 'weight_sum': sums['weight'], 'logical_slots': sums['slots'],
+            'union_overlap_lower_bound': sums['union_overlap_lower'] / sums['slots'],
+            'grouped_overlap_upper_bound': sums['grouped_overlap_upper'] / sums['slots'],
+            'live_full_diagnostic': {'logical_slots': full,
+                'mean_overlap': sums['full_overlap'] / full if full else None,
+                'top1_agreement': sums['full_top1'] / full if full else None,
+                'weighted_mean_full_kl': sums['full_loss'] / sums['full_weight'] if full else None,
+                'weighted_mean_grouped_kl': sums['full_grouped_loss'] / sums['full_weight'] if full else None,
+                'full_minus_grouped_kl': (sums['full_loss'] - sums['full_grouped_loss']) / sums['full_weight'] if full else None,
+                'proposal_source': 'same reconstructed full-vocabulary q for both objectives'},
+            'T_train': 1., 'beta_train': 1., 'warpers_used_for_training': False}
+
+
+@torch.no_grad()
+def evaluate_candidate(adapter, blocks, head, bias, args, head_metadata, overlap):
+    l_unit = train.reconstruct_batch(blocks, head, bias, vocab_chunk=args.vocab_chunk,
+                                    output_multiplier=head_metadata.get('output_multiplier', 1.))
+    scores = train.corrected_batch_scores(adapter, blocks, l_unit)
+    packed = packed_targets(blocks, scores.device)
+    loss = union_rest_grouped(scores, packed['ids'], packed['probabilities'], packed['rest'], packed['weights'])
+    q_log = scores.log_softmax(-1)
+    q = q_log.exp()
+    lo, hi = overlap(q, packed)
+    sums = live_full_stats(blocks, scores, q_log, q, packed)
+    sums.update(loss=float(loss), weight=float(packed['weights'].sum()), slots=len(scores))
+    for lower, upper in zip(lo, hi):
+        sums['union_overlap_lower'] += lower
+        sums['grouped_overlap_upper'] += upper
+    return summarize(sums)
+
+
+def report_parity(reference, candidate, path=''):
+    errors = {}
+    for key, value in reference.items():
+        name = path + key
+        other = candidate[key]
+        if isinstance(value, dict):
+            errors.update(report_parity(value, other, name + '.'))
+        elif isinstance(value, (int, float)) and not isinstance(value, bool):
+            error = abs(value - other)
+            if not math.isclose(value, other, rel_tol=2e-6, abs_tol=2e-7):
+                raise AssertionError((name, value, other, error))
+            errors[name] = error
+        else:
+            assert value == other, (name, value, other)
+    return errors
+
+
+def profile_once(function, path):
+    torch.cuda.synchronize()
+    with torch.profiler.profile(activities=[torch.profiler.ProfilerActivity.CPU, torch.profiler.ProfilerActivity.CUDA]) as profile:
+        function()
+        torch.cuda.synchronize()
+    profile.export_chrome_trace(str(path))
+    names = ('to', 'copy', 'synchronize', 'local_scalar', 'memcpy', 'item', 'minimum', 'segment_reduce')
+    return [{'name': event.key, 'count': event.count, 'cpu_time_total_us': event.cpu_time_total,
+             'device_time_total_us': event.device_time_total}
+            for event in profile.key_averages() if any(name in event.key.lower() for name in names)]
+
+
+def main():
+    if os.environ.get('CUDA_VISIBLE_DEVICES') != EXPECTED_UUID:
+        raise RuntimeError('This component benchmark is authorized only on physical GPU1 UUID')
+    device = torch.device('cuda:0')
+    inventory = assert_idle(device)
+    torch.set_num_threads(1)
+    torch.manual_seed(SEED)
+    audit_path = ROOT / 'artifacts/m1_audit.json'
+    audit = json.loads(audit_path.read_text())
+    assert audit['status'] == 'passed' and audit['scale'] == 'reference'
+    accepted = {row['path']: row for row in audit['source_shards']}
+    selection = json.loads((OUT / 'selected_sources.json').read_text())['sources']
+    source_before = source_provenance()
+    live_record = json.loads((ROOT / 'artifacts/runs/train-23b97943b68176e4-rank0.json').read_text())
+    for name in ('src/edraft/train.py', 'src/edraft/adapter.py', 'src/edraft/traces.py'):
+        assert source_before['source_files_sha256'][name] == live_record['source_files_sha256'][name]
+    sources, cases, loading = [], [], []
+    for item in selection:
+        assert accepted[item['path']]['sha256'] == item['sha256']
+        begin = time.perf_counter()
+        payload = read_shard(item['path'])
+        loading.append({'path': item['path'], 'read_validate_wall_ms': (time.perf_counter() - begin) * 1000,
+                        'whole_shard_blocks': len(payload['blocks']), 'bytes': Path(item['path']).stat().st_size})
+        assert train.file_digest(item['path']) == item['sha256']
+        blocks = payload['blocks'][:8]
+        assert all(train.primary_eligible(block) for block in blocks)
+        name = f"{item['split']}_T{item['temperature']}"
+        cases.append((name, blocks))
+        sources.append(dict(item, block_indices=list(range(8))))
+    head_metadata = cases[0][1][0]['draft_lm_head']
+    assert all(block['draft_lm_head'] == head_metadata for _, blocks in cases for block in blocks)
+    head, bias = train.load_frozen_head(head_metadata, device)
+    feature_path = ROOT / 'artifacts/token_features.pt'
+    feature = torch.load(feature_path, map_location='cpu', weights_only=True)
+    E = feature['E'].to(device, dtype=torch.float32)
+    adapter = DenseAdapter(E, cases[0][1][0]['h'].shape[1], 4, M_sparse=256).eval()
+    adapter.requires_grad_(False)
+    args = SimpleNamespace(batch_blocks=8, vocab_chunk=8192)
+    report = {'status': 'running', 'scope': 'component benchmark on audited traces and exact frozen head; zero baseline adapter; no optimizer updates or model-quality claims',
+              'config': {'seed': SEED, 'warmups': WARMUPS, 'repeats': REPEATS, 'batch_blocks': 8, 'vocab_chunk': 8192,
+                         'cpu_threads': torch.get_num_threads(), 'physical_gpu': 1, 'visible_devices': EXPECTED_UUID,
+                         'torch_version': torch.__version__, 'cuda_version': torch.version.cuda,
+                         'tf32_matmul': torch.backends.cuda.matmul.allow_tf32, 'dtype': str(head.dtype)},
+              'pid': os.getpid(), 'inventory': inventory, 'source_provenance': source_before,
+              'benchmark_script_sha256': train.file_digest(__file__), 'audit_sha256': train.file_digest(audit_path),
+              'features_sha256': train.file_digest(feature_path), 'head_metadata': head_metadata,
+              'audited_sources': sources, 'source_read_validation': loading, 'live_fit_pid': live_record['pid'],
+              'live_source_hashes_match': True, 'cases': []}
+    atomic_json(OUT / 'report.json', report)
+    for case_name, blocks in cases:
+        print(f'Benchmarking {case_name}: {len(blocks)} blocks; {sum("live_full" in b for b in blocks)} live-full blocks', flush=True)
+        assert_no_external_gpu_processes(device)
+        with torch.no_grad():
+            l_unit = train.reconstruct_batch(blocks, head, bias, vocab_chunk=8192,
+                                             output_multiplier=head_metadata.get('output_multiplier', 1.))
+            scores = train.corrected_batch_scores(adapter, blocks, l_unit)
+            q_log = scores.log_softmax(-1)
+            q = q_log.exp()
+            packed = packed_targets(blocks, device)
+            old = train.batch_targets(blocks, device)
+            for left, right in zip(old[:3], (packed['ids'], packed['probabilities'], packed['rest'])):
+                assert len(left) == len(right)
+                for a, b in zip(left, right):
+                    assert torch.equal(a, b)
+            assert torch.equal(old[3], packed['weights'])
+            old_loss = train.batch_loss(adapter, blocks, l_unit)[0]
+            packed_loss = union_rest_grouped(scores, packed['ids'], packed['probabilities'], packed['rest'], packed['weights'])
+            assert torch.equal(old_loss, packed_loss)
+            old_overlap = overlap_current(blocks, q)
+            deferred_overlap = overlap_deferred(q, packed)
+            vector_overlap = overlap_vectorized(q, packed)
+            assert old_overlap == tuple(deferred_overlap) or list(old_overlap) == deferred_overlap
+            overlap_errors = [max(abs(a - b) for a, b in zip(left, right)) for left, right in zip(old_overlap, vector_overlap)]
+            assert max(overlap_errors) < 2e-6
+            def current_evaluate():
+                with patch.object(train, 'batches', lambda *args, **kwargs: iter([(0, blocks)])):
+                    return train.evaluate(adapter, [], head, bias, args, head_metadata)
+            def deferred_evaluate():
+                return evaluate_candidate(adapter, blocks, head, bias, args, head_metadata, overlap_deferred)
+            def vector_evaluate():
+                return evaluate_candidate(adapter, blocks, head, bias, args, head_metadata, overlap_vectorized)
+            old_report = current_evaluate()
+            deferred_report = deferred_evaluate()
+            vector_report = vector_evaluate()
+            deferred_errors = report_parity(old_report, deferred_report)
+            vector_errors = report_parity(old_report, vector_report)
+            operations = {
+                'reconstruct': lambda: train.reconstruct_batch(blocks, head, bias, vocab_chunk=8192, output_multiplier=head_metadata.get('output_multiplier', 1.)),
+                'corrected_scores': lambda: train.corrected_batch_scores(adapter, blocks, l_unit),
+                'targets_current': lambda: train.batch_targets(blocks, device),
+                'targets_packed': lambda: packed_targets(blocks, device),
+                'grouped_loss_preloaded': lambda: union_rest_grouped(scores, packed['ids'], packed['probabilities'], packed['rest'], packed['weights']),
+                'q_log_exp': lambda: scores.log_softmax(-1).exp(),
+                'overlap_current_including_repeat_targets': lambda: overlap_current(blocks, q),
+                'overlap_deferred_preloaded': lambda: overlap_deferred(q, packed),
+                'overlap_vectorized_preloaded': lambda: overlap_vectorized(q, packed),
+                'live_full_preloaded_targets': lambda: live_full_stats(blocks, scores, q_log, q, packed),
+                'evaluate_current_in_memory': current_evaluate,
+                'evaluate_packed_deferred_in_memory': deferred_evaluate,
+                'evaluate_packed_vectorized_in_memory': vector_evaluate,
+            }
+            timings = {}
+            for name, operation in operations.items():
+                timings[name] = measure(operation, device, WARMUPS, REPEATS, SEED)
+            profiles = {}
+            if case_name == cases[0][0]:
+                for name in ('targets_current', 'targets_packed', 'evaluate_current_in_memory', 'evaluate_packed_vectorized_in_memory'):
+                    profiles[name] = profile_once(operations[name], OUT / f'{case_name}-{name}.trace.json')
+            wall = {name: value['synchronized_wall']['median_ms'] for name, value in timings.items()}
+            old_total, new_total = wall['evaluate_current_in_memory'], wall['evaluate_packed_vectorized_in_memory']
+            case = {'name': case_name, 'blocks': len(blocks), 'logical_slots': len(scores), 'vocabulary_size': scores.shape[-1],
+                    'union_lengths': {'min': min(packed['lengths']), 'max': max(packed['lengths']), 'total': sum(packed['lengths'])},
+                    'live_full_blocks': sum('live_full' in b for b in blocks),
+                    'parity': {'target_ids_probabilities_rest_weights_bitwise_equal': True, 'grouped_loss_bitwise_equal': True,
+                               'deferred_per_slot_overlap_bitwise_equal': True, 'vectorized_per_slot_overlap_max_abs_error': overlap_errors,
+                               'deferred_evaluate_abs_errors': deferred_errors, 'vectorized_evaluate_abs_errors': vector_errors,
+                               'report_atol': 2e-7, 'report_rtol': 2e-6, 'passed': True},
+                    'timings': timings, 'profiler_operator_totals': profiles,
+                    'component_fraction_of_current_evaluate': {name: wall[name] / old_total for name in
+                        ('reconstruct', 'corrected_scores', 'targets_current', 'grouped_loss_preloaded', 'q_log_exp',
+                         'overlap_current_including_repeat_targets', 'live_full_preloaded_targets')},
+                    'in_memory_vectorized_speedup': old_total / new_total,
+                    'in_memory_vectorized_fraction_saved': 1 - new_total / old_total,
+                    'in_memory_deferred_speedup': old_total / wall['evaluate_packed_deferred_in_memory']}
+            report['cases'].append(case)
+            atomic_json(OUT / 'report.json', report)
+            print(json.dumps({'case': case_name, 'wall_median_ms': wall, 'vectorized_speedup': old_total / new_total,
+                              'vectorized_parity_max_abs': max(vector_errors.values())}), flush=True)
+        del l_unit, scores, q_log, q, packed, old
+    assert all(not bool(tensor.count_nonzero()) for tensor in (adapter.W, adapter.A, adapter.b))
+    source_after = source_provenance()
+    assert source_before['source_files_sha256'] == source_after['source_files_sha256']
+    assert_no_external_gpu_processes(device)
+    report.update(status='measured', live_training_source_unchanged=True, adapter_zero_parameters_unchanged=True,
+                  optimizer_updates=0, live_fit_process_still_exists=Path(f'/proc/{live_record["pid"]}').exists(),
+                  limitation='In-memory batch medians exclude shard reads/checksums/validation, optimizer/backward, sparse stages and checkpoint/statistics costs. Timings are component measurements, not a full-fit runtime forecast. Segment reductions can change FP32 rounding; deferred reductions preserve per-row operations.')
+    atomic_json(OUT / 'report.json', report)
+    print('COMPONENT BENCHMARK COMPLETE; live M2 unchanged', flush=True)
+
+
+if __name__ == '__main__':
+    main()

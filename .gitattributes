@@ -1,0 +1,2 @@
+# Preserve profiler exports exactly as produced by PyTorch.
+artifacts/**/*.trace.json -whitespace
