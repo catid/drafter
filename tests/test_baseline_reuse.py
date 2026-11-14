@@ -226,6 +226,8 @@ def test_m4_aggregate_acceptance_complete_with_reused_baselines_and_fresh_timing
     assert not before_timing['isolated_timing_complete']
     atomic_json(tmp_path / 'm4' / 'timing.json', {'status': 'complete', 'full_reference_prompt_coverage': True,
                                               'frozen_settings_hash': fingerprint(settings4)})
+    # Isolate acceptance reuse from the independently tested raw-timing gate.
+    monkeypatch.setattr('edraft.eval_closed_loop.audit_timing_evidence', lambda *args: {'status': 'complete'})
     report = aggregate(m4.args, prompts, settings4)
     assert report['status'] == 'complete'
     assert report['baseline_reuse']['reused_requests'] == 16

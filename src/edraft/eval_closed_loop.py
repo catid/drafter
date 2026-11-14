@@ -530,6 +530,7 @@ def comparison_session(runner, mode, configuration):
     args = runner.args
     config = {'configuration': configuration, 'checkpoint_hashes': runner.checkpoint_hashes,
               'model_pair': runner.model_pair, 'model_revisions': runner.model_revisions,
+              'generation_environment': getattr(runner, 'generation_environment', None),
               'generation_caps': generation_caps(args), 'stage': args.stage, 'scale': args.scale,
               'device': str(runner.device), 'visible_devices': os.environ.get('CUDA_VISIBLE_DEVICES'), 'seed': args.seed}
     path = args.output / args.stage / mode / 'sessions' / f'{fingerprint(config)}.json'
@@ -543,12 +544,70 @@ def comparison_session(runner, mode, configuration):
     return path, state, epoch
 
 
-def comparison_bundle(runner, mode, jobs_and_settings, frozen_hash, session_path, session_state, epoch, repeat, profile=False):
-    bundle_key = fingerprint({'jobs': [(job['prompt'], job['arm'], job['sampling_name'], job['seed'], setting) for job, setting in jobs_and_settings],
-                              'repeat': repeat, 'profile': profile})
+def comparison_bundle_key(jobs_and_settings, repeat, profile):
+    return fingerprint({'jobs': [(job['prompt'], job['arm'], job['sampling_name'], job['seed'], setting)
+                                 for job, setting in jobs_and_settings], 'repeat': repeat, 'profile': profile})
+
+
+def read_comparison_bundle(runner, mode, jobs_and_settings, frozen_hash, session_state, repeat, profile=False, manifest=None):
+    """Return only a complete, checksummed, exactly matched all-arm bundle.
+
+    Missing files are an interrupted bundle: callers may rerun every arm together.
+    Contradictory identities or checksums fail explicitly rather than accepting or
+    partially repairing measurements whose provenance is uncertain.
+    """
+    bundle_key = comparison_bundle_key(jobs_and_settings, repeat, profile)
     prior = session_state['bundles'].get(bundle_key)
-    if prior is not None and prior['status'] == 'complete' and all(Path(p).is_file() for p in prior['result_paths']):
-        return [json.loads(Path(path).read_text()) for path in prior['result_paths']]
+    if prior is None or prior.get('status') != 'complete':
+        return None
+    paths = prior.get('result_paths', [])
+    if len(paths) != len(jobs_and_settings) or len(set(paths)) != len(paths):
+        raise ValueError('completed comparison bundle has incorrect result coverage')
+    epoch = prior.get('epoch')
+    if not epoch or epoch not in {item['epoch'] for item in session_state['epochs']}:
+        raise ValueError('completed comparison bundle has an unknown epoch')
+    if not all(Path(path).is_file() for path in paths):
+        return None
+    directory = runner.args.output / runner.args.stage / mode
+    if manifest is None:
+        manifest = Manifest(directory / 'manifest-rank0.json').data
+    rows = []
+    for (job, setting), path in zip(jobs_and_settings, paths):
+        identity = run_identity(runner, job, setting, mode, frozen_hash,
+            session=session_state['logical_session'], repeat=f'{repeat}:epoch={epoch}', profile=profile)
+        expected_path = directory / 'rank0' / f'{fingerprint(identity)}.json'
+        if Path(path).resolve() != expected_path.resolve():
+            raise ValueError('completed comparison bundle result path does not match expected identity')
+        entry = manifest['jobs'].get(fingerprint(identity))
+        if entry is None or entry.get('status') != 'complete':
+            return None
+        if entry.get('identity') != identity or Path(entry.get('result_path', '')).resolve() != expected_path.resolve():
+            raise ValueError('completed comparison manifest identity/path mismatch')
+        payload = Path(path).read_bytes()
+        if not entry.get('result_sha256') or hashlib.sha256(payload).hexdigest() != entry['result_sha256']:
+            raise ValueError('completed comparison result checksum missing or changed')
+        row = json.loads(payload)
+        if row.get('identity') != identity:
+            raise ValueError('completed comparison result identity mismatch')
+        if (row.get('generation', {}).get('complete') is not True
+                or row.get('phase_profile') is not profile or row.get('timing_isolated') is not (mode == 'timing')
+                or row.get('timing_session') != identity['timing_session'] or row.get('repeat') != identity['repeat']):
+            raise ValueError('completed comparison result is incomplete or has mismatched timing/profile metadata')
+        for key, expected in [('arm', job['arm']), ('prompt_id', job['prompt']['prompt_id']),
+                              ('condition', job['prompt']['condition']), ('seed', job['seed']),
+                              ('temperature', job['temperature']), ('sampling_name', job['sampling_name']),
+                              ('sampling_warp_config', asdict(job['warper'])), ('settings', setting)]:
+            if row.get(key) != expected:
+                raise ValueError(f'completed comparison result {key} mismatch')
+        rows.append(row)
+    return rows
+
+
+def comparison_bundle(runner, mode, jobs_and_settings, frozen_hash, session_path, session_state, epoch, repeat, profile=False):
+    bundle_key = comparison_bundle_key(jobs_and_settings, repeat, profile)
+    prior = read_comparison_bundle(runner, mode, jobs_and_settings, frozen_hash, session_state, repeat, profile)
+    if prior is not None:
+        return prior
     # Never reuse only some arms from an interrupted comparison. Every arm is
     # remeasured back-to-back in this invocation's epoch before publishing it.
     rows, paths = [], []
@@ -889,6 +948,83 @@ def evaluate(runner, prompt_manifest, settings):
     return report
 
 
+def timing_schedule(jobs, settings, repeats):
+    groups = defaultdict(list)
+    for job in jobs:
+        groups[(job['prompt']['prompt_id'], job['sampling_name'], job['seed'])].append(job)
+    for group_index, same_prompt_jobs in enumerate(groups.values()):
+        for repeat in range(repeats):
+            offset = (group_index + repeat) % len(same_prompt_jobs)
+            yield repeat, False, [(job, settings['selected'][job['arm']])
+                                  for job in same_prompt_jobs[offset:] + same_prompt_jobs[:offset]]
+        yield 'phase_profile', True, [(job, settings['selected'][job['arm']]) for job in same_prompt_jobs]
+
+
+def audit_timing_evidence(runner, prompt_manifest, settings, report):
+    """CPU-only completion gate over every expected raw timing/profile result."""
+    try:
+        args = runner.args
+        frozen_hash = fingerprint(settings)
+        if (report is None or report.get('status') != 'complete'
+                or report.get('full_reference_prompt_coverage') is not True
+                or report.get('frozen_settings_hash') != frozen_hash):
+            raise ValueError('complete full-population timing report for current settings is missing')
+        if report.get('stage') != args.stage or report.get('scale') != args.scale:
+            raise ValueError('timing report stage/scale mismatch')
+        prompts = select_prompts(prompt_manifest, 'test', args.scale)
+        selected = [prompt for condition in sorted({p['condition'] for p in prompts})
+                    for prompt in prompts if prompt['condition'] == condition]
+        if (report['prompt_ids'] != [p['prompt_id'] for p in selected]
+                or report['expected_full_prompt_count'] != len(prompts)):
+            raise ValueError('timing report prompt coverage mismatch')
+        repeats, warmups = report['repeats'], report['warmups_per_arm_condition']
+        if type(repeats) is not int or repeats < 2 or type(warmups) is not int or warmups < 1:
+            raise ValueError('timing evidence lacks required repeats/warmups')
+        evidence = report['raw_evidence']
+        session_path = Path(evidence['session_path'])
+        session_bytes = session_path.read_bytes()
+        if hashlib.sha256(session_bytes).hexdigest() != evidence['session_sha256']:
+            raise ValueError('timing comparison session checksum changed')
+        session = json.loads(session_bytes)
+        config = session['configuration']
+        expected_path = args.output / args.stage / 'timing' / 'sessions' / f'{fingerprint(config)}.json'
+        if session_path.resolve() != expected_path.resolve() or session['logical_session'] != report['timing_session']:
+            raise ValueError('timing session path/identity mismatch')
+        expected_config = {'configuration': {'frozen_settings_hash': frozen_hash,
+            'prompt_manifest_hash': fingerprint(prompt_manifest), 'selected_prompts': report['prompt_ids'],
+            'repeats': repeats, 'warmups': warmups}, 'checkpoint_hashes': runner.checkpoint_hashes,
+            'model_pair': runner.model_pair, 'model_revisions': runner.model_revisions,
+            'generation_environment': getattr(runner, 'generation_environment', None),
+            'generation_caps': generation_caps(args), 'stage': args.stage, 'scale': args.scale,
+            'device': report['device'], 'seed': args.seed}
+        if any(config.get(key) != value for key, value in expected_config.items()):
+            raise ValueError('timing session configuration mismatch')
+        manifest_path = args.output / args.stage / 'timing' / 'manifest-rank0.json'
+        if Path(evidence['manifest_path']).resolve() != manifest_path.resolve():
+            raise ValueError('timing manifest path mismatch')
+        manifest_bytes = manifest_path.read_bytes()
+        if hashlib.sha256(manifest_bytes).hexdigest() != evidence['manifest_sha256']:
+            raise ValueError('timing manifest checksum changed')
+        manifest = json.loads(manifest_bytes)
+        jobs = evaluation_jobs(selected, args.stage, args.scale, args.seed)
+        counts = {'timing_requests': 0, 'profile_requests': 0, 'bundles': 0}
+        for repeat, profile, comparisons in timing_schedule(jobs, settings, repeats):
+            rows = read_comparison_bundle(runner, 'timing', comparisons, frozen_hash, session,
+                                          repeat, profile, manifest=manifest)
+            if rows is None:
+                raise ValueError('required all-arm timing/profile bundle is incomplete')
+            counts['profile_requests' if profile else 'timing_requests'] += len(rows)
+            counts['bundles'] += 1
+        if (counts['timing_requests'] != len(jobs) * repeats or counts['profile_requests'] != len(jobs)
+                or report['timed_requests'] != counts['timing_requests']
+                or any(evidence.get(key) != value for key, value in counts.items())):
+            raise ValueError('raw timing/profile evidence count mismatch')
+        return {'status': 'complete', **counts, 'session_sha256': evidence['session_sha256'],
+                'manifest_sha256': evidence['manifest_sha256']}
+    except (OSError, ValueError, KeyError, TypeError) as error:
+        return {'status': 'incomplete', 'reason': str(error)}
+
+
 def timing(runner, prompt_manifest, settings):
     args = runner.args
     if args.world_size != 1 or args.rank != 0:
@@ -913,19 +1049,16 @@ def timing(runner, prompt_manifest, settings):
                 job = {'prompt': prompt, 'sampling_name': name, 'temperature': temperature,
                        'warper': warp, 'seed': args.seed, 'arm': arm, 'max_new_tokens_override': 64}
                 runner.run(job, settings['selected'][arm], profile=False)
-    groups = defaultdict(list)
-    for job in jobs:
-        groups[(job['prompt']['prompt_id'], job['sampling_name'], job['seed'])].append(job)
     rows, profiles = [], []
-    for group_index, same_prompt_jobs in enumerate(groups.values()):
-        for repeat in range(args.timing_repeats):
-            offset = (group_index + repeat) % len(same_prompt_jobs)
-            comparisons = [(job, settings['selected'][job['arm']]) for job in same_prompt_jobs[offset:] + same_prompt_jobs[:offset]]
-            rows.extend(comparison_bundle(runner, 'timing', comparisons, frozen_hash, session_path, session_state, epoch, repeat, profile=False))
-        # Phase events add CPU instrumentation overhead. Profile separately so
-        # phase-event creation is not silently charged as adapter computation.
-        comparisons = [(job, settings['selected'][job['arm']]) for job in same_prompt_jobs]
-        profiles.extend(comparison_bundle(runner, 'timing', comparisons, frozen_hash, session_path, session_state, epoch, 'phase_profile', profile=True))
+    bundle_count = 0
+    # Phase events add instrumentation overhead; their separate pass is required
+    # evidence but is never charged as proposal computation in the speed pass.
+    for repeat, profile, comparisons in timing_schedule(jobs, settings, args.timing_repeats):
+        results = comparison_bundle(runner, 'timing', comparisons, frozen_hash,
+                                    session_path, session_state, epoch, repeat, profile=profile)
+        (profiles if profile else rows).extend(results)
+        bundle_count += 1
+    manifest_path = args.output / args.stage / 'timing' / 'manifest-rank0.json'
     full_coverage = len(selected) == len(prompts)
     report = {'scale': args.scale, 'stage': args.stage, 'status': 'complete' if full_coverage else 'pilot_complete',
               'full_reference_prompt_coverage': full_coverage, 'expected_full_prompt_count': len(prompts), 'timing_session': session,
@@ -934,6 +1067,9 @@ def timing(runner, prompt_manifest, settings):
               'device': str(runner.device), 'isolation': 'one process; idle-device check before model load',
               'warmups_per_arm_condition': args.timing_warmups, 'repeats': args.timing_repeats,
               'prompt_ids': [p['prompt_id'] for p in selected], 'timed_requests': len(rows),
+              'raw_evidence': {'session_path': str(session_path.resolve()), 'session_sha256': file_sha256(session_path),
+                               'manifest_path': str(manifest_path.resolve()), 'manifest_sha256': file_sha256(manifest_path),
+                               'timing_requests': len(rows), 'profile_requests': len(profiles), 'bundles': bundle_count},
               'groups': summarize_rows(rows, isolated_timing=True), 'phase_profiles': summarize_rows(profiles, isolated_timing=True),
               'instrumentation_policy': 'Uninstrumented synchronized request wall time for speed; separate same-arm/same-prompt CUDA-event profile runs for phases.',
               'timing_scope': 'all required held-out test prompts and condition-specific seed counts' if full_coverage else 'pilot matched subset; cannot satisfy milestone throughput gate',
@@ -1172,7 +1308,8 @@ def aggregate(args, prompt_manifest, settings):
         rows.append(row)
     timing_path = args.output / args.stage / 'timing.json'
     timed = json.loads(timing_path.read_text()) if timing_path.exists() else None
-    timing_valid = timed is not None and timed.get('status') == 'complete' and timed.get('full_reference_prompt_coverage', False) and timed.get('frozen_settings_hash') == frozen_hash
+    timing_evidence = audit_timing_evidence(runner, prompt_manifest, settings, timed)
+    timing_valid = timing_evidence['status'] == 'complete'
     feature_context = m4_feature_context(args, prompt_manifest, settings, prompts) if args.stage == 'm4' else None
     feature_context_valid = feature_context is None or feature_context['status'] == 'complete'
     greedy_report = greedy_output_report(rows, jobs, args.output)
@@ -1189,6 +1326,7 @@ def aggregate(args, prompt_manifest, settings):
               'feature_context_complete': feature_context_valid if args.stage == 'm4' else None,
               'feature_context': feature_context,
               'isolated_timing_complete': timing_valid, 'timing_report': str(timing_path) if timing_valid else None,
+              'timing_evidence': timing_evidence,
               'external_baselines_not_run': ['full tree-based Token Recycling', 'Test-Time Speculation', 'SharpDraft'],
               'baseline_naming': 'online_bigram is the normalized committed-transition baseline, not full Token Recycling',
               'long_condition': sorted({p['condition'] for p in prompts if p['condition'].startswith('long_')}),

@@ -115,12 +115,14 @@ def test_missing_plain_comparison_is_explicit(tmp_path):
     assert report['completed_comparisons'] < report['expected_comparisons']
 
 
-def test_missing_target_only_coverage_gates_aggregate_even_with_all_arm_outputs(tmp_path):
+def test_missing_target_only_coverage_gates_aggregate_even_with_all_arm_outputs(tmp_path, monkeypatch):
     runner, prompts = make_runner(tmp_path, 'm3'), smoke_manifest()
     settings = frozen_settings(runner)
     evaluate(runner, prompts, settings)
     atomic_json(tmp_path / 'm3' / 'timing.json', {'status': 'complete', 'full_reference_prompt_coverage': True,
                                               'frozen_settings_hash': fingerprint(settings)})
+    # Isolate greedy coverage from the independently tested raw-timing gate.
+    monkeypatch.setattr('edraft.eval_closed_loop.audit_timing_evidence', lambda *args: {'status': 'complete'})
     before = aggregate(runner.args, prompts, settings)
     assert before['status'] == 'complete'
     source = execute_target_only(runner, greedy_job())
@@ -133,7 +135,7 @@ def test_missing_target_only_coverage_gates_aggregate_even_with_all_arm_outputs(
     assert all(row['reference'] == 'target_only' for row in missing['greedy_output_comparisons']['missing_comparisons'])
 
 
-def test_numerical_mismatch_is_reported_without_failing_completed_coverage(tmp_path):
+def test_numerical_mismatch_is_reported_without_failing_completed_coverage(tmp_path, monkeypatch):
     runner, prompts = make_runner(tmp_path, 'm3'), smoke_manifest()
     settings = frozen_settings(runner)
     evaluate(runner, prompts, settings)
@@ -149,6 +151,7 @@ def test_numerical_mismatch_is_reported_without_failing_completed_coverage(tmp_p
     atomic_json(manifest_path, manifest)
     atomic_json(tmp_path / 'm3' / 'timing.json', {'status': 'complete', 'full_reference_prompt_coverage': True,
                                               'frozen_settings_hash': fingerprint(settings)})
+    monkeypatch.setattr('edraft.eval_closed_loop.audit_timing_evidence', lambda *args: {'status': 'complete'})
     report = aggregate(runner.args, prompts, settings)
     assert report['status'] == 'complete'
     assert report['greedy_output_comparisons_complete']

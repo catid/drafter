@@ -1,0 +1,48 @@
+{
+  "status": "passed",
+  "scope": "generic CPU process lifecycle only; not M2/M3/M4 validation",
+  "driver_source_sha256": "798a272ff45774e056c0fbacd41366898ca8b0252b00d0267edd80321c73f5d0",
+  "test_source_sha256": "d2f07ae8314f378a7d82c8de1eae167105b0a3a2a3a0d94543dbeb7b79e0d0cc",
+  "production_state_paths_used": false,
+  "driver_main_invoked": false,
+  "M2_wait_invoked": false,
+  "GPU_queries_or_jobs": false,
+  "cases": {
+    "successful_child": {
+      "status": "passed",
+      "exit_code": 0,
+      "inflight_cleared": true,
+      "pid_and_process_group_recorded": true,
+      "surviving_group_members": 0
+    },
+    "nonzero_fail_stop": {
+      "status": "passed",
+      "exit_code": 7,
+      "inflight_cleared": true,
+      "next_step_started": false,
+      "attempt_count": 1
+    },
+    "inherited_lock": {
+      "status": "passed",
+      "child_confirmed_inherited_fd": true,
+      "parent_descriptor_closed_before_contention": true,
+      "contender_exit_while_child_alive": 73,
+      "contender_exit_after_child": 0
+    },
+    "unresolved_launch_intent": {
+      "status": "passed",
+      "restart_rejected": true,
+      "state_preserved": true,
+      "child_attempts": 0
+    }
+  },
+  "torch_imported": false,
+  "elapsed_seconds": 1.5733287041075528,
+  "driver_messages": [
+    "2026-11-14T00:51:07.379094+00:00 Starting generic_success",
+    "2026-11-14T00:51:07.473258+00:00 Finished generic_success with exit code 0",
+    "2026-11-14T00:51:07.524651+00:00 Starting generic_failure",
+    "2026-11-14T00:51:07.609384+00:00 Starting generic_lock_holder",
+    "2026-11-14T00:51:08.901105+00:00 Finished generic_lock_holder with exit code 0"
+  ]
+}

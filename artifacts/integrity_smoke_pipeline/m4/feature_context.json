@@ -1,0 +1,263 @@
+{
+  "status": "complete",
+  "label": "synthetic",
+  "source": "plain-toy feature context recomputed separately on smoke test prompts",
+  "interpretation": "Synthetic reporting exercise; not evidence of Qwen feature shift and not features from updated adapter arms.",
+  "checkpoint_hashes": {
+    "dense": "551a7a5907538169bf91ad2fb07c74d2c0549f6477fe7412fc7e505d47c59dce",
+    "dense_sparse": "3064fd63be5221bcae96a291b6247c50e6faee648ce6ad5562199675b2be6b54",
+    "projection": "synthetic-calibration-seed-2026",
+    "implementation": "090fcd0a3492eeb37646cd2cdeb9eddccaa429c7d3399fed72b25ce0d5c650da"
+  },
+  "prompt_manifest_hash": "496873fa2eabc179ac17b1621fe87aa80bea6a3ee30b6c72d7c43721bc727610",
+  "calibration_projection_tensor_sha256": "4c5b48b18b61821e48fd3457e1d2fef0028a43171979e61d624dd7c8002d8c3d",
+  "calibration_metadata": {
+    "method": "fixed_seeded_orthogonal_gaussian",
+    "seed": 2026,
+    "p": 6,
+    "d_h": 12,
+    "sample_count": 64,
+    "split": "train",
+    "condition": "standard_nonthinking",
+    "prompt_ids": [],
+    "variance_denominator": "population",
+    "std_floor": 1e-06
+  },
+  "feature_group_count": 4,
+  "groups": [
+    {
+      "condition": "long_thinking",
+      "collection_temperature": 0.6,
+      "sampling_warp_config": {
+        "min_p": 0.0,
+        "top_k": 20,
+        "top_p": 0.95
+      },
+      "split": "test",
+      "axis": "output_offset",
+      "bin": "0-1K",
+      "data_policy": "on_policy",
+      "inclusion": "primary",
+      "logical_slots": 60,
+      "features": {
+        "coordinate_mean_norm": 1.0896447737179418,
+        "variance_ratio_to_standard_calibration": 0.8143789040191748,
+        "calibration_reference": "standardized training-calibration per-coordinate population variance = 1",
+        "l2_norm_quantiles": {
+          "p0": 1.9955413597290876,
+          "p25": 2.3295065726399233,
+          "p50": 2.4707126277786386,
+          "p75": 2.5851262115255307,
+          "p95": 2.775477298168292,
+          "p99": 2.8114521876940706,
+          "p100": 2.8114521876940706
+        },
+        "outlier_threshold_abs_coordinate": 5.0,
+        "outlier_slot_rate": 0.0,
+        "outlier_coordinate_rate": 0.0
+      }
+    },
+    {
+      "condition": "standard_nonthinking",
+      "collection_temperature": 0.0,
+      "sampling_warp_config": {
+        "min_p": 0.0,
+        "top_k": 0,
+        "top_p": 1.0
+      },
+      "split": "test",
+      "axis": "output_offset",
+      "bin": "0-1K",
+      "data_policy": "on_policy",
+      "inclusion": "primary",
+      "logical_slots": 53,
+      "features": {
+        "coordinate_mean_norm": 2.1075483445134995,
+        "variance_ratio_to_standard_calibration": 0.2893884179629425,
+        "calibration_reference": "standardized training-calibration per-coordinate population variance = 1",
+        "l2_norm_quantiles": {
+          "p0": 2.2076387547709553,
+          "p25": 2.419201590159049,
+          "p50": 2.4859670627518162,
+          "p75": 2.5338015647832957,
+          "p95": 2.6101852840111888,
+          "p99": 3.0595230693292352,
+          "p100": 3.1269997688241586
+        },
+        "outlier_threshold_abs_coordinate": 5.0,
+        "outlier_slot_rate": 0.0,
+        "outlier_coordinate_rate": 0.0
+      }
+    },
+    {
+      "condition": "standard_nonthinking",
+      "collection_temperature": 0.7,
+      "sampling_warp_config": {
+        "min_p": 0.0,
+        "top_k": 20,
+        "top_p": 0.8
+      },
+      "split": "test",
+      "axis": "output_offset",
+      "bin": "0-1K",
+      "data_policy": "on_policy",
+      "inclusion": "primary",
+      "logical_slots": 61,
+      "features": {
+        "coordinate_mean_norm": 0.5031869946335311,
+        "variance_ratio_to_standard_calibration": 1.042292375314557,
+        "calibration_reference": "standardized training-calibration per-coordinate population variance = 1",
+        "l2_norm_quantiles": {
+          "p0": 2.1294412078071048,
+          "p25": 2.3454284003114285,
+          "p50": 2.476527993004825,
+          "p75": 2.6643700050968304,
+          "p95": 3.036766027086943,
+          "p99": 3.091934391706151,
+          "p100": 3.092227003707427
+        },
+        "outlier_threshold_abs_coordinate": 5.0,
+        "outlier_slot_rate": 0.0,
+        "outlier_coordinate_rate": 0.0
+      }
+    },
+    {
+      "condition": "standard_nonthinking",
+      "collection_temperature": 1.0,
+      "sampling_warp_config": {
+        "min_p": 0.0,
+        "top_k": 0,
+        "top_p": 1.0
+      },
+      "split": "test",
+      "axis": "output_offset",
+      "bin": "0-1K",
+      "data_policy": "on_policy",
+      "inclusion": "primary",
+      "logical_slots": 59,
+      "features": {
+        "coordinate_mean_norm": 0.45186793723579965,
+        "variance_ratio_to_standard_calibration": 1.081878686990309,
+        "calibration_reference": "standardized training-calibration per-coordinate population variance = 1",
+        "l2_norm_quantiles": {
+          "p0": 2.147961538397369,
+          "p25": 2.42742724640986,
+          "p50": 2.532842729772345,
+          "p75": 2.6269232908742453,
+          "p95": 3.107520932512287,
+          "p99": 3.330040436702462,
+          "p100": 3.346026353726906
+        },
+        "outlier_threshold_abs_coordinate": 5.0,
+        "outlier_slot_rate": 0.0,
+        "outlier_coordinate_rate": 0.0
+      }
+    }
+  ],
+  "condition_bin_coverage": [
+    {
+      "condition": "long_thinking",
+      "collection_temperature": 0.6,
+      "sampling_warp_config": {
+        "min_p": 0.0,
+        "top_k": 20,
+        "top_p": 0.95
+      },
+      "observed_bins": [
+        "0-1K"
+      ],
+      "empty_bins": [
+        "1K-4K",
+        "4K-8K",
+        "8K-16K",
+        "16K+"
+      ],
+      "primary_empty_bins": [
+        "1K-4K",
+        "4K-8K",
+        "8K-16K",
+        "16K+"
+      ],
+      "logical_slots": 60,
+      "feature_group_count": 1
+    },
+    {
+      "condition": "standard_nonthinking",
+      "collection_temperature": 0.0,
+      "sampling_warp_config": {
+        "min_p": 0.0,
+        "top_k": 0,
+        "top_p": 1.0
+      },
+      "observed_bins": [
+        "0-1K"
+      ],
+      "empty_bins": [
+        "1K-4K",
+        "4K-8K",
+        "8K-16K",
+        "16K+"
+      ],
+      "primary_empty_bins": [
+        "1K-4K",
+        "4K-8K",
+        "8K-16K",
+        "16K+"
+      ],
+      "logical_slots": 53,
+      "feature_group_count": 1
+    },
+    {
+      "condition": "standard_nonthinking",
+      "collection_temperature": 0.7,
+      "sampling_warp_config": {
+        "min_p": 0.0,
+        "top_k": 20,
+        "top_p": 0.8
+      },
+      "observed_bins": [
+        "0-1K"
+      ],
+      "empty_bins": [
+        "1K-4K",
+        "4K-8K",
+        "8K-16K",
+        "16K+"
+      ],
+      "primary_empty_bins": [
+        "1K-4K",
+        "4K-8K",
+        "8K-16K",
+        "16K+"
+      ],
+      "logical_slots": 61,
+      "feature_group_count": 1
+    },
+    {
+      "condition": "standard_nonthinking",
+      "collection_temperature": 1.0,
+      "sampling_warp_config": {
+        "min_p": 0.0,
+        "top_k": 0,
+        "top_p": 1.0
+      },
+      "observed_bins": [
+        "0-1K"
+      ],
+      "empty_bins": [
+        "1K-4K",
+        "4K-8K",
+        "8K-16K",
+        "16K+"
+      ],
+      "primary_empty_bins": [
+        "1K-4K",
+        "4K-8K",
+        "8K-16K",
+        "16K+"
+      ],
+      "logical_slots": 59,
+      "feature_group_count": 1
+    }
+  ]
+}

@@ -181,6 +181,12 @@ caps, model revisions, implementation, or checkpoint changes require settings
 that match the new run. A command that finishes with an `incomplete` audit/summary
 has not passed its milestone gate.
 
+Resumed comparison bundles must match their expected identities and checksums.
+Timing completion also validates every required raw timing and phase-profile
+bundle against the recorded session and manifest; summary flags alone cannot
+complete a milestone. Missing evidence leaves timing incomplete, while
+contradictory evidence stops reuse for investigation.
+
 Full scale is a separate opt-in experiment requiring `--scale full
 --allow_large_run`, the larger prompt manifest and collection quotas, and at least
 32 long dev prompts for tuning. It has not run. M5 extensions are optional.

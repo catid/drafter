@@ -117,10 +117,14 @@ Progress is recorded in [NOTES.md](../NOTES.md); the process log is
 results are pending. The planned M3/M4 timing retains full held-out prompt coverage
 and fresh matched baseline measurements.
 
-All 222 CPU tests pass. Complete M3 and M4 smoke runs also pass, including verified
+All 243 CPU tests pass. Complete M3 and M4 smoke runs also pass, including verified
 baseline reuse, direct greedy comparisons, fresh isolated timing, sparse norms,
 version boundaries, feature-context linkage, and parallel diagnostic parity;
-see [validation.json](../artifacts/reuse_smoke_pipeline/validation.json).
+see [validation.json](../artifacts/integrity_smoke_pipeline/validation.json).
+The [fresh prompt audit](../artifacts/prompt_followup_audit.json) found and fixed
+a timing-resume integrity gap: completion now requires checksummed raw bundles
+covering every expected timing and phase-profile request. The active M2 fitting
+sources remain unchanged.
 CPU smoke paths exercise collection, compact grouped-loss fitting, all required
 evaluation arms, and synchronous request-local online updates. Synthetic fitting
 and reference-sized random-tensor microbenchmarks are implementation checks;

@@ -1,0 +1,877 @@
+{
+  "scale": "smoke",
+  "label": "synthetic",
+  "stage": "m4",
+  "arm": "online_bigram",
+  "prompt_id": "synthetic-test-standard_nonthinking-0",
+  "split": "test",
+  "condition": "standard_nonthinking",
+  "seed": 2026,
+  "sampling_name": "pure_temperature_diagnostic",
+  "temperature": 1.0,
+  "sampling_warp_config": {
+    "top_k": 0,
+    "top_p": 1.0,
+    "min_p": 0.0
+  },
+  "settings": {
+    "lambda_tr": 0.05,
+    "alpha": 0.5,
+    "k_ret": null
+  },
+  "effective_beta": 1.0,
+  "verification_rule": "ratio",
+  "model_pair": [
+    "builtin_toy_target",
+    "builtin_parallel_drafter"
+  ],
+  "model_revisions": [
+    "synthetic-v1",
+    "synthetic-v1"
+  ],
+  "input_metadata": {
+    "input_token_ids_sha256": "b373ee423f813fcd0246b5238b2b2c61680bb07712d83204ee97256ffc9490d8",
+    "input_token_count": 4,
+    "enable_thinking": false,
+    "requested_generation_cap": 32,
+    "effective_generation_cap": 32,
+    "generation_environment_sha256": "588e3c69b32771da3c9da7be36341e956acc5ee40a1a1e9bcae3ff7c745fdbb1"
+  },
+  "checkpoint_hashes": {
+    "dense": "551a7a5907538169bf91ad2fb07c74d2c0549f6477fe7412fc7e505d47c59dce",
+    "dense_sparse": "3064fd63be5221bcae96a291b6247c50e6faee648ce6ad5562199675b2be6b54",
+    "projection": "synthetic-calibration-seed-2026",
+    "implementation": "090fcd0a3492eeb37646cd2cdeb9eddccaa429c7d3399fed72b25ce0d5c650da"
+  },
+  "offline_fit_provenance": "four built-in synthetic calibration-train prefixes",
+  "generated_tokens": 32,
+  "elapsed_seconds": 0.0048172990791499615,
+  "generation_loop_elapsed_seconds": 0.0047631419729441404,
+  "tokens_per_second": 6642.72644779335,
+  "latency_scope": "request adapter initialization + tokenizer + generation; excludes reporting/serialization",
+  "mean_accepted_length": 2.5555555555555554,
+  "median_accepted_length": 3,
+  "target_forwards_per_generated_token": 0.28125,
+  "phase_ms": {},
+  "blocks": [
+    {
+      "round_idx": 1,
+      "absolute_output_offset": 0,
+      "input_context_length": 4,
+      "verified_prefix_tail": [
+        1,
+        2,
+        3,
+        7
+      ],
+      "physical_to_logical": {
+        "anchor_physical_index": 0,
+        "logical_to_physical": [
+          1,
+          2,
+          3,
+          4
+        ]
+      },
+      "draft_tokens": [
+        2,
+        1,
+        3,
+        1
+      ],
+      "draft_lm_head": {
+        "artifact_id": "builtin-toy-linear-head",
+        "revision": "synthetic-v1",
+        "dtype": "torch.float32",
+        "bias": true,
+        "tied_weights": false,
+        "hook": "post _normalized, pre draft_lm_head",
+        "weight_shape": [
+          8,
+          12
+        ]
+      },
+      "accepted_length": 1,
+      "first_rejection_index": 1,
+      "replacement_token": 5,
+      "bonus_token": null,
+      "decisions": [
+        true,
+        false
+      ],
+      "proposal_token_probs": [
+        0.2135424166917801,
+        0.4326339662075043,
+        0.07611450552940369,
+        0.6045750975608826
+      ],
+      "target_token_probs": [
+        0.21354243159294128,
+        0.008794290944933891,
+        0.2185238152742386,
+        0.028146782889962196
+      ],
+      "adapter_version": 0,
+      "proposal_mode": "plain_dflash",
+      "verification_rule": "ratio",
+      "collection_temperature": 1.0,
+      "loss_temperature": 1.0,
+      "sampling_warp_config": {
+        "top_k": 0,
+        "top_p": 1.0,
+        "min_p": 0.0
+      },
+      "off_policy_teacher_positions": [
+        2,
+        3
+      ],
+      "committed_tokens": [
+        2,
+        5
+      ],
+      "next_adapter_version": 0
+    },
+    {
+      "round_idx": 2,
+      "absolute_output_offset": 2,
+      "input_context_length": 6,
+      "verified_prefix_tail": [
+        3,
+        7,
+        2,
+        5
+      ],
+      "physical_to_logical": {
+        "anchor_physical_index": 0,
+        "logical_to_physical": [
+          1,
+          2,
+          3,
+          4
+        ]
+      },
+      "draft_tokens": [
+        6,
+        0,
+        0,
+        6
+      ],
+      "draft_lm_head": {
+        "artifact_id": "builtin-toy-linear-head",
+        "revision": "synthetic-v1",
+        "dtype": "torch.float32",
+        "bias": true,
+        "tied_weights": false,
+        "hook": "post _normalized, pre draft_lm_head",
+        "weight_shape": [
+          8,
+          12
+        ]
+      },
+      "accepted_length": 2,
+      "first_rejection_index": 2,
+      "replacement_token": 7,
+      "bonus_token": null,
+      "decisions": [
+        true,
+        true,
+        false
+      ],
+      "proposal_token_probs": [
+        0.20434688031673431,
+        0.23229771852493286,
+        0.30994823575019836,
+        0.12552879750728607
+      ],
+      "target_token_probs": [
+        0.20434686541557312,
+        0.35895586013793945,
+        0.10243506729602814,
+        0.12419971823692322
+      ],
+      "adapter_version": 0,
+      "proposal_mode": "plain_dflash",
+      "verification_rule": "ratio",
+      "collection_temperature": 1.0,
+      "loss_temperature": 1.0,
+      "sampling_warp_config": {
+        "top_k": 0,
+        "top_p": 1.0,
+        "min_p": 0.0
+      },
+      "off_policy_teacher_positions": [
+        3
+      ],
+      "committed_tokens": [
+        6,
+        0,
+        7
+      ],
+      "next_adapter_version": 0
+    },
+    {
+      "round_idx": 3,
+      "absolute_output_offset": 5,
+      "input_context_length": 9,
+      "verified_prefix_tail": [
+        5,
+        6,
+        0,
+        7
+      ],
+      "physical_to_logical": {
+        "anchor_physical_index": 0,
+        "logical_to_physical": [
+          1,
+          2,
+          3,
+          4
+        ]
+      },
+      "draft_tokens": [
+        1,
+        2,
+        1,
+        1
+      ],
+      "draft_lm_head": {
+        "artifact_id": "builtin-toy-linear-head",
+        "revision": "synthetic-v1",
+        "dtype": "torch.float32",
+        "bias": true,
+        "tied_weights": false,
+        "hook": "post _normalized, pre draft_lm_head",
+        "weight_shape": [
+          8,
+          12
+        ]
+      },
+      "accepted_length": 1,
+      "first_rejection_index": 1,
+      "replacement_token": 5,
+      "bonus_token": null,
+      "decisions": [
+        true,
+        false
+      ],
+      "proposal_token_probs": [
+        0.5054329633712769,
+        0.13528476655483246,
+        0.6625844836235046,
+        0.7041438221931458
+      ],
+      "target_token_probs": [
+        0.5110086798667908,
+        0.08283554762601852,
+        0.0060880472883582115,
+        0.10121487826108932
+      ],
+      "adapter_version": 0,
+      "proposal_mode": "plain_dflash",
+      "verification_rule": "ratio",
+      "collection_temperature": 1.0,
+      "loss_temperature": 1.0,
+      "sampling_warp_config": {
+        "top_k": 0,
+        "top_p": 1.0,
+        "min_p": 0.0
+      },
+      "off_policy_teacher_positions": [
+        2,
+        3
+      ],
+      "committed_tokens": [
+        1,
+        5
+      ],
+      "next_adapter_version": 0
+    },
+    {
+      "round_idx": 4,
+      "absolute_output_offset": 7,
+      "input_context_length": 11,
+      "verified_prefix_tail": [
+        0,
+        7,
+        1,
+        5
+      ],
+      "physical_to_logical": {
+        "anchor_physical_index": 0,
+        "logical_to_physical": [
+          1,
+          2,
+          3,
+          4
+        ]
+      },
+      "draft_tokens": [
+        2,
+        5,
+        7,
+        0
+      ],
+      "draft_lm_head": {
+        "artifact_id": "builtin-toy-linear-head",
+        "revision": "synthetic-v1",
+        "dtype": "torch.float32",
+        "bias": true,
+        "tied_weights": false,
+        "hook": "post _normalized, pre draft_lm_head",
+        "weight_shape": [
+          8,
+          12
+        ]
+      },
+      "accepted_length": 3,
+      "first_rejection_index": 3,
+      "replacement_token": 1,
+      "bonus_token": null,
+      "decisions": [
+        true,
+        true,
+        true,
+        false
+      ],
+      "proposal_token_probs": [
+        0.07401170581579208,
+        0.07287246733903885,
+        0.06716769188642502,
+        0.46186453104019165
+      ],
+      "target_token_probs": [
+        0.07451393455266953,
+        0.3224766254425049,
+        0.06805365532636642,
+        0.0771627351641655
+      ],
+      "adapter_version": 0,
+      "proposal_mode": "plain_dflash",
+      "verification_rule": "ratio",
+      "collection_temperature": 1.0,
+      "loss_temperature": 1.0,
+      "sampling_warp_config": {
+        "top_k": 0,
+        "top_p": 1.0,
+        "min_p": 0.0
+      },
+      "off_policy_teacher_positions": [],
+      "committed_tokens": [
+        2,
+        5,
+        7,
+        1
+      ],
+      "next_adapter_version": 0
+    },
+    {
+      "round_idx": 5,
+      "absolute_output_offset": 11,
+      "input_context_length": 15,
+      "verified_prefix_tail": [
+        2,
+        5,
+        7,
+        1
+      ],
+      "physical_to_logical": {
+        "anchor_physical_index": 0,
+        "logical_to_physical": [
+          1,
+          2,
+          3,
+          4
+        ]
+      },
+      "draft_tokens": [
+        0,
+        1,
+        4,
+        1
+      ],
+      "draft_lm_head": {
+        "artifact_id": "builtin-toy-linear-head",
+        "revision": "synthetic-v1",
+        "dtype": "torch.float32",
+        "bias": true,
+        "tied_weights": false,
+        "hook": "post _normalized, pre draft_lm_head",
+        "weight_shape": [
+          8,
+          12
+        ]
+      },
+      "accepted_length": 3,
+      "first_rejection_index": 3,
+      "replacement_token": 6,
+      "bonus_token": null,
+      "decisions": [
+        true,
+        true,
+        true,
+        false
+      ],
+      "proposal_token_probs": [
+        0.14489981532096863,
+        0.4911927878856659,
+        0.07088209688663483,
+        0.49470406770706177
+      ],
+      "target_token_probs": [
+        0.14559505879878998,
+        0.5959725379943848,
+        0.05079905316233635,
+        0.09395933896303177
+      ],
+      "adapter_version": 0,
+      "proposal_mode": "plain_dflash",
+      "verification_rule": "ratio",
+      "collection_temperature": 1.0,
+      "loss_temperature": 1.0,
+      "sampling_warp_config": {
+        "top_k": 0,
+        "top_p": 1.0,
+        "min_p": 0.0
+      },
+      "off_policy_teacher_positions": [],
+      "committed_tokens": [
+        0,
+        1,
+        4,
+        6
+      ],
+      "next_adapter_version": 0
+    },
+    {
+      "round_idx": 6,
+      "absolute_output_offset": 15,
+      "input_context_length": 19,
+      "verified_prefix_tail": [
+        0,
+        1,
+        4,
+        6
+      ],
+      "physical_to_logical": {
+        "anchor_physical_index": 0,
+        "logical_to_physical": [
+          1,
+          2,
+          3,
+          4
+        ]
+      },
+      "draft_tokens": [
+        5,
+        6,
+        4,
+        3
+      ],
+      "draft_lm_head": {
+        "artifact_id": "builtin-toy-linear-head",
+        "revision": "synthetic-v1",
+        "dtype": "torch.float32",
+        "bias": true,
+        "tied_weights": false,
+        "hook": "post _normalized, pre draft_lm_head",
+        "weight_shape": [
+          8,
+          12
+        ]
+      },
+      "accepted_length": 4,
+      "first_rejection_index": 4,
+      "replacement_token": null,
+      "bonus_token": 7,
+      "decisions": [
+        true,
+        true,
+        true,
+        true
+      ],
+      "proposal_token_probs": [
+        0.14019432663917542,
+        0.09307147562503815,
+        0.41180476546287537,
+        0.07692334800958633
+      ],
+      "target_token_probs": [
+        0.1419171392917633,
+        0.19819769263267517,
+        0.30150410532951355,
+        0.1299167275428772
+      ],
+      "adapter_version": 0,
+      "proposal_mode": "plain_dflash",
+      "verification_rule": "ratio",
+      "collection_temperature": 1.0,
+      "loss_temperature": 1.0,
+      "sampling_warp_config": {
+        "top_k": 0,
+        "top_p": 1.0,
+        "min_p": 0.0
+      },
+      "off_policy_teacher_positions": [],
+      "committed_tokens": [
+        5,
+        6,
+        4,
+        3,
+        7
+      ],
+      "next_adapter_version": 0
+    },
+    {
+      "round_idx": 7,
+      "absolute_output_offset": 20,
+      "input_context_length": 24,
+      "verified_prefix_tail": [
+        6,
+        4,
+        3,
+        7
+      ],
+      "physical_to_logical": {
+        "anchor_physical_index": 0,
+        "logical_to_physical": [
+          1,
+          2,
+          3,
+          4
+        ]
+      },
+      "draft_tokens": [
+        5,
+        4,
+        5,
+        1
+      ],
+      "draft_lm_head": {
+        "artifact_id": "builtin-toy-linear-head",
+        "revision": "synthetic-v1",
+        "dtype": "torch.float32",
+        "bias": true,
+        "tied_weights": false,
+        "hook": "post _normalized, pre draft_lm_head",
+        "weight_shape": [
+          8,
+          12
+        ]
+      },
+      "accepted_length": 3,
+      "first_rejection_index": 3,
+      "replacement_token": 4,
+      "bonus_token": null,
+      "decisions": [
+        true,
+        true,
+        true,
+        false
+      ],
+      "proposal_token_probs": [
+        0.08932826668024063,
+        0.06768133491277695,
+        0.05143094062805176,
+        0.5585454106330872
+      ],
+      "target_token_probs": [
+        0.09287944436073303,
+        0.24171902239322662,
+        0.03589086979627609,
+        0.018910160288214684
+      ],
+      "adapter_version": 0,
+      "proposal_mode": "plain_dflash",
+      "verification_rule": "ratio",
+      "collection_temperature": 1.0,
+      "loss_temperature": 1.0,
+      "sampling_warp_config": {
+        "top_k": 0,
+        "top_p": 1.0,
+        "min_p": 0.0
+      },
+      "off_policy_teacher_positions": [],
+      "committed_tokens": [
+        5,
+        4,
+        5,
+        4
+      ],
+      "next_adapter_version": 0
+    },
+    {
+      "round_idx": 8,
+      "absolute_output_offset": 24,
+      "input_context_length": 28,
+      "verified_prefix_tail": [
+        5,
+        4,
+        5,
+        4
+      ],
+      "physical_to_logical": {
+        "anchor_physical_index": 0,
+        "logical_to_physical": [
+          1,
+          2,
+          3,
+          4
+        ]
+      },
+      "draft_tokens": [
+        5,
+        6,
+        6,
+        4
+      ],
+      "draft_lm_head": {
+        "artifact_id": "builtin-toy-linear-head",
+        "revision": "synthetic-v1",
+        "dtype": "torch.float32",
+        "bias": true,
+        "tied_weights": false,
+        "hook": "post _normalized, pre draft_lm_head",
+        "weight_shape": [
+          8,
+          12
+        ]
+      },
+      "accepted_length": 4,
+      "first_rejection_index": 4,
+      "replacement_token": null,
+      "bonus_token": 4,
+      "decisions": [
+        true,
+        true,
+        true,
+        true
+      ],
+      "proposal_token_probs": [
+        0.040845856070518494,
+        0.25109025835990906,
+        0.2066611647605896,
+        0.3212048411369324
+      ],
+      "target_token_probs": [
+        0.03965338319540024,
+        0.2696468234062195,
+        0.08671451359987259,
+        0.27720674872398376
+      ],
+      "adapter_version": 0,
+      "proposal_mode": "plain_dflash",
+      "verification_rule": "ratio",
+      "collection_temperature": 1.0,
+      "loss_temperature": 1.0,
+      "sampling_warp_config": {
+        "top_k": 0,
+        "top_p": 1.0,
+        "min_p": 0.0
+      },
+      "off_policy_teacher_positions": [],
+      "committed_tokens": [
+        5,
+        6,
+        6,
+        4,
+        4
+      ],
+      "next_adapter_version": 0
+    },
+    {
+      "round_idx": 9,
+      "absolute_output_offset": 29,
+      "input_context_length": 33,
+      "verified_prefix_tail": [
+        6,
+        6,
+        4,
+        4
+      ],
+      "physical_to_logical": {
+        "anchor_physical_index": 0,
+        "logical_to_physical": [
+          1,
+          2,
+          3
+        ]
+      },
+      "draft_tokens": [
+        4,
+        7,
+        7
+      ],
+      "draft_lm_head": {
+        "artifact_id": "builtin-toy-linear-head",
+        "revision": "synthetic-v1",
+        "dtype": "torch.float32",
+        "bias": true,
+        "tied_weights": false,
+        "hook": "post _normalized, pre draft_lm_head",
+        "weight_shape": [
+          8,
+          12
+        ]
+      },
+      "accepted_length": 2,
+      "first_rejection_index": 2,
+      "replacement_token": 1,
+      "bonus_token": null,
+      "decisions": [
+        true,
+        true,
+        false
+      ],
+      "proposal_token_probs": [
+        0.2539728581905365,
+        0.13799279928207397,
+        0.14953765273094177
+      ],
+      "target_token_probs": [
+        0.2505466341972351,
+        0.13752245903015137,
+        0.05327253043651581
+      ],
+      "adapter_version": 0,
+      "proposal_mode": "plain_dflash",
+      "verification_rule": "ratio",
+      "collection_temperature": 1.0,
+      "loss_temperature": 1.0,
+      "sampling_warp_config": {
+        "top_k": 0,
+        "top_p": 1.0,
+        "min_p": 0.0
+      },
+      "off_policy_teacher_positions": [],
+      "committed_tokens": [
+        4,
+        7,
+        1
+      ],
+      "next_adapter_version": 0
+    }
+  ],
+  "generation": {
+    "realized_length": 32,
+    "repeated_ngram_fraction": {
+      "4": 0.0,
+      "8": 0.0,
+      "16": 0.0
+    },
+    "dominant_ngram_token_coverage": {
+      "4": 0.125,
+      "8": 0.25,
+      "16": 0.5
+    },
+    "longest_periodic_run_tokens": 0,
+    "repetition_dominated": false,
+    "repetition_rule": "length>=256 and (period<=64 repeated run >=max(256,50% length) or repeated8>=80% and dominant16 coverage>=50%)",
+    "output_bins_reached": [
+      "0-1K"
+    ],
+    "eos_reached": false,
+    "capped": true,
+    "complete": true
+  },
+  "output_tokens": [
+    2,
+    5,
+    6,
+    0,
+    7,
+    1,
+    5,
+    2,
+    5,
+    7,
+    1,
+    0,
+    1,
+    4,
+    6,
+    5,
+    6,
+    4,
+    3,
+    7,
+    5,
+    4,
+    5,
+    4,
+    5,
+    6,
+    6,
+    4,
+    4,
+    4,
+    7,
+    1
+  ],
+  "online": null,
+  "estimated_online_state_bandwidth_GBps": null,
+  "online_bandwidth_definition": "algorithmic state bytes divided by measured full online_update phase duration, including live-full backprop and snapshots; not hardware HBM bandwidth",
+  "bigram": {
+    "counted_transitions": 32,
+    "exact_ledger_pairs": 23,
+    "retained_prior_pairs": 23,
+    "ledger_retained_for_exact_counts": true,
+    "k_ret": null
+  },
+  "online_invariants": null,
+  "parameter_norms": {},
+  "peak_allocated_bytes": null,
+  "peak_reserved_bytes": null,
+  "phase_profile": false,
+  "identity": {
+    "model_pair": [
+      "builtin_toy_target",
+      "builtin_parallel_drafter"
+    ],
+    "prompt": "synthetic-test-standard_nonthinking-0",
+    "scale": "smoke",
+    "prompt_payload_hash": "b18d97783bb0aa7d53b6745aa798364448ff7c90b1d711235f7a79792a381160",
+    "condition": "standard_nonthinking",
+    "seed": 2026,
+    "temperature": 1.0,
+    "sampling_name": "pure_temperature_diagnostic",
+    "verification_rule": "ratio",
+    "proposal_mode": "online_bigram",
+    "checkpoint": {
+      "dense": "551a7a5907538169bf91ad2fb07c74d2c0549f6477fe7412fc7e505d47c59dce",
+      "dense_sparse": "3064fd63be5221bcae96a291b6247c50e6faee648ce6ad5562199675b2be6b54",
+      "projection": "synthetic-calibration-seed-2026",
+      "implementation": "090fcd0a3492eeb37646cd2cdeb9eddccaa429c7d3399fed72b25ce0d5c650da"
+    },
+    "adapter_version": 0,
+    "model_revisions": [
+      "synthetic-v1",
+      "synthetic-v1"
+    ],
+    "stage": "m4",
+    "mode": "timing",
+    "sampling_warp_config": {
+      "top_k": 0,
+      "top_p": 1.0,
+      "min_p": 0.0
+    },
+    "setting": {
+      "lambda_tr": 0.05,
+      "alpha": 0.5,
+      "k_ret": null
+    },
+    "frozen_settings_hash": "fb910f0544dc53b93e279721989f77a6cfd4bd4d456b2b58fc7fff03206cc638",
+    "generation_cap": 32,
+    "generation_caps": {
+      "standard": 2048,
+      "long": 24576,
+      "smoke": 32
+    },
+    "timing_session": "c591c94d505d4508bce63b47685c8b58",
+    "repeat": "2:epoch=5a82f937d02541aeaba42ce7cf6bde58",
+    "phase_profile": false
+  },
+  "timing_session": "c591c94d505d4508bce63b47685c8b58",
+  "repeat": "2:epoch=5a82f937d02541aeaba42ce7cf6bde58",
+  "timing_isolated": true,
+  "rank": 0
+}

@@ -1,0 +1,473 @@
+"""One-off reference continuation driver. Prepare/review first; never trains.
+
+Dry run (no locks, files, checkpoints, subprocesses, or CUDA initialization):
+  .venv/bin/python artifacts/reference_continuation_source.txt --scale reference --dry_run
+After explicit launch review:
+  .venv/bin/python artifacts/reference_continuation_source.txt --scale reference
+
+The driver waits for the original M2 process, validates final artifacts, then
+executes README's M3/M4 sequence with unchanged reference settings. Restarting
+replays resumable commands, without fresh sessions. A prior process with unknown
+exit status requires manual review; this driver never adopts or kills it.
+"""
+from __future__ import annotations
+
+import argparse
+from datetime import datetime, timezone
+import fcntl
+import hashlib
+import json
+import os
+from pathlib import Path
+import signal
+import subprocess
+import sys
+import tempfile
+import time
+import uuid
+
+ROOT = Path(__file__).resolve().parent.parent
+ARTIFACTS = ROOT / 'artifacts'
+PYTHON = ROOT / '.venv/bin/python'
+SOURCE = Path(__file__).resolve()
+STATE_PATH = ARTIFACTS / 'reference_continuation_state.json'
+LOCK_PATH = ARTIFACTS / 'reference_continuation.lock'
+LOG_DIR = ARTIFACTS / 'reference_continuation_logs'
+VALIDATOR = ARTIFACTS / 'm2_validation_source.txt'
+VALIDATION = ARTIFACTS / 'm2_validation_reference.json'
+M2_REPORT = ARTIFACTS / 'm2.json'
+M2_RUN = ARTIFACTS / 'runs/train-23b97943b68176e4-rank0.json'
+M2_PID = 2882467
+GPU_LIST = tuple(range(8))
+MODEL_PAIR = ['Qwen/Qwen3-8B', 'z-lab/Qwen3-8B-DFlash-b16']
+CAPS = {'standard': 2048, 'long': 24576, 'smoke': 32}
+EVAL_SOURCE_FILES = ('adapter.py', 'online.py', 'features.py', 'dflash_loop.py',
+    'sampler.py', 'verify.py', 'backend.py', 'sparse.py', 'toy.py', 'diagnose.py',
+    'eval_closed_loop.py')
+OFFLINE_ENV = {'HF_HUB_OFFLINE': '1', 'HF_DATASETS_OFFLINE': '1',
+               'TRANSFORMERS_OFFLINE': '1', 'TOKENIZERS_PARALLELISM': 'false'}
+
+
+def require(condition, message):
+    if not condition:
+        raise RuntimeError(message)
+
+
+def now():
+    return datetime.now(timezone.utc).isoformat()
+
+
+def read_json(path):
+    return json.loads(Path(path).read_text())
+
+
+def digest(path):
+    result = hashlib.sha256()
+    with Path(path).open('rb') as stream:
+        while chunk := stream.read(8 * 1024 * 1024):
+            result.update(chunk)
+    return result.hexdigest()
+
+
+def fingerprint(value):
+    return hashlib.sha256(json.dumps(value, sort_keys=True, separators=(',', ':')).encode()).hexdigest()
+
+
+def resolve(value):
+    path = Path(value)
+    return path if path.is_absolute() else ROOT / path
+
+
+def atomic_json(path, value):
+    path = Path(path)
+    descriptor, temporary = tempfile.mkstemp(prefix=path.name + '.', suffix='.tmp', dir=path.parent)
+    try:
+        with os.fdopen(descriptor, 'w') as stream:
+            json.dump(value, stream, indent=2, allow_nan=False)
+            stream.write('\n')
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.replace(temporary, path)
+    finally:
+        if os.path.exists(temporary):
+            os.unlink(temporary)
+
+
+def proc_info(pid):
+    try:
+        text = Path(f'/proc/{pid}/stat').read_text()
+        fields = text[text.rfind(')') + 2:].split()
+        if fields[0] == 'Z':
+            return None
+        return {'pid': int(pid), 'state': fields[0], 'process_group': int(fields[2]),
+                'session': int(fields[3]), 'start_ticks': int(fields[19])}
+    except (OSError, ValueError, IndexError):
+        return None
+
+
+def process_scan(group=None):
+    """Inspect only membership of the recorded child process group.
+
+    The known launcher and its workers inherit the child's group. No process
+    environments are inspected. An intent without a recorded group fails closed.
+    """
+    if group is None:
+        return []
+    found = []
+    for entry in Path('/proc').iterdir():
+        if not entry.name.isdigit() or int(entry.name) == os.getpid():
+            continue
+        info = proc_info(int(entry.name))
+        if info is None:
+            continue
+        if info['process_group'] == group:
+            found.append(info)
+    return sorted(found, key=lambda item: item['pid'])
+
+
+def command_plan():
+    steps = []
+    for stage in ('m3', 'm4'):
+        base = [str(PYTHON), '-m', 'edraft.eval_closed_loop', '--scale', 'reference',
+                '--stage', stage, '--seed', '2026', '--output', str(ARTIFACTS)]
+        caps = ['--max_new_tokens', '2048', '--long_max_new_tokens', '24576']
+        steps.extend([
+            {'key': stage + '_tune', 'stage': stage, 'mode': 'tune', 'gpus': [0],
+             'argv': base + ['--mode', 'tune', '--device', 'cuda:0',
+                '--standard_dev_prompts', '8', '--long_dev_prompts', '12'] + caps},
+            {'key': stage + '_evaluate', 'stage': stage, 'mode': 'evaluate', 'gpus': list(GPU_LIST),
+             'argv': [str(PYTHON), '-m', 'edraft.launch', '--scale', 'reference',
+                '--task', stage, '--gpus', ','.join(map(str, GPU_LIST)), '--seed', '2026',
+                '--output', str(ARTIFACTS), '--evaluation_max_new_tokens', '2048',
+                '--long_max_new_tokens', '24576']},
+            {'key': stage + '_timing', 'stage': stage, 'mode': 'timing', 'gpus': [0],
+             'argv': base + ['--mode', 'timing', '--device', 'cuda:0', '--timing_prompts', '0',
+                '--timing_repeats', '3', '--timing_warmups', '1'] + caps},
+            {'key': stage + '_summarize', 'stage': stage, 'mode': 'summarize', 'gpus': [],
+             'argv': base + ['--mode', 'summarize', '--device', 'cpu'] + caps},
+        ])
+    return steps
+
+
+def assert_idle(indices):
+    if not indices:
+        return
+    rows = subprocess.run(['nvidia-smi', '--query-gpu=index,uuid', '--format=csv,noheader'],
+        capture_output=True, text=True, check=True).stdout.splitlines()
+    devices = {int(row.split(',')[0]): row.split(',')[1].strip() for row in rows}
+    require(set(indices) <= devices.keys(), 'A planned physical GPU is unavailable')
+    selected = {devices[index] for index in indices}
+    rows = subprocess.run(['nvidia-smi', '--query-compute-apps=gpu_uuid,pid', '--format=csv,noheader'],
+        capture_output=True, text=True, check=True).stdout.splitlines()
+    occupied = [row.strip() for row in rows if row.split(',')[0].strip() in selected]
+    require(not occupied, 'Planned GPU has existing compute processes: ' + '; '.join(occupied))
+
+
+def evaluation_implementation_hash():
+    result = hashlib.sha256()
+    for name in EVAL_SOURCE_FILES:
+        result.update(name.encode())
+        result.update((ROOT / 'src/edraft' / name).read_bytes())
+    return result.hexdigest()
+
+
+def artifact_binding():
+    report = read_json(M2_REPORT)
+    paths = [M2_REPORT, VALIDATOR, ARTIFACTS / 'prompts.json', ARTIFACTS / 'h_proj.pt',
+        ARTIFACTS / 'token_features.pt', ARTIFACTS / 'environment.json',
+        ARTIFACTS / 'm1_audit.json', ARTIFACTS / 'calibration.json',
+        ARTIFACTS / 'diagnostic_reference.json']
+    paths.extend(resolve(report['checkpoints'][stage]) for stage in ('dense', 'dense_sparse'))
+    paths.extend(sorted((ROOT / 'src/edraft').glob('*.py')))
+    return {str(path.resolve()): digest(path) for path in paths}
+
+
+def cached_validation_matches():
+    """Reuse a passed validator only while every recorded dependency still matches."""
+    try:
+        value = read_json(VALIDATION)
+        if not (value['status'] == 'passed' and value['scale'] == 'reference'
+                and value['cuda_initialized'] is False and value['report_sha256'] == digest(M2_REPORT)
+                and Path(value['report_path']).resolve() == M2_REPORT.resolve()
+                and value['validator_source_sha256'] == digest(VALIDATOR)):
+            return False
+        evidence = value['evidence']
+        report = read_json(M2_REPORT)
+        required = [resolve(report['checkpoints'][stage]) for stage in ('dense', 'dense_sparse')]
+        required.append(required[-1].parent / 'latest.pt')
+        if any(str(path.resolve()) not in evidence for path in required):
+            return False
+        for name, record in evidence.items():
+            if name == 'sparse_chunks':
+                if record.get('all_sha256_verified') is not True:
+                    return False
+                continue
+            if 'sha256' not in record or digest(resolve(name)) != record['sha256']:
+                return False
+        for name, expected in report['implementation_sha256'].items():
+            if digest(ROOT / 'src/edraft' / name) != expected:
+                return False
+        for item in report['sparse_statistics_chunks']:
+            if digest(resolve(item['path'])) != item['sha256']:
+                return False
+        stats = report['stages']['dense_sparse']['sparse_collision_statistics']
+        if resolve(stats['database']).stat().st_size != stats['database_bytes']:
+            return False
+        return True
+    except (OSError, KeyError, ValueError, TypeError):
+        return False
+
+
+class Driver:
+    def __init__(self, lock):
+        self.lock = lock
+        self.child = None
+        plan = command_plan()
+        plan_hash = fingerprint({'steps': plan, 'offline_env': OFFLINE_ENV,
+            'driver_source_sha256': digest(SOURCE), 'original_m2_pid': M2_PID})
+        if STATE_PATH.exists():
+            self.state = read_json(STATE_PATH)
+            require(self.state['plan_sha256'] == plan_hash, 'Driver source/plan changed; review existing state before continuing')
+        else:
+            self.state = {'schema_version': 1, 'scale': 'reference', 'status': 'prepared',
+                'created_at_utc': now(), 'plan_sha256': plan_hash, 'steps': plan,
+                'attempts': [], 'inflight': None, 'settings_sha256': {}}
+        inflight = self.state.get('inflight')
+        group = inflight.get('process_group') if inflight else None
+        survivors = process_scan(group)
+        require(not survivors, 'Previous driver descendants remain alive; no launch: ' + json.dumps(survivors))
+        require(inflight is None, 'Previous step has an unknown outcome. Inspect logs/process state manually; no automatic relaunch')
+        self.state.update(driver_pid=os.getpid(), driver_process=proc_info(os.getpid()),
+                          invocation_started_at_utc=now(), status='starting')
+        LOG_DIR.mkdir(parents=True, exist_ok=True)
+        self.save()
+
+    def save(self):
+        self.state['updated_at_utc'] = now()
+        atomic_json(STATE_PATH, self.state)
+
+    def message(self, text):
+        line = now() + ' ' + text
+        print(line, flush=True)
+        with (LOG_DIR / 'driver.log').open('a') as stream:
+            stream.write(line + '\n')
+
+    def wait_for_m2(self):
+        run = read_json(M2_RUN)
+        require(run['pid'] == M2_PID, 'Original M2 run record PID changed')
+        observed = self.state.get('original_m2_process')
+        current = proc_info(M2_PID)
+        if current is not None and observed is None:
+            argv = Path(f'/proc/{M2_PID}/cmdline').read_bytes().split(b'\0')
+            require(b'edraft.train' in argv, 'Original M2 PID now names an unexpected process; manual review required')
+            require(Path(f'/proc/{M2_PID}/cwd').resolve() == ROOT, 'Original M2 process has an unexpected working directory')
+            boot = next(int(line.split()[1]) for line in Path('/proc/stat').read_text().splitlines() if line.startswith('btime '))
+            process_started = boot + current['start_ticks'] / os.sysconf('SC_CLK_TCK')
+            require(0 <= run['started_at_unix'] - process_started <= 300,
+                    'Original M2 PID birth time does not match its run record')
+            observed = current
+            self.state['original_m2_process'] = observed
+        self.state['status'] = 'waiting_for_original_m2'
+        self.save()
+        self.message(f'Waiting for original M2 PID {M2_PID}; it will never be signaled or relaunched')
+        while current is not None and (observed is None or current['start_ticks'] == observed['start_ticks']):
+            time.sleep(5)
+            self.state['last_m2_observed_at_utc'] = now()
+            self.save()
+            current = proc_info(M2_PID)
+        require(M2_REPORT.is_file(), 'Original M2 exited without final artifacts/m2.json')
+        report = read_json(M2_REPORT)
+        require(report.get('status') == 'passed' and report.get('scale') == 'reference',
+                'Final M2 report is not passed at reference scale')
+        self.state['m2_finished_at_observed_utc'] = now()
+        self.save()
+        self.message('Original M2 exited; final passed report is present')
+
+    def check_binding(self):
+        current = artifact_binding()
+        previous = self.state.get('frozen_artifact_binding')
+        require(previous is None or current == previous, 'Source/checkpoint/calibration/config artifact drift; stop for review')
+        if previous is None:
+            self.state['frozen_artifact_binding'] = current
+            self.save()
+
+    def check_settings(self, stage):
+        path = ARTIFACTS / stage / 'settings.json'
+        settings = read_json(path)
+        require(settings.get('frozen') is True and settings['stage'] == stage and settings['scale'] == 'reference',
+                f'{stage}: settings are not frozen at reference scale')
+        expected = {'dense': digest(ARTIFACTS / 'm2/dense.pt'),
+            'dense_sparse': digest(ARTIFACTS / 'm2/dense_sparse.pt'),
+            'projection': digest(ARTIFACTS / 'h_proj.pt'), 'implementation': evaluation_implementation_hash()}
+        require(settings['checkpoint_hashes'] == expected, f'{stage}: frozen checkpoint/implementation binding changed')
+        require(settings['prompt_manifest_hash'] == fingerprint(read_json(ARTIFACTS / 'prompts.json')),
+                f'{stage}: prompt manifest changed')
+        require(settings['generation_caps'] == CAPS and settings['model_pair'] == MODEL_PAIR,
+                f'{stage}: model pair or generation caps changed')
+        environment = read_json(ARTIFACTS / 'environment.json')
+        revisions = [environment['model_artifacts'][name]['revision'] for name in MODEL_PAIR]
+        require(settings['model_revisions'] == revisions and settings['settings_seed'] == 2026,
+                f'{stage}: model revisions or seed changed')
+        selected = settings['selected']
+        arms = {'plain_dflash', 'online_bigram', 'dense', 'dense_sparse'} if stage == 'm3' else {
+            'plain_dflash', 'online_bigram', 'offline_static', 'offline_online_stride1', 'online_dbS'}
+        require(set(selected) == arms, f'{stage}: required arm coverage changed')
+        manifest = read_json(ARTIFACTS / 'prompts.json')
+        by_id = {item['prompt_id']: item for item in manifest['prompts']}
+        dev = [by_id[identity] for identity in settings['development_prompt_ids']]
+        require(len(dev) == 20 and all(item['split'] == 'dev' for item in dev)
+                and sum(item['condition'] == 'standard_nonthinking' for item in dev) == 8
+                and sum(item['condition'] == 'long_thinking' for item in dev) == 12,
+                f'{stage}: reference development prompt counts changed')
+        checksum = digest(path)
+        prior = self.state['settings_sha256'].get(stage)
+        require(prior is None or checksum == prior, f'{stage}: frozen settings changed across driver invocations')
+        self.state['settings_sha256'][stage] = checksum
+        self.save()
+        return settings
+
+    def stage_gate(self, stage):
+        settings = self.check_settings(stage)
+        summary = read_json(ARTIFACTS / stage / 'summary.json')
+        timed = read_json(ARTIFACTS / stage / 'timing.json')
+        count = 1920 if stage == 'm3' else 2400
+        require(summary['status'] == 'complete' and summary['scale'] == 'reference'
+                and summary['stage'] == stage and summary['settings'] == settings,
+                f'{stage}: summary is not complete for current settings')
+        require(summary['expected_requests'] == summary['completed_requests'] == count
+                and summary['missing_requests'] == [] and summary['isolated_timing_complete'] is True
+                and summary['greedy_output_comparisons_complete'] is True,
+                f'{stage}: required acceptance/timing/greedy coverage incomplete')
+        require(timed['status'] == 'complete' and timed['full_reference_prompt_coverage'] is True
+                and timed['frozen_settings_hash'] == fingerprint(settings)
+                and timed['expected_full_prompt_count'] == 96 and len(timed['prompt_ids']) == 96
+                and timed['timed_requests'] == count * 3 and timed['repeats'] == 3
+                and timed['warmups_per_arm_condition'] == 1,
+                f'{stage}: full timing schedule incomplete or mismatched')
+        if stage == 'm4':
+            require(summary['feature_context_complete'] is True
+                    and summary['feature_context']['status'] == 'complete', 'M4 feature context incomplete')
+            require(summary['feature_context']['diagnostic_sha256'] == digest(ARTIFACTS / 'diagnostic_reference.json'),
+                    'M4 feature diagnostic binding changed')
+        self.state.setdefault('stage_gates', {})[stage] = {'checked_at_utc': now(),
+            'settings_sha256': digest(ARTIFACTS / stage / 'settings.json'),
+            'summary_sha256': digest(ARTIFACTS / stage / 'summary.json'),
+            'timing_sha256': digest(ARTIFACTS / stage / 'timing.json')}
+        self.save()
+
+    def run_step(self, step):
+        require(self.state.get('inflight') is None, 'A previous command is unresolved; refusing another command')
+        assert_idle(step['gpus'])
+        environment = dict(os.environ, **OFFLINE_ENV)
+        for name in ('RANK', 'WORLD_SIZE', 'LOCAL_RANK'):
+            environment.pop(name, None)
+        environment['CUDA_VISIBLE_DEVICES'] = '0' if step['gpus'] == [0] else ','.join(map(str, step['gpus']))
+        attempt = {'attempt_id': uuid.uuid4().hex, 'step': step['key'], 'status': 'launch_intent',
+            'argv': step['argv'], 'gpus': step['gpus'], 'created_at_utc': now(),
+            'log': str(LOG_DIR / (step['key'] + '.log')), 'exit_code': None,
+            'environment_overrides': {**OFFLINE_ENV, 'CUDA_VISIBLE_DEVICES': environment['CUDA_VISIBLE_DEVICES']}}
+        self.state['attempts'].append(attempt)
+        self.state.update(status='running', inflight=attempt)
+        self.save()  # Intent is durable before Popen; unknown outcomes never auto-relaunch.
+        self.message('Starting ' + step['key'])
+        with Path(attempt['log']).open('ab', buffering=0) as log:
+            log.write(('\n' + now() + ' attempt ' + attempt['attempt_id'] + '\n').encode())
+            self.child = subprocess.Popen(step['argv'], cwd=ROOT, env=environment,
+                stdout=log, stderr=subprocess.STDOUT, start_new_session=True,
+                pass_fds=(self.lock.fileno(),))
+            process = proc_info(self.child.pid)
+            attempt.update(pid=self.child.pid, process_group=self.child.pid,
+                process=process, started_at_utc=now(), status='running')
+            self.save()
+            while self.child.poll() is None:
+                time.sleep(5)
+                attempt['last_observed_at_utc'] = now()
+                self.save()
+            code = self.child.wait()
+            attempt.update(exit_code=code, finished_at_utc=now(), status='exited')
+            self.child = None
+            self.save()
+        survivors = process_scan(attempt['process_group'])
+        # Workers may need a moment to exit after launch.py reaps/terminates them.
+        deadline = time.monotonic() + 30
+        while survivors and time.monotonic() < deadline:
+            time.sleep(1)
+            survivors = process_scan(attempt['process_group'])
+        require(not survivors, 'Child command exited but descendants survive; stop: ' + json.dumps(survivors))
+        attempt['status'] = 'complete' if code == 0 else 'failed'
+        self.state['inflight'] = None
+        self.save()
+        require(code == 0, f'{step["key"]} exited {code}; inspect {attempt["log"]}; no automatic retry')
+        self.message('Finished ' + step['key'] + ' with exit code 0')
+
+    def run(self):
+        self.wait_for_m2()
+        if cached_validation_matches():
+            self.message('Reusing current passed M2 artifact validation')
+        else:
+            self.run_step({'key': 'm2_validation', 'gpus': [], 'argv': [str(PYTHON), str(VALIDATOR),
+                '--report', str(M2_REPORT), '--output', str(VALIDATION)]})
+        require(cached_validation_matches(), 'M2 validator result is not passed/current; stop without relaxing tolerances')
+        self.state['m2_validation_sha256'] = digest(VALIDATION)
+        self.check_binding()
+        for step in command_plan():
+            self.check_binding()
+            stage = step['stage']
+            if stage == 'm4':
+                self.stage_gate('m3')
+            if stage in self.state['settings_sha256']:
+                self.check_settings(stage)
+            self.run_step(step)
+            self.check_binding()
+            if step['mode'] == 'tune':
+                self.check_settings(stage)
+            if step['mode'] == 'summarize':
+                self.stage_gate(stage)
+        self.state.update(status='complete', completed_at_utc=now())
+        self.save()
+        self.message('Both reference stage gates are complete; no goal status was changed')
+
+
+def interrupted(signum, frame):
+    raise KeyboardInterrupt(f'driver received signal {signum}')
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--scale', required=True, choices=['reference'])
+    parser.add_argument('--dry_run', action='store_true')
+    args = parser.parse_args()
+    require(PYTHON.is_file(), 'Project .venv/bin/python is missing')
+    if args.dry_run:
+        print(json.dumps({'scale': args.scale, 'dry_run': True, 'original_m2_pid': M2_PID,
+            'm2_report_required': str(M2_REPORT), 'validator': str(VALIDATOR),
+            'validation_output': str(VALIDATION), 'state': str(STATE_PATH), 'lock': str(LOCK_PATH),
+            'offline_environment': OFFLINE_ENV, 'steps': command_plan(),
+            'policy': 'No launch, file writes, locks, checkpoint reads, or GPU queries in dry run. Normal restart replays resumable commands; unknown prior process outcomes fail closed.'}, indent=2))
+        return
+    signal.signal(signal.SIGTERM, interrupted)
+    signal.signal(signal.SIGINT, interrupted)
+    driver = None
+    with LOCK_PATH.open('a+b') as lock:
+        try:
+            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            raise SystemExit('Another continuation driver or its child holds the lock; no launch')
+        try:
+            driver = Driver(lock)
+            driver.run()
+        except BaseException as error:
+            if driver is not None:
+                driver.state.update(status='interrupted' if isinstance(error, KeyboardInterrupt) else 'failed',
+                    last_error=f'{type(error).__name__}: {error}', stopped_at_utc=now())
+                # Never kill M2 or silently abandon an owned child. If still live,
+                # it retains the lock; its recorded group blocks duplicate restarts.
+                driver.state['surviving_owned_processes'] = process_scan(
+                    driver.state.get('inflight', {}).get('process_group') if driver.state.get('inflight') else None)
+                driver.save()
+                driver.message(driver.state['last_error'])
+            raise
+
+
+if __name__ == '__main__':
+    main()

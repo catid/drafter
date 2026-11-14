@@ -111,6 +111,8 @@ def test_smoke_m4_recomputes_separate_plain_feature_context_and_requires_it(tmp_
     evaluate(runner, manifest, settings)
     atomic_json(tmp_path / 'm4' / 'timing.json', {'status': 'complete', 'full_reference_prompt_coverage': True,
                                               'frozen_settings_hash': fingerprint(settings)})
+    # This test isolates the feature-context gate; raw timing is covered separately.
+    monkeypatch.setattr('edraft.eval_closed_loop.audit_timing_evidence', lambda *args: {'status': 'complete'})
     complete = aggregate(args, manifest, settings)
     assert complete['status'] == 'complete'
     assert complete['feature_context_complete']

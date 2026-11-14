@@ -1,0 +1,143 @@
+{
+  "logical_session": "d1d6de179e234710a2a255133421c7c1",
+  "configuration": {
+    "configuration": {
+      "prompt_manifest_hash": "496873fa2eabc179ac17b1621fe87aa80bea6a3ee30b6c72d7c43721bc727610",
+      "dev_ids": [
+        "synthetic-dev-standard_nonthinking-0",
+        "synthetic-dev-standard_nonthinking-1",
+        "synthetic-dev-long_thinking-0",
+        "synthetic-dev-long_thinking-1"
+      ],
+      "candidates": {
+        "plain_dflash": [
+          {}
+        ],
+        "online_bigram": [
+          {
+            "lambda_tr": 0.05,
+            "alpha": 0.5,
+            "k_ret": null
+          },
+          {
+            "lambda_tr": 0.2,
+            "alpha": 1.0,
+            "k_ret": null
+          }
+        ],
+        "dense": [
+          {
+            "beta": 0.5
+          },
+          {
+            "beta": 1.0
+          }
+        ],
+        "dense_sparse": [
+          {
+            "beta": 0.5
+          },
+          {
+            "beta": 1.0
+          }
+        ]
+      }
+    },
+    "checkpoint_hashes": {
+      "dense": "551a7a5907538169bf91ad2fb07c74d2c0549f6477fe7412fc7e505d47c59dce",
+      "dense_sparse": "3064fd63be5221bcae96a291b6247c50e6faee648ce6ad5562199675b2be6b54",
+      "projection": "synthetic-calibration-seed-2026",
+      "implementation": "090fcd0a3492eeb37646cd2cdeb9eddccaa429c7d3399fed72b25ce0d5c650da"
+    },
+    "model_pair": [
+      "builtin_toy_target",
+      "builtin_parallel_drafter"
+    ],
+    "model_revisions": [
+      "synthetic-v1",
+      "synthetic-v1"
+    ],
+    "generation_environment": {
+      "target_state_sha256": "1748e731fd4aa48749d6579199328d6ba4bb807d6ad08ce15b5920db66ef8558",
+      "tokenizer": {
+        "kind": "synthetic prompt-ID prefix",
+        "vocabulary_size": 8
+      },
+      "stop_token_ids": [],
+      "context_limit": null,
+      "torch_version": "2.13.0+cu130"
+    },
+    "generation_caps": {
+      "standard": 2048,
+      "long": 24576,
+      "smoke": 32
+    },
+    "stage": "m3",
+    "scale": "smoke",
+    "device": "cpu",
+    "visible_devices": "",
+    "seed": 2026
+  },
+  "created_at_unix": 1794617606.7595952,
+  "epochs": [
+    {
+      "epoch": "b05b235120dc45b1a6e2a173771d9be9",
+      "started_at_unix": 1794617606.7595997,
+      "device": "cpu"
+    }
+  ],
+  "bundles": {
+    "eff9d3135b12449bee3b70f6155d8e347a803cbfedad37f48e5ae32ca090a8cc": {
+      "status": "complete",
+      "epoch": "b05b235120dc45b1a6e2a173771d9be9",
+      "result_paths": [
+        "/home/catid/drafter/artifacts/integrity_smoke_pipeline/m3/tune/rank0/6f1f7d42fd0b58c6fd65a52de4c5f086d97b2cff5b4d9f253378e8e69ed2766e.json",
+        "/home/catid/drafter/artifacts/integrity_smoke_pipeline/m3/tune/rank0/63a6b827ccf3d06b650597526fa9aa897da5a0fc270a547fd9923f3cf10ee18b.json",
+        "/home/catid/drafter/artifacts/integrity_smoke_pipeline/m3/tune/rank0/a50b2465df696bb060026b831a49e0953ff6e9547a93904dfafdd00407f23a67.json",
+        "/home/catid/drafter/artifacts/integrity_smoke_pipeline/m3/tune/rank0/f3f1c681a26a5d273c4ad13ecabc7bddc9deaafba4290c0e22dde6a4dd5c45f3.json",
+        "/home/catid/drafter/artifacts/integrity_smoke_pipeline/m3/tune/rank0/1607cf0262c0249e20a148466e75b19fb014da7e1d9a8dd238a08e2fc218f1c1.json",
+        "/home/catid/drafter/artifacts/integrity_smoke_pipeline/m3/tune/rank0/c8fc14969917972145f58273604906512c4b0d49f3922b21562a622de67d406c.json",
+        "/home/catid/drafter/artifacts/integrity_smoke_pipeline/m3/tune/rank0/ff2162258a922afc635804e08a344ce51ea8a2979f37c1f1719d26c22ed2e147.json"
+      ]
+    },
+    "aceb62a0492a49a1b4ad1c766fb560ed19943466c21da6408e4f35e4d2aa99dc": {
+      "status": "complete",
+      "epoch": "b05b235120dc45b1a6e2a173771d9be9",
+      "result_paths": [
+        "/home/catid/drafter/artifacts/integrity_smoke_pipeline/m3/tune/rank0/5a503a5dd967d5cd416ff7453f4ea3c3fc20b32ce86353efbc72be5b245d5559.json",
+        "/home/catid/drafter/artifacts/integrity_smoke_pipeline/m3/tune/rank0/272987de802f2d94bb7a4ef359eaef2bcc1a5e8a1bd5d11f139d3e3600a6e586.json",
+        "/home/catid/drafter/artifacts/integrity_smoke_pipeline/m3/tune/rank0/ca7128b02ed7f715cb456b10f8cee6e4d77bcab668646ab27bd9807ae1010953.json",
+        "/home/catid/drafter/artifacts/integrity_smoke_pipeline/m3/tune/rank0/8dab4045de13f7853a398133f98cf79f1622dbefe775d18acd8712e607ed1356.json",
+        "/home/catid/drafter/artifacts/integrity_smoke_pipeline/m3/tune/rank0/bb9fc68b3f3a32c80b9615480618bd74f96320e488ea49842b0c30f86972d5cd.json",
+        "/home/catid/drafter/artifacts/integrity_smoke_pipeline/m3/tune/rank0/9edcc567dbb5f74eefee5f18657cff2ff425976287f19861e8500f067355731d.json",
+        "/home/catid/drafter/artifacts/integrity_smoke_pipeline/m3/tune/rank0/854c82987c37f974de4062ef0921829c1c4e2a02ac54af5007dca4ecd8cdd95b.json"
+      ]
+    },
+    "7f07b6544090614b495897eaacfcfc0f8e8a016d00e3cd86f51b126058eb3e0a": {
+      "status": "complete",
+      "epoch": "b05b235120dc45b1a6e2a173771d9be9",
+      "result_paths": [
+        "/home/catid/drafter/artifacts/integrity_smoke_pipeline/m3/tune/rank0/adf87b9a0cbe317807e24586998e00632f3a66f2f4783b34b6ae911afe924012.json",
+        "/home/catid/drafter/artifacts/integrity_smoke_pipeline/m3/tune/rank0/e9df56b8e168c2260060a9a722731676eecb9bb9f1483bdf01c2f95721e36bdb.json",
+        "/home/catid/drafter/artifacts/integrity_smoke_pipeline/m3/tune/rank0/f4c1ac58de29f33055c64b27f377833bc58be157ef1f7c290bd0199685ef6be4.json",
+        "/home/catid/drafter/artifacts/integrity_smoke_pipeline/m3/tune/rank0/0fad6a81eaaa5fdd5e76a39488dfb2daf2f05961988fd932b311500cc027e8b9.json",
+        "/home/catid/drafter/artifacts/integrity_smoke_pipeline/m3/tune/rank0/df94048e6a781e5ef7b7397f33e514a875beb814ab02c0115e1f7428f8070067.json",
+        "/home/catid/drafter/artifacts/integrity_smoke_pipeline/m3/tune/rank0/59d5a7013335cd8a3c08cfac134fb2c97a8b7c3b9150e286eb29182ed5212cef.json",
+        "/home/catid/drafter/artifacts/integrity_smoke_pipeline/m3/tune/rank0/86b76330d62866f403ae200b048659eabd2eeb3608e8e03d3f73fe5f3c8eb179.json"
+      ]
+    },
+    "3dc5bc7c63661fd55dedaa9a10cb4aed8ea4bebcf4b7313af0941b821a18e22f": {
+      "status": "complete",
+      "epoch": "b05b235120dc45b1a6e2a173771d9be9",
+      "result_paths": [
+        "/home/catid/drafter/artifacts/integrity_smoke_pipeline/m3/tune/rank0/a50fde96a9931ad56d0824f467909a46d894bb4993af1c48c9e2730e821b215a.json",
+        "/home/catid/drafter/artifacts/integrity_smoke_pipeline/m3/tune/rank0/5569865f638052ad55931da086cc6affdebe5fbef7213d2ed34901c8d3afbe43.json",
+        "/home/catid/drafter/artifacts/integrity_smoke_pipeline/m3/tune/rank0/fb802a43153becd5720a1c6ea21decc0cb9cfcceb02b5fb4578bc2f5563114b4.json",
+        "/home/catid/drafter/artifacts/integrity_smoke_pipeline/m3/tune/rank0/c88df2c537a053e69056346c2be012710fdf8696a2a95a08ddea51c4694bf4a3.json",
+        "/home/catid/drafter/artifacts/integrity_smoke_pipeline/m3/tune/rank0/db39f59bfb9ca6672e569a78ef2b37e96257cfa5316f101848f693ef1217d80e.json",
+        "/home/catid/drafter/artifacts/integrity_smoke_pipeline/m3/tune/rank0/2a1d33bd4302c7b030ac8b4f4b700db01b1e5451ae75e55b7edb07c93af54806.json",
+        "/home/catid/drafter/artifacts/integrity_smoke_pipeline/m3/tune/rank0/8c308b06d1e91b8d8d2bca84b468e3f89d81a89a0cca38db29aa0050faae5802.json"
+      ]
+    }
+  }
+}

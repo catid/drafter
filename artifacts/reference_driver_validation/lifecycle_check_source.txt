@@ -1,0 +1,207 @@
+"""Bounded CPU-only lifecycle checks for the archived continuation driver.
+
+Loads definitions without invoking driver main/run/M2 waiting. All driver state,
+locks, logs, and generic children use TemporaryDirectory paths. The only durable
+output is this archived source and lifecycle_report.json beside it.
+"""
+from __future__ import annotations
+
+from contextlib import redirect_stdout
+import fcntl
+import hashlib
+import io
+import json
+import os
+from pathlib import Path
+import subprocess
+import sys
+import tempfile
+import threading
+import time
+import types
+
+ROOT = Path(__file__).resolve().parents[2]
+DRIVER = ROOT / 'artifacts/reference_continuation_source.txt'
+OUTPUT = Path(__file__).resolve().parent / 'lifecycle_report.json'
+
+
+def digest(path):
+    return hashlib.sha256(Path(path).read_bytes()).hexdigest()
+
+
+def check(condition, message):
+    if not condition:
+        raise AssertionError(message)
+
+
+def fixture(base):
+    module = types.ModuleType('archived_reference_driver_lifecycle_test')
+    module.__file__ = str(DRIVER)
+    exec(compile(DRIVER.read_text(), str(DRIVER), 'exec'), module.__dict__)
+    module.ROOT = base
+    module.ARTIFACTS = base / 'artifacts'
+    module.ARTIFACTS.mkdir()
+    module.STATE_PATH = module.ARTIFACTS / 'state.json'
+    module.LOCK_PATH = module.ARTIFACTS / 'lock'
+    module.LOG_DIR = module.ARTIFACTS / 'logs'
+    module.PYTHON = Path(sys.executable)
+    # Keep real bounded child durations while shortening driver's 5-second polls.
+    module.time = types.SimpleNamespace(sleep=lambda seconds: time.sleep(min(seconds, .01)),
+                                       monotonic=time.monotonic)
+    def forbid_gpu(indices):
+        check(indices == [], 'Lifecycle test attempted a GPU request')
+    module.assert_idle = forbid_gpu
+    def forbidden(*args, **kwargs):
+        raise AssertionError('Lifecycle test invoked actual main/run/M2 waiting')
+    module.main = forbidden
+    module.Driver.run = forbidden
+    module.Driver.wait_for_m2 = forbidden
+    lock = module.LOCK_PATH.open('a+b')
+    fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    return module, lock, module.Driver(lock)
+
+
+def step(name, code):
+    return {'key': name, 'gpus': [], 'argv': [sys.executable, '-c', code]}
+
+
+def lock_contender(path):
+    # Same nonblocking flock operation as driver main; no driver/main invocation.
+    code = '''import fcntl,sys
+f=open(sys.argv[1],'a+b')
+try:
+ fcntl.flock(f,fcntl.LOCK_EX|fcntl.LOCK_NB)
+except BlockingIOError:
+ sys.exit(73)
+sys.exit(0)
+'''
+    return subprocess.run([sys.executable, '-c', code, str(path)], capture_output=True,
+                          text=True, timeout=2).returncode
+
+
+def success_case(base):
+    module, lock, driver = fixture(base)
+    try:
+        driver.run_step(step('generic_success', 'raise SystemExit(0)'))
+        state = module.read_json(module.STATE_PATH)
+        attempt = state['attempts'][-1]
+        check(attempt['exit_code'] == 0 and attempt['status'] == 'complete', 'Success exit was not recorded')
+        check(state['inflight'] is None, 'Success left inflight state')
+        check(attempt['pid'] > 0 and attempt['process_group'] == attempt['pid'], 'Missing child/group identity')
+        check(module.process_scan(attempt['process_group']) == [], 'Success left a process-group member')
+        return {'status': 'passed', 'exit_code': 0, 'inflight_cleared': True,
+                'pid_and_process_group_recorded': True, 'surviving_group_members': 0}
+    finally:
+        lock.close()
+
+
+def failure_case(base):
+    module, lock, driver = fixture(base)
+    sentinel = base / 'forbidden_next_step'
+    attempted, error = [], None
+    try:
+        for item in [step('generic_failure', 'raise SystemExit(7)'),
+                     step('must_not_start', f'open({str(sentinel)!r},"w").write("unexpected")')]:
+            attempted.append(item['key'])
+            driver.run_step(item)
+    except RuntimeError as caught:
+        error = str(caught)
+    finally:
+        lock.close()
+    state = module.read_json(module.STATE_PATH)
+    check(error is not None and 'exited 7' in error, 'Nonzero child did not fail-stop')
+    check(attempted == ['generic_failure'] and not sentinel.exists(), 'A later step started after failure')
+    check(state['inflight'] is None and state['attempts'][-1]['exit_code'] == 7
+          and state['attempts'][-1]['status'] == 'failed', 'Failure exit/state not recorded')
+    return {'status': 'passed', 'exit_code': 7, 'inflight_cleared': True,
+            'next_step_started': False, 'attempt_count': len(state['attempts'])}
+
+
+def inherited_lock_case(base):
+    module, lock, driver = fixture(base)
+    ready = base / 'child_ready'
+    errors = []
+    fd = lock.fileno()
+    code = (f'import os,time; os.fstat({fd}); '
+            f'open({str(ready)!r},"w").write("inherited_lock_open"); time.sleep(1.2)')
+    def run():
+        try:
+            driver.run_step(step('generic_lock_holder', code))
+        except BaseException as error:
+            errors.append(repr(error))
+    worker = threading.Thread(target=run, daemon=False)
+    worker.start()
+    try:
+        deadline = time.monotonic() + 2
+        while not ready.exists() and time.monotonic() < deadline:
+            time.sleep(.01)
+        check(ready.exists(), 'Generic child did not confirm inherited descriptor')
+        # CLOSE only: explicit LOCK_UN would release the shared open-description lock.
+        lock.close()
+        blocked = lock_contender(module.LOCK_PATH)
+        check(blocked == 73, 'Second lock acquisition succeeded while child held inherited lock')
+    finally:
+        worker.join(timeout=3)
+        if not lock.closed:
+            lock.close()
+    check(not worker.is_alive() and not errors, f'Generic child runner failed: {errors}')
+    released = lock_contender(module.LOCK_PATH)
+    check(released == 0, 'Inherited lock remained held after generic child exit')
+    state = module.read_json(module.STATE_PATH)
+    check(state['inflight'] is None and state['attempts'][-1]['exit_code'] == 0,
+          'Lock holder exit/state not recorded')
+    return {'status': 'passed', 'child_confirmed_inherited_fd': True,
+            'parent_descriptor_closed_before_contention': True,
+            'contender_exit_while_child_alive': blocked, 'contender_exit_after_child': released}
+
+
+def unresolved_intent_case(base):
+    module, lock, driver = fixture(base)
+    try:
+        driver.state['inflight'] = {'step': 'never_started', 'status': 'launch_intent', 'exit_code': None}
+        driver.save()
+        previous = module.STATE_PATH.read_bytes()
+        error = None
+        try:
+            module.Driver(lock)
+        except RuntimeError as caught:
+            error = str(caught)
+        check(error is not None and 'unknown outcome' in error, 'Unresolved launch intent did not fail closed')
+        check(module.STATE_PATH.read_bytes() == previous, 'Rejected restart overwrote unresolved intent')
+        check(driver.state['attempts'] == [], 'Unresolved-intent check launched a child')
+        return {'status': 'passed', 'restart_rejected': True, 'state_preserved': True,
+                'child_attempts': 0}
+    finally:
+        lock.close()
+
+
+def main():
+    began = time.monotonic()
+    report = {'status': 'running', 'scope': 'generic CPU process lifecycle only; not M2/M3/M4 validation',
+              'driver_source_sha256': digest(DRIVER), 'test_source_sha256': digest(__file__),
+              'production_state_paths_used': False, 'driver_main_invoked': False,
+              'M2_wait_invoked': False, 'GPU_queries_or_jobs': False, 'cases': {}}
+    output = io.StringIO()
+    try:
+        with tempfile.TemporaryDirectory(prefix='edraft-driver-lifecycle-') as temporary:
+            root = Path(temporary)
+            with redirect_stdout(output):
+                for name, function in [('successful_child', success_case), ('nonzero_fail_stop', failure_case),
+                                       ('inherited_lock', inherited_lock_case), ('unresolved_launch_intent', unresolved_intent_case)]:
+                    directory = root / name
+                    directory.mkdir()
+                    report['cases'][name] = function(directory)
+        report['status'] = 'passed'
+    except BaseException as error:
+        report.update(status='failed', error=f'{type(error).__name__}: {error}')
+    report['torch_imported'] = 'torch' in sys.modules
+    report['elapsed_seconds'] = time.monotonic() - began
+    report['driver_messages'] = output.getvalue().splitlines()
+    OUTPUT.write_text(json.dumps(report, indent=2) + '\n')
+    print(json.dumps({'status': report['status'], 'cases': list(report['cases']),
+                      'elapsed_seconds': report['elapsed_seconds'], 'output': str(OUTPUT)}))
+    raise SystemExit(0 if report['status'] == 'passed' else 1)
+
+
+if __name__ == '__main__':
+    main()

@@ -118,7 +118,11 @@ def test_resumed_comparison_reruns_all_arms_after_partial_bundle(tmp_path):
         if job['arm'] == 'online_bigram' and fail[0]:
             fail[0] = False
             raise RuntimeError('simulated interruption')
-        return {'arm': job['arm'], 'tokens_per_second': 1.}
+        return {'arm': job['arm'], 'prompt_id': job['prompt']['prompt_id'],
+                'condition': job['prompt']['condition'], 'seed': job['seed'], 'temperature': job['temperature'],
+                'sampling_name': job['sampling_name'], 'sampling_warp_config': vars(job['warper']),
+                'settings': setting, 'generation': {'complete': True}, 'phase_profile': profile,
+                'tokens_per_second': 1.}
     runner = SimpleNamespace(args=args, tiny=True, device=torch.device('cpu'), checkpoint_hashes={'a': 'b'},
                              model_pair=['toy', 'toy'], model_revisions=['v1', 'v1'], run=run)
     prompt = smoke_manifest()['prompts'][-1]
