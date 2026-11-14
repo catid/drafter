@@ -1248,3 +1248,402 @@ def test_bughunter_regressions_online_dbs_zombie_autograd_verify_validator_and_b
     torch.testing.assert_close(a_sr.W, a_sd.W, rtol=0, atol=0)
     torch.testing.assert_close(a_sr.b, a_sd.b, rtol=0, atol=0)
 
+
+# ---------------------------------------------------------------------------
+# 9. Compact top-k sequential proposal sampling, GPU-resident OnlineBigram.score_tensor,
+#    and #64 Round-2 edge-case regressions (OPT-R2-BUG-2, OPT-R2-BUG-3, OPT-R2-BUG-4)
+# ---------------------------------------------------------------------------
+
+def test_compact_probabilities_and_sample_token_compact_exact_parity():
+    from dflash.model import _sampling_probs
+    from edraft.sampler import compact_probabilities, sample_token, sample_token_compact
+
+    g = torch.Generator().manual_seed(20261114)
+    V, K = 257, 6
+    warpers = [
+        SamplingWarper(top_k=0, top_p=1.0, min_p=0.0),
+        SamplingWarper(top_k=0, top_p=0.82, min_p=0.05),
+        SamplingWarper(top_k=V, top_p=0.85, min_p=0.0),
+        SamplingWarper(top_k=20, top_p=1.0, min_p=0.0),
+        SamplingWarper(top_k=20, top_p=0.80, min_p=0.0),
+        SamplingWarper(top_k=20, top_p=0.95, min_p=0.08),
+    ]
+    for dtype in (torch.bfloat16, torch.float32, torch.float64):
+        raw_2d = torch.randn(K, V, generator=g, dtype=torch.float32).to(dtype)
+        # Inject exact ties + -inf masked slots
+        raw_2d[1, :30] = raw_2d[1, 0]
+        raw_2d[2, 10:] = -torch.inf
+        for T in (0.6, 0.7, 1.0):
+            for warp in warpers:
+                for inp in (raw_2d[0], raw_2d[1], raw_2d[2], raw_2d):
+                    p_sub, idx = compact_probabilities(inp, T, warp)
+                    p_full = probabilities(inp, T, warp)
+                    if idx is None:
+                        assert torch.equal(p_sub, p_full)
+                    else:
+                        reconstructed = torch.zeros_like(p_full).scatter(-1, idx, p_sub)
+                        assert torch.equal(reconstructed, p_full)
+                    if warp.min_p == 0.0 and dtype != torch.float64:
+                        ref_dflash = _sampling_probs(inp, T, top_p=warp.top_p, top_k=warp.top_k)
+                        assert torch.equal(p_full, ref_dflash)
+
+    # Validation guards & greedy T=0 lowest-ID tie-break with zero RNG consumption
+    with pytest.raises(ValueError):
+        sample_token_compact(torch.empty(0), 0.7)
+    with pytest.raises(ValueError):
+        sample_token_compact(torch.zeros(2, 4), 0.7)
+    with pytest.raises(ValueError):
+        sample_token_compact(torch.zeros(4), -0.1)
+
+    tied = torch.tensor([-1.0, 2.5, 0.3, 2.5, 2.5], dtype=torch.float32)
+    rng_g = torch.Generator().manual_seed(77)
+    state_before = rng_g.get_state().clone()
+    tok0, p0, i0 = sample_token_compact(tied, 0.0, SamplingWarper(top_k=2, top_p=0.5), generator=rng_g)
+    assert int(tok0) == 1 and p0 is None and i0 is None
+    assert torch.equal(rng_g.get_state(), state_before)
+
+    # FastPathRuntime.compact_probabilities static-graph tuple capture, replay, & non-aliasing
+    fp = FastPathRuntime(FastPathConfig(compile=True, simulate_cpu_graph=True), static_block_length=K)
+    warp_k = SamplingWarper(top_k=20, top_p=0.8)
+    s_vec = torch.randn(V, generator=g)
+    for step in range(3):
+        tok_t, ps_s, ix_s = sample_token_compact(
+            s_vec, 0.7, warp_k, generator=torch.Generator().manual_seed(900 + step),
+            compact_probs_fn=fp.compact_probabilities,
+        )
+        assert ix_s is not None and ix_s.shape == (20,)
+        assert bool(torch.all(ix_s[1:] > ix_s[:-1]))  # strictly ascending vocab IDs
+        q_from_compact = torch.zeros(V, dtype=ps_s.dtype).scatter(0, ix_s, ps_s)
+        torch.testing.assert_close(q_from_compact, probabilities(s_vec, 0.7, warp_k), rtol=1e-6, atol=1e-6)
+        ps_s.fill_(-999.0)
+        ix_s.fill_(0)
+    assert fp.stats()["probs_graph_captures"] == 1
+    assert fp.stats()["probs_graph_replays"] == 2
+
+    # Empirical categorical parity against sample_token over 16,000 draws
+    logits_cat = torch.tensor([0.2, 1.9, -0.5, 1.9, 1.3, 0.8, 2.2, -1.0, 1.5], dtype=torch.float32)
+    warp_cat = SamplingWarper(top_k=5, top_p=0.85, min_p=0.05)
+    expected_p = probabilities(logits_cat, 0.7, warp_cat)
+    counts = torch.zeros(len(logits_cat), dtype=torch.float64)
+    rng_emp = torch.Generator().manual_seed(12345)
+    n_draws = 16000
+    for _ in range(n_draws):
+        t_c, _, _ = sample_token_compact(logits_cat, 0.7, warp_cat, generator=rng_emp)
+        counts[int(t_c)] += 1.0
+    emp_p = counts / n_draws
+    assert torch.equal(counts == 0, (expected_p == 0))
+    assert float((emp_p - expected_p.double()).abs().max()) < 0.015
+
+
+@pytest.mark.parametrize("k_ret", [None, 1, 4, 19])
+def test_online_bigram_score_tensor_zero_ulp_fuzz_and_dynamic_growth(k_ret):
+    rng = random.Random(7700 + (0 if k_ret is None else k_ret))
+    V = 97
+    bigram = OnlineBigram(V, alpha=0.4, lambda_tr=0.23, k_ret=k_ret)
+    g = torch.Generator().manual_seed(88)
+
+    for dtype in (torch.float32, torch.float64):
+        l_u = torch.randn(V, generator=g, dtype=dtype)
+        l_u[0] = -0.0  # verify -0.0 sign-bit preservation on inactive bypass
+        l_u[3] = -torch.inf
+        assert bigram.score_tensor(l_u, None) is l_u
+        assert bigram.score_tensor(l_u, torch.tensor(5, dtype=torch.long)) is l_u
+
+    # Force >64 active predecessor rows AND >32 unique successors on row 7 (when k_ret=None)
+    # while row 11 has a single non-zero successor id=42 (testing col_cap growth padding!).
+    bigram.update([11], [42])
+    l_f32 = torch.randn(V, generator=g, dtype=torch.float32)
+    l_f32[0] = -0.0
+    l_f64 = l_f32.double()
+    # Materialize device table BEFORE col_cap & row_cap double
+    assert torch.equal(bigram.score_tensor(l_f32, torch.tensor(11)), bigram.score(l_f32, 11))
+    assert torch.equal(bigram.score_tensor(l_f64, torch.tensor(11)), bigram.score(l_f64, 11))
+
+    for succ in range(40):
+        bigram.update([7], [(succ * 2 + 1) % 90])
+    for step in range(90):
+        prev_tok = step % 80
+        committed = [rng.randrange(90) for _ in range(rng.randint(1, 5))]
+        bigram.update([prev_tok], committed)
+
+    # Touch an unseen key on defaultdict(Counter) to ensure empty Counter() never corrupts table
+    _ = bigram.counts[96]
+    assert len(bigram.counts[96]) == 0
+
+    for prev in [0, 7, 11, 42, 79, 85, 96]:
+        p_t = torch.tensor(prev, dtype=torch.long)
+        out32 = bigram.score_tensor(l_f32, p_t)
+        ref32 = bigram.score(l_f32, prev)
+        assert torch.equal(out32, ref32)
+        if not bigram.counts.get(prev):
+            assert math.copysign(1.0, float(out32[0])) == math.copysign(1.0, float(ref32[0]))
+        out64 = bigram.score_tensor(l_f64, p_t)
+        ref64 = bigram.score(l_f64, prev)
+        assert torch.equal(out64, ref64)
+
+    # Mid-stream hyperparameter mutations (alpha, k_ret, lambda_tr) and counts.clear()
+    bigram.alpha = 1.25
+    bigram.lambda_tr = 0.07
+    bigram.k_ret = 3 if k_ret is None else None
+    for prev in [7, 11, 42, 96]:
+        p_t = torch.tensor(prev, dtype=torch.long)
+        assert torch.equal(bigram.score_tensor(l_f32, p_t), bigram.score(l_f32, prev))
+
+    bigram.lambda_tr = 0.0
+    assert bigram.score_tensor(l_f32, torch.tensor(7)) is l_f32
+    bigram.lambda_tr = 0.15
+    bigram.counts.clear()
+    bigram._rows.clear()
+    bigram._cache.clear()
+    assert bigram.score_tensor(l_f32, torch.tensor(7)) is l_f32
+
+
+def test_sample_proposal_sync_free_arms_exact_q_and_v151936_smoke():
+    from edraft.dflash_loop import PhaseTimer, _sample_proposal
+
+    g = torch.Generator().manual_seed(4242)
+    V, K, r, p_dim, D = 64, 5, 6, 8, 3
+    E = torch.randn(V, r, generator=g) * 0.2
+    sparse = SignedHash(128)
+    with torch.no_grad():
+        sparse.values.normal_(0, 0.05)
+    adapter = DenseAdapter(E, p=p_dim, D=D, sparse=sparse, M_sparse=8)
+    with torch.no_grad():
+        adapter.W.normal_(0, 0.1)
+        adapter.A.normal_(0, 0.1)
+        adapter.b.normal_(0, 0.05)
+    snap = adapter.snapshot()
+    bigram = OnlineBigram(V, alpha=0.5, lambda_tr=0.2, k_ret=6)
+    bigram.update([1, 2, 3], [4, 5, 2, 7, 3, 9])
+
+    draft_logits = torch.randn(K, V, generator=g)
+    h_raw = torch.randn(K, p_dim, generator=g)
+    prefix = [1, 2, 3]
+    warp = SamplingWarper(top_k=12, top_p=0.85)
+    fp = FastPathRuntime(FastPathConfig(compile=True, simulate_cpu_graph=True), static_block_length=K)
+
+    for use_snap in (None, snap):
+        for use_bg in (None, bigram):
+            if use_snap is None and use_bg is None:
+                continue
+            for use_fp in (None, fp):
+                timer = PhaseTimer("cpu", enabled=True)
+                toks, q, l_unit, H = _sample_proposal(
+                    draft_logits, h_raw, prefix, temperature=0.7, warper=warp,
+                    generator=torch.Generator().manual_seed(99), snapshot=use_snap,
+                    projection=None, beta=0.8, bigram=use_bg, timer=timer,
+                    need_training_tensors=False, fastpath=use_fp, _return_token_tensor=False,
+                )
+                assert isinstance(toks, list) and len(toks) == K
+                assert q is not None and q.shape == (K, V)
+                # Reconstruct exact per-slot probabilities from realized tokens and verify 0-ULP / FP32 parity
+                U_ref = use_snap.unary(h_raw.float()) if use_snap is not None else None
+                l_ref = draft_logits.float().log_softmax(-1)
+                for i in range(K):
+                    sc_i = (
+                        use_snap.score_slot(l_ref[i], U_ref[i], prefix, toks[:i], i, beta=0.8)
+                        if use_snap is not None else l_ref[i]
+                    )
+                    if use_bg is not None:
+                        prev_i = toks[i - 1] if i > 0 else prefix[-1]
+                        sc_i = use_bg.score(sc_i, prev_i)
+                    q_ref_i = probabilities(sc_i, 0.7, warp)
+                    if use_fp is None:
+                        assert torch.equal(q[i], q_ref_i)
+                    else:
+                        torch.testing.assert_close(q[i], q_ref_i, rtol=1e-5, atol=1e-6)
+                    assert float(q[i, toks[i]]) > 0.0
+
+                # T == 0 greedy exact token parity against reference score_slot + sample_token
+                toks_g, q_g, _, _ = _sample_proposal(
+                    draft_logits, h_raw, prefix, temperature=0.0, warper=warp,
+                    generator=None, snapshot=use_snap, projection=None, beta=0.8,
+                    bigram=use_bg, timer=PhaseTimer("cpu", False),
+                    need_training_tensors=False, fastpath=use_fp, _return_token_tensor=False,
+                )
+                assert q_g is None
+                ref_g = []
+                for i in range(K):
+                    sc_i = (
+                        use_snap.score_slot(l_ref[i], U_ref[i], prefix, ref_g, i, beta=0.8)
+                        if use_snap is not None else l_ref[i]
+                    )
+                    if use_bg is not None:
+                        prev_i = ref_g[-1] if ref_g else prefix[-1]
+                        sc_i = use_bg.score(sc_i, prev_i)
+                    ref_g.append(int(torch.argmax(sc_i).item()))
+                assert toks_g == ref_g
+
+    # Qwen3-4B vocabulary-scale (V=151,936, K=15, top_k=20) smoke check on online_bigram
+    V_big, K_big = 151_936, 15
+    bg_big = OnlineBigram(V_big, alpha=0.5, lambda_tr=0.1, k_ret=None)
+    bg_big.update([10, 20], [30, 40, 20, 50, 60])
+    d_big = torch.randn(K_big, V_big, generator=g, dtype=torch.bfloat16)
+    h_big = torch.randn(K_big, 8, generator=g, dtype=torch.bfloat16)
+    t_big, q_big, _, _ = _sample_proposal(
+        d_big, h_big, [10, 60], temperature=0.6, warper=SamplingWarper(top_k=20, top_p=0.95),
+        generator=torch.Generator().manual_seed(7), snapshot=None, projection=None, beta=1.0,
+        bigram=bg_big, timer=PhaseTimer("cpu", True), need_training_tensors=False,
+        _return_token_tensor=True,
+    )
+    assert t_big.shape == (K_big,) and q_big.shape == (K_big, V_big)
+    torch.testing.assert_close(q_big.sum(-1), torch.ones(K_big), rtol=1e-5, atol=1e-5)
+
+
+def test_round2_bughunter_edge_cases_kl_weights_diagnose_and_launch_cli(tmp_path, monkeypatch):
+    import json
+    from edraft import launch as launch_mod
+
+    # 1. OPT-R2-BUG-2: arbitrary broadcast-compatible weights in full_kl & union_rest_grouped
+    g = torch.Generator().manual_seed(31415)
+    N, V = 4, 11
+    s_base = torch.randn(N, V, generator=g)
+    t_base = torch.randn(N, V, generator=g)
+    u_ids = [torch.tensor([0, 1]), torch.tensor([2, 3]), torch.tensor([0]), torch.tensor([1, 2, 3])]
+    u_probs = [torch.tensor([0.5, 0.2]), torch.tensor([0.4, 0.3]), torch.tensor([0.6]), torch.tensor([0.2, 0.2, 0.2])]
+    rest_m = torch.tensor([0.3, 0.3, 0.4, 0.4])
+    direction = torch.randn(N, V, generator=g)
+
+    weight_cases = [
+        2.0,
+        torch.tensor(2.0),
+        torch.tensor([2.0]),
+        torch.tensor([1.0, 2.0, 0.5, 1.5]),
+        torch.tensor([[1.0], [2.0], [3.0], [4.0]]),
+        torch.ones((2, N)) * 0.75,
+        torch.randn(2, 3, N, generator=g).abs(),
+    ]
+    for w_case in weight_cases:
+        # full_kl forward + 1st-order + 2nd-order HVP parity vs explicit broadcast reference
+        s_opt = s_base.clone().requires_grad_(True)
+        s_ref = s_base.clone().requires_grad_(True)
+        loss_opt = full_kl(s_opt, t_base, weights=w_case)
+        p_log = torch.log_softmax(t_base.float(), -1)
+        q_log = torch.log_softmax(s_ref.float(), -1)
+        loss_ref = ((p_log.exp() * (p_log - q_log)).sum(-1) * w_case).sum()
+        torch.testing.assert_close(loss_opt, loss_ref, rtol=1e-6, atol=1e-6)
+        (g_opt,) = torch.autograd.grad(loss_opt, s_opt, create_graph=True)
+        (g_ref,) = torch.autograd.grad(loss_ref, s_ref, create_graph=True)
+        torch.testing.assert_close(g_opt, g_ref, rtol=1e-5, atol=1e-6)
+        (hvp_opt,) = torch.autograd.grad((g_opt * direction).sum(), s_opt)
+        (hvp_ref,) = torch.autograd.grad((g_ref * direction).sum(), s_ref)
+        torch.testing.assert_close(hvp_opt, hvp_ref, rtol=1e-5, atol=1e-5)
+
+        # union_rest_grouped forward + 1st-order + 2nd-order HVP parity vs grouped_loop_reference
+        sg_opt = s_base.clone().requires_grad_(True)
+        sg_ref = s_base.clone().requires_grad_(True)
+        lg_opt = union_rest_grouped(sg_opt, u_ids, u_probs, rest_m, weights=w_case)
+        # Compute per-slot grouped loss reference and apply exact PyTorch `* w_case` broadcast
+        per_slot_ref = torch.stack([
+            grouped_loop_reference(sg_ref[r:r + 1], [u_ids[r]], [u_probs[r]], rest_m[r:r + 1], weights=torch.ones(1))
+            for r in range(N)
+        ])
+        lg_ref = (per_slot_ref * w_case).sum()
+        torch.testing.assert_close(lg_opt, lg_ref, rtol=1e-6, atol=1e-6)
+        (gg_opt,) = torch.autograd.grad(lg_opt, sg_opt, create_graph=True)
+        (gg_ref,) = torch.autograd.grad(lg_ref, sg_ref, create_graph=True)
+        torch.testing.assert_close(gg_opt, gg_ref, rtol=1e-5, atol=1e-6)
+        (ghvp_opt,) = torch.autograd.grad((gg_opt * direction).sum(), sg_opt)
+        (ghvp_ref,) = torch.autograd.grad((gg_ref * direction).sum(), sg_ref)
+        torch.testing.assert_close(ghvp_opt, ghvp_ref, rtol=1e-5, atol=1e-5)
+
+    with pytest.raises(RuntimeError):
+        full_kl(s_base.clone().requires_grad_(True), t_base, weights=torch.ones(N + 1))
+    with pytest.raises(RuntimeError):
+        union_rest_grouped(s_base.clone().requires_grad_(True), u_ids, u_probs, rest_m, weights=torch.ones(N + 1))
+
+    # 2. OPT-R2-BUG-3: DiagnosticAccumulator.add_blocks with sampling_warp_config=None & mixed configs
+    base_diag = {
+        "target_rank": [0, 1],
+        "sampled_target_rank": [0, 1],
+        "sampled_target_rank_unwarped": [0, 1],
+        "overlap_sampling": [1.0, 0.5],
+        "overlap_unwarped": [0.9, 0.6],
+        "cross_entropy_unwarped": [0.2, 0.7],
+        "sampling_cross_entropy": [0.0, 0.5],
+        "sampling_cross_entropy_infinite": [0.0, 0.0],
+        "target_mass_on_zero_proposal": [0.0, 0.0],
+        "top_m": {str(m): {"mass": [1.0, 1.0], "overlap": [0.9, 0.6]} for m in TOP_M},
+        "first_rejection": None,
+    }
+    warp_seq = [None, {"top_k": 20, "top_p": 1}, {"top_k": 20, "top_p": 1.0}, None]
+    blocks_none = []
+    acc_one = DiagnosticAccumulator(seed=2026)
+    acc_many = DiagnosticAccumulator(seed=2026)
+    for idx_b, w_cfg in enumerate(warp_seq):
+        blk = {
+            "prompt_id": f"p{idx_b}", "seed": 2026, "condition": "standard_nonthinking",
+            "collection_temperature": 0.0, "sampling_warp_config": w_cfg, "split": "dev",
+            "draft_tokens": [1, 2], "accepted_length": 1, "first_rejection_index": 1,
+            "absolute_output_offset": idx_b * 2, "input_context_length": 8 + idx_b,
+            "h": torch.randn((2, 4), generator=g), "diagnostics": base_diag,
+        }
+        blocks_none.append(blk)
+        acc_one.add_block(blk)
+    acc_many.add_blocks(blocks_none)
+    rep_one = acc_one.report()
+    rep_many = acc_many.report()
+    assert json.dumps(rep_many, sort_keys=True) == json.dumps(rep_one, sort_keys=True)
+    assert any(grp["sampling_warp_config"] is None for grp in rep_many["groups"])
+
+    # 3. OPT-R2-BUG-4: launch.py accepts and forwards all Round-2 train CLI flags
+    spawned_cmds = []
+
+    class _DummyProc:
+        def __init__(self, cmd, **kwargs):
+            spawned_cmds.append(list(cmd))
+            self.pid = 43210
+            self.returncode = 0
+
+        def wait(self):
+            return 0
+
+        def poll(self):
+            return 0
+
+    monkeypatch.setattr(launch_mod, "record_run", lambda *a, **kw: None)
+    monkeypatch.setattr(launch_mod, "selected_gpus_idle", lambda indices: None)
+    monkeypatch.setattr(launch_mod.subprocess, "Popen", _DummyProc)
+    out_launch = tmp_path / "launch_out"
+    launch_mod.main([
+        "--scale", "reference",
+        "--task", "train",
+        "--gpus", "0,1",
+        "--output", str(out_launch),
+        "--optimizer", "pacemuon",
+        "--lr_schedule", "wsd",
+        "--block_shuffle_window", "8",
+        "--learning_rate", "0.0003",
+        "--weight_decay", "0.01",
+        "--bias_weight_decay", "1e-05",
+        "--sparse_learning_rate", "0.005",
+        "--lambda_l1", "2e-05",
+        "--epochs_dense", "2",
+        "--epochs_sparse", "3",
+        "--no_ema_eval",
+        "--pace_pullback", "0.08",
+        "--anchor_soda", "0.03",
+        "--no_resume",
+    ])
+    assert len(spawned_cmds) == 2
+    cmd0 = spawned_cmds[0]
+    for expected_pair in (
+        ("--optimizer", "pacemuon"),
+        ("--lr_schedule", "wsd"),
+        ("--block_shuffle_window", "8"),
+        ("--learning_rate", "0.0003"),
+        ("--weight_decay", "0.01"),
+        ("--bias_weight_decay", "1e-05"),
+        ("--sparse_learning_rate", "0.005"),
+        ("--lambda_l1", "2e-05"),
+        ("--epochs_dense", "2"),
+        ("--epochs_sparse", "3"),
+        ("--pace_pullback", "0.08"),
+        ("--anchor_soda", "0.03"),
+    ):
+        idx_f = cmd0.index(expected_pair[0])
+        assert cmd0[idx_f + 1] == expected_pair[1]
+    assert "--no_ema_eval" in cmd0
+    assert "--no_resume" in cmd0
+
+

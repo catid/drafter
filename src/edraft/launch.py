@@ -55,6 +55,20 @@ def main(argv=None):
     parser.add_argument('--compile_online', action='store_true', default=False)
     parser.add_argument('--optimizer', choices=['adamw', 'muon', 'pacemuon', 'anchormuon', 'adam_atan2'], default='adamw')
     parser.add_argument('--lr_schedule', choices=['constant', 'wsd', 'cosine'], default='constant')
+    parser.add_argument('--block_shuffle_window', type=int, default=0)
+    parser.add_argument('--learning_rate', type=float)
+    parser.add_argument('--weight_decay', type=float)
+    parser.add_argument('--bias_weight_decay', type=float)
+    parser.add_argument('--sparse_learning_rate', type=float)
+    parser.add_argument('--lambda_l1', type=float)
+    parser.add_argument('--epochs_dense', type=int)
+    parser.add_argument('--epochs_sparse', type=int)
+    parser.add_argument('--ema_eval', action='store_true', default=None)
+    parser.add_argument('--no_ema_eval', action='store_false', dest='ema_eval')
+    parser.add_argument('--pace_pullback', type=float)
+    parser.add_argument('--anchor_soda', type=float)
+    parser.add_argument('--resume', action='store_true', default=True)
+    parser.add_argument('--no_resume', action='store_false', dest='resume')
     args = parse_config(parser, argv)
     if args.train_tokens_per_temperature is None:
         args.train_tokens_per_temperature = 1000000 if args.scale == 'full' else 250000
@@ -106,6 +120,22 @@ def main(argv=None):
                     command.extend(['--optimizer', args.optimizer])
                 if args.lr_schedule != 'constant':
                     command.extend(['--lr_schedule', args.lr_schedule])
+                if args.block_shuffle_window != 0:
+                    command.extend(['--block_shuffle_window', str(args.block_shuffle_window)])
+                for flag_name in (
+                    'learning_rate', 'weight_decay', 'bias_weight_decay',
+                    'sparse_learning_rate', 'lambda_l1', 'epochs_dense',
+                    'epochs_sparse', 'pace_pullback', 'anchor_soda',
+                ):
+                    val = getattr(args, flag_name)
+                    if val is not None:
+                        command.extend([f'--{flag_name}', str(val)])
+                if args.ema_eval is True:
+                    command.append('--ema_eval')
+                elif args.ema_eval is False:
+                    command.append('--no_ema_eval')
+                if not args.resume:
+                    command.append('--no_resume')
             elif args.task == 'collect':
                 command = [sys.executable, '-m', 'edraft.collect', '--stage', 'collect', *base,
                            '--long_max_new_tokens', str(args.long_max_new_tokens),

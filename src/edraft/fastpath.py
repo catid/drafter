@@ -20,7 +20,12 @@ import torch
 from torch.nn import functional as F
 
 from .adapter import block_unary, full_kl
-from .sampler import SamplingWarper, probabilities as eager_probabilities, probability_dtype
+from .sampler import (
+    SamplingWarper,
+    compact_probabilities as eager_compact_probabilities,
+    probabilities as eager_probabilities,
+    probability_dtype,
+)
 
 
 @dataclass(frozen=True)
@@ -59,6 +64,21 @@ class FastPathConfig:
         return out
 
 
+def _clone_graph_output(out):
+    if isinstance(out, tuple):
+        return tuple(None if x is None else x.clone() for x in out)
+    return out.clone()
+
+
+def _copy_graph_output(dst, src) -> None:
+    if isinstance(dst, tuple):
+        for d, s in zip(dst, src):
+            if d is not None and s is not None:
+                d.copy_(s)
+    else:
+        dst.copy_(src)
+
+
 class StaticGraphCallable:
     """Static-shape CUDA graph cache (with optional CPU buffer-replay simulation).
 
@@ -78,7 +98,7 @@ class StaticGraphCallable:
         self.graph_replays = 0
         self.eager_fallbacks = 0
 
-    def __call__(self, *tensors: torch.Tensor, extra_args: tuple = ()) -> torch.Tensor:
+    def __call__(self, *tensors: torch.Tensor, extra_args: tuple = ()):
         if not tensors:
             raise ValueError("StaticGraphCallable requires at least one tensor input")
         first = tensors[0]
@@ -116,11 +136,11 @@ class StaticGraphCallable:
             else:
                 with torch.no_grad():
                     sample_out = self.fn(*static_inputs, *extra_args)
-                    static_output = sample_out.clone()
+                    static_output = _clone_graph_output(sample_out)
                 entry = {"kind": "cpu_sim", "inputs": static_inputs, "output": static_output}
             self._entries[key] = entry
             self.graph_captures += 1
-            return entry["output"].clone()
+            return _clone_graph_output(entry["output"])
 
         for dst, src in zip(entry["inputs"], tensors):
             dst.copy_(src)
@@ -128,9 +148,9 @@ class StaticGraphCallable:
             entry["graph"].replay()
         else:
             with torch.no_grad():
-                entry["output"].copy_(self.fn(*entry["inputs"], *extra_args))
+                _copy_graph_output(entry["output"], self.fn(*entry["inputs"], *extra_args))
         self.graph_replays += 1
-        return entry["output"].clone()
+        return _clone_graph_output(entry["output"])
 
 
 def _fresh_compile(fn: Callable, mode: str, *, dynamic: bool = False) -> Callable:
@@ -215,9 +235,13 @@ def _make_compiled_probs(temperature: float, warper: SamplingWarper, mode: str) 
             s, indices = torch.topk(s, top_k, dim=-1)
         probs = torch.softmax(s, dim=-1)
         if top_p < 1.0:
-            sorted_probs, order = probs.sort(dim=-1, descending=True)
-            keep = sorted_probs.cumsum(dim=-1) - sorted_probs < top_p
-            probs = torch.zeros_like(probs).scatter(-1, order, sorted_probs * keep)
+            if indices is not None:
+                keep = probs.cumsum(dim=-1) - probs < top_p
+                probs = probs * keep
+            else:
+                sorted_probs, order = probs.sort(dim=-1, descending=True)
+                keep = sorted_probs.cumsum(dim=-1) - sorted_probs < top_p
+                probs = torch.zeros_like(probs).scatter(-1, order, sorted_probs * keep)
             probs = probs / probs.sum(dim=-1, keepdim=True)
         if min_p > 0.0:
             keep = probs >= min_p * probs.amax(dim=-1, keepdim=True)
@@ -229,6 +253,37 @@ def _make_compiled_probs(temperature: float, warper: SamplingWarper, mode: str) 
         return probs
 
     return _fresh_compile(_probs_impl, mode)
+
+
+def _make_compiled_compact_probs(temperature: float, warper: SamplingWarper, mode: str) -> Callable:
+    temp = float(temperature)
+    top_k = int(warper.top_k)
+    top_p = float(warper.top_p)
+    min_p = float(warper.min_p)
+
+    def _compact_probs_impl(scores: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor | None]:
+        s = probability_dtype(scores) / temp
+        V = s.shape[-1]
+        indices = None
+        if 0 < top_k < V:
+            s, indices = torch.topk(s, top_k, dim=-1)
+        probs = torch.softmax(s, dim=-1)
+        if top_p < 1.0:
+            if indices is not None:
+                keep = probs.cumsum(dim=-1) - probs < top_p
+                probs = probs * keep
+            else:
+                sorted_probs, order = probs.sort(dim=-1, descending=True)
+                keep = sorted_probs.cumsum(dim=-1) - sorted_probs < top_p
+                probs = torch.zeros_like(probs).scatter(-1, order, sorted_probs * keep)
+            probs = probs / probs.sum(dim=-1, keepdim=True)
+        if min_p > 0.0:
+            keep = probs >= min_p * probs.amax(dim=-1, keepdim=True)
+            probs = probs * keep
+            probs = probs / probs.sum(dim=-1, keepdim=True)
+        return probs, indices
+
+    return _fresh_compile(_compact_probs_impl, mode)
 
 
 def _rotate_half(x: torch.Tensor) -> torch.Tensor:
@@ -397,6 +452,7 @@ class FastPathRuntime:
         self._e_bf16_cache: dict[tuple, torch.Tensor] = {}
         self._drafter_runners: dict[int, _CompiledDrafterRunner] = {}
         self._probs_compiled_cache: dict[tuple[int, float, SamplingWarper], Callable] = {}
+        self._compact_probs_compiled_cache: dict[tuple[int, float, SamplingWarper], Callable] = {}
         if config.cuda_graph or config.simulate_cpu_graph:
             allowed_unary = (static_block_length,) if static_block_length is not None else None
             self._unary_graph = StaticGraphCallable(
@@ -410,9 +466,16 @@ class FastPathRuntime:
                 )(scores),
                 simulate_cpu=config.simulate_cpu_graph,
             )
+            self._compact_probs_graph = StaticGraphCallable(
+                lambda scores, temperature, warper: self._compact_probs_callable_for(
+                    scores.ndim, temperature, warper
+                )(scores),
+                simulate_cpu=config.simulate_cpu_graph,
+            )
         else:
             self._unary_graph = None
             self._probs_graph = None
+            self._compact_probs_graph = None
 
     @property
     def enabled(self) -> bool:
@@ -438,6 +501,16 @@ class FastPathRuntime:
         if fn is None:
             fn = _make_compiled_probs(temperature, warper, self.config.compile_mode)
             self._probs_compiled_cache[key] = fn
+        return fn
+
+    def _compact_probs_callable_for(self, ndim: int, temperature: float, warper: SamplingWarper) -> Callable:
+        if not self.config.compile:
+            return lambda s: eager_compact_probabilities(s, temperature, warper)
+        key = (int(ndim), float(temperature), warper)
+        fn = self._compact_probs_compiled_cache.get(key)
+        if fn is None:
+            fn = _make_compiled_compact_probs(temperature, warper, self.config.compile_mode)
+            self._compact_probs_compiled_cache[key] = fn
         return fn
 
     def unary(self, E: torch.Tensor, W: torch.Tensor, b: torch.Tensor, H: torch.Tensor) -> torch.Tensor:
@@ -575,7 +648,38 @@ class FastPathRuntime:
                 return self._probs_graph(scores, extra_args=(float(temperature), warper))
             return self._probs_callable_for(scores.ndim, temperature, warper)(scores)
 
+    def compact_probabilities(
+        self,
+        scores: torch.Tensor,
+        temperature: float,
+        warper: SamplingWarper = SamplingWarper(),
+    ) -> tuple[torch.Tensor, torch.Tensor | None]:
+        if not math.isfinite(temperature) or temperature <= 0:
+            raise ValueError("sampling probabilities require finite temperature > 0")
+        if (scores.ndim == 2 and self.static_block_length is not None
+                and scores.shape[0] not in (self.static_block_length, self.static_block_length + 1)):
+            if self._compact_probs_graph is not None:
+                self._compact_probs_graph.eager_fallbacks += 1
+            with torch.no_grad():
+                return eager_compact_probabilities(scores, temperature, warper)
+        with torch.no_grad():
+            if self._compact_probs_graph is not None:
+                return self._compact_probs_graph(scores, extra_args=(float(temperature), warper))
+            return self._compact_probs_callable_for(scores.ndim, temperature, warper)(scores)
+
     def stats(self) -> dict:
+        probs_captures = (
+            (0 if self._probs_graph is None else self._probs_graph.graph_captures)
+            + (0 if self._compact_probs_graph is None else self._compact_probs_graph.graph_captures)
+        )
+        probs_replays = (
+            (0 if self._probs_graph is None else self._probs_graph.graph_replays)
+            + (0 if self._compact_probs_graph is None else self._compact_probs_graph.graph_replays)
+        )
+        probs_fallbacks = (
+            (0 if self._probs_graph is None else self._probs_graph.eager_fallbacks)
+            + (0 if self._compact_probs_graph is None else self._compact_probs_graph.eager_fallbacks)
+        )
         return {
             "compile": bool(self.config.compile),
             "cuda_graph": bool(self.config.cuda_graph),
@@ -585,7 +689,7 @@ class FastPathRuntime:
             "unary_graph_captures": 0 if self._unary_graph is None else self._unary_graph.graph_captures,
             "unary_graph_replays": 0 if self._unary_graph is None else self._unary_graph.graph_replays,
             "unary_eager_fallbacks": 0 if self._unary_graph is None else self._unary_graph.eager_fallbacks,
-            "probs_graph_captures": 0 if self._probs_graph is None else self._probs_graph.graph_captures,
-            "probs_graph_replays": 0 if self._probs_graph is None else self._probs_graph.graph_replays,
-            "probs_eager_fallbacks": 0 if self._probs_graph is None else self._probs_graph.eager_fallbacks,
+            "probs_graph_captures": probs_captures,
+            "probs_graph_replays": probs_replays,
+            "probs_eager_fallbacks": probs_fallbacks,
         }

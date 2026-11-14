@@ -67,11 +67,17 @@ def apply_warper(scores: torch.Tensor, warper: SamplingWarper = SamplingWarper()
     return scores
 
 
-def probabilities(
+def compact_probabilities(
     scores: torch.Tensor,
     temperature: float,
     warper: SamplingWarper = SamplingWarper(),
-) -> torch.Tensor:
+) -> tuple[torch.Tensor, torch.Tensor | None]:
+    """Return `(probs_sub, indices)` on retained support without `[..., V]` scatter.
+
+    When `0 < warper.top_k < V`, `torch.topk` already orders the `top_k` candidates
+    descending, so `top_p` needs no secondary sort or intermediate scatter. When
+    `top_k` is inactive (`0` or `>= V`), returns `(probs_full, None)`.
+    """
     if not math.isfinite(temperature) or temperature <= 0:
         raise ValueError("sampling probabilities require finite temperature > 0")
     scores = probability_dtype(scores) / temperature
@@ -81,15 +87,29 @@ def probabilities(
         scores, indices = torch.topk(scores, warper.top_k, dim=-1)
     probs = torch.softmax(scores, dim=-1)
     if warper.top_p < 1:
-        sorted_probs, order = probs.sort(dim=-1, descending=True)
-        keep = sorted_probs.cumsum(dim=-1) - sorted_probs < warper.top_p
-        probs = torch.zeros_like(probs).scatter(-1, order, sorted_probs * keep)
+        if indices is not None:
+            keep = probs.cumsum(dim=-1) - probs < warper.top_p
+            probs = probs * keep
+        else:
+            sorted_probs, order = probs.sort(dim=-1, descending=True)
+            keep = sorted_probs.cumsum(dim=-1) - sorted_probs < warper.top_p
+            probs = torch.zeros_like(probs).scatter(-1, order, sorted_probs * keep)
         probs = probs / probs.sum(dim=-1, keepdim=True)
     if warper.min_p > 0:
         keep = probs >= warper.min_p * probs.amax(dim=-1, keepdim=True)
         probs = probs * keep
         probs = probs / probs.sum(dim=-1, keepdim=True)
+    return probs, indices
+
+
+def probabilities(
+    scores: torch.Tensor,
+    temperature: float,
+    warper: SamplingWarper = SamplingWarper(),
+) -> torch.Tensor:
+    probs, indices = compact_probabilities(scores, temperature, warper)
     if indices is not None:
+        V = scores.shape[-1]
         full_shape = (*probs.shape[:-1], V)
         probs = torch.zeros(full_shape, dtype=probs.dtype, device=probs.device).scatter(-1, indices, probs)
     return probs
@@ -107,6 +127,41 @@ def draw_tensor(probs: torch.Tensor, generator: torch.Generator | None = None) -
     if probs.ndim != 1:
         raise ValueError("draw_tensor requires a single probability vector")
     return torch.multinomial(probs, 1, generator=generator)[0]
+
+
+def sample_token_compact(
+    scores: torch.Tensor,
+    temperature: float,
+    warper: SamplingWarper = SamplingWarper(),
+    generator: torch.Generator | None = None,
+    *,
+    compact_probs_fn=None,
+) -> tuple[torch.Tensor, torch.Tensor | None, torch.Tensor | None]:
+    """Sync-free categorical draw on compact warped support with ascending-ID CDF order.
+
+    Returns `(tok_tensor, probs_compact, indices_compact)`:
+    - `temperature == 0`: `(torch.argmax(scores), None, None)` with no division,
+      warper, softmax, or RNG consumption.
+    - `0 < warper.top_k < V`: sorts retained `indices` ascending before `multinomial`
+      so CDF bucket order matches ascending vocabulary IDs `0..V-1`, returning
+      `(tok_t, probs_sorted, idx_sorted)` of length `warper.top_k`.
+    - Full-vocabulary warper (`indices is None`): returns `(draw_tensor(probs), probs, None)`.
+    """
+    if scores.ndim != 1 or scores.numel() == 0:
+        raise ValueError("sample_token_compact requires a nonempty vocabulary vector")
+    if not math.isfinite(temperature) or temperature < 0:
+        raise ValueError("temperature must be finite and nonnegative")
+    if temperature == 0:
+        return torch.argmax(scores), None, None
+    probs_sub, indices = (compact_probabilities if compact_probs_fn is None else compact_probs_fn)(
+        scores, temperature, warper
+    )
+    if indices is None:
+        return draw_tensor(probs_sub, generator), probs_sub, None
+    idx_sorted, perm = indices.sort(dim=-1)
+    probs_sorted = probs_sub.gather(-1, perm)
+    choice = torch.multinomial(probs_sorted, 1, generator=generator)[0]
+    return idx_sorted[choice], probs_sorted, idx_sorted
 
 
 def sample_token(

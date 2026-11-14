@@ -15,7 +15,7 @@ from .fastpath import FastPathConfig, FastPathRuntime
 from .online import OnlineBigram, OnlineState
 from .runtime import (common_parser, parse_config, record_run, resolved_config,
                       atomic_json, preflight, Manifest, fingerprint)
-from .sampler import SamplingWarper, sample_token, sample_token_tensor
+from .sampler import SamplingWarper, sample_token, sample_token_compact, sample_token_tensor
 from .sparse import SignedHash
 
 
@@ -176,6 +176,18 @@ def benchmark(args):
     phases['online_bigram_score'] = timing(
         lambda: [bigram.score(l_unit[i], fixed_tokens[i - 1] if i > 0 else prefix[-1]) for i in range(K)]
     )
+    bigram_prev_t = torch.tensor(
+        [fixed_tokens[i - 1] if i > 0 else prefix[-1] for i in range(K)],
+        dtype=torch.long,
+        device=device,
+    )
+    phases['online_bigram_score_tensor'] = timing(
+        lambda: [bigram.score_tensor(l_unit[i], bigram_prev_t[i]) for i in range(K)]
+    )
+    compact_warper = SamplingWarper(top_k=min(20, max(1, V - 1)), top_p=0.8) if V > 1 else SamplingWarper()
+    phases['sequential_sampling_compact_topk20'] = timing(
+        lambda: [sample_token_compact(l_unit[i] - dense[i], 0.7, compact_warper, generator=sampler_rng)[0] for i in range(K)]
+    )
 
     modes = {mode: timing(lambda mode=mode: total(mode))
              for mode in ('batched_full', 'sequential_full', 'dense_candidate')}
@@ -185,10 +197,10 @@ def benchmark(args):
     slot_offsets = [torch.arange(1, min(D, len(prefix) + i) + 1, dtype=torch.long, device=device)
                     for i in range(K)]
 
-    def total_zero_sync(fastpath=None):
+    def total_zero_sync(fastpath=None, active_warper=warper, temp=1.):
         bf16_mode = bool(fastpath is not None and fastpath.bf16_gemm)
         unary = fastpath.unary(E, snapshot.W, snapshot.b, H) if fastpath is not None else snapshot.unary(H)
-        probs_fn = fastpath.probabilities if fastpath is not None else None
+        compact_fn = fastpath.compact_probabilities if fastpath is not None else None
         ctx_buf[:len(prefix)] = prefix_t
         for i in range(K):
             offs = slot_offsets[i]
@@ -196,11 +208,14 @@ def benchmark(args):
             scores = snapshot.score_slot_tensor(
                 l_unit[i], unary[i], offs, prev_ids, contiguous_offsets=True, bf16_gemm=bf16_mode
             )
-            tok_t, _ = sample_token_tensor(scores, 1., warper, generator=sampler_rng, probs_fn=probs_fn)
+            tok_t, _, _ = sample_token_compact(
+                scores, temp, active_warper, generator=sampler_rng, compact_probs_fn=compact_fn
+            )
             ctx_buf[len(prefix) + i] = tok_t
         return ctx_buf[len(prefix):].tolist()
 
     modes['batched_full_zero_sync'] = timing(total_zero_sync)
+    modes['batched_full_compact_topk'] = timing(lambda: total_zero_sync(None, compact_warper, 0.7))
     if getattr(args, 'compile', False) or getattr(args, 'cuda_graph', False) or getattr(args, 'bf16_gemm', False):
         fastpath = FastPathRuntime(
             FastPathConfig(

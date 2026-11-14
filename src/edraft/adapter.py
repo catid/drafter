@@ -337,13 +337,29 @@ def _non_inference(x: torch.Tensor) -> torch.Tensor:
     return x.clone() if x.is_inference() else x
 
 
+def _effective_slot_weights(weights, n: int, device: torch.device) -> torch.Tensor:
+    """Canonicalize any broadcast-compatible `weights` for `(n,)` per-slot losses into a 1-D `(n,)` float32 tensor."""
+    if weights is None:
+        return loss_weights(n, device)
+    w = (
+        weights.detach().to(device=device, dtype=torch.float32)
+        if isinstance(weights, torch.Tensor)
+        else torch.as_tensor(weights, device=device, dtype=torch.float32)
+    )
+    bshape = torch.broadcast_shapes((n,), tuple(w.shape))
+    w_b = w.expand(bshape)
+    if w_b.ndim > 1:
+        return w_b.sum(dim=tuple(range(w_b.ndim - 1)))
+    return w_b.clone() if w_b.numel() != w.numel() else w_b
+
+
 class _FullKLFunction(torch.autograd.Function):
     """LSE-replay full-vocabulary KL avoiding [N, V] probability buffers saved for backward."""
 
     @staticmethod
-    def forward(ctx, scores: torch.Tensor, target_logits: torch.Tensor, weights: torch.Tensor) -> torch.Tensor:
+    def forward(ctx, scores: torch.Tensor, target_logits: torch.Tensor, weights) -> torch.Tensor:
         t_det = _non_inference(target_logits.detach())
-        w_f = _non_inference(torch.as_tensor(weights, device=scores.device, dtype=torch.float32).detach())
+        w_f = _non_inference(_effective_slot_weights(weights, scores.shape[0], scores.device))
         p_log = torch.log_softmax(t_det.float(), dim=-1)
         q_log = torch.log_softmax(scores.detach().float(), dim=-1)
         per_slot = (p_log.exp() * (p_log - q_log)).sum(dim=-1)
@@ -353,8 +369,7 @@ class _FullKLFunction(torch.autograd.Function):
     @staticmethod
     def backward(ctx, grad_out: torch.Tensor):
         scores, target_logits, w_f = ctx.saved_tensors
-        gw = grad_out.float() * w_f
-        scale = gw.reshape(-1, 1) if w_f.ndim > 0 else gw
+        scale = (grad_out.float() * w_f)[:, None]
         if torch.is_grad_enabled():
             grad_s = scale * (torch.softmax(scores.float(), dim=-1) - torch.softmax(target_logits.float(), dim=-1))
         else:
@@ -478,11 +493,7 @@ def collate_grouped_targets(
         rest_p = rest_p.index_fill(0, full_rows, 0.)
     else:
         full_rows = torch.empty(0, device=target_dev, dtype=torch.long)
-    eff_weights = (
-        loss_weights(N, target_dev)
-        if weights is None
-        else weights.detach().to(device=target_dev, dtype=torch.float32)
-    )
+    eff_weights = _effective_slot_weights(weights, N, target_dev)
     return PrecollatedGroupedTargets(
         rows=N,
         vocab_size=V,

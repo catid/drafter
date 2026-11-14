@@ -427,22 +427,25 @@ def test_work_queue_reclaims_dead_pid_and_dynamic_sharding_matches_modulo(tmp_pa
     q2 = WorkQueue(q_path, ["long-0", "long-1", "std-0"])
     assert q2.claim(rank=0) is None
 
-    # Compare dynamic vs modulo 2-rank evaluation in eval_closed_loop
+    # Compare dynamic vs modulo 2-rank evaluation in eval_closed_loop against identical frozen settings
     p_manifest = smoke_manifest()
+    tune_base = dict(
+        output=tmp_path / "tune_shared", stage="m3", scale="smoke", seed=19, device="cpu",
+        max_new_tokens=16, long_max_new_tokens=20, smoke_tokens=16,
+        standard_dev_prompts=2, long_dev_prompts=2, fresh_session=False, schedule="modulo",
+        compile=False, cuda_graph=False, target="t", drafter="d",
+        dense_checkpoint=None, sparse_checkpoint=None, projection=None, prompts_manifest=None,
+        feature_diagnostic=None,
+    )
+    shared_settings = run_tune(EvaluationRunner(SimpleNamespace(**tune_base, mode="tune", rank=0, world_size=1)), p_manifest)
     for sched in ("modulo", "dynamic"):
         out = tmp_path / f"eval_{sched}"
-        base = dict(
-            output=out, stage="m3", scale="smoke", seed=19, device="cpu",
-            max_new_tokens=16, long_max_new_tokens=20, smoke_tokens=16,
-            standard_dev_prompts=2, long_dev_prompts=2, fresh_session=False, schedule=sched,
-            compile=False, cuda_graph=False, target="t", drafter="d",
-            dense_checkpoint=None, sparse_checkpoint=None, projection=None, prompts_manifest=None,
-            feature_diagnostic=None,
-        )
-        settings = run_tune(EvaluationRunner(SimpleNamespace(**base, mode="tune", rank=0, world_size=1)), p_manifest)
+        (out / "m3").mkdir(parents=True, exist_ok=True)
+        (out / "m3" / "settings.json").write_text(json.dumps(shared_settings))
+        base = dict(tune_base, output=out, schedule=sched)
         for rank in (0, 1):
-            run_evaluate(EvaluationRunner(SimpleNamespace(**base, mode="evaluate", rank=rank, world_size=2)), p_manifest, settings)
-        eval_aggregate(SimpleNamespace(**base, mode="summarize", rank=0, world_size=1), p_manifest, settings)
+            run_evaluate(EvaluationRunner(SimpleNamespace(**base, mode="evaluate", rank=rank, world_size=2)), p_manifest, shared_settings)
+        eval_aggregate(SimpleNamespace(**base, mode="summarize", rank=0, world_size=1), p_manifest, shared_settings)
     mod_summary = json.loads((tmp_path / "eval_modulo" / "m3" / "summary.json").read_text())
     dyn_summary = json.loads((tmp_path / "eval_dynamic" / "m3" / "summary.json").read_text())
     assert mod_summary["missing_requests"] == [] and dyn_summary["missing_requests"] == []

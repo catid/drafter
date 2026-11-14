@@ -416,20 +416,15 @@ class DiagnosticAccumulator:
         out_idx_all = np.searchsorted(self._output_edges_np, offsets_np, side='right').tolist()
         ctx_idx_all = np.searchsorted(self._context_edges_np, contexts_np, side='right').tolist()
         ctx_labels = self._context_labels
-        last_warp_obj = None
-        last_warp_json = ''
         cursor = 0
         for block, K in zip(blocks, lengths):
             end = cursor + K
-            warp_obj = block['sampling_warp_config']
-            if warp_obj != last_warp_obj:
-                last_warp_obj = warp_obj
-                last_warp_json = json.dumps(warp_obj, sort_keys=True)
+            warp_json = json.dumps(block['sampling_warp_config'], sort_keys=True)
             out_bins = [OUTPUT_LABELS[j] for j in out_idx_all[cursor:end]]
             ctx_bins = [ctx_labels[j] for j in ctx_idx_all[cursor:end]]
             self._accumulate_prepared_block(
                 block, repetition_dominated, H_all[cursor:end], H_sq_all[cursor:end],
-                all_norms[cursor:end], all_outliers[cursor:end], out_bins, ctx_bins, last_warp_json,
+                all_norms[cursor:end], all_outliers[cursor:end], out_bins, ctx_bins, warp_json,
             )
             cursor = end
 

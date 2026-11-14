@@ -93,6 +93,57 @@ class _BigramRowIndex:
             self.retained_sum += new_count
 
 
+class _DeviceBigramState:
+    """Device-resident compact transition table for zero-sync `OnlineBigram.score_tensor`."""
+    __slots__ = (
+        'device', 'dtype', 'hyper_key', 'row_slot', 'base_shift', 'ret_ids', 'ret_shift',
+        'prev_to_slot', 'active_rows', 'max_ret', 'row_cap', 'col_cap', 'dirty_rows',
+    )
+
+    def __init__(self, vocab_size: int, device: torch.device, dtype: torch.dtype,
+                 hyper_key: tuple[float, int | None, float], row_cap: int = 64, col_cap: int = 16):
+        self.device = device
+        self.dtype = dtype
+        self.hyper_key = hyper_key
+        self.row_cap = max(2, row_cap)
+        self.col_cap = max(1, col_cap)
+        self.row_slot = torch.zeros(vocab_size, device=device, dtype=torch.long)
+        # Row 0 is the inactive sentinel; IEEE-754 `-0.0` is the exact additive identity
+        # (`x + (-0.0) == x` bit-for-bit, preserving even `-0.0` and `+/-inf`).
+        self.base_shift = torch.full((self.row_cap,), -0.0, device=device, dtype=dtype)
+        self.ret_ids = torch.zeros((self.row_cap, self.col_cap), device=device, dtype=torch.long)
+        self.ret_shift = torch.full((self.row_cap, self.col_cap), -0.0, device=device, dtype=dtype)
+        self.prev_to_slot: dict[int, int] = {}
+        self.active_rows = 0
+        self.max_ret = 0
+        self.dirty_rows: set[int] = set()
+
+    def ensure_capacity(self, needed_rows: int, needed_cols: int) -> None:
+        if needed_rows <= self.row_cap and needed_cols <= self.col_cap:
+            return
+        new_row_cap = max(needed_rows, self.row_cap * 2 if needed_rows > self.row_cap else self.row_cap)
+        new_col_cap = max(needed_cols, self.col_cap * 2 if needed_cols > self.col_cap else self.col_cap)
+        if new_row_cap != self.row_cap:
+            new_base = torch.full((new_row_cap,), -0.0, device=self.device, dtype=self.dtype)
+            new_base[:self.active_rows + 1].copy_(self.base_shift[:self.active_rows + 1])
+            self.base_shift = new_base
+        new_ids = torch.zeros((new_row_cap, new_col_cap), device=self.device, dtype=torch.long)
+        new_shift = torch.full((new_row_cap, new_col_cap), -0.0, device=self.device, dtype=self.dtype)
+        if self.active_rows > 0:
+            active_end = self.active_rows + 1
+            new_ids[1:active_end, :self.col_cap].copy_(self.ret_ids[1:active_end, :self.col_cap])
+            new_shift[1:active_end, :self.col_cap].copy_(self.ret_shift[1:active_end, :self.col_cap])
+            if new_col_cap > self.col_cap:
+                # Pad newly grown columns of already-synced active rows with their column-0
+                # `(ids[0], ret_shift[0])` entry so non-dirty rows never scatter into token 0.
+                new_ids[1:active_end, self.col_cap:new_col_cap] = new_ids[1:active_end, 0:1]
+                new_shift[1:active_end, self.col_cap:new_col_cap] = new_shift[1:active_end, 0:1]
+        self.ret_ids = new_ids
+        self.ret_shift = new_shift
+        self.row_cap = new_row_cap
+        self.col_cap = new_col_cap
+
+
 class OnlineBigram:
     """Exact successor counts; optional top-k retained-prior memory ablation.
 
@@ -113,6 +164,7 @@ class OnlineBigram:
         self._cache: dict[int, dict] = {}
         self._ids_bufs: dict[torch.device, torch.Tensor] = {}
         self._counts_bufs: dict[tuple[torch.device, torch.dtype], torch.Tensor] = {}
+        self._dev_tables: dict[tuple[torch.device, torch.dtype], _DeviceBigramState] = {}
 
     def _borrow_buffers(self, length: int, device: torch.device, dtype: torch.dtype):
         ids_buf = self._ids_bufs.get(device)
@@ -146,6 +198,8 @@ class OnlineBigram:
                 else:
                     row_idx.increment(token, new_count)
                 self._cache.pop(previous, None)
+                for st in self._dev_tables.values():
+                    st.dirty_rows.add(previous)
             previous = token
         if len(committed_tokens):
             self.version += 1
@@ -225,6 +279,103 @@ class OnlineBigram:
         if ids_t.numel():
             out[ids_t] = l_unit.index_select(0, ids_t) + self.lambda_tr * ret_lp
         return out
+
+    def _sync_device_table(self, device: torch.device, dtype: torch.dtype) -> _DeviceBigramState:
+        key = (device, dtype)
+        hyper_key = (float(self.alpha), self.k_ret, float(self.lambda_tr))
+        state = self._dev_tables.get(key)
+        if state is None or state.hyper_key != hyper_key:
+            col_init = min(max(self.k_ret, 1), 64) if self.k_ret is not None else 16
+            state = _DeviceBigramState(self.vocab_size, device, dtype, hyper_key, col_cap=col_init)
+            state.dirty_rows.update(p for p, c in self.counts.items() if c)
+            self._dev_tables[key] = state
+        if not state.dirty_rows:
+            return state
+        dirty_list = [p for p in state.dirty_rows if self.counts.get(p)]
+        state.dirty_rows.clear()
+        if not dirty_list:
+            return state
+
+        prepared = []
+        new_active = state.active_rows
+        needed_max_ret = state.max_ret
+        new_prev_ids: list[int] = []
+        new_prev_slots: list[int] = []
+        for prev_int in dirty_list:
+            slot = state.prev_to_slot.get(prev_int)
+            if slot is None:
+                new_active += 1
+                slot = new_active
+                state.prev_to_slot[prev_int] = slot
+                new_prev_ids.append(prev_int)
+                new_prev_slots.append(slot)
+            row = self._row_for(prev_int, self.counts[prev_int])
+            total = row.total
+            if row.k_ret is None:
+                ids_list = row.ids
+                counts_list = row.counts_f
+            else:
+                ids_list = [tok for _, tok in row.top]
+                counts_list = [float(-neg_c) for neg_c, _ in row.top]
+            ret_len = len(ids_list)
+            if ret_len > needed_max_ret:
+                needed_max_ret = ret_len
+            evicted = total - row.retained_sum
+            absent = self.vocab_size - ret_len
+            denom = float(total) + float(self.alpha) * float(self.vocab_size)
+            base_val = (float(evicted) / float(absent)) if absent else 0.0
+            base_lp = math.log((base_val + float(self.alpha)) / denom)
+            prepared.append((slot, base_lp, ids_list, counts_list, denom))
+
+        state.ensure_capacity(new_active + 1, max(1, needed_max_ret))
+        state.active_rows = new_active
+        state.max_ret = needed_max_ret
+        width = state.col_cap
+        n_dirty = len(prepared)
+        slots_cpu = torch.empty(n_dirty, dtype=torch.long)
+        base_cpu = torch.empty(n_dirty, dtype=dtype)
+        ids_cpu = torch.empty((n_dirty, width), dtype=torch.long)
+        shift_cpu = torch.empty((n_dirty, width), dtype=dtype)
+        lam = float(self.lambda_tr)
+        alpha_f = float(self.alpha)
+        for idx, (slot, base_lp, ids_list, counts_list, denom) in enumerate(prepared):
+            slots_cpu[idx] = slot
+            base_cpu[idx] = lam * base_lp
+            rlen = len(ids_list)
+            ids_t = torch.tensor(ids_list, dtype=torch.long)
+            cnt_t = torch.tensor(counts_list, dtype=dtype)
+            ret_val = lam * torch.log((cnt_t + alpha_f) / denom)
+            ids_cpu[idx, :rlen] = ids_t
+            shift_cpu[idx, :rlen] = ret_val
+            if rlen < width:
+                ids_cpu[idx, rlen:] = ids_t[0]
+                shift_cpu[idx, rlen:] = ret_val[0]
+
+        if new_prev_ids:
+            prev_t = torch.tensor(new_prev_ids, dtype=torch.long, device=device)
+            pslot_t = torch.tensor(new_prev_slots, dtype=torch.long, device=device)
+            state.row_slot.index_copy_(0, prev_t, pslot_t)
+        slots_dev = slots_cpu.to(device=device)
+        state.base_shift.index_copy_(0, slots_dev, base_cpu.to(device=device))
+        state.ret_ids.index_copy_(0, slots_dev, ids_cpu.to(device=device))
+        state.ret_shift.index_copy_(0, slots_dev, shift_cpu.to(device=device))
+        return state
+
+    def score_tensor(self, l_unit: torch.Tensor, prev_token: torch.Tensor | None) -> torch.Tensor:
+        """Zero-sync, 0-ULP device-resident bigram scoring matching `score(l_unit, int(prev_token))`."""
+        if prev_token is None or self.lambda_tr == 0 or not self.counts:
+            if not self.counts and self._dev_tables:
+                self._dev_tables.clear()
+            return l_unit
+        state = self._sync_device_table(l_unit.device, l_unit.dtype)
+        if state.active_rows == 0 or state.max_ret == 0:
+            return l_unit
+        r = state.row_slot[prev_token]
+        shifted = l_unit + state.base_shift[r]
+        ids_row = state.ret_ids[r, :state.max_ret]
+        vals = l_unit.gather(0, ids_row) + state.ret_shift[r, :state.max_ret]
+        shifted.scatter_(0, ids_row, vals)
+        return shifted
 
     def metrics(self):
         retained = sum(min(len(c), self.k_ret) if self.k_ret is not None else len(c) for c in self.counts.values())
