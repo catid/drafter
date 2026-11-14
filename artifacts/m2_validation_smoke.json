@@ -1,0 +1,105 @@
+{
+  "status": "passed",
+  "scale": "smoke",
+  "label": "synthetic_validation",
+  "validation_kind": "read_only_CPU_artifact_checks",
+  "report_path": "/home/catid/drafter/artifacts/m2_smoke.json",
+  "validator_source_path": "/home/catid/drafter/artifacts/m2_validation_source.txt",
+  "validator_source_sha256": "d112e6f50edbe70623892c645468992c8a9c68ce1726a1dbc02c4ece4ee27a1c",
+  "started_at_unix": 1794616448.1393306,
+  "checks_completed": [
+    "final_report_schema_and_finite_numbers",
+    "final_checkpoints_tensor_health_identity_sources_and_parameter_reports",
+    "trace_metadata_coverage_and_all_report_metric_algebra",
+    "sparse_parameter_statistics_chunk_checksums_and_coverage"
+  ],
+  "evidence": {
+    "/home/catid/drafter/artifacts/m2_smoke/dense.pt": {
+      "sha256": "1cbaadc6d1860cf74f2353d8c6d14d83e2e17deedd0150d9ee3ec84ff4510590",
+      "bytes": 20162
+    },
+    "/home/catid/drafter/artifacts/m2_smoke/dense_sparse.pt": {
+      "sha256": "21f447d322e7732b4fccd67efc36c64eea883a156c617361dafbeab7030661c3",
+      "bytes": 31734
+    },
+    "/home/catid/drafter/artifacts/m2_smoke/latest.pt": {
+      "sha256": "55428d28c600f06c4bc8269e4ecfb8c0869f3b0163647266e545fd73bbf746fa",
+      "bytes": 28053
+    },
+    "sparse_chunks": {
+      "count": 20,
+      "all_sha256_verified": true,
+      "total_bytes": 26170
+    }
+  },
+  "tolerances": {
+    "algebra_rtol": 1e-10,
+    "algebra_atol": 1e-12,
+    "cpu_fp64_vs_reported_fp32_norm_rtol": 2e-05,
+    "norm_atol": 1e-07,
+    "zero_fraction_atol": 1e-07,
+    "FP32_KL_and_probability_bound_slack": 1e-06
+  },
+  "limitations": [
+    "No loss/gradient/inference recomputation or claim of downstream acceptance/throughput improvement.",
+    "A norm-tolerance failure is a validation discrepancy requiring measurement of CPU FP64 versus recorded GPU FP32 reduction error; it is not automatically a model failure.",
+    "Trace slot totals come from report-linked sidecars bound to accepted audit identity/SHA metadata; trace payload bytes are not rehashed or loaded.",
+    "Live-full subset sizes are checked for positive held-out coverage and cross-stage consistency, not recomputed from trace tensors.",
+    "Sparse chunks are checksummed and reported algebra checked; the existing DuckDB tables are not reaggregated or benchmarked.",
+    "Historical validation requires the recorded production source versions; commit IDs alone are not used as a source-equality gate.",
+    "A passed smoke validation is synthetic evidence and does not validate the reference branch or real model quality."
+  ],
+  "report_sha256": "a7373119cd9033f341fe7c7790a5ffa0b55b1cd797f5666784ace12c16d2df84",
+  "parameter_checks": {
+    "dense": {
+      "W": {
+        "cpu_fp64_norm": 0.0628082167208185,
+        "reported_norm": 0.06280821561813354,
+        "exact_zero_fraction": 0.0
+      },
+      "A": {
+        "cpu_fp64_norm": 0.0843852885370436,
+        "reported_norm": 0.08438529074192047,
+        "exact_zero_fraction": 0.0
+      },
+      "b": {
+        "cpu_fp64_norm": 0.0,
+        "reported_norm": 0.0,
+        "exact_zero_fraction": 1.0
+      }
+    },
+    "dense_sparse": {
+      "W": {
+        "cpu_fp64_norm": 0.12202761648384457,
+        "reported_norm": 0.12202761322259903,
+        "exact_zero_fraction": 0.0
+      },
+      "A": {
+        "cpu_fp64_norm": 0.15091455982031926,
+        "reported_norm": 0.15091454982757568,
+        "exact_zero_fraction": 0.0
+      },
+      "b": {
+        "cpu_fp64_norm": 0.03293504069385247,
+        "reported_norm": 0.032935041934251785,
+        "exact_zero_fraction": 0.0
+      },
+      "S": {
+        "cpu_fp64_norm": 0.01190654093913818,
+        "reported_norm": 0.011906541883945465,
+        "nonzero_buckets": 181,
+        "capacity": 256
+      }
+    }
+  },
+  "calibration_binding": "synthetic: E generated in memory; checked bitwise across saved stages, no reference calibration claim",
+  "expected_logical_slots_from_trace_sidecars": {
+    "test": 142,
+    "train": 607,
+    "dev": 142
+  },
+  "relative_dev_improvement": 0.314123271904482,
+  "identity": "f848296a03565cd1870284fa1874941d339897996398bb256a81c524731f0238",
+  "cuda_initialized": false,
+  "elapsed_seconds": 0.015294551849365234
+}

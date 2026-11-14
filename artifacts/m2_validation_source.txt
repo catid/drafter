@@ -1,0 +1,429 @@
+"""Archived one-off M2 artifact validator; CPU/read-only except its output JSON.
+
+Usage: python artifacts/m2_validation_source.txt --report PATH --output PATH
+Requires a final passed report before reading its checkpoints. No production
+modules, model inference, optimizers, CUDA contexts, or sparse finalizers run.
+"""
+from __future__ import annotations
+
+import argparse
+from collections import defaultdict
+import hashlib
+import io
+import json
+import math
+import os
+from pathlib import Path
+import tempfile
+import time
+
+# This changes only this validator process, never the active training process.
+os.environ['CUDA_VISIBLE_DEVICES'] = ''
+import torch
+
+ROOT = Path(__file__).resolve().parent.parent
+SPLITS = ('train', 'dev', 'test')
+STAGES = ('dense', 'dense_sparse')
+SOURCE_FILES = {'train.py', 'adapter.py', 'features.py', 'sparse.py', 'sparse_stats.py', 'traces.py'}
+ALGEBRA_RTOL, ALGEBRA_ATOL = 1e-10, 1e-12
+NORM_RTOL, NORM_ATOL = 2e-5, 1e-7
+FP32_SLACK = 1e-6
+
+
+def require(condition, message):
+    if not condition:
+        raise ValueError(message)
+
+
+def fingerprint(value):
+    return hashlib.sha256(json.dumps(value, sort_keys=True, separators=(',', ':')).encode()).hexdigest()
+
+
+def digest(path):
+    h = hashlib.sha256()
+    with Path(path).open('rb') as stream:
+        while chunk := stream.read(8 * 1024 * 1024):
+            h.update(chunk)
+    return h.hexdigest()
+
+
+def resolve(value):
+    path = Path(value)
+    return path if path.is_absolute() else ROOT / path
+
+
+def read_json(path):
+    return json.loads(Path(path).read_text())
+
+
+def close(actual, expected, name, rtol=ALGEBRA_RTOL, atol=ALGEBRA_ATOL):
+    require(math.isfinite(float(actual)) and math.isfinite(float(expected)), f'{name}: nonfinite value')
+    require(math.isclose(float(actual), float(expected), rel_tol=rtol, abs_tol=atol),
+            f'{name}: {actual} differs from expected {expected} (rtol={rtol}, atol={atol})')
+
+
+def finite_tree(value, path):
+    if isinstance(value, torch.Tensor):
+        require(value.device.type == 'cpu', f'{path}: tensor is not on CPU')
+        require(bool(torch.isfinite(value).all()), f'{path}: nonfinite tensor')
+    elif isinstance(value, float):
+        require(math.isfinite(value), f'{path}: nonfinite number')
+    elif isinstance(value, dict):
+        for key, child in value.items():
+            finite_tree(child, f'{path}.{key}')
+    elif isinstance(value, (list, tuple)):
+        for index, child in enumerate(value):
+            finite_tree(child, f'{path}[{index}]')
+
+
+def load_checkpoint(path, evidence):
+    # One opened inode gives a consistent snapshot even if an unrelated writer
+    # replaces a path. A final passed report is required before reaching here.
+    with path.open('rb') as stream:
+        payload = stream.read()
+    value = torch.load(io.BytesIO(payload), map_location='cpu', weights_only=True)
+    evidence[str(path.resolve())] = {'sha256': hashlib.sha256(payload).hexdigest(), 'bytes': len(payload)}
+    finite_tree(value, str(path))
+    return value
+
+
+def tensor_norm64(tensor):
+    flat = tensor.reshape(-1)
+    total = 0.
+    for start in range(0, flat.numel(), 1_000_000):
+        total += float(flat[start:start + 1_000_000].double().square().sum())
+    return math.sqrt(total)
+
+
+def check_parameters(checkpoint, recorded, stage):
+    state, config = checkpoint['adapter_state'], checkpoint['adapter_config']
+    E = state['E']
+    expected_shapes = {'W': [config['r'], config['p']], 'A': [config['D'], config['r'], config['r']],
+                       'b': [len(E)], 'E': [len(E), config['r']]}
+    require(config['M_sparse'] > 0 and config['D'] > 0, f'{stage}: invalid adapter dimensions')
+    expected_keys = set(expected_shapes) | ({'sparse.values'} if stage == 'dense_sparse' else set())
+    require(set(state) == expected_keys, f'{stage}: unexpected/missing adapter tensors')
+    result = {}
+    for name, shape in expected_shapes.items():
+        tensor = state[name]
+        require(list(tensor.shape) == shape and tensor.dtype == torch.float32, f'{stage}.{name}: shape/dtype mismatch')
+        if name == 'E':
+            continue
+        actual = tensor_norm64(tensor)
+        zero_fraction = 1. - int(tensor.count_nonzero()) / tensor.numel()
+        require(recorded[name]['shape'] == shape and recorded[name]['dtype'] == str(tensor.dtype), f'{stage}.{name}: reported shape/dtype mismatch')
+        close(recorded[name]['norm'], actual, f'{stage}.{name}.norm', NORM_RTOL, NORM_ATOL)
+        close(recorded[name]['exact_zero_fraction'], zero_fraction, f'{stage}.{name}.zero_fraction', 0., 1e-7)
+        result[name] = {'cpu_fp64_norm': actual, 'reported_norm': recorded[name]['norm'], 'exact_zero_fraction': zero_fraction}
+    if stage == 'dense':
+        require(config['sparse_capacity'] is None and not bool(state['b'].count_nonzero()), 'dense phase must have no sparse table and zero frozen bias')
+    else:
+        sparse, stats = state['sparse.values'], recorded['S']
+        require(sparse.dtype == torch.float32 and list(sparse.shape) == [config['sparse_capacity']], 'sparse table shape/dtype mismatch')
+        nonzero = int(sparse.count_nonzero())
+        actual = tensor_norm64(sparse)
+        require(stats['capacity'] == sparse.numel() and stats['nonzero_buckets'] == nonzero, 'sparse capacity/nonzero count mismatch')
+        require(stats['memory_bytes'] == sparse.numel() * sparse.element_size(), 'sparse memory size mismatch')
+        close(stats['norm'], actual, 'S.norm', NORM_RTOL, NORM_ATOL)
+        close(stats['exact_zero_fraction'], 1. - nonzero / sparse.numel(), 'S.zero_fraction', 0., 1e-7)
+        result['S'] = {'cpu_fp64_norm': actual, 'reported_norm': stats['norm'], 'nonzero_buckets': nonzero,
+                       'capacity': sparse.numel()}
+    return result
+
+
+def primary(identity):
+    temperature, warp = identity['temperature'], identity['sampling_warp_config']
+    return identity['condition'] == 'standard_nonthinking' and (temperature == 0 or
+        (abs(temperature - .7) < 1e-10 and warp.get('top_k') == 20 and warp.get('top_p') == .8 and warp.get('min_p', 0.) == 0.))
+
+
+def check_reference_calibration(report, config, E, evidence):
+    audit_path = resolve(config['m1_audit'])
+    audit = read_json(audit_path)
+    require(audit['status'] == 'passed' and audit['scale'] == report['scale'], 'M1 audit is not passed at matching scale')
+    calibration_path = audit_path.parent / 'calibration.json'
+    calibration = read_json(calibration_path)
+    require(fingerprint(calibration) == fingerprint(audit['calibration']), 'calibration record differs from accepted M1 audit')
+    require(calibration['identity']['model_pair'] == report['model_pair'], 'calibration model pair mismatch')
+    require(calibration['identity']['checkpoint'] == report['model_revisions'], 'calibration model revisions mismatch')
+    required = {'h_proj.pt': report['frozen_artifacts']['hidden_projection_sha256'],
+                'token_features.pt': report['frozen_artifacts']['token_features_sha256']}
+    for name, expected in required.items():
+        require(expected and calibration['artifact_sha256'][name] == expected, f'calibration hash mismatch: {name}')
+    for name, expected in calibration['artifact_sha256'].items():
+        path = audit_path.parent / name
+        require(digest(path) == expected, f'calibration artifact bytes changed: {name}')
+        evidence[str(path.resolve())] = {'sha256': expected}
+    require(digest(resolve(config['projection'])) == required['h_proj.pt'], 'configured projection checksum mismatch')
+    require(digest(resolve(config['features'])) == required['token_features.pt'], 'configured token feature checksum mismatch')
+    features = torch.load(resolve(config['features']), map_location='cpu', weights_only=True)
+    require(torch.equal(features['E'].float(), E), 'checkpoint E differs from frozen token features')
+    prompt_path = resolve(config['prompts'])
+    prompt_hash = digest(prompt_path)
+    require(prompt_hash == calibration['identity']['prompt_manifest_sha256'], 'frozen prompt checksum mismatch')
+    diagnostic_path = resolve(config['m1_diagnostic'])
+    diagnostic = read_json(diagnostic_path)
+    require(diagnostic['status'] in ('measured', 'passed') and diagnostic['scale'] == report['scale'], 'M1 diagnostic missing/mismatched')
+    provenance = diagnostic['audit_provenance']
+    require(provenance['audit_sha256'] == digest(audit_path), 'M1 diagnostic audit checksum mismatch')
+    require(provenance['source_set_sha256'] == fingerprint(audit['source_shards']), 'M1 diagnostic source-set mismatch')
+    require(provenance['frozen_artifact_sha256'] == calibration['artifact_sha256'], 'M1 diagnostic calibration hash mismatch')
+    require(provenance['prompt_manifest_sha256'] == prompt_hash, 'M1 diagnostic prompt checksum mismatch')
+    accepted = {str(resolve(row['path']).resolve()): row for row in audit['source_shards']}
+    diagnosed = {str(resolve(row['path']).resolve()): row['sha256'] for row in diagnostic['source_shards']}
+    require(len(accepted) == len(audit['source_shards']), 'duplicate audit source paths')
+    require(diagnosed == {path: row['sha256'] for path, row in accepted.items()}, 'M1 diagnostic accepted source map mismatch')
+    for path in (audit_path, calibration_path, prompt_path, diagnostic_path):
+        evidence[str(path.resolve())] = {'sha256': digest(path)}
+    return audit, accepted, read_json(prompt_path)
+
+
+def check_trace_metadata(report, config, audit=None, accepted=None, prompts=None):
+    paths = sorted(resolve(path) for path in audit['shards']) if audit is not None else sorted(resolve(config['trace_dir']).glob('rank*/*.pt'))
+    summaries = {split: {'generated_output_tokens': 0, 'prompts': set(), 'shards': 0, 'blocks': 0} for split in SPLITS}
+    slots, tokens_by_temperature, excluded, sources = defaultdict(int), defaultdict(int), defaultdict(int), []
+    seen, split_by_prompt = set(), {}
+    prompt_map = {row['prompt_id']: row for row in prompts['prompts']} if prompts else None
+    for path in paths:
+        side = read_json(path.with_suffix('.pt.json'))
+        identity, generation = side['identity'], side['generation']
+        identity_hash = fingerprint(identity)
+        require(identity_hash not in seen, 'duplicate trace generation identity')
+        seen.add(identity_hash)
+        if accepted is not None:
+            source = accepted[str(path.resolve())]
+            require(source['sha256'] == side['sha256'] and source['identity_sha256'] == identity_hash, 'trace sidecar differs from accepted audit')
+        require(path.is_file() and path.stat().st_size == side['disk_bytes'], 'trace absent or byte size changed')
+        require(generation['complete'], 'incomplete trace generation')
+        split, prompt = generation['split'], identity['prompt']
+        require(split in SPLITS and generation['condition'] == identity['condition'], 'trace split/condition mismatch')
+        require(identity.get('split', split) == split, 'trace identity split mismatch')
+        require(prompt not in split_by_prompt or split_by_prompt[prompt] == split, 'prompt leaked across splits')
+        split_by_prompt[prompt] = split
+        count = len(generation['output_tokens']) if isinstance(generation['output_tokens'], list) else generation['output_tokens']
+        require(generation.get('realized_length', count) == count, 'trace output count mismatch')
+        if not primary(identity):
+            excluded[f"{split}/{identity['condition']}/T={identity['temperature']}"] += count
+            continue
+        require(identity['proposal_mode'] == 'plain_dflash' and identity['adapter_version'] == 0, 'M2 fitted a non-plain trace')
+        require(identity['model_pair'] == report['model_pair'] and identity['checkpoint'] == report['model_revisions'], 'trace model identity mismatch')
+        if prompt_map is not None:
+            require(prompt_map[prompt]['split'] == split, 'trace prompt missing or split changed')
+            require(split == 'test' or prompt_map[prompt]['dataset'] != prompts['complete_heldout_dataset'], 'held-out dataset leaked')
+            require(identity['projection_sha256'] == report['frozen_artifacts']['hidden_projection_sha256'], 'trace projection mismatch')
+            require(identity['token_features_sha256'] == report['frozen_artifacts']['token_features_sha256'], 'trace token features mismatch')
+        item = summaries[split]
+        item['generated_output_tokens'] += count
+        item['prompts'].add(prompt)
+        item['shards'] += 1
+        item['blocks'] += side['blocks']
+        slots[split] += side['logical_slots']
+        if split == 'train':
+            tokens_by_temperature[str(identity['temperature'])] += count
+        sources.append({'identity': identity, 'sha256': side['sha256']})
+    for item in summaries.values():
+        item['prompts'] = len(item['prompts'])
+    index = report['trace_index']
+    require(summaries == index['primary'], 'trace primary counts differ from report')
+    require(dict(excluded) == index['excluded_generated_tokens'], 'excluded trace counts differ from report')
+    require(dict(tokens_by_temperature) == index['primary_train_tokens_by_temperature'], 'primary temperature token totals differ')
+    require(fingerprint(sources) == index['source_fingerprint'], 'eligible trace source fingerprint mismatch')
+    if report['scale'] != 'smoke':
+        floor = 2_000_000 if report['scale'] == 'full' else 500_000
+        require(summaries['train']['generated_output_tokens'] >= floor, 'training token floor not met')
+        require(all(tokens_by_temperature[str(t)] >= floor // 2 for t in (0., .7)), 'per-temperature floor not met')
+        require(summaries['test']['prompts'] >= 64, 'standard test prompt floor not met')
+    return dict(slots)
+
+
+def check_metrics(metrics, baseline, slots, label):
+    require(metrics['loss_mode'] == 'union_rest_grouped', f'{label}: loss mode mismatch')
+    require(metrics['T_train'] == metrics['beta_train'] == 1. and metrics['warpers_used_for_training'] is False, f'{label}: training distribution warped')
+    require(metrics['logical_slots'] == slots and slots > 0, f'{label}: evaluated slot count mismatch')
+    require(metrics['weight_sum'] > 0 and metrics['weighted_mean_kl'] >= -FP32_SLACK, f'{label}: invalid weight/KL')
+    close(metrics['weighted_mean_kl'], metrics['weighted_kl_sum'] / metrics['weight_sum'], f'{label}.weighted KL algebra')
+    close(metrics['weight_sum'], baseline['weight_sum'], f'{label}.weight coverage')
+    lo, hi = metrics['union_overlap_lower_bound'], metrics['grouped_overlap_upper_bound']
+    require(-FP32_SLACK <= lo <= hi + FP32_SLACK and hi <= 1. + FP32_SLACK, f'{label}: invalid overlap bounds')
+    full = metrics['live_full_diagnostic']
+    require(0 <= full['logical_slots'] <= slots, f'{label}: invalid live-full slot count')
+    require(full['logical_slots'] == baseline['live_full_diagnostic']['logical_slots'], f'{label}: live-full subset changed')
+    if label.endswith(('.dev', '.test')):
+        require(full['logical_slots'] > 0, f'{label}: required live-full subset absent')
+    names = ('mean_overlap', 'top1_agreement', 'weighted_mean_full_kl', 'weighted_mean_grouped_kl', 'full_minus_grouped_kl')
+    if full['logical_slots'] == 0:
+        require(all(full[name] is None for name in names), f'{label}: empty live-full subset must have null metrics')
+    else:
+        require(all(isinstance(full[name], (float, int)) for name in names), f'{label}: missing live-full metrics')
+        require(all(-FP32_SLACK <= full[name] <= 1. + FP32_SLACK for name in ('mean_overlap', 'top1_agreement')), f'{label}: invalid live-full rate')
+        require(all(full[name] >= -FP32_SLACK for name in ('weighted_mean_full_kl', 'weighted_mean_grouped_kl', 'full_minus_grouped_kl')), f'{label}: invalid full/grouped KL')
+        close(full['full_minus_grouped_kl'], full['weighted_mean_full_kl'] - full['weighted_mean_grouped_kl'], f'{label}.full/grouped gap algebra')
+
+
+def check_sparse_statistics(report, state, config, evidence):
+    stats = report['stages']['dense_sparse']['sparse_collision_statistics']
+    require(stats['status'] == 'measured', 'sparse statistics are incomplete')
+    capacity, nonzero = state['sparse.values'].numel(), int(state['sparse.values'].count_nonzero())
+    require(stats['capacity'] == capacity == config['sparse_capacity'], 'sparse-stat capacity mismatch')
+    require(0 <= nonzero <= stats['occupied_buckets'] <= min(capacity, stats['unique_observed_keys']), 'invalid sparse occupancy counts')
+    require(stats['collision_count'] == stats['unique_observed_keys'] - stats['occupied_buckets'], 'collision count algebra mismatch')
+    close(stats['load_factor_unique_keys_per_bucket'], stats['unique_observed_keys'] / capacity, 'sparse load factor')
+    close(stats['occupancy_fraction'], stats['occupied_buckets'] / capacity, 'sparse occupancy fraction')
+    require(stats['raw_parameter_bytes'] == capacity * 4 and stats['nonzero_parameter_value_bytes'] == nonzero * 4, 'sparse byte counts mismatch')
+    chunks = report['sparse_statistics_chunks']
+    require(len(chunks) == len({item['path'] for item in chunks}) == len({(item['epoch'], item['batch']) for item in chunks}), 'duplicate sparse chunks')
+    epochs = [item['epoch'] for item in report['epoch_development'] if item['stage'] == 'dense_sparse']
+    batches = math.ceil(report['trace_index']['primary']['train']['blocks'] / config['batch_blocks'])
+    require({(item['epoch'], item['batch']) for item in chunks} == {(epoch, batch) for epoch in epochs for batch in range(batches)}, 'sparse optimizer-batch coverage incomplete')
+    require(stats['committed_chunks'] == len(chunks) and stats['observed_lookup_events'] == sum(item['events'] for item in chunks), 'sparse event/chunk totals mismatch')
+    size = 0
+    for item in chunks:
+        path = resolve(item['path'])
+        require(digest(path) == item['sha256'], 'sparse chunk checksum mismatch')
+        size += path.stat().st_size
+    require(stats['chunk_disk_bytes'] == size, 'sparse chunk byte total mismatch')
+    database = resolve(stats['database'])
+    require(database.is_file() and database.stat().st_size == stats['database_bytes'], 'sparse database missing/size changed')
+    require(stats['lookup_benchmark']['query_values_equal'] is True and stats['lookup_benchmark']['synchronized_wall_timing'] is True, 'sparse lookup benchmark parity/timing evidence incomplete')
+    for name, timing in stats['lookup_benchmark']['timings'].items():
+        require(len(timing['samples_ms']) == stats['lookup_benchmark']['repeats'], f'{name}: benchmark repeat coverage mismatch')
+        require(all(sample >= 0 for sample in timing['samples_ms']), f'{name}: negative benchmark duration')
+    evidence['sparse_chunks'] = {'count': len(chunks), 'all_sha256_verified': True, 'total_bytes': size}
+
+
+def validate(report_path, output_path, result):
+    report = read_json(report_path)
+    result.update(scale=report.get('scale'), label='synthetic_validation' if report.get('scale') == 'smoke' else 'reference_artifact_validation')
+    require(report.get('status') == 'passed', 'final M2 passed report required; active checkpoints are not inspected')
+    require(report['scale'] in ('smoke', 'reference', 'full'), 'unknown scale')
+    require(report['data'] == ('synthetic' if report['scale'] == 'smoke' else report['scale']), 'report scale/data label mismatch')
+    require(report['fixed_required_phases'] == list(STAGES) and set(report['stages']) == set(STAGES), 'both completed fixed phases required')
+    finite_tree(report, 'report')
+    result['checks_completed'].append('final_report_schema_and_finite_numbers')
+    paths = {stage: resolve(report['checkpoints'][stage]) for stage in STAGES}
+    require(paths['dense'].parent == paths['dense_sparse'].parent, 'stage checkpoints have different output directories')
+    paths['complete'] = paths['dense_sparse'].parent / 'latest.pt'
+    require(output_path not in [report_path, *[path.resolve() for path in paths.values()]], 'validation output would overwrite an input artifact')
+    require(all(path.is_file() for path in paths.values()), 'all final stage/latest checkpoints required')
+    checkpoints = {stage: load_checkpoint(path, result['evidence']) for stage, path in paths.items()}
+    config = checkpoints['complete']['resolved_config']
+    for stage, checkpoint in checkpoints.items():
+        require(checkpoint['stage'] == stage and checkpoint['identity'] == report['identity'], f'{stage}: checkpoint stage/identity mismatch')
+        require(checkpoint['schema_version'] == 1 and checkpoint['scale'] == report['scale'], f'{stage}: checkpoint schema/scale mismatch')
+        require(checkpoint['next_batch'] == 0 and checkpoint['resolved_config'] == config, f'{stage}: unfinished or changed-config checkpoint')
+        expected_version = fingerprint({'identity': report['identity'], 'stage': stage, 'epoch': checkpoint['epoch'], 'next_batch': 0})
+        require(checkpoint['adapter_version'] == expected_version, f'{stage}: version fingerprint mismatch')
+        for key in ('identity', 'baseline', 'trace_index', 'implementation_sha256', 'frozen_artifacts', 'head_metadata', 'model_pair', 'model_revisions'):
+            require(checkpoint['report'][key] == report[key], f'{stage}: embedded report {key} mismatch')
+        if stage in STAGES:
+            require(checkpoint['epoch'] == config['epochs_dense' if stage == 'dense' else 'epochs_sparse'], f'{stage}: recorded configured epoch count mismatch')
+            require(checkpoint['report']['stages'][stage] == report['stages'][stage], f'{stage}: completed phase report differs')
+            require(checkpoint['dense_optimizer'] is not None, f'{stage}: optimizer state missing')
+            for state in checkpoint['dense_optimizer']['state'].values():
+                require(bool((state['exp_avg_sq'] >= 0).all()), f'{stage}: negative AdamW second moment')
+        else:
+            require(checkpoint['epoch'] == 0 and checkpoint['dense_optimizer'] is None and checkpoint['sparse_optimizer'] is None, 'latest.pt is not finalized')
+            require(checkpoint['report'] == report, 'final latest report differs from final JSON')
+    for stage in ('dense_sparse', 'complete'):
+        require(torch.equal(checkpoints['dense']['adapter_state']['E'], checkpoints[stage]['adapter_state']['E']), 'frozen E changed across stages')
+    left, right = checkpoints['dense_sparse']['adapter_state'], checkpoints['complete']['adapter_state']
+    require(left.keys() == right.keys() and all(torch.equal(left[key], right[key]) for key in left), 'final latest parameters differ from dense_sparse checkpoint')
+    result['parameter_checks'] = {stage: check_parameters(checkpoints[stage], report['stages'][stage]['parameters'], stage) for stage in STAGES}
+    E = checkpoints['dense']['adapter_state']['E']
+    hashes = report['implementation_sha256']
+    require(set(hashes) == SOURCE_FILES, 'required implementation source hash set differs')
+    for name, expected in hashes.items():
+        require(digest(ROOT / 'src/edraft' / name) == expected, f'current source differs from recorded fit: {name}')
+    identity_config = {key: value for key, value in config.items() if key != 'resume'}
+    reconstructed = fingerprint({'config': identity_config, 'sources': report['trace_index']['source_fingerprint'],
+        'head': report['head_metadata'], 'implementation_sha256': hashes,
+        'E_sha256': hashlib.sha256(E.contiguous().numpy().tobytes()).hexdigest()})
+    require(reconstructed == report['identity'], 'fit identity does not reconstruct from config/sources/head/E')
+    result['checks_completed'].append('final_checkpoints_tensor_health_identity_sources_and_parameter_reports')
+    if report['scale'] == 'smoke':
+        require(all(value is None for value in report['frozen_artifacts'].values()), 'unexpected smoke calibration hash policy')
+        audit, accepted, prompts = None, None, None
+        result['calibration_binding'] = 'synthetic: E generated in memory; checked bitwise across saved stages, no reference calibration claim'
+    else:
+        audit, accepted, prompts = check_reference_calibration(report, config, E, result['evidence'])
+        result['calibration_binding'] = 'audited reference/full calibration file hashes, model revisions, prompt hash and bitwise frozen E verified'
+    slots = check_trace_metadata(report, config, audit, accepted, prompts)
+    result['expected_logical_slots_from_trace_sidecars'] = slots
+    for name, section in [('baseline', report['baseline'])] + [(stage, report['stages'][stage]) for stage in STAGES]:
+        for split in SPLITS:
+            check_metrics(section[split], report['baseline'][split], slots[split], f'{name}.{split}')
+    development = report['epoch_development']
+    for stage in STAGES:
+        history = [item for item in development if item['stage'] == stage]
+        require(history and [item['epoch'] for item in history] == list(range(len(history))), f'{stage}: epoch history missing/invalid')
+        require(len(history) <= config['epochs_dense' if stage == 'dense' else 'epochs_sparse'], f'{stage}: excess epochs')
+        require(history[-1]['dev'] == report['stages'][stage]['dev'], f'{stage}: final dev metrics differ from epoch selection')
+        steps = len(history) * math.ceil(report['trace_index']['primary']['train']['blocks'] / config['batch_blocks'])
+        for state in checkpoints[stage]['dense_optimizer']['state'].values():
+            require(float(state['step']) == steps, f'{stage}: optimizer step count differs from executed full epochs')
+        for item in history:
+            check_metrics(item['dev'], report['baseline']['dev'], slots['dev'], f'epoch_{stage}_{item["epoch"]}.dev')
+            gain = (report['baseline']['dev']['weighted_mean_kl'] - item['dev']['weighted_mean_kl']) / max(report['baseline']['dev']['weighted_mean_kl'], 1e-12)
+            close(item['relative_improvement_over_zero'], gain, f'{stage}: epoch improvement algebra')
+    base = report['baseline']['dev']['weighted_mean_kl']
+    gain = (base - report['stages']['dense_sparse']['dev']['weighted_mean_kl']) / max(base, 1e-12)
+    close(report['relative_dev_improvement'], gain, 'final dev improvement algebra')
+    require(report['under_one_percent_stop_tuning'] == (gain < .01), 'under-one-percent flag mismatch')
+    require(report['extra_tuning_or_sweeps'] is False, 'unexpected extra tuning/sweeps')
+    result['relative_dev_improvement'] = gain
+    result['checks_completed'].append('trace_metadata_coverage_and_all_report_metric_algebra')
+    check_sparse_statistics(report, left, config, result['evidence'])
+    result['checks_completed'].append('sparse_parameter_statistics_chunk_checksums_and_coverage')
+    result['identity'] = report['identity']
+    result['status'] = 'passed'
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--report', type=Path, required=True)
+    parser.add_argument('--output', type=Path, required=True)
+    args = parser.parse_args()
+    report_path, output_path = args.report.resolve(), args.output.resolve()
+    require(output_path != report_path and output_path.suffix == '.json', 'use a separate validation JSON output path')
+    torch.set_num_threads(1)
+    started = time.time()
+    result = {'status': 'failed', 'scale': None, 'label': 'artifact_validation', 'validation_kind': 'read_only_CPU_artifact_checks',
+        'report_path': str(report_path), 'validator_source_path': str(Path(__file__).resolve()),
+        'validator_source_sha256': digest(__file__), 'started_at_unix': started, 'checks_completed': [], 'evidence': {},
+        'tolerances': {'algebra_rtol': ALGEBRA_RTOL, 'algebra_atol': ALGEBRA_ATOL,
+                       'cpu_fp64_vs_reported_fp32_norm_rtol': NORM_RTOL, 'norm_atol': NORM_ATOL,
+                       'zero_fraction_atol': 1e-7, 'FP32_KL_and_probability_bound_slack': FP32_SLACK},
+        'limitations': ['No loss/gradient/inference recomputation or claim of downstream acceptance/throughput improvement.',
+            'A norm-tolerance failure is a validation discrepancy requiring measurement of CPU FP64 versus recorded GPU FP32 reduction error; it is not automatically a model failure.',
+            'Trace slot totals come from report-linked sidecars bound to accepted audit identity/SHA metadata; trace payload bytes are not rehashed or loaded.',
+            'Live-full subset sizes are checked for positive held-out coverage and cross-stage consistency, not recomputed from trace tensors.',
+            'Sparse chunks are checksummed and reported algebra checked; the existing DuckDB tables are not reaggregated or benchmarked.',
+            'Historical validation requires the recorded production source versions; commit IDs alone are not used as a source-equality gate.',
+            'A passed smoke validation is synthetic evidence and does not validate the reference branch or real model quality.']}
+    try:
+        require(not torch.cuda.is_initialized(), 'CUDA was unexpectedly initialized')
+        result['report_sha256'] = digest(report_path)
+        validate(report_path, output_path, result)
+    except Exception as error:
+        result.update(status='failed', error=f'{type(error).__name__}: {error}')
+    result['cuda_initialized'] = torch.cuda.is_initialized()
+    if result['cuda_initialized']:
+        result.update(status='failed', error='CUDA was unexpectedly initialized')
+    result['elapsed_seconds'] = time.time() - started
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    fd, temporary = tempfile.mkstemp(prefix=output_path.name + '.', suffix='.tmp', dir=output_path.parent)
+    try:
+        with os.fdopen(fd, 'w') as stream:
+            json.dump(result, stream, indent=2, allow_nan=False)
+            stream.write('\n')
+        os.replace(temporary, output_path)
+    finally:
+        if os.path.exists(temporary):
+            os.unlink(temporary)
+    print(json.dumps({'status': result['status'], 'scale': result['scale'], 'output': str(output_path),
+                      'error': result.get('error'), 'cuda_initialized': result['cuda_initialized']}))
+    raise SystemExit(0 if result['status'] == 'passed' else 1)
+
+
+if __name__ == '__main__':
+    main()
