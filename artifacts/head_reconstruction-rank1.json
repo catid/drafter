@@ -1,0 +1,170 @@
+[
+  {
+    "shard": "/home/catid/drafter/artifacts/traces/rank1/ea35b5318dc4973ed795d774ea7474c5bc92f42f336cb941e0f8fec099b38183.pt",
+    "prompt_id": "gsm8k-main-train-01021",
+    "round_idx": 1,
+    "status": "passed",
+    "shape": [
+      15,
+      151936
+    ],
+    "elements_checked": 2279040,
+    "h_storage_dtype": "torch.bfloat16",
+    "head_dtype": "torch.bfloat16",
+    "accumulation_dtype": "torch.float32",
+    "output_multiplier": 1.0,
+    "log_probability_atol": 0.15,
+    "log_probability_rtol": 0.01,
+    "probability_atol": 0.01,
+    "probability_rtol": 0.05,
+    "live_comparison": "stored_live_unit_logprob",
+    "max_abs_logit_error": null,
+    "max_abs_l_unit_error": 0.09099864959716797,
+    "max_abs_probability_error": 0.011037349700927734,
+    "mean_abs_probability_error": 1.0956030394027039e-07,
+    "log_probability_passed": true,
+    "probability_passed": true,
+    "live_argmax_agreement": 0.9333333969116211,
+    "head_metadata": {
+      "artifact_id": "/home/catid/.cache/huggingface/hub/models--Qwen--Qwen3-8B/snapshots/b968826d9c46dd6066d109eabc6255188de91218",
+      "revision": "b968826d9c46dd6066d109eabc6255188de91218",
+      "module": "Qwen3ForCausalLM.lm_head",
+      "hook": "DFlashDraftModel.norm output, logical slots [1:]",
+      "shape": [
+        151936,
+        4096
+      ],
+      "dtype": "torch.bfloat16",
+      "bias": false,
+      "tied_weights": false,
+      "output_multiplier": 1.0,
+      "final_logit_softcapping": null
+    }
+  },
+  {
+    "shard": "/home/catid/drafter/artifacts/traces/rank1/ea35b5318dc4973ed795d774ea7474c5bc92f42f336cb941e0f8fec099b38183.pt",
+    "prompt_id": "gsm8k-main-train-01021",
+    "round_idx": 2,
+    "status": "passed",
+    "shape": [
+      15,
+      151936
+    ],
+    "elements_checked": 2279040,
+    "h_storage_dtype": "torch.bfloat16",
+    "head_dtype": "torch.bfloat16",
+    "accumulation_dtype": "torch.float32",
+    "output_multiplier": 1.0,
+    "log_probability_atol": 0.15,
+    "log_probability_rtol": 0.01,
+    "probability_atol": 0.01,
+    "probability_rtol": 0.05,
+    "live_comparison": "stored_live_unit_logprob",
+    "max_abs_logit_error": null,
+    "max_abs_l_unit_error": 0.11580085754394531,
+    "max_abs_probability_error": 0.012800902128219604,
+    "mean_abs_probability_error": 9.041593784786528e-08,
+    "log_probability_passed": true,
+    "probability_passed": true,
+    "live_argmax_agreement": 1.0,
+    "head_metadata": {
+      "artifact_id": "/home/catid/.cache/huggingface/hub/models--Qwen--Qwen3-8B/snapshots/b968826d9c46dd6066d109eabc6255188de91218",
+      "revision": "b968826d9c46dd6066d109eabc6255188de91218",
+      "module": "Qwen3ForCausalLM.lm_head",
+      "hook": "DFlashDraftModel.norm output, logical slots [1:]",
+      "shape": [
+        151936,
+        4096
+      ],
+      "dtype": "torch.bfloat16",
+      "bias": false,
+      "tied_weights": false,
+      "output_multiplier": 1.0,
+      "final_logit_softcapping": null
+    }
+  },
+  {
+    "shard": "/home/catid/drafter/artifacts/traces/rank1/80ee3df375d0d8338085822dceeb46a7679ce341f75b63ef80a2ce596f7123f3.pt",
+    "prompt_id": "humaneval-HumanEval-86",
+    "round_idx": 1,
+    "status": "passed",
+    "shape": [
+      15,
+      151936
+    ],
+    "elements_checked": 2279040,
+    "h_storage_dtype": "torch.bfloat16",
+    "head_dtype": "torch.bfloat16",
+    "accumulation_dtype": "torch.float32",
+    "output_multiplier": 1.0,
+    "log_probability_atol": 0.15,
+    "log_probability_rtol": 0.01,
+    "probability_atol": 0.01,
+    "probability_rtol": 0.05,
+    "live_comparison": "stored_live_unit_logprob",
+    "max_abs_logit_error": null,
+    "max_abs_l_unit_error": 0.10210418701171875,
+    "max_abs_probability_error": 0.021873444318771362,
+    "mean_abs_probability_error": 1.7269056229451962e-07,
+    "log_probability_passed": true,
+    "probability_passed": true,
+    "live_argmax_agreement": 1.0,
+    "head_metadata": {
+      "artifact_id": "/home/catid/.cache/huggingface/hub/models--Qwen--Qwen3-8B/snapshots/b968826d9c46dd6066d109eabc6255188de91218",
+      "revision": "b968826d9c46dd6066d109eabc6255188de91218",
+      "module": "Qwen3ForCausalLM.lm_head",
+      "hook": "DFlashDraftModel.norm output, logical slots [1:]",
+      "shape": [
+        151936,
+        4096
+      ],
+      "dtype": "torch.bfloat16",
+      "bias": false,
+      "tied_weights": false,
+      "output_multiplier": 1.0,
+      "final_logit_softcapping": null
+    }
+  },
+  {
+    "shard": "/home/catid/drafter/artifacts/traces/rank1/80ee3df375d0d8338085822dceeb46a7679ce341f75b63ef80a2ce596f7123f3.pt",
+    "prompt_id": "humaneval-HumanEval-86",
+    "round_idx": 2,
+    "status": "passed",
+    "shape": [
+      15,
+      151936
+    ],
+    "elements_checked": 2279040,
+    "h_storage_dtype": "torch.bfloat16",
+    "head_dtype": "torch.bfloat16",
+    "accumulation_dtype": "torch.float32",
+    "output_multiplier": 1.0,
+    "log_probability_atol": 0.15,
+    "log_probability_rtol": 0.01,
+    "probability_atol": 0.01,
+    "probability_rtol": 0.05,
+    "live_comparison": "stored_live_unit_logprob",
+    "max_abs_logit_error": null,
+    "max_abs_l_unit_error": 0.09545040130615234,
+    "max_abs_probability_error": 0.015265166759490967,
+    "mean_abs_probability_error": 1.7544192587592988e-07,
+    "log_probability_passed": true,
+    "probability_passed": true,
+    "live_argmax_agreement": 0.9333333969116211,
+    "head_metadata": {
+      "artifact_id": "/home/catid/.cache/huggingface/hub/models--Qwen--Qwen3-8B/snapshots/b968826d9c46dd6066d109eabc6255188de91218",
+      "revision": "b968826d9c46dd6066d109eabc6255188de91218",
+      "module": "Qwen3ForCausalLM.lm_head",
+      "hook": "DFlashDraftModel.norm output, logical slots [1:]",
+      "shape": [
+        151936,
+        4096
+      ],
+      "dtype": "torch.bfloat16",
+      "bias": false,
+      "tied_weights": false,
+      "output_multiplier": 1.0,
+      "final_logit_softcapping": null
+    }
+  }
+]

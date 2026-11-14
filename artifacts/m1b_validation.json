@@ -1,0 +1,26 @@
+{
+  "scale": "reference",
+  "status": "passed",
+  "validated_utc": "2026-11-14T00:02:39.208486+00:00",
+  "checks": {
+    "m1a_passed": true,
+    "m1b_measured_reference": true,
+    "ordered_source_paths_and_checksums_equal": true,
+    "audit_digest_equal": true,
+    "source_set_digest_equal": true,
+    "frozen_calibration_hashes_equal": true,
+    "prompt_manifest_hash_equal": true,
+    "recorded_sources_match_current": true
+  },
+  "m1_audit": "artifacts/m1_audit.json",
+  "m1_audit_sha256": "f5bbaa23b13db411069f29d19185d7a481b63007fde5183d4ab3bea3204c5279",
+  "diagnostic_report": "artifacts/diagnostic_reference.json",
+  "diagnostic_report_sha256": "5830c3b2d936240b0a2ee320cb8db9b47701221fe7f851356f96b8b406f8b950",
+  "source_shards": 2184,
+  "diagnostic_groups": 106,
+  "source_set_sha256": "edb1504bef0253785a38aeff90fc82eb3265a633d6722da58681af4bfb4dd9aa",
+  "source_tree_sha256": "c6a09ae5ef9ca7b61273ac5034d0f7f36b8eeafea50645e44dddecf7bbc7e96e",
+  "project_git_commit": "0cb50a863037c8105cfa2bb9a72ba83cadc07386",
+  "elapsed_seconds": 312.9597408771515,
+  "workers": 8
+}

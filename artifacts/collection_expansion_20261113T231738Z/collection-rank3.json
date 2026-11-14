@@ -1,0 +1,18 @@
+{
+  "scale": "reference",
+  "status": "running",
+  "rank": 3,
+  "world_size": 4,
+  "primary_tokens_by_temperature": {
+    "0.0": 62766,
+    "0.7": 62926
+  },
+  "quota_per_temperature": 62500,
+  "completed_generations": 534,
+  "partitions": [
+    "train_primary",
+    "standard_eval",
+    "diagnostic",
+    "long"
+  ]
+}

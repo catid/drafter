@@ -2,8 +2,9 @@
 
 This repository tests whether a small learned energy correction improves a parallel
 DFlash drafter after its scoring, sampling, verification, and update costs. The full
-experiment specification is [prompt.md](prompt.md). M0 and M1-pre have passed at
-reference scale; M1a collection is running. Reference M1b and M2–M4 have not run.
+experiment specification is [prompt.md](prompt.md). M0 and all three M1 stages
+have passed at reference scale. Reference M2 offline fitting is running; M3 and
+M4 have not run.
 No adapter improvement or end-to-end speedup claim is established. See
 [the research summary](reports/SUMMARY.md) and
 [milestone status](artifacts/milestones.json) for the recorded evidence.

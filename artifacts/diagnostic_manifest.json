@@ -17,6 +17,24 @@
       },
       "status": "complete",
       "result_path": "/home/catid/drafter/artifacts/diagnostic_smoke.json"
+    },
+    "f275527fb19add7c18b92331238058a477c045c389a83df9bdd9e7c61d374d83": {
+      "identity": {
+        "model_pair": [
+          "Qwen/Qwen3-8B",
+          "z-lab/Qwen3-8B-DFlash-b16"
+        ],
+        "prompt": "534d88db442f405469a877c8aef0f19c08b48eca49360de3c84fe83c7c4409d6",
+        "condition": "separate_conditions_in_report",
+        "seed": 2026,
+        "temperature": "separate_temperatures",
+        "verification_rule": "ratio_stochastic_greedy_argmax",
+        "proposal_mode": "plain_dflash",
+        "checkpoint": "163ff0a026ba0013c6db5857d2acb9775395ecc538908939dcb612f93528f29a",
+        "adapter_version": 0
+      },
+      "status": "complete",
+      "result_path": "/home/catid/drafter/artifacts/diagnostic_reference.json"
     }
   }
 }

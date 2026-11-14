@@ -1,0 +1,46 @@
+{
+  "scale": "reference",
+  "status": "passed",
+  "rank": 4,
+  "world_size": 8,
+  "partitions": [
+    "long"
+  ],
+  "primary_tokens_by_temperature": {},
+  "quota_per_temperature": 31250,
+  "completed_generations": 5,
+  "live_full_blocks_by_split": {
+    "dev": 0,
+    "test": 0
+  },
+  "blocker": null,
+  "resolved_config": {
+    "config": null,
+    "scale": "reference",
+    "allow_download": false,
+    "allow_large_run": false,
+    "seed": 2026,
+    "device": "cuda:0",
+    "target": "Qwen/Qwen3-8B",
+    "drafter": "z-lab/Qwen3-8B-DFlash-b16",
+    "output": "/home/catid/drafter/artifacts",
+    "stage": "collect",
+    "rank": 4,
+    "world_size": 8,
+    "partitions": [
+      "long"
+    ],
+    "prompt_manifest": "/home/catid/drafter/artifacts/prompts.json",
+    "train_tokens_per_temperature": 250000,
+    "standard_max_new_tokens": 1024,
+    "long_max_new_tokens": 24576,
+    "calibration_max_new_tokens": 128,
+    "calibration_prompts": 64,
+    "projection_dim": 256,
+    "feature_rank": 64,
+    "embedding_source": "target_input",
+    "diagnostic_train_prompts": 64,
+    "live_full_blocks": 2
+  },
+  "project_git_commit": "0cb50a863037c8105cfa2bb9a72ba83cadc07386"
+}

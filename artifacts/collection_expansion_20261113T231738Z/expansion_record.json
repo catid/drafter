@@ -1,0 +1,241 @@
+{
+  "utc": "2026-11-13T23:17:38.993827+00:00",
+  "archive": "/home/catid/drafter/artifacts/collection_expansion_20261113T231738Z",
+  "old_state": {
+    "scale": "reference",
+    "launcher_pid": 2555687,
+    "started_at_unix": 1794610057.4657679,
+    "workers": [
+      {
+        "rank": 0,
+        "physical_gpu": 2,
+        "pid": 2555707,
+        "command": [
+          "/home/catid/drafter/.venv/bin/python",
+          "-m",
+          "edraft.collect",
+          "--scale",
+          "reference",
+          "--stage",
+          "collect",
+          "--rank",
+          "0",
+          "--world_size",
+          "4",
+          "--device",
+          "cuda:0",
+          "--seed",
+          "2026",
+          "--output",
+          "/home/catid/drafter/artifacts",
+          "--target",
+          "Qwen/Qwen3-8B",
+          "--drafter",
+          "z-lab/Qwen3-8B-DFlash-b16",
+          "--train_tokens_per_temperature",
+          "250000",
+          "--standard_max_new_tokens",
+          "1024",
+          "--long_max_new_tokens",
+          "24576",
+          "--partitions",
+          "train_primary",
+          "standard_eval",
+          "diagnostic",
+          "long"
+        ],
+        "log": "/home/catid/drafter/artifacts/logs/collect-rank0.log",
+        "status": "running"
+      },
+      {
+        "rank": 1,
+        "physical_gpu": 3,
+        "pid": 2555708,
+        "command": [
+          "/home/catid/drafter/.venv/bin/python",
+          "-m",
+          "edraft.collect",
+          "--scale",
+          "reference",
+          "--stage",
+          "collect",
+          "--rank",
+          "1",
+          "--world_size",
+          "4",
+          "--device",
+          "cuda:0",
+          "--seed",
+          "2026",
+          "--output",
+          "/home/catid/drafter/artifacts",
+          "--target",
+          "Qwen/Qwen3-8B",
+          "--drafter",
+          "z-lab/Qwen3-8B-DFlash-b16",
+          "--train_tokens_per_temperature",
+          "250000",
+          "--standard_max_new_tokens",
+          "1024",
+          "--long_max_new_tokens",
+          "24576",
+          "--partitions",
+          "train_primary",
+          "standard_eval",
+          "diagnostic",
+          "long"
+        ],
+        "log": "/home/catid/drafter/artifacts/logs/collect-rank1.log",
+        "status": "running"
+      },
+      {
+        "rank": 2,
+        "physical_gpu": 4,
+        "pid": 2555709,
+        "command": [
+          "/home/catid/drafter/.venv/bin/python",
+          "-m",
+          "edraft.collect",
+          "--scale",
+          "reference",
+          "--stage",
+          "collect",
+          "--rank",
+          "2",
+          "--world_size",
+          "4",
+          "--device",
+          "cuda:0",
+          "--seed",
+          "2026",
+          "--output",
+          "/home/catid/drafter/artifacts",
+          "--target",
+          "Qwen/Qwen3-8B",
+          "--drafter",
+          "z-lab/Qwen3-8B-DFlash-b16",
+          "--train_tokens_per_temperature",
+          "250000",
+          "--standard_max_new_tokens",
+          "1024",
+          "--long_max_new_tokens",
+          "24576",
+          "--partitions",
+          "train_primary",
+          "standard_eval",
+          "diagnostic",
+          "long"
+        ],
+        "log": "/home/catid/drafter/artifacts/logs/collect-rank2.log",
+        "status": "running"
+      },
+      {
+        "rank": 3,
+        "physical_gpu": 6,
+        "pid": 2555710,
+        "command": [
+          "/home/catid/drafter/.venv/bin/python",
+          "-m",
+          "edraft.collect",
+          "--scale",
+          "reference",
+          "--stage",
+          "collect",
+          "--rank",
+          "3",
+          "--world_size",
+          "4",
+          "--device",
+          "cuda:0",
+          "--seed",
+          "2026",
+          "--output",
+          "/home/catid/drafter/artifacts",
+          "--target",
+          "Qwen/Qwen3-8B",
+          "--drafter",
+          "z-lab/Qwen3-8B-DFlash-b16",
+          "--train_tokens_per_temperature",
+          "250000",
+          "--standard_max_new_tokens",
+          "1024",
+          "--long_max_new_tokens",
+          "24576",
+          "--partitions",
+          "train_primary",
+          "standard_eval",
+          "diagnostic",
+          "long"
+        ],
+        "log": "/home/catid/drafter/artifacts/logs/collect-rank3.log",
+        "status": "running"
+      }
+    ]
+  },
+  "verified_initial_gpu_occupancy": [
+    {
+      "gpu_uuid": "GPU-a5246588-c88f-a55d-1b48-13f1366b78aa",
+      "pid": 2555707,
+      "process": "/home/catid/drafter/.venv/bin/python"
+    },
+    {
+      "gpu_uuid": "GPU-1b576d6c-d02c-fb6d-088c-5a29798b5770",
+      "pid": 2555708,
+      "process": "/home/catid/drafter/.venv/bin/python"
+    },
+    {
+      "gpu_uuid": "GPU-7c288216-bd49-2790-7d5a-b44ebcd2b54a",
+      "pid": 2555709,
+      "process": "/home/catid/drafter/.venv/bin/python"
+    },
+    {
+      "gpu_uuid": "GPU-97c9ac33-9a82-bad1-96cd-725d7eae6174",
+      "pid": 2555710,
+      "process": "/home/catid/drafter/.venv/bin/python"
+    }
+  ],
+  "progress_before_stop": [
+    {
+      "rank": 0,
+      "completed_long_prompts": [
+        "math500-long-0176"
+      ],
+      "approx_in_progress_seconds_since_last_commit": 47.23454833030701
+    },
+    {
+      "rank": 1,
+      "completed_long_prompts": [
+        "math500-long-0151"
+      ],
+      "approx_in_progress_seconds_since_last_commit": 73.00261688232422
+    },
+    {
+      "rank": 2,
+      "completed_long_prompts": [
+        "math500-long-0134"
+      ],
+      "approx_in_progress_seconds_since_last_commit": 138.1127896308899
+    },
+    {
+      "rank": 3,
+      "completed_long_prompts": [],
+      "approx_in_progress_seconds_since_last_commit": 294.38720417022705
+    }
+  ],
+  "estimated_discarded_gpu_seconds": 552.7371590137482,
+  "estimate_caveat": "Elapsed time since latest committed shard estimates partial generation work and includes small I/O/setup overhead; no committed trace was removed.",
+  "new_gpu_order": [
+    2,
+    3,
+    4,
+    6,
+    0,
+    1,
+    5,
+    7
+  ],
+  "new_partitions": [
+    "long"
+  ],
+  "all_old_processes_exited": true
+}

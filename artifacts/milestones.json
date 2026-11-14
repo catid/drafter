@@ -20,23 +20,139 @@
     "hidden_vectors": 22377
   },
   "M1a": {
-    "status": "running",
-    "launcher_pid": 2555687,
+    "status": "passed",
+    "launcher_pid": 2719449,
     "physical_gpus": [
       2,
       3,
       4,
-      6
+      6,
+      0,
+      1,
+      5,
+      7
     ],
-    "world_size": 4,
-    "manifest": "artifacts/collection-processes.json"
+    "world_size": 8,
+    "manifest": "artifacts/collection-processes.json",
+    "primary_train_tokens": 501510,
+    "primary_train_tokens_by_temperature": {
+      "0.0": 250790,
+      "0.7": 250720
+    },
+    "standard_primary_eval_generations": 256,
+    "pure_temperature_diagnostic_generations": 192,
+    "long_generations_required": 44,
+    "current_partition": "complete",
+    "progress_recorded_utc": "2026-11-13T23:17:57.440943+00:00",
+    "completed_long_generations_at_expansion": 3,
+    "expansion_record": "artifacts/collection_expansion_20261113T231738Z/expansion_record.json",
+    "progress": {
+      "utc": "2026-11-14T00:02:39.208486+00:00",
+      "long_generations": 44,
+      "long_split_counts": {
+        "dev": 12,
+        "test": 32
+      },
+      "long_tokens": 512369,
+      "long_repetition_excluded": 0,
+      "long_over_8K": 37,
+      "long_over_16K": 5,
+      "long_capped": 2
+    },
+    "completed_utc": "2026-11-13T23:56:36.415506+00:00",
+    "evidence": [
+      "artifacts/m1_audit.json",
+      "artifacts/collection-processes.json"
+    ],
+    "audit_sha256": "f5bbaa23b13db411069f29d19185d7a481b63007fde5183d4ab3bea3204c5279",
+    "requirements": {
+      "primary_train_floor": true,
+      "each_primary_temperature_floor": true,
+      "standard_test_each_temperature": true,
+      "standard_dev_present": true,
+      "diagnostic_train_separate": true,
+      "serialized_head_reconstruction": true,
+      "long_dev_generations": true,
+      "long_test_generations": true,
+      "disjoint_prompt_splits": true,
+      "selected_standard_test_ids": true,
+      "complete_dataset_held_out": true,
+      "live_full_dev_and_test": true
+    },
+    "token_counts": {
+      "standard_nonthinking/train/T=0.0": 250790,
+      "primary_train_total": 501510,
+      "primary_train_T=0.0": 250790,
+      "standard_nonthinking/train/T=0.7": 250720,
+      "primary_train_T=0.7": 250720,
+      "standard_nonthinking/dev/T=0.0": 20280,
+      "standard_nonthinking/dev/T=0.7": 19932,
+      "standard_nonthinking/test/T=0.0": 19081,
+      "standard_nonthinking/test/T=0.7": 19143,
+      "standard_nonthinking/train/T=1.0": 19477,
+      "standard_nonthinking/dev/T=1.0": 19788,
+      "standard_nonthinking/test/T=1.0": 19054,
+      "long_thinking/dev/T=0.6": 151225,
+      "long_thinking/test/T=0.6": 361144
+    },
+    "prompt_counts": {
+      "standard_nonthinking/train/T=0.0": 848,
+      "standard_nonthinking/train/T=0.7": 844,
+      "standard_nonthinking/dev/T=0.0": 64,
+      "standard_nonthinking/dev/T=0.7": 64,
+      "standard_nonthinking/test/T=0.0": 64,
+      "standard_nonthinking/test/T=0.7": 64,
+      "standard_nonthinking/train/T=1.0": 64,
+      "standard_nonthinking/dev/T=1.0": 64,
+      "standard_nonthinking/test/T=1.0": 64,
+      "long_thinking/dev/T=0.6": 12,
+      "long_thinking/test/T=0.6": 32
+    },
+    "shards": 2184,
+    "serialized_head_checks": 16,
+    "long_generations": 44
   },
   "M1b": {
-    "status": "not_run"
+    "status": "passed",
+    "integration_validation": {
+      "status": "passed",
+      "pytest_tests": 222,
+      "evidence": "artifacts/reuse_smoke_pipeline/validation.json",
+      "sha256": "aa65d7bb7f4e7f6bccd15be1bee1b880da0f7e38932d69a1135e448af747c10f",
+      "source_hashes_unchanged": true
+    },
+    "diagnostic_workers": 8,
+    "parallel_implementation_tests": 22,
+    "parallel_benchmark": "artifacts/diagnostic_parallel_benchmark.json",
+    "started_utc": "2026-11-13T23:56:36.419163+00:00",
+    "workers": 8,
+    "log": "artifacts/m1b-diagnose.log",
+    "report_status": "measured",
+    "completed_utc": "2026-11-14T00:02:39.208486+00:00",
+    "evidence": [
+      "artifacts/diagnostic_reference.json",
+      "artifacts/m1b_validation.json"
+    ],
+    "diagnostic_report_sha256": "5830c3b2d936240b0a2ee320cb8db9b47701221fe7f851356f96b8b406f8b950",
+    "diagnostic_groups": 106,
+    "source_shards": 2184,
+    "elapsed_seconds": 312.9597408771515,
+    "ready_for_M2": true
   },
   "M2": {
-    "status": "not_run",
-    "synthetic_smoke": "artifacts/m2_smoke.json; not reference evidence"
+    "status": "running",
+    "physical_gpu": 0,
+    "source_commit": "0cb50a8",
+    "log": "artifacts/m2-reference.log",
+    "synthetic_smoke": "artifacts/m2_smoke.json; not reference evidence",
+    "estimate_minutes": [
+      30,
+      120
+    ],
+    "pid": 2882467,
+    "exec_session_id": 93943,
+    "started_at_utc": "2026-11-14T00:04:21.743103+00:00",
+    "configuration": "predeclared CLI defaults; one epoch per required phase"
   },
   "M3": {
     "status": "not_run"
