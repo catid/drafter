@@ -1,0 +1,344 @@
+"""Guarded accounting-only recovery of the completed reference M2 optimizer run.
+
+Preparation (CPU only; archives failed inputs, no evaluation/finalization):
+  CUDA_VISIBLE_DEVICES='' .venv/bin/python artifacts/m2_finalize_recovery_source.txt --scale reference --prepare
+Read-only inspection is the default. After independent launch review:
+  CUDA_VISIBLE_DEVICES=0 .venv/bin/python artifacts/m2_finalize_recovery_source.txt --scale reference --execute
+
+The original train.main and exact resolved configuration are retained. Only the
+DuckDB finalizer's memory argument changes from 512MB to 32GB. Optimizer steps,
+proximal updates, and new sparse chunks are forbidden. Checkpoint publication
+requires bitwise unchanged parameters, optimizer state, RNG, and fit provenance.
+The normal run record is redirected to a separate accounting-recovery name so
+the continuation driver's original M2 PID record is preserved. No driver launch
+or optimizer recovery is performed here.
+"""
+from __future__ import annotations
+
+import argparse
+from contextlib import contextmanager
+from datetime import datetime, timezone
+import fcntl
+import hashlib
+import json
+import os
+from pathlib import Path
+import shutil
+import sys
+import tempfile
+
+ROOT = Path(__file__).resolve().parent.parent
+SOURCE = Path(__file__).resolve()
+ARTIFACTS = ROOT / 'artifacts'
+ARCHIVE = ARTIFACTS / 'm2_finalize_recovery'
+LATEST = ARTIFACTS / 'm2/latest.pt'
+FAILURE_LOG = ARTIFACTS / 'm2-reference.log'
+ORIGINAL_RUN = ARTIFACTS / 'runs/train-23b97943b68176e4-rank0.json'
+EXPECTED = {
+    'checkpoint': '71e7084b2c72c6a9c4a3aa4039bb0e6213c1305232931ffd52685febdbfd06a1',
+    'failure_log': '786f1c5d81dd31e52fe03eff886f417ac30e9438944aa5a3275fe072f3b7c441',
+    'run_record': '19bd015eed73bd3cdfa070de979f2afaa677365c3dfd6122ac2692bb54c9bd3a',
+}
+IDENTITY = 'a68a4d614bc2a4960f2d8ce292c3611b2ce2328b2bbd81428b697372a31eed6e'
+FIT_MODULES = ('train.py', 'adapter.py', 'features.py', 'sparse.py', 'sparse_stats.py', 'traces.py')
+ORIGINAL_MEMORY = '512MB'
+EFFECTIVE_MEMORY = '32GB'
+ORIGINAL_PID = 2882467
+
+
+def require(condition, message):
+    if not condition:
+        raise RuntimeError(message)
+
+
+def now():
+    return datetime.now(timezone.utc).isoformat()
+
+
+def digest(path):
+    result = hashlib.sha256()
+    with Path(path).open('rb') as stream:
+        while chunk := stream.read(8 * 1024 * 1024):
+            result.update(chunk)
+    return result.hexdigest()
+
+
+def atomic_json(path, value):
+    path = Path(path)
+    descriptor, temporary = tempfile.mkstemp(prefix=path.name + '.', dir=path.parent)
+    try:
+        with os.fdopen(descriptor, 'w') as stream:
+            json.dump(value, stream, indent=2, allow_nan=False)
+            stream.write('\n')
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.replace(temporary, path)
+    finally:
+        if os.path.exists(temporary):
+            os.unlink(temporary)
+
+
+def tree_equal(actual, expected, label):
+    import torch
+    if isinstance(expected, torch.Tensor):
+        require(isinstance(actual, torch.Tensor) and actual.dtype == expected.dtype
+                and actual.shape == expected.shape and torch.equal(actual.cpu(), expected.cpu()),
+                label + ': tensor changed')
+    elif isinstance(expected, dict):
+        require(isinstance(actual, dict) and actual.keys() == expected.keys(), label + ': keys changed')
+        for key in expected:
+            tree_equal(actual[key], expected[key], label + '.' + str(key))
+    elif isinstance(expected, (list, tuple)):
+        require(type(actual) is type(expected) and len(actual) == len(expected), label + ': sequence changed')
+        for index, (left, right) in enumerate(zip(actual, expected)):
+            tree_equal(left, right, label + '.' + str(index))
+    else:
+        require(actual == expected, label + ': value changed')
+
+
+def current_sources(checkpoint):
+    expected = checkpoint['report']['implementation_sha256']
+    require(set(expected) == set(FIT_MODULES), 'Unexpected fit source manifest')
+    observed = {name: digest(ROOT / 'src/edraft' / name) for name in FIT_MODULES}
+    require(observed == expected, 'One of the six fit-hashed source modules changed')
+    return observed
+
+
+def original_argv(config):
+    require(config['config'] is None and config['resume'] is True,
+            'Recovery requires the original explicit/default configuration and resume')
+    argv = []
+    for key, value in config.items():
+        if value is None:
+            continue
+        if isinstance(value, bool):
+            if value:
+                argv.append('--' + key)
+        else:
+            argv.extend(['--' + key, str(value)])
+    return argv
+
+
+def inspect_inputs():
+    import torch
+    require(Path.cwd().resolve() == ROOT, 'Run from the original project working directory')
+    require(not torch.cuda.is_initialized(), 'CPU preflight must precede any CUDA initialization')
+    for key, path in [('checkpoint', LATEST), ('failure_log', FAILURE_LOG), ('run_record', ORIGINAL_RUN)]:
+        require(digest(path) == EXPECTED[key], 'Original ' + key + ' changed; manual review required')
+    require(not (ARTIFACTS / 'm2.json').exists() and not (ARTIFACTS / 'm2/dense_sparse.pt').exists(),
+            'Final reference artifacts already exist; do not rerun this recovery')
+    checkpoint = torch.load(LATEST, map_location='cpu', weights_only=True)
+    run = json.loads(ORIGINAL_RUN.read_text())
+    config = checkpoint['resolved_config']
+    require(checkpoint['scale'] == config['scale'] == 'reference' and checkpoint['identity'] == IDENTITY,
+            'Failed checkpoint is not the expected reference fit')
+    require(checkpoint['stage'] == 'dense_sparse' and checkpoint['epoch'] == config['epochs_sparse'] == 1
+            and checkpoint['next_batch'] == 0, 'Checkpoint is not at the final sparse epoch boundary')
+    require(config == run['config'] and run['pid'] == ORIGINAL_PID and run['visible_devices'] == '0',
+            'Original run/config identity changed')
+    require(config['stats_memory_limit'] == ORIGINAL_MEMORY and not config['allow_download'],
+            'Original accounting/download configuration changed')
+    require(set(checkpoint['report']['stages']) == {'dense'} and checkpoint['dense_optimizer'] is not None
+            and checkpoint['sparse_optimizer'] is not None, 'Unexpected failed-checkpoint contents')
+    chunks = checkpoint['report']['sparse_statistics_chunks']
+    require(len(chunks) == 10539 and len({item['path'] for item in chunks}) == len(chunks),
+            'Committed sparse chunk coverage changed')
+    require('_duckdb.OutOfMemoryException' in FAILURE_LOG.read_text(), 'Failure log lacks the reviewed accounting OOM')
+    sources = current_sources(checkpoint)
+    require(digest(ROOT / 'src/edraft/runtime.py') == run['source_files_sha256']['src/edraft/runtime.py'],
+            'Config/run-record implementation changed')
+    preparation = {'scale': 'reference', 'status': 'prepared_not_executed', 'checked_at_utc': now(),
+        'wrapper_source_sha256': digest(SOURCE), 'original_checkpoint_sha256': EXPECTED['checkpoint'],
+        'failure_log_sha256': EXPECTED['failure_log'], 'original_run_record_sha256': EXPECTED['run_record'],
+        'fit_identity': IDENTITY, 'stage': checkpoint['stage'], 'epoch': checkpoint['epoch'],
+        'next_batch': checkpoint['next_batch'], 'original_resolved_config': config,
+        'original_argv': original_argv(config), 'implementation_sha256': sources,
+        'original_memory_limit': ORIGINAL_MEMORY, 'effective_memory_limit': EFFECTIVE_MEMORY,
+        'committed_chunks': len(chunks), 'dense_checkpoint_sha256': digest(ARTIFACTS / 'm2/dense.pt'),
+        'cuda_initialized': torch.cuda.is_initialized(),
+        'scope': 'No optimizer updates; repeat complete sparse-stage train/dev/test evaluation and exact accounting.'}
+    return checkpoint, preparation
+
+
+def archive_inputs(preparation):
+    ARCHIVE.mkdir(parents=True, exist_ok=True)
+    records = {}
+    for key, source, name in [('checkpoint', LATEST, 'failed_latest.pt'),
+                             ('failure_log', FAILURE_LOG, 'failed_m2-reference.log'),
+                             ('run_record', ORIGINAL_RUN, 'original_train_run.json')]:
+        destination = ARCHIVE / name
+        if not destination.exists():
+            descriptor, temporary = tempfile.mkstemp(prefix=name + '.', dir=ARCHIVE)
+            os.close(descriptor)
+            try:
+                shutil.copyfile(source, temporary)
+                require(digest(temporary) == EXPECTED[key], 'Archive copy checksum mismatch')
+                with open(temporary, 'rb') as stream:
+                    os.fsync(stream.fileno())
+                os.replace(temporary, destination)
+            finally:
+                if os.path.exists(temporary):
+                    os.unlink(temporary)
+        require(digest(destination) == EXPECTED[key], 'Existing archive checksum mismatch')
+        records[key] = {'path': str(destination), 'sha256': EXPECTED[key]}
+    preparation['archived_inputs'] = records
+    atomic_json(ARCHIVE / 'preparation.json', preparation)
+
+
+@contextmanager
+def recovery_guards(train, checkpoint, preparation):
+    import torch
+    config, old_report = checkpoint['resolved_config'], checkpoint['report']
+    counters = {'optimizer_step_attempts': 0, 'proximal_step_attempts': 0, 'chunk_write_attempts': 0,
+                'finalizer_calls': 0, 'checkpoint_saves': 0}
+    provenance = {'kind': 'exact_sparse_accounting_memory_recovery', 'scale': 'reference',
+        'original_memory_limit': ORIGINAL_MEMORY, 'effective_memory_limit': EFFECTIVE_MEMORY,
+        'original_checkpoint_sha256': EXPECTED['checkpoint'], 'wrapper_source_sha256': preparation['wrapper_source_sha256'],
+        'failure_log_sha256': EXPECTED['failure_log'], 'original_run_record_sha256': EXPECTED['run_record'],
+        'original_fit_identity': IDENTITY, 'archived_inputs': preparation['archived_inputs'],
+        'optimizer_updates_executed': 0, 'fit_config_unchanged': True, 'fit_source_hashes_unchanged': True,
+        'parameter_and_optimizer_state': 'exact equality with failed final-epoch checkpoint required before publication',
+        'elapsed_time_scope': 'fit_elapsed_seconds_this_invocation covers recovery evaluation/accounting only, not original fitting',
+        'recovery_started_at_utc': now()}
+    originals = []
+    def replace(owner, name, replacement):
+        old = getattr(owner, name)
+        originals.append((owner, name, old))
+        setattr(owner, name, replacement)
+        return old
+    def forbidden(counter):
+        def fail(*args, **kwargs):
+            counters[counter] += 1
+            raise RuntimeError('Finalization-only recovery forbids ' + counter)
+        return fail
+    def check_report(report):
+        require(report['identity'] == IDENTITY, 'Fit identity changed during recovery')
+        for key in ('baseline', 'epoch_development', 'sparse_statistics_chunks', 'implementation_sha256'):
+            tree_equal(report[key], old_report[key], 'report.' + key)
+        tree_equal(report['stages']['dense'], old_report['stages']['dense'], 'dense stage report')
+        require(counters['optimizer_step_attempts'] == counters['proximal_step_attempts'] == counters['chunk_write_attempts'] == 0,
+                'A forbidden update was attempted')
+        stats = report['stages']['dense_sparse']['sparse_collision_statistics']
+        require(stats['memory_limit'] == EFFECTIVE_MEMORY and stats['accounting_recovery'] == provenance,
+                'Accounting override provenance is missing or inconsistent')
+    def save_guard(path, payload):
+        path = Path(path).resolve()
+        require(path in {LATEST, ARTIFACTS / 'm2/dense_sparse.pt'}, 'Unexpected checkpoint publication path')
+        require(payload['stage'] == ('complete' if path == LATEST else 'dense_sparse'), 'Unexpected checkpoint stage')
+        require(counters['finalizer_calls'] == 1, 'Checkpoint publication must follow exactly one finalization')
+        for key in ('identity', 'resolved_config', 'adapter_config', 'adapter_state', 'torch_rng', 'python_rng', 'cuda_rng'):
+            tree_equal(payload[key], checkpoint[key], 'checkpoint.' + key)
+        if path != LATEST:
+            for key in ('dense_optimizer', 'sparse_optimizer'):
+                tree_equal(payload[key], checkpoint[key], 'checkpoint.' + key)
+        check_report(payload['report'])
+        current_sources(checkpoint)
+        original_save(path, payload)
+        counters['checkpoint_saves'] += 1
+    def finalize_guard(recorder, chunks, sparse, *, memory_limit='512MB', **kwargs):
+        require(memory_limit == ORIGINAL_MEMORY and counters['finalizer_calls'] == 0,
+                'Unexpected finalizer memory argument or repeated invocation')
+        tree_equal(chunks, old_report['sparse_statistics_chunks'], 'finalizer chunks')
+        require(digest(LATEST) == EXPECTED['checkpoint'], 'Failed checkpoint changed before finalization')
+        current_sources(checkpoint)
+        counters['finalizer_calls'] += 1
+        stats = original_finalize(recorder, chunks, sparse, memory_limit=EFFECTIVE_MEMORY, **kwargs)
+        require(stats['status'] == 'measured' and stats['committed_chunks'] == len(chunks)
+                and stats['memory_limit'] == EFFECTIVE_MEMORY, 'Exact sparse accounting did not complete')
+        stats['accounting_recovery'] = provenance
+        return stats
+    def parse_guard(*args, **kwargs):
+        result = original_parse(*args, **kwargs)
+        require(train.resolved_config(result) == config, 'Resolved configuration differs from original fit')
+        return result
+    def record_guard(args, name):
+        require(name == 'train' and train.resolved_config(args) == config, 'Unexpected run record/config')
+        require(digest(ORIGINAL_RUN) == EXPECTED['run_record'], 'Original run record changed')
+        return original_record(args, 'train-accounting-recovery')
+    def json_guard(path, report):
+        require(Path(path).resolve() == ARTIFACTS / 'm2.json', 'Unexpected report publication')
+        check_report(report)
+        require(counters['checkpoint_saves'] == 2, 'Final report requires both guarded checkpoints')
+        return original_json(path, report)
+    try:
+        replace(torch.optim.AdamW, 'step', forbidden('optimizer_step_attempts'))
+        replace(torch.optim.SGD, 'step', forbidden('optimizer_step_attempts'))
+        replace(train.SignedHash, 'proximal_step', forbidden('proximal_step_attempts'))
+        replace(train.SparseAccessRecorder, 'write_batch', forbidden('chunk_write_attempts'))
+        original_parse = replace(train, 'parse_config', parse_guard)
+        original_record = replace(train, 'record_run', record_guard)
+        original_save = replace(train, 'atomic_torch_save', save_guard)
+        original_json = replace(train, 'atomic_json', json_guard)
+        original_finalize = replace(train.SparseAccessRecorder, 'finalize', finalize_guard)
+        yield counters
+    finally:
+        for owner, name, original in reversed(originals):
+            setattr(owner, name, original)
+
+
+def execute(checkpoint, preparation):
+    import torch
+    from edraft import train
+    from edraft.bench_adapter import assert_idle
+    require(os.environ.get('CUDA_VISIBLE_DEVICES') == '0', 'Recovery must use original physical GPU 0')
+    require(not Path(f'/proc/{ORIGINAL_PID}').exists(), 'Original M2 PID still exists; inspect before recovery')
+    saved = json.loads((ARCHIVE / 'preparation.json').read_text())
+    require(saved['wrapper_source_sha256'] == digest(SOURCE), 'Wrapper changed since preparation/review')
+    require(saved['original_checkpoint_sha256'] == preparation['original_checkpoint_sha256'], 'Prepared checkpoint changed')
+    preparation['archived_inputs'] = saved['archived_inputs']
+    for item in preparation['archived_inputs'].values():
+        require(digest(item['path']) == item['sha256'], 'Archived failure evidence changed')
+    available_kib = next(int(line.split()[1]) for line in Path('/proc/meminfo').read_text().splitlines()
+                         if line.startswith('MemAvailable:'))
+    require(available_kib >= 64 * 1024**2, 'Less than 64GiB host memory is available for the 32GB accounting limit')
+    with (ARTIFACTS / 'reference_continuation.lock').open('a+b') as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        state = json.loads((ARTIFACTS / 'reference_continuation_state.json').read_text())
+        require(state['status'] == 'failed' and state.get('inflight') is None
+                and not state.get('surviving_owned_processes'), 'Continuation driver must remain stopped with no owned children')
+        assert_idle(torch.device('cuda:0'))
+        execution = {'scale': 'reference', 'status': 'running', 'started_at_utc': now(),
+            'pid': os.getpid(), 'wrapper_source_sha256': digest(SOURCE), 'preparation': preparation,
+            'host_mem_available_kib': available_kib}
+        atomic_json(ARCHIVE / 'execution.json', execution)
+        original_args = sys.argv
+        try:
+            sys.argv = ['edraft.train', *preparation['original_argv']]
+            with recovery_guards(train, checkpoint, preparation) as counters:
+                train.main()
+            require(counters['finalizer_calls'] == 1 and counters['checkpoint_saves'] == 2,
+                    'Recovery did not publish the expected finalization artifacts')
+            require(digest(ORIGINAL_RUN) == EXPECTED['run_record']
+                    and digest(FAILURE_LOG) == EXPECTED['failure_log'], 'Original run/log evidence changed')
+            require(digest(ARTIFACTS / 'm2/dense.pt') == preparation['dense_checkpoint_sha256'], 'Dense checkpoint changed')
+            current_sources(checkpoint)
+            require(digest(SOURCE) == preparation['wrapper_source_sha256'], 'Wrapper changed during execution')
+            execution.update(status='passed', finished_at_utc=now(), guards=counters,
+                artifacts={str(path): digest(path) for path in [LATEST, ARTIFACTS / 'm2/dense_sparse.pt', ARTIFACTS / 'm2.json']},
+                interpretation='Accounting recovery only; no optimizer updates or quality-improvement claim. Independent M2 validator still required.')
+        except BaseException as error:
+            execution.update(status='failed', finished_at_utc=now(), error=f'{type(error).__name__}: {error}')
+            raise
+        finally:
+            sys.argv = original_args
+            atomic_json(ARCHIVE / 'execution.json', execution)
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--scale', choices=['reference'], default='reference')
+    mode = parser.add_mutually_exclusive_group()
+    mode.add_argument('--prepare', action='store_true')
+    mode.add_argument('--execute', action='store_true')
+    args = parser.parse_args()
+    checkpoint, preparation = inspect_inputs()
+    if args.prepare:
+        archive_inputs(preparation)
+    elif args.execute:
+        execute(checkpoint, preparation)
+    print(json.dumps(preparation if not args.execute else {'scale': 'reference', 'status': 'recovery_finished',
+        'execution_record': str(ARCHIVE / 'execution.json')}, indent=2))
+
+
+if __name__ == '__main__':
+    main()

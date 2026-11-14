@@ -1,0 +1,62 @@
+{
+  "scale": "reference",
+  "label": "smoke",
+  "status": "passed",
+  "scope": "CPU guard/control checks only; reference evaluation and exact accounting were not executed.",
+  "wrapper_source_sha256": "a3b8ffdac8b2686095724c0ca04bbe9cbbb288d91b467fc0668ac95fef013af1",
+  "validation_source_sha256": "bc6560162424a996be3b3d8070573cff2c06e205631e61837af8681822826f00",
+  "cuda_initialized": false,
+  "reference_files_unchanged": {
+    "/home/catid/drafter/artifacts/m2/latest.pt": "71e7084b2c72c6a9c4a3aa4039bb0e6213c1305232931ffd52685febdbfd06a1",
+    "/home/catid/drafter/artifacts/runs/train-23b97943b68176e4-rank0.json": "19bd015eed73bd3cdfa070de979f2afaa677365c3dfd6122ac2692bb54c9bd3a",
+    "/home/catid/drafter/artifacts/m2-reference.log": "786f1c5d81dd31e52fe03eff886f417ac30e9438944aa5a3275fe072f3b7c441",
+    "/home/catid/drafter/artifacts/m2/dense.pt": "53ed0f23458bceb44842d2598a51b78604897347915df5be01c6f1a16a8229da"
+  },
+  "unchanged_original_config_parse": true,
+  "changed_config_rejected": true,
+  "optimizer_proximal_chunk_guards": {
+    "optimizer_step_attempts": 2,
+    "proximal_step_attempts": 1,
+    "chunk_write_attempts": 1,
+    "finalizer_calls": 0,
+    "checkpoint_saves": 0
+  },
+  "simulated_publication": {
+    "optimizer_step_attempts": 0,
+    "proximal_step_attempts": 0,
+    "chunk_write_attempts": 0,
+    "finalizer_calls": 1,
+    "checkpoint_saves": 2
+  },
+  "changed_weights_and_epoch_history_rejected": true,
+  "record_redirect_verified": true,
+  "memory_override_verified": {
+    "memory_limit": "32GB",
+    "benchmark_entries": 1000000,
+    "seed": 2026
+  },
+  "actual_fit_synthetic_end_epoch_control_flow": {
+    "source_fixture_sha256": "21f447d322e7732b4fccd67efc36c64eea883a156c617361dafbeab7030661c3",
+    "temporary_paths_only": true,
+    "scope": "Original train.fit with copied tiny synthetic checkpoint/traces; evaluation and accounting callbacks stubbed; no optimizer updates.",
+    "calls": {
+      "evaluations": [
+        "train",
+        "dev",
+        "test"
+      ],
+      "finalizer_memory": [
+        "32GB"
+      ]
+    },
+    "guards": {
+      "optimizer_step_attempts": 0,
+      "proximal_step_attempts": 0,
+      "chunk_write_attempts": 0,
+      "finalizer_calls": 1,
+      "checkpoint_saves": 2
+    },
+    "final_parameter_optimizer_history_and_chunk_equality": true,
+    "final_report_matches_checkpoint": true
+  }
+}

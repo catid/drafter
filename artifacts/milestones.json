@@ -140,7 +140,7 @@
     "ready_for_M2": true
   },
   "M2": {
-    "status": "incomplete",
+    "status": "recovering",
     "physical_gpu": 0,
     "source_commit": "0cb50a8",
     "log": "artifacts/m2-reference.log",
@@ -182,7 +182,7 @@
     },
     "first_status_recorded_at_utc": "2026-11-14T00:04:21.743103+00:00",
     "run_record": "artifacts/runs/train-23b97943b68176e4-rank0.json",
-    "current_phase": "finalization recovery preparation",
+    "current_phase": "finalization-only recovery",
     "original_process_exit_code": 1,
     "sparse_epoch_dev": {
       "weighted_mean_kl": 2.060249472521257,
@@ -198,6 +198,20 @@
       "checkpoint_sha256": "71e7084b2c72c6a9c4a3aa4039bb0e6213c1305232931ffd52685febdbfd06a1",
       "parameters_preserved": true,
       "required_recovery": "repeat sparse train/dev/test evaluation and exact statistics, with zero optimizer updates"
+    },
+    "recovery": {
+      "pid": 2913083,
+      "exec_session_id": 70262,
+      "physical_gpu": 0,
+      "source": "artifacts/m2_finalize_recovery_source.txt",
+      "source_sha256": "a3b8ffdac8b2686095724c0ca04bbe9cbbb288d91b467fc0668ac95fef013af1",
+      "log": "artifacts/m2-finalization-recovery.log",
+      "execution_record": "artifacts/m2_finalize_recovery/execution.json",
+      "guard_validation": "artifacts/m2_finalize_recovery/guard_validation.json",
+      "archive": "artifacts/m2_finalize_recovery/failed_latest.pt",
+      "effective_accounting_memory_limit": "32GB",
+      "optimizer_updates": "forbidden by guards; no tuning or training restart",
+      "source_fit_identity": "unchanged original a68a4d614bc2a4960f2d8ce292c3611b2ce2328b2bbd81428b697372a31eed6e"
     }
   },
   "M3": {

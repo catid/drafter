@@ -1,0 +1,21 @@
+Traceback (most recent call last):
+  File "<frozen runpy>", line 198, in _run_module_as_main
+  File "<frozen runpy>", line 88, in _run_code
+  File "/home/catid/drafter/src/edraft/train.py", line 650, in <module>
+    main()
+  File "/home/catid/drafter/src/edraft/train.py", line 642, in main
+    report = fit(entries, index_report, E, head, bias, head_metadata, args)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/catid/drafter/src/edraft/train.py", line 522, in fit
+    report['stages'][stage]['sparse_collision_statistics'] = stats_recorder.finalize(
+                                                             ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/catid/drafter/src/edraft/sparse_stats.py", line 74, in finalize
+    connection.execute('CREATE OR REPLACE TABLE exact_key_counts AS SELECT packed_key, '
+_duckdb.OutOfMemoryException: Out of Memory Error: could not allocate block of size 256.0 KiB (488.3 MiB/488.2 MiB used)
+
+Possible solutions:
+* Reducing the number of threads (SET threads=X)
+* Disabling insertion-order preservation (SET preserve_insertion_order=false)
+* Increasing the memory limit (SET memory_limit='...GB')
+
+See also https://duckdb.org/docs/stable/guides/performance/how_to_tune_workloads

@@ -1,0 +1,209 @@
+"""CPU-only recovery-wrapper guard validation; never runs fit or finalization.
+
+Uses the read-only failed checkpoint and substitutes in-memory publication,
+finalizer, and logging callbacks. train.main stops at preflight, before trace or
+GPU access. No recovery execution or M2 artifacts are written by this check.
+"""
+import copy
+import importlib.machinery
+import importlib.util
+import hashlib
+import json
+from pathlib import Path
+import shutil
+import sys
+import tempfile
+from types import SimpleNamespace
+from unittest.mock import patch
+
+import torch
+from edraft import train
+
+ROOT = Path(__file__).resolve().parent.parent
+SOURCE = ROOT / 'artifacts/m2_finalize_recovery_source.txt'
+loader = importlib.machinery.SourceFileLoader('m2_recovery_guard_check', str(SOURCE))
+spec = importlib.util.spec_from_loader(loader.name, loader)
+wrapper = importlib.util.module_from_spec(spec)
+loader.exec_module(wrapper)
+torch.set_num_threads(1)
+checkpoint, preparation = wrapper.inspect_inputs()
+saved = json.loads((wrapper.ARCHIVE / 'preparation.json').read_text())
+preparation['archived_inputs'] = saved['archived_inputs']
+originals = {str(path): wrapper.digest(path) for path in
+    [wrapper.LATEST, wrapper.ORIGINAL_RUN, wrapper.FAILURE_LOG, wrapper.ARTIFACTS / 'm2/dense.pt']}
+assert not torch.cuda.is_initialized()
+
+
+class StoppedBeforeReferenceWork(Exception):
+    pass
+
+
+def stop_before_reference(*args, **kwargs):
+    raise StoppedBeforeReferenceWork
+
+
+with wrapper.recovery_guards(train, checkpoint, preparation) as parse_counters:
+    with patch.object(sys, 'argv', ['edraft.train', *preparation['original_argv']]), patch.object(train, 'preflight', stop_before_reference):
+        try:
+            train.main()
+        except StoppedBeforeReferenceWork:
+            pass
+        else:
+            raise AssertionError('train.main did not stop at CPU preflight')
+    altered = list(preparation['original_argv'])
+    altered[altered.index('--learning_rate') + 1] = '0.002'
+    with patch.object(sys, 'argv', ['edraft.train', *altered]), patch.object(train, 'preflight', stop_before_reference):
+        try:
+            train.main()
+        except RuntimeError as error:
+            assert 'Resolved configuration differs' in str(error)
+        else:
+            raise AssertionError('changed optimizer configuration was accepted')
+assert all(value == 0 for value in parse_counters.values())
+
+with wrapper.recovery_guards(train, checkpoint, preparation) as blocked:
+    param = torch.nn.Parameter(torch.tensor([1.]))
+    for optimizer_class in (torch.optim.AdamW, torch.optim.SGD):
+        optimizer = optimizer_class([param], lr=.01)
+        try:
+            optimizer.step()
+        except RuntimeError as error:
+            assert 'forbids optimizer_step_attempts' in str(error)
+        else:
+            raise AssertionError('optimizer update was allowed')
+    for callback in (lambda: train.SignedHash.proximal_step(None, .01, .01),
+                     lambda: train.SparseAccessRecorder.write_batch(None, None, 0, 0)):
+        try:
+            callback()
+        except RuntimeError as error:
+            assert 'Finalization-only recovery forbids' in str(error)
+        else:
+            raise AssertionError('update/chunk write was allowed')
+    assert torch.equal(param.detach(), torch.tensor([1.]))
+assert blocked['optimizer_step_attempts'] == 2 and blocked['proximal_step_attempts'] == blocked['chunk_write_attempts'] == 1
+
+observed = {'saved': [], 'json': [], 'records': []}
+def fake_finalizer(recorder, chunks, sparse, **kwargs):
+    observed['finalizer_kwargs'] = kwargs
+    return {'status': 'measured', 'memory_limit': kwargs['memory_limit'], 'committed_chunks': len(chunks)}
+def fake_record(args, name):
+    observed['records'].append((name, train.resolved_config(args)))
+    return {'name': name}
+
+with patch.object(train.SparseAccessRecorder, 'finalize', fake_finalizer), \
+     patch.object(train, 'atomic_torch_save', lambda path, payload: observed['saved'].append(str(path))), \
+     patch.object(train, 'atomic_json', lambda path, report: observed['json'].append(str(path))), \
+     patch.object(train, 'record_run', fake_record):
+    with wrapper.recovery_guards(train, checkpoint, preparation) as publication:
+        recorder = train.SparseAccessRecorder.__new__(train.SparseAccessRecorder)
+        stats = recorder.finalize(checkpoint['report']['sparse_statistics_chunks'], None,
+            memory_limit='512MB', benchmark_entries=1000000, seed=2026)
+        assert observed['finalizer_kwargs'] == {'memory_limit': '32GB', 'benchmark_entries': 1000000, 'seed': 2026}
+        provenance = stats['accounting_recovery']
+        assert provenance['optimizer_updates_executed'] == 0
+        assert provenance['original_memory_limit'] == '512MB' and provenance['effective_memory_limit'] == '32GB'
+        payload = copy.deepcopy(checkpoint)
+        payload['report']['stages']['dense_sparse'] = {'sparse_collision_statistics': stats}
+        train.atomic_torch_save(wrapper.ARTIFACTS / 'm2/dense_sparse.pt', payload)
+        payload['stage'] = 'complete'
+        payload['dense_optimizer'] = payload['sparse_optimizer'] = None
+        train.atomic_torch_save(wrapper.LATEST, payload)
+        train.atomic_json(wrapper.ARTIFACTS / 'm2.json', payload['report'])
+        train.record_run(SimpleNamespace(**checkpoint['resolved_config']), 'train')
+        changed = copy.deepcopy(payload)
+        changed['adapter_state']['W'][0, 0] += 1
+        try:
+            train.atomic_torch_save(wrapper.LATEST, changed)
+        except RuntimeError as error:
+            assert 'adapter_state.W: tensor changed' in str(error)
+        else:
+            raise AssertionError('changed weights were published')
+        changed = copy.deepcopy(payload)
+        changed['report']['epoch_development'].append({'unexpected': True})
+        try:
+            train.atomic_torch_save(wrapper.LATEST, changed)
+        except RuntimeError as error:
+            assert 'epoch_development: sequence changed' in str(error)
+        else:
+            raise AssertionError('changed epoch history was published')
+assert publication == {'optimizer_step_attempts': 0, 'proximal_step_attempts': 0,
+    'chunk_write_attempts': 0, 'finalizer_calls': 1, 'checkpoint_saves': 2}
+assert len(observed['saved']) == 2 and len(observed['json']) == 1
+assert observed['records'] == [('train-accounting-recovery', checkpoint['resolved_config'])]
+
+# Execute the actual unmodified end-epoch fit control flow on a COPIED synthetic
+# checkpoint in a TemporaryDirectory. Metrics and accounting callbacks are
+# bounded stand-ins: this verifies resume/publication and guards, not reference
+# loss recomputation or DuckDB cardinalities. No smoke_bundle or optimizer runs.
+fixture_path = ROOT / 'artifacts/m2_smoke/dense_sparse.pt'
+fixture_hash = wrapper.digest(fixture_path)
+fixture = torch.load(fixture_path, map_location='cpu', weights_only=True)
+assert fixture['stage'] == 'dense_sparse' and fixture['epoch'] == 1 and fixture['next_batch'] == 0
+split_metrics = copy.deepcopy(fixture['report']['stages']['dense_sparse'])
+synthetic_calls = {'evaluations': [], 'finalizer_memory': []}
+with tempfile.TemporaryDirectory(prefix='edraft-finalization-control-') as directory:
+    temporary = Path(directory)
+    copied_traces = temporary / 'traces'
+    shutil.copytree(Path(fixture['resolved_config']['trace_dir']), copied_traces)
+    entries, index = train.trace_index(copied_traces)
+    # The reference value selects fit's m2 publication path only; all models,
+    # traces, metrics, and parameters in this temporary case are synthetic.
+    config = dict(fixture['resolved_config'], output=str(temporary), trace_dir=str(copied_traces),
+                  scale='reference', resume=True)
+    args = SimpleNamespace(**config)
+    args.output = temporary
+    sources = {name: wrapper.digest(ROOT / 'src/edraft' / name) for name in wrapper.FIT_MODULES}
+    E = fixture['adapter_state']['E']
+    head_metadata = fixture['report']['head_metadata']
+    identity = train.fingerprint({'config': {k: v for k, v in config.items() if k != 'resume'},
+        'sources': index['source_fingerprint'], 'head': head_metadata, 'implementation_sha256': sources,
+        'E_sha256': hashlib.sha256(E.numpy().tobytes()).hexdigest()})
+    fixture.update(identity=identity, resolved_config=config, scale='reference')
+    fixture['report'].update(identity=identity, scale='reference', implementation_sha256=sources)
+    del fixture['report']['stages']['dense_sparse']
+    latest = temporary / 'm2/latest.pt'
+    train.atomic_torch_save(latest, fixture)
+    expected = dict(wrapper.EXPECTED, checkpoint=wrapper.digest(latest))
+    synthetic_preparation = dict(preparation, original_checkpoint_sha256=expected['checkpoint'])
+    def synthetic_evaluate(adapter, references, *args, **kwargs):
+        split = references[0][0].split
+        synthetic_calls['evaluations'].append(split)
+        return copy.deepcopy(split_metrics[split])
+    def synthetic_finalize(recorder, chunks, sparse, **kwargs):
+        synthetic_calls['finalizer_memory'].append(kwargs['memory_limit'])
+        return {'status': 'measured', 'memory_limit': kwargs['memory_limit'], 'committed_chunks': len(chunks)}
+    with patch.multiple(wrapper, ARTIFACTS=temporary, LATEST=latest, IDENTITY=identity, EXPECTED=expected), \
+         patch.object(train, 'evaluate', synthetic_evaluate), \
+         patch.object(train.SparseAccessRecorder, 'finalize', synthetic_finalize):
+        with wrapper.recovery_guards(train, fixture, synthetic_preparation) as synthetic_counters:
+            report = train.fit(entries, index, E, None, None, head_metadata, args)
+        final = torch.load(latest, map_location='cpu', weights_only=True)
+        stage = torch.load(temporary / 'm2/dense_sparse.pt', map_location='cpu', weights_only=True)
+        assert final['stage'] == 'complete' and report['status'] == 'passed'
+        wrapper.tree_equal(final['adapter_state'], fixture['adapter_state'], 'synthetic final parameters')
+        wrapper.tree_equal(stage['dense_optimizer'], fixture['dense_optimizer'], 'synthetic dense optimizer')
+        wrapper.tree_equal(stage['sparse_optimizer'], fixture['sparse_optimizer'], 'synthetic sparse optimizer')
+        assert final['report'] == json.loads((temporary / 'm2.json').read_text())
+        assert final['report']['epoch_development'] == fixture['report']['epoch_development']
+        assert final['report']['sparse_statistics_chunks'] == fixture['report']['sparse_statistics_chunks']
+assert synthetic_calls == {'evaluations': ['train', 'dev', 'test'], 'finalizer_memory': ['32GB']}
+assert synthetic_counters == {'optimizer_step_attempts': 0, 'proximal_step_attempts': 0,
+    'chunk_write_attempts': 0, 'finalizer_calls': 1, 'checkpoint_saves': 2}
+assert wrapper.digest(fixture_path) == fixture_hash
+assert {path: wrapper.digest(path) for path in originals} == originals
+assert not (wrapper.ARTIFACTS / 'm2.json').exists() and not (wrapper.ARTIFACTS / 'm2/dense_sparse.pt').exists()
+assert not torch.cuda.is_initialized()
+result = {'scale': 'reference', 'label': 'smoke', 'status': 'passed',
+    'scope': 'CPU guard/control checks only; reference evaluation and exact accounting were not executed.',
+    'wrapper_source_sha256': wrapper.digest(SOURCE), 'validation_source_sha256': wrapper.digest(Path(__file__)),
+    'cuda_initialized': False, 'reference_files_unchanged': originals, 'unchanged_original_config_parse': True,
+    'changed_config_rejected': True, 'optimizer_proximal_chunk_guards': blocked,
+    'simulated_publication': publication, 'changed_weights_and_epoch_history_rejected': True,
+    'record_redirect_verified': True, 'memory_override_verified': observed['finalizer_kwargs']}
+result['actual_fit_synthetic_end_epoch_control_flow'] = {
+    'source_fixture_sha256': fixture_hash, 'temporary_paths_only': True,
+    'scope': 'Original train.fit with copied tiny synthetic checkpoint/traces; evaluation and accounting callbacks stubbed; no optimizer updates.',
+    'calls': synthetic_calls, 'guards': synthetic_counters,
+    'final_parameter_optimizer_history_and_chunk_equality': True, 'final_report_matches_checkpoint': True}
+wrapper.atomic_json(wrapper.ARCHIVE / 'guard_validation.json', result)
+print(json.dumps(result, indent=2))
