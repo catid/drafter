@@ -1,7 +1,7 @@
 # Research status
 
 As of 2026-11-14, reference M0, M1-pre, M1a, and M1b have **passed**. Reference M2
-offline fitting is **running**; reference M3 and M4 are **not_run**. The completed
+offline fitting is **incomplete pending finalization recovery**; reference M3 and M4 are **not_run**. The completed
 dense epoch worsened offline dev loss; final fitting results, closed-loop quality,
 online adaptation, and end-to-end speed are still pending.
 Synthetic tests and smoke results do not satisfy the real reference gates.
@@ -12,7 +12,7 @@ Synthetic tests and smoke results do not satisfy the real reference gates.
 | M1-pre | passed | 64 train calibration prompts; 22,377 hidden vectors; frozen hidden and token features |
 | M1a | passed | 2,184 checksummed shards; 256,836 blocks; all 12 audit requirements pass |
 | M1b | passed | 106 diagnostic groups from all 2,184 audited shards; source and calibration provenance validated |
-| M2 | running | Primary offline fit on GPU 0; completed reference loss/sparsity/collision results pending |
+| M2 | incomplete | Both training epochs finished; recovering exact sparse statistics after a memory-limit failure |
 | M3 | not_run | Dev selection, four-arm test evaluation, and isolated timing pending |
 | M4 | not_run | Dev selection, five-arm online evaluation, and separate isolated timing pending |
 
@@ -101,17 +101,22 @@ settings, so their feature and acceptance differences do not isolate a causal
 effect of thinking or output length. Long-thinking feature shift does not appear
 as a higher standardized outlier rate in these measurements.
 
-M2 is fitting only the primary standard train traces; long-thinking traces
+M2 used only the primary standard train traces for fitting; long-thinking traces
 remain reserved for evaluation. After the single predeclared dense epoch, dev
 weighted grouped KL rose from **1.16845 to 2.01809**, a **72.7% deterioration**.
 Values remain finite. This negative intermediate result triggered the under-1%
 rule stopping extra dense epochs. Completed dense evaluation also worsened train
 KL from 1.16525 to 1.92824 and test KL from 1.21702 to 2.85880. The negative result
-therefore spans all three splits. The required bias/sparse phase remains pending;
+therefore spans all three splits. Final accounting for the bias/sparse phase remains pending;
 no settings or optimizer state were changed in response. The
 [dense phase record](../artifacts/m2_dense_interim.json) includes the checkpoint
 checksum, parameter statistics, and separate live-full diagnostics from 120 dev
-and 120 test slots. Final fitting results remain pending.
+and 120 test slots. The bias/sparse epoch also worsened dev KL to 2.06025
+(76.3% above baseline), so extra tuning stopped. Final sparse statistics exceeded
+DuckDB's 512 MB memory limit after split evaluation. The saved checkpoint preserves
+the completed training state; recovery will recompute evaluation and statistics
+with a larger, explicitly recorded accounting limit and no optimizer updates.
+Final fitting results remain pending.
 Progress is recorded in [NOTES.md](../NOTES.md); the process log is
 [m2-reference.log](../artifacts/m2-reference.log). Closed-loop quality and speed
 results are pending. The planned M3/M4 timing retains full held-out prompt coverage
