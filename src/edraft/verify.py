@@ -93,7 +93,18 @@ def verify_block(
     decisions_all = (uniforms * q_selected < p_selected).tolist()
     for i, accepted in enumerate(decisions_all):
         if not accepted:
-            replacement = draw(residual_distribution(P[i], q[i]), generator)
+            P_i = probability_dtype(P[i])
+            q_i = probability_dtype(q[i])
+            if not bool((P_i - q_i).clamp_min(0).sum() > 0):
+                # Guard FP32 1-ULP normalization tie while keeping residual_distribution strict.
+                P_i = P_i / P_i.sum()
+                q_i = q_i / q_i.sum()
+                if not bool((P_i - q_i).clamp_min(0).sum() > 0):
+                    decisions_all[i] = True
+                    continue
+                replacement = draw(residual_distribution(P_i, q_i), generator)
+            else:
+                replacement = draw(residual_distribution(P[i], q[i]), generator)
             return VerificationResult(tokens[:i] + [replacement], i, i, replacement, None,
                                       decisions_all[:i + 1], proposal_token_probs, target_token_probs)
     bonus = draw(P[K], generator)

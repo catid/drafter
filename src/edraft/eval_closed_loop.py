@@ -1,4 +1,4 @@
-"""M3/M4 dev-only selection, frozen evaluation, and isolated matched-arm timing."""
+"""M3/M4/M5 dev-only selection, frozen evaluation, and isolated matched-arm timing."""
 from __future__ import annotations
 
 from collections import defaultdict
@@ -14,7 +14,7 @@ import time
 import uuid
 import torch
 
-from .adapter import DenseAdapter
+from .adapter import DenseAdapter, LookaheadConfig
 from .diagnose import (prompt_bootstrap, output_bin, context_bin, generation_diagnostics,
                        DEFAULT_CONTEXT_EDGES)
 from .features import HiddenProjection
@@ -25,6 +25,24 @@ from .sampler import SamplingWarper
 
 M3_ARMS = ('plain_dflash', 'online_bigram', 'dense', 'dense_sparse')
 M4_ARMS = ('plain_dflash', 'online_bigram', 'offline_static', 'offline_online_stride1', 'online_dbS')
+M5_ARMS = (
+    'plain_dflash',
+    'dense_full',
+    'dense_candidate',
+    'lookahead_static_candidate',
+    'lookahead_rerelax_candidate',
+    'lookahead_static_full',
+    'lookahead_rerelax_full',
+    'signed_feature_hash_online',
+    'exact_observed_pairs_online',
+    'offline_online_stride5',
+    'online_buffered_stride5',
+    'online_two_sided_pl',
+    'token_recycling_tree',
+    'tts',
+    'sharp_draft',
+    'adaptive_block_length',
+)
 
 
 def file_sha256(path):
@@ -35,9 +53,13 @@ def file_sha256(path):
     return digest.hexdigest()
 
 
-def implementation_hash():
-    paths = [Path(__file__).parent / name for name in ('adapter.py', 'online.py', 'features.py', 'dflash_loop.py',
-             'sampler.py', 'verify.py', 'backend.py', 'sparse.py', 'toy.py', 'diagnose.py', 'eval_closed_loop.py')]
+def implementation_hash(stage: str = 'm3'):
+    names = ('adapter.py', 'online.py', 'features.py', 'dflash_loop.py',
+             'sampler.py', 'verify.py', 'backend.py', 'sparse.py', 'toy.py',
+             'diagnose.py', 'eval_closed_loop.py')
+    if stage == 'm5':
+        names = names + ('m5_baselines.py', 'triton_ops.py')
+    paths = [Path(__file__).parent / name for name in names]
     digest = hashlib.sha256()
     for path in paths:
         digest.update(path.name.encode())
@@ -53,12 +75,33 @@ def adapter_tensor_hash(adapter):
     return digest.hexdigest()
 
 
-def arms_for(stage, scale='reference'):
+def arms_for(stage, scale='reference', *, m5_arms=None, include_long_oracle=False):
     if stage == 'm3':
         return M3_ARMS
-    if stage != 'm4':
-        raise ValueError('stage must be m3 or m4')
-    return M4_ARMS + (('offline_online_stride5', 'zero_offline_online_only', 'online_rejection_relative', 'online_cutoff') if scale == 'full' else ())
+    if stage == 'm4':
+        return M4_ARMS + (('offline_online_stride5', 'zero_offline_online_only',
+                           'online_rejection_relative', 'online_cutoff') if scale == 'full' else ())
+    if stage != 'm5':
+        raise ValueError('stage must be m3, m4, or m5')
+    available = M5_ARMS + (('long_oracle_offline',) if include_long_oracle else ())
+    if not m5_arms:
+        return available
+    requested = tuple(dict.fromkeys(m5_arms))
+    unknown = set(requested) - set(available)
+    if unknown:
+        raise ValueError(f'unknown M5 arm(s): {sorted(unknown)}')
+    if 'plain_dflash' not in requested:
+        requested = ('plain_dflash',) + requested
+    return requested
+
+
+def _arms_from_args(args):
+    return arms_for(
+        args.stage,
+        args.scale,
+        m5_arms=getattr(args, 'm5_arms', None),
+        include_long_oracle=bool(getattr(args, 'm5_oracle_checkpoint', None)),
+    )
 
 
 def sampling_conditions(condition, primary_only=False):
@@ -97,15 +140,16 @@ def select_prompts(manifest, split, scale, standard_dev_prompts=8, long_dev_prom
     return standard[:n_standard] + long[:n_long]
 
 
-def evaluation_jobs(prompts, stage, scale, seed=2026):
+def evaluation_jobs(prompts, stage, scale, seed=2026, *, m5_arms=None, include_long_oracle=False):
     jobs = []
+    active_arms = arms_for(stage, scale, m5_arms=m5_arms, include_long_oracle=include_long_oracle)
     for prompt in prompts:
         for name, temperature, warp in sampling_conditions(prompt['condition']):
             seeds = 1 if temperature == 0 else (3 if prompt['condition'] == 'standard_nonthinking' or scale == 'full' else 1)
             if scale == 'smoke':
                 seeds = 1
             for index in range(seeds):
-                for arm in arms_for(stage, scale):
+                for arm in active_arms:
                     jobs.append({'prompt': prompt, 'arm': arm, 'sampling_name': name,
                                  'temperature': temperature, 'warper': warp, 'seed': seed + index})
     return jobs
@@ -116,8 +160,35 @@ def candidate_settings(arm):
         return [{}]
     if arm == 'online_bigram':
         return [{'lambda_tr': .05, 'alpha': .5, 'k_ret': None}, {'lambda_tr': .2, 'alpha': 1., 'k_ret': None}]
-    if arm in ('dense', 'dense_sparse', 'offline_static'):
+    if arm in ('dense', 'dense_sparse', 'offline_static', 'dense_full', 'dense_candidate', 'long_oracle_offline'):
         return [{'beta': .5}, {'beta': 1.}]
+    if arm in ('lookahead_static_candidate', 'lookahead_rerelax_candidate',
+               'lookahead_static_full', 'lookahead_rerelax_full'):
+        return [{'beta': .5, 'R_init': 2, 'R_clamp': 1, 'eta': .5, 'T_relax': 1.},
+                {'beta': 1., 'R_init': 2, 'R_clamp': 1, 'eta': .5, 'T_relax': 1.}]
+    if arm == 'online_buffered_stride5':
+        return [{'beta': 1., 'lr': lr, 'update_stride': 5, 'lambda_l2': l2,
+                 'lambda_l1_b': 1e-6, 'lambda_l1_s': 1e-5, 'weighting_mode': 'exponential',
+                 'buffer_reduction': 'mean'}
+                for lr, l2 in ((1e-4, .01), (1e-3, .1))]
+    if arm == 'online_two_sided_pl':
+        return [{'beta': 1., 'lr': lr, 'update_stride': 1, 'lambda_l2': l2,
+                 'lambda_l1_b': 1e-6, 'lambda_l1_s': 1e-5}
+                for lr, l2 in ((1e-4, .01), (1e-3, .1))]
+    if arm == 'token_recycling_tree':
+        return [{'max_successors': 4, 'branch_widths': [2, 2, 1, 1]},
+                {'max_successors': 8, 'branch_widths': [3, 2, 1, 1]}]
+    if arm == 'tts':
+        return [{'lr': 5e-3, 'update_stride': 1, 'lambda_l2': .01, 'lambda_l1_b': 1e-5},
+                {'lr': 2e-2, 'update_stride': 1, 'lambda_l2': .05, 'lambda_l1_b': 1e-5}]
+    if arm == 'sharp_draft':
+        return [{'gamma_max': 1.25, 'gamma_min': .95, 'entropy_pivot': .35},
+                {'gamma_max': 1.45, 'gamma_min': .9, 'entropy_pivot': .4}]
+    if arm == 'adaptive_block_length':
+        return [{'beta': 1., 'min_block_length': 2, 'policy': 'hybrid',
+                 'ema_decay': .7, 'ema_multiplier': 1.5, 'ema_margin': 1., 'min_cumulative_confidence': .08},
+                {'beta': 1., 'min_block_length': 1, 'policy': 'hybrid',
+                 'ema_decay': .7, 'ema_multiplier': 1.25, 'ema_margin': 1., 'min_cumulative_confidence': .15}]
     stride = 5 if arm == 'offline_online_stride5' else 1
     weighting = 'rejection_relative' if arm == 'online_rejection_relative' else 'cutoff' if arm == 'online_cutoff' else 'exponential'
     return [{'beta': 1., 'lr': lr, 'update_stride': stride, 'lambda_l2': l2,
@@ -125,7 +196,9 @@ def candidate_settings(arm):
             for lr, l2 in ((1e-4, .01), (1e-3, .1))]
 
 
-def validate_frozen_settings(settings, stage, scale, checkpoint_hashes, prompt_manifest, generation_caps=None, model_pair=None, model_revisions=None, generation_environment=None):
+def validate_frozen_settings(settings, stage, scale, checkpoint_hashes, prompt_manifest, generation_caps=None,
+                             model_pair=None, model_revisions=None, generation_environment=None, *,
+                             m5_arms=None, include_long_oracle=False):
     if not settings.get('frozen') or settings.get('stage') != stage or settings.get('scale') != scale:
         raise ValueError('test evaluation requires frozen settings for this stage and scale')
     if settings['checkpoint_hashes'] != checkpoint_hashes:
@@ -148,7 +221,8 @@ def validate_frozen_settings(settings, stage, scale, checkpoint_hashes, prompt_m
     minimum_long = 1 if scale == 'smoke' else 32 if scale == 'full' else 12
     if len(long_ids) < minimum_long:
         raise ValueError('frozen settings lack the required long development prompts')
-    if set(settings['selected']) != set(arms_for(stage, scale)):
+    expected_arms = arms_for(stage, scale, m5_arms=m5_arms, include_long_oracle=include_long_oracle)
+    if set(settings['selected']) != set(expected_arms):
         raise ValueError('frozen settings omit a required arm')
 
 
@@ -157,6 +231,9 @@ class EvaluationRunner:
         self.args = args
         self.device = torch.device(args.device)
         self.tiny = args.scale == 'smoke'
+        self.long_oracle = None
+        self.triton_gate_report = None
+        self.torch_compile_gate_report = None
         if self.tiny:
             from .toy import ToyTarget, ToyParallelDrafter
             from .features import fit_hidden_projection, fit_token_features
@@ -185,7 +262,14 @@ class EvaluationRunner:
                 self.dense_sparse.b.copy_(self.dense.b)
             self.backend = None
             self.checkpoint_hashes = {'dense': adapter_tensor_hash(self.dense), 'dense_sparse': adapter_tensor_hash(self.dense_sparse),
-                                      'projection': 'synthetic-calibration-seed-' + str(args.seed), 'implementation': implementation_hash()}
+                                      'projection': 'synthetic-calibration-seed-' + str(args.seed),
+                                      'implementation': implementation_hash(args.stage)}
+            if args.stage == 'm5' and getattr(args, 'm5_oracle_checkpoint', None):
+                from .train import load_adapter_checkpoint
+                self.long_oracle, oracle_meta = load_adapter_checkpoint(args.m5_oracle_checkpoint, args.device)
+                if oracle_meta.get('report', {}).get('training_distribution') != 'long_oracle_m5':
+                    raise ValueError('m5_oracle_checkpoint must have training_distribution=="long_oracle_m5"')
+                self.checkpoint_hashes['long_oracle'] = file_sha256(args.m5_oracle_checkpoint)
             self.model_pair = ['builtin_toy_target', 'builtin_parallel_drafter']
             self.model_revisions = ['synthetic-v1', 'synthetic-v1']
         else:
@@ -194,11 +278,16 @@ class EvaluationRunner:
             from .download import fetch_model
             m2 = json.loads((args.output / 'm2.json').read_text())
             if m2.get('status') != 'passed' or m2.get('scale', args.scale) != args.scale:
-                raise RuntimeError('M2 reference acceptance gate must pass before M3/M4')
+                raise RuntimeError('M2 reference acceptance gate must pass before M3/M4/M5')
             if args.stage == 'm4':
                 prior = json.loads((args.output / 'm3' / 'summary.json').read_text())
                 if prior.get('status') != 'complete' or prior.get('scale') != args.scale:
                     raise RuntimeError('M3 must complete before M4')
+            elif args.stage == 'm5':
+                for prior_stage in ('m3', 'm4'):
+                    prior = json.loads((args.output / prior_stage / 'summary.json').read_text())
+                    if prior.get('status') != 'complete' or prior.get('scale') != args.scale:
+                        raise RuntimeError(f'{prior_stage.upper()} must complete before M5')
             self.checkpoint_hashes = checkpoint_hashes(args)
             self.dense, self.dense_metadata = load_adapter_checkpoint(args.dense_checkpoint, args.device)
             self.dense_sparse, self.sparse_metadata = load_adapter_checkpoint(args.sparse_checkpoint, args.device)
@@ -217,11 +306,41 @@ class EvaluationRunner:
                     raise ValueError('checkpoint training models/revisions do not match evaluation backend')
                 if report.get('frozen_artifacts', {}).get('hidden_projection_sha256') != self.checkpoint_hashes['projection']:
                     raise ValueError('checkpoint was fitted with a different hidden projection')
+            if args.stage == 'm5' and getattr(args, 'm5_oracle_checkpoint', None):
+                self.long_oracle, oracle_meta = load_adapter_checkpoint(args.m5_oracle_checkpoint, args.device)
+                oracle_report = oracle_meta.get('report', {})
+                if oracle_report.get('training_distribution') != 'long_oracle_m5':
+                    raise ValueError('m5_oracle_checkpoint must have training_distribution=="long_oracle_m5"')
+                if oracle_report.get('model_pair') != [args.target, args.drafter] or oracle_report.get('model_revisions') != self.model_revisions:
+                    raise ValueError('long_oracle checkpoint model pair/revisions do not match evaluation backend')
             self.backend = ReferenceBackend.from_pretrained(target, drafter, device=args.device,
                 target_revision=self.model_revisions[0], drafter_revision=self.model_revisions[1])
             self.model_pair = [args.target, args.drafter]
         self.dense.eval()
         self.dense_sparse.eval()
+        if self.long_oracle is not None:
+            self.long_oracle.eval()
+        if args.stage == 'm5' and getattr(args, 'm5_triton', False):
+            from .triton_ops import build_gated_m5_kernels
+            reports = build_gated_m5_kernels(
+                device=self.device,
+                vocab_size=self.dense.E.shape[0],
+                sparse_capacity=257 if self.tiny else 2**20,
+                M_sparse=self.dense.M_sparse,
+                D=len(self.dense.A),
+                K=4 if self.tiny else (self.backend.block_size - 1),
+            )
+            self.triton_gate_report = {k: v.to_dict() for k, v in reports.items()}
+        if args.stage == 'm5' and getattr(args, 'm5_torch_compile', False):
+            from .triton_ops import build_gated_torch_compile
+            tc_reports = build_gated_torch_compile(
+                device=self.device,
+                vocab_size=self.dense.E.shape[0],
+                r=self.dense.E.shape[1],
+                p=self.dense.W.shape[1],
+                K=4 if self.tiny else (self.backend.block_size - 1),
+            )
+            self.torch_compile_gate_report = {k: v.to_dict() for k, v in tc_reports.items()}
         if self.tiny:
             self.generation_environment = {'target_state_sha256': adapter_tensor_hash(self.target),
                 'tokenizer': {'kind': 'synthetic prompt-ID prefix', 'vocabulary_size': self.target.embedding.shape[0]},
@@ -278,39 +397,123 @@ class EvaluationRunner:
         from .dflash_loop import generate_reference, generate_toy
         args, arm, prompt = self.args, job['arm'], job['prompt']
         temperature, warper = job['temperature'], job['warper']
-        # Greedy beta=1 is a fixed required arm, independent of stochastic dev beta.
-        beta = 1. if temperature == 0 else setting.get('beta', 1.)
+        # Greedy beta=1 is a fixed required arm, independent of stochastic dev beta
+        # (unless an explicit beta_sweep overrides greedy_allow_beta).
+        beta = (setting.get('beta', 1.)
+                if (temperature > 0 or job.get('force_setting_beta', False))
+                else 1.)
         if self.device.type == 'cuda':
             torch.cuda.synchronize(self.device)
             torch.cuda.reset_peak_memory_stats(self.device)
         request_started = time.perf_counter()
         adapter, online, bigram = None, None, None
-        if arm == 'online_bigram':
-            bigram = OnlineBigram(self.dense.E.shape[0], **setting)
-        elif arm == 'dense':
-            adapter = self.dense
-        elif arm in ('dense_sparse', 'offline_static'):
-            adapter = self.dense_sparse
-        elif arm != 'plain_dflash':
-            offline = self.dense_sparse
-            if arm == 'zero_offline_online_only':
-                offline = DenseAdapter(self.dense.E, self.dense.W.shape[1], len(self.dense.A), M_sparse=self.dense.M_sparse)
-            kwargs = {k: v for k, v in setting.items() if k != 'beta'}
-            online = OnlineState(offline, enable_sparse=True, sparse_capacity=257 if self.tiny else 2**20,
-                                 bias_sparse_only=arm == 'online_dbS', **kwargs)
+        proposal_mode = 'dense_full'
+        lookahead = None
+        proposal_controller = None
+        adaptive_controller = None
+        recycling_state = None
         inputs, max_tokens, input_metadata = self.prepare_inputs(prompt, job.get('max_new_tokens_override'))
         generator = torch.Generator(device=self.device).manual_seed(job['seed'])
-        if self.tiny:
-            prefix = inputs
-            result = generate_toy(self.target, self.drafter, prefix, max_tokens, temperature=temperature, warper=warper,
-                generator=generator, adapter=adapter, online_state=online, projection=self.projection if adapter is not None or online is not None else None,
-                bigram=bigram, beta=beta, measure_phases=profile)
-            eos = False
+
+        if arm == 'token_recycling_tree':
+            from .m5_baselines import generate_token_recycling_reference, generate_token_recycling_toy
+            max_succ = int(setting.get('max_successors', 4 if self.tiny else 8))
+            b_widths = tuple(int(w) for w in setting.get('branch_widths', [2, 2, 1, 1] if self.tiny else [4, 2, 1, 1]))
+            if self.tiny:
+                prefix = inputs
+                result, recycling_state = generate_token_recycling_toy(
+                    self.target, self.drafter, prefix, max_tokens,
+                    temperature=temperature, warper=warper, generator=generator,
+                    max_successors=max_succ, branch_widths=b_widths, measure_phases=profile,
+                )
+                eos = False
+            else:
+                result, recycling_state = generate_token_recycling_reference(
+                    self.backend, inputs, max_tokens,
+                    temperature=temperature, warper=warper, generator=generator,
+                    max_successors=max_succ, branch_widths=b_widths, measure_phases=profile,
+                )
+                eos = bool(result.output_tokens and result.output_tokens[-1] in self.backend.stop_token_ids)
         else:
-            result = generate_reference(self.backend, inputs, max_tokens, temperature=temperature, warper=warper,
-                generator=generator, adapter=adapter, online_state=online, projection=self.projection if adapter is not None or online is not None else None,
-                bigram=bigram, beta=beta, measure_phases=profile)
-            eos = bool(result.output_tokens and result.output_tokens[-1] in self.backend.stop_token_ids)
+            if arm == 'online_bigram':
+                bigram = OnlineBigram(self.dense.E.shape[0], **setting)
+            elif arm == 'dense':
+                adapter = self.dense
+            elif arm in ('dense_sparse', 'offline_static', 'dense_full'):
+                adapter = self.dense_sparse
+            elif arm == 'long_oracle_offline':
+                if self.long_oracle is None:
+                    raise RuntimeError('long_oracle_offline requires --m5_oracle_checkpoint')
+                adapter = self.long_oracle
+            elif arm == 'dense_candidate':
+                adapter = self.dense_sparse
+                proposal_mode = 'dense_candidate'
+            elif arm in ('lookahead_static_candidate', 'lookahead_rerelax_candidate',
+                         'lookahead_static_full', 'lookahead_rerelax_full'):
+                adapter = self.dense_sparse
+                la_mode = 'static' if 'static' in arm else 'rerelax'
+                la_domain = 'candidate_masked' if arm.endswith('_candidate') else 'full_vocabulary'
+                proposal_mode = 'dense_candidate' if la_domain == 'candidate_masked' else 'dense_full'
+                lookahead = LookaheadConfig(
+                    mode=la_mode,
+                    domain=la_domain,
+                    R_init=int(setting.get('R_init', 2)),
+                    R_clamp=int(setting.get('R_clamp', 1)),
+                    eta=float(setting.get('eta', 0.5)),
+                    T_relax=float(setting.get('T_relax', 1.0)),
+                    beta_relax=beta,
+                )
+            elif arm == 'tts':
+                from .m5_baselines import TTSState
+                proposal_controller = TTSState(
+                    self.dense.E.shape[0], self.dense.W.shape[1],
+                    max_slots=4 if self.tiny else 32, device=self.device, **setting,
+                )
+            elif arm == 'sharp_draft':
+                from .m5_baselines import SharpDraftProposal
+                proposal_controller = SharpDraftProposal(**setting)
+            elif arm == 'adaptive_block_length':
+                from .m5_baselines import AdaptiveBlockController
+                adapter = self.dense_sparse
+                max_blk = 4 if self.tiny else (self.backend.block_size - 1)
+                ctrl_kwargs = {k: v for k, v in setting.items() if k != 'beta'}
+                adaptive_controller = AdaptiveBlockController(max_block_length=max_blk, **ctrl_kwargs)
+            elif arm != 'plain_dflash':
+                offline = self.dense_sparse
+                if arm == 'zero_offline_online_only':
+                    offline = DenseAdapter(self.dense.E, self.dense.W.shape[1], len(self.dense.A), M_sparse=self.dense.M_sparse)
+                kwargs = {k: v for k, v in setting.items() if k != 'beta'}
+                if arm == 'exact_observed_pairs_online':
+                    kwargs['sparse_backend'] = 'exact_observed_pairs'
+                    kwargs.setdefault('sparse_overflow_policy', getattr(args, 'sparse_overflow_policy', 'freeze_new'))
+                elif arm == 'signed_feature_hash_online':
+                    kwargs['sparse_backend'] = 'signed_feature_hash'
+                elif arm == 'online_buffered_stride5':
+                    kwargs['accumulate_stride'] = True
+                    kwargs.setdefault('update_stride', 5)
+                elif arm == 'online_two_sided_pl':
+                    kwargs['loss_mode'] = 'two_sided_pseudolikelihood'
+                online = OnlineState(offline, enable_sparse=True, sparse_capacity=257 if self.tiny else 2**20,
+                                     bias_sparse_only=arm == 'online_dbS', **kwargs)
+
+            need_projection = (adapter is not None or online is not None
+                               or (proposal_controller is not None and getattr(proposal_controller, 'needs_hidden', False)))
+            proj = self.projection if need_projection else None
+            if self.tiny:
+                prefix = inputs
+                result = generate_toy(self.target, self.drafter, prefix, max_tokens, temperature=temperature, warper=warper,
+                    generator=generator, adapter=adapter, online_state=online, projection=proj,
+                    bigram=bigram, beta=beta, measure_phases=profile,
+                    proposal_mode=proposal_mode, lookahead=lookahead,
+                    proposal_controller=proposal_controller, adaptive_controller=adaptive_controller)
+                eos = False
+            else:
+                result = generate_reference(self.backend, inputs, max_tokens, temperature=temperature, warper=warper,
+                    generator=generator, adapter=adapter, online_state=online, projection=proj,
+                    bigram=bigram, beta=beta, measure_phases=profile,
+                    proposal_mode=proposal_mode, lookahead=lookahead,
+                    proposal_controller=proposal_controller, adaptive_controller=adaptive_controller)
+                eos = bool(result.output_tokens and result.output_tokens[-1] in self.backend.stop_token_ids)
         request_elapsed = time.perf_counter() - request_started
         if self.tiny and temperature == 0:
             expected = self.target.generate(prefix, result.num_output_tokens)
@@ -324,14 +527,18 @@ class EvaluationRunner:
                 if block['adapter_version'] != expected_before or block['next_adapter_version'] != expected_after:
                     raise RuntimeError('online version changed outside a stride boundary')
             online_invariants = {'request_reset': True, 'version_only_between_rounds': True, 'stride': online.update_stride,
-                                 'executed_updates': online.u, 'single_round_no_buffering': True}
+                                 'executed_updates': online.u,
+                                 'single_round_no_buffering': not online.accumulate_stride}
+            if online.accumulate_stride:
+                online_invariants['buffered_stride_accumulation'] = True
         lengths = [block['accepted_length'] for block in result.blocks]
         generation = generation_diagnostics(result.output_tokens)
         generation.update({'eos_reached': eos, 'capped': result.num_output_tokens == max_tokens, 'complete': True})
         online_metrics = online.metrics() if online else None
         update_ms = result.phase_ms.get('online_update', 0.)
         state_bandwidth = online_metrics['state_bytes_estimate_total'] / (update_ms * 1e6) if online_metrics is not None and update_ms > 0 else None
-        return {'scale': args.scale, 'label': 'synthetic' if self.tiny else args.scale,
+        base_adapter = adapter if adapter is not None else (online.offline if online is not None else None)
+        row = {'scale': args.scale, 'label': 'synthetic' if self.tiny else args.scale,
             'stage': args.stage, 'arm': arm, 'prompt_id': prompt['prompt_id'], 'split': prompt['split'],
             'condition': prompt['condition'], 'seed': job['seed'], 'sampling_name': job['sampling_name'],
             'temperature': temperature, 'sampling_warp_config': asdict(warper), 'settings': setting, 'effective_beta': beta,
@@ -339,7 +546,10 @@ class EvaluationRunner:
             'model_pair': self.model_pair, 'model_revisions': self.model_revisions,
             'input_metadata': input_metadata,
             'checkpoint_hashes': self.checkpoint_hashes,
-            'offline_fit_provenance': 'four built-in synthetic calibration-train prefixes' if self.tiny else 'gated M2 checkpoints', 'generated_tokens': result.num_output_tokens,
+            'offline_fit_provenance': ('M5 long-condition oracle checkpoint' if arm == 'long_oracle_offline'
+                                       else 'four built-in synthetic calibration-train prefixes' if self.tiny
+                                       else 'gated M2 checkpoints'),
+            'generated_tokens': result.num_output_tokens,
             'elapsed_seconds': request_elapsed, 'generation_loop_elapsed_seconds': result.elapsed_seconds,
             'tokens_per_second': result.num_output_tokens / request_elapsed,
             'latency_scope': 'request adapter initialization + tokenizer + generation; excludes reporting/serialization',
@@ -351,17 +561,34 @@ class EvaluationRunner:
             'estimated_online_state_bandwidth_GBps': state_bandwidth,
             'online_bandwidth_definition': 'algorithmic state bytes divided by measured full online_update phase duration, including live-full backprop and snapshots; not hardware HBM bandwidth',
             'bigram': bigram.metrics() if bigram else None, 'online_invariants': online_invariants,
-            'parameter_norms': {'W': float((adapter or self.dense_sparse).W.detach().norm()),
-                                'A': float((adapter or self.dense_sparse).A.detach().norm()),
-                                'b': float((adapter or self.dense_sparse).b.detach().norm())} if adapter is not None or online is not None else {},
+            'parameter_norms': {'W': float(base_adapter.W.detach().norm()),
+                                'A': float(base_adapter.A.detach().norm()),
+                                'b': float(base_adapter.b.detach().norm())} if base_adapter is not None else {},
             'peak_allocated_bytes': torch.cuda.max_memory_allocated(self.device) if self.device.type == 'cuda' else None,
             'peak_reserved_bytes': torch.cuda.max_memory_reserved(self.device) if self.device.type == 'cuda' else None,
             'phase_profile': profile}
+        if args.stage == 'm5':
+            m5_telemetry = {}
+            if lookahead is not None:
+                m5_telemetry['lookahead'] = asdict(lookahead)
+            if recycling_state is not None:
+                m5_telemetry['token_recycling'] = recycling_state.metrics()
+            if proposal_controller is not None and hasattr(proposal_controller, 'metrics'):
+                m5_telemetry[arm] = proposal_controller.metrics()
+            if adaptive_controller is not None:
+                m5_telemetry['adaptive_block'] = adaptive_controller.metrics()
+            if self.triton_gate_report is not None:
+                m5_telemetry['triton_gate'] = self.triton_gate_report
+            row['m5_telemetry'] = m5_telemetry
+        return row
 
 
 def checkpoint_hashes(args):
-    return {'dense': file_sha256(args.dense_checkpoint), 'dense_sparse': file_sha256(args.sparse_checkpoint),
-            'projection': file_sha256(args.projection), 'implementation': implementation_hash()}
+    hashes = {'dense': file_sha256(args.dense_checkpoint), 'dense_sparse': file_sha256(args.sparse_checkpoint),
+              'projection': file_sha256(args.projection), 'implementation': implementation_hash(args.stage)}
+    if args.stage == 'm5' and getattr(args, 'm5_oracle_checkpoint', None):
+        hashes['long_oracle'] = file_sha256(args.m5_oracle_checkpoint)
+    return hashes
 
 
 def run_identity(runner, job, setting, mode, frozen_hash='', session=None, repeat=None, profile=False):
@@ -640,16 +867,17 @@ def tune(runner, manifest):
     args = runner.args
     if args.rank != 0 or args.world_size != 1:
         raise ValueError('dev selection is a single-process matched timing session')
+    active_arms = _arms_from_args(args)
     prompts = select_prompts(manifest, 'dev', args.scale, args.standard_dev_prompts, args.long_dev_prompts)
     session_path, session_state, epoch = comparison_session(runner, 'tune', {'prompt_manifest_hash': fingerprint(manifest),
-        'dev_ids': [p['prompt_id'] for p in prompts], 'candidates': {a: candidate_settings(a) for a in arms_for(args.stage, args.scale)}})
-    warm_comparisons(runner, prompts, {a: candidate_settings(a) for a in arms_for(args.stage, args.scale)})
+        'dev_ids': [p['prompt_id'] for p in prompts], 'candidates': {a: candidate_settings(a) for a in active_arms}})
+    warm_comparisons(runner, prompts, {a: candidate_settings(a) for a in active_arms})
     observations = defaultdict(lambda: defaultdict(list))
     dev_rows = []
     for prompt_index, prompt in enumerate(prompts):
         name, temperature, warp = sampling_conditions(prompt['condition'], primary_only=True)[0]
         base = {'prompt': prompt, 'sampling_name': name, 'temperature': temperature, 'warper': warp, 'seed': args.seed}
-        jobs = [(arm, setting) for arm in arms_for(args.stage, args.scale) for setting in candidate_settings(arm)]
+        jobs = [(arm, setting) for arm in active_arms for setting in candidate_settings(arm)]
         # Rotate arm order across prompts to reduce systematic thermal/order bias.
         offset = prompt_index % len(jobs)
         comparisons = [(dict(base, arm=arm), setting) for arm, setting in jobs[offset:] + jobs[:offset]]
@@ -659,7 +887,7 @@ def tune(runner, manifest):
             observations[row['arm']][fingerprint(row['settings'])].append(row)
     plain_by_prompt = {row['prompt_id']: row for row in observations['plain_dflash'][fingerprint({})]}
     selected, candidate_reports = {}, {}
-    for arm in arms_for(args.stage, args.scale):
+    for arm in active_arms:
         reports = []
         for setting in candidate_settings(arm):
             rows = observations[arm][fingerprint(setting)]
@@ -690,6 +918,10 @@ def tune(runner, manifest):
               'candidates': candidate_reports, 'selection_metric': 'mean across conditions of prompt throughput relative to same-prompt plain DFlash',
               'budget': 'two configurations per tuned arm, identical dev prompts, seeds and token caps; plain DFlash has no tuned parameters',
               'settings_seed': args.seed, 'created_at_unix': session_state['created_at_unix']}
+    if args.stage == 'm5' and getattr(runner, 'triton_gate_report', None) is not None:
+        frozen['triton_gate_report'] = runner.triton_gate_report
+    if args.stage == 'm5' and getattr(runner, 'torch_compile_gate_report', None) is not None:
+        frozen['torch_compile_gate_report'] = runner.torch_compile_gate_report
     atomic_json(args.output / args.stage / 'settings.json', frozen)
     return frozen
 
@@ -927,7 +1159,11 @@ def greedy_output_report(rows, jobs, output):
 def evaluate(runner, prompt_manifest, settings):
     args = runner.args
     prompts = select_prompts(prompt_manifest, 'test', args.scale)
-    jobs = evaluation_jobs(prompts, args.stage, args.scale, args.seed)
+    jobs = evaluation_jobs(
+        prompts, args.stage, args.scale, args.seed,
+        m5_arms=getattr(args, 'm5_arms', None),
+        include_long_oracle=bool(getattr(args, 'm5_oracle_checkpoint', None)),
+    )
     prompt_rank = {p['prompt_id']: i % args.world_size for i, p in enumerate(prompts)}
     frozen_hash = fingerprint(settings)
     rows = []
@@ -1006,7 +1242,11 @@ def audit_timing_evidence(runner, prompt_manifest, settings, report):
         if hashlib.sha256(manifest_bytes).hexdigest() != evidence['manifest_sha256']:
             raise ValueError('timing manifest checksum changed')
         manifest = json.loads(manifest_bytes)
-        jobs = evaluation_jobs(selected, args.stage, args.scale, args.seed)
+        jobs = evaluation_jobs(
+            selected, args.stage, args.scale, args.seed,
+            m5_arms=getattr(args, 'm5_arms', None),
+            include_long_oracle=bool(getattr(args, 'm5_oracle_checkpoint', None)),
+        )
         counts = {'timing_requests': 0, 'profile_requests': 0, 'bundles': 0}
         for repeat, profile, comparisons in timing_schedule(jobs, settings, repeats):
             rows = read_comparison_bundle(runner, 'timing', comparisons, frozen_hash, session,
@@ -1034,18 +1274,23 @@ def timing(runner, prompt_manifest, settings):
     for condition in sorted({p['condition'] for p in prompts}):
         condition_prompts = [p for p in prompts if p['condition'] == condition]
         selected.extend(condition_prompts if args.timing_prompts == 0 else condition_prompts[:args.timing_prompts])
-    jobs = evaluation_jobs(selected, args.stage, args.scale, args.seed)
+    jobs = evaluation_jobs(
+        selected, args.stage, args.scale, args.seed,
+        m5_arms=getattr(args, 'm5_arms', None),
+        include_long_oracle=bool(getattr(args, 'm5_oracle_checkpoint', None)),
+    )
     session_path, session_state, epoch = comparison_session(runner, 'timing', {'frozen_settings_hash': fingerprint(settings),
         'prompt_manifest_hash': fingerprint(prompt_manifest), 'selected_prompts': [p['prompt_id'] for p in selected],
         'repeats': args.timing_repeats, 'warmups': args.timing_warmups})
     session = session_state['logical_session']
     frozen_hash = fingerprint(settings)
+    active_arms = _arms_from_args(args)
     # All arms are warmed up with fresh request state before any measured runs.
     for condition in sorted({p['condition'] for p in selected}):
         prompt = next(p for p in selected if p['condition'] == condition)
         name, temperature, warp = sampling_conditions(condition, primary_only=True)[0]
         for _ in range(args.timing_warmups):
-            for arm in arms_for(args.stage, args.scale):
+            for arm in active_arms:
                 job = {'prompt': prompt, 'sampling_name': name, 'temperature': temperature,
                        'warper': warp, 'seed': args.seed, 'arm': arm, 'max_new_tokens_override': 64}
                 runner.run(job, settings['selected'][arm], profile=False)
@@ -1280,13 +1525,284 @@ def m4_feature_context(args, prompt_manifest, settings, prompts):
                 'source': 'required plain-DFlash M1b feature context', 'groups': [], 'feature_group_count': 0}
 
 
+M5_MATCHED_PAIRS = (
+    ('lookahead_static_candidate', 'dense_candidate', 'frozen_C0_candidate_masked'),
+    ('lookahead_rerelax_candidate', 'dense_candidate', 'frozen_C0_candidate_masked'),
+    ('lookahead_static_full', 'dense_full', 'full_vocabulary'),
+    ('lookahead_rerelax_full', 'dense_full', 'full_vocabulary'),
+    ('exact_observed_pairs_online', 'signed_feature_hash_online', 'online_sparse_representation'),
+    ('online_buffered_stride5', 'offline_online_stride5', 'online_stride5_update_mode'),
+)
+
+
+def compute_matched_support_comparisons(rows, timed_report=None):
+    """Compute paired prompt-bootstrap M5 comparisons under matched support/representation."""
+    by_slot = {}
+    regimes = set()
+    for row in rows:
+        warp = json.dumps(row['sampling_warp_config'], sort_keys=True)
+        regimes.add((row['condition'], row['temperature'], warp))
+        by_slot[(row['condition'], row['temperature'], warp, row['prompt_id'], row['seed'], row['arm'])] = row
+    timed_groups = {}
+    if timed_report and timed_report.get('groups'):
+        for g in timed_report['groups']:
+            w = json.dumps(g['sampling_warp_config'], sort_keys=True)
+            timed_groups[(g['condition'], g['temperature'], w, g['arm'])] = g
+    comparisons = []
+    for arm, ref_arm, support_family in M5_MATCHED_PAIRS:
+        for condition, temperature, warp in sorted(regimes):
+            acc_deltas, fwd_deltas = [], []
+            excluded = 0
+            for (c, t, w, pid, seed, a), row in by_slot.items():
+                if a != arm or (c, t, w) != (condition, temperature, warp):
+                    continue
+                ref_row = by_slot.get((c, t, w, pid, seed, ref_arm))
+                if ref_row is None:
+                    continue
+                if condition.startswith('long_') and (
+                    row['generation']['repetition_dominated'] or ref_row['generation']['repetition_dominated']
+                ):
+                    excluded += 1
+                    continue
+                acc_deltas.append({'prompt_id': pid, 'seed': seed,
+                                   'delta': row['mean_accepted_length'] - ref_row['mean_accepted_length']})
+                fwd_deltas.append({'prompt_id': pid, 'seed': seed,
+                                   'delta': row['target_forwards_per_generated_token'] - ref_row['target_forwards_per_generated_token']})
+            if not acc_deltas and excluded == 0:
+                continue
+            tg_arm = timed_groups.get((condition, temperature, warp, arm))
+            tg_ref = timed_groups.get((condition, temperature, warp, ref_arm))
+            tps_arm = tg_arm.get('matched_arm_tokens_per_second') if tg_arm else None
+            tps_ref = tg_ref.get('matched_arm_tokens_per_second') if tg_ref else None
+            comparisons.append({
+                'arm': arm,
+                'reference_arm': ref_arm,
+                'matched_support_family': support_family,
+                'condition': condition,
+                'temperature': temperature,
+                'sampling_warp_config': json.loads(warp),
+                'matched_pairs': len(acc_deltas),
+                'repetition_excluded_pairs': excluded,
+                'mean_accepted_length_delta': prompt_bootstrap(acc_deltas, 'delta') if acc_deltas else None,
+                'target_forwards_per_generated_token_delta': prompt_bootstrap(fwd_deltas, 'delta') if fwd_deltas else None,
+                'isolated_timing_tokens_per_second': {
+                    'arm': tps_arm,
+                    'reference_arm': tps_ref,
+                    'ratio': (tps_arm / tps_ref) if (tps_arm and tps_ref) else None,
+                } if (tg_arm is not None and tg_ref is not None) else None,
+            })
+    return comparisons
+
+
+def beta_sweep(runner, prompt_manifest, settings):
+    """Resumable inference beta sweep across configured arms (`prompt.md:831`)."""
+    args = runner.args
+    split = args.beta_sweep_split
+    prompts = select_prompts(prompt_manifest, split, args.scale, args.standard_dev_prompts, args.long_dev_prompts)
+    prompt_rank = {p['prompt_id']: i % args.world_size for i, p in enumerate(prompts)}
+    active_arms = _arms_from_args(args)
+    if args.beta_sweep_arms:
+        unknown = set(args.beta_sweep_arms) - set(active_arms)
+        if unknown:
+            raise ValueError(f'unknown beta_sweep arm(s): {sorted(unknown)}')
+        sweep_arms = tuple(a for a in args.beta_sweep_arms if a != 'plain_dflash')
+    else:
+        sweep_arms = tuple(
+            a for a in active_arms
+            if a != 'plain_dflash' and (
+                'beta' in settings['selected'].get(a, {})
+                or a in ('dense', 'dense_sparse', 'offline_static', 'dense_full', 'dense_candidate')
+            )
+        )
+    betas = [float(b) for b in args.beta_grid]
+    if not betas or any(not math.isfinite(b) or b < 0 for b in betas):
+        raise ValueError('beta_grid must contain finite nonnegative values')
+    frozen_hash = fingerprint(settings)
+    rows = []
+    for prompt in prompts:
+        if prompt_rank[prompt['prompt_id']] != args.rank:
+            continue
+        cond_list = sampling_conditions(prompt['condition'], primary_only=(split == 'dev'))
+        for name, temperature, warp in cond_list:
+            seeds = 1 if (temperature == 0 or args.scale == 'smoke' or split == 'dev') else (
+                3 if prompt['condition'] == 'standard_nonthinking' or args.scale == 'full' else 1
+            )
+            for s_idx in range(seeds):
+                base_job = {'prompt': prompt, 'sampling_name': name, 'temperature': temperature,
+                            'warper': warp, 'seed': args.seed + s_idx}
+                plain_row = execute_job(runner, dict(base_job, arm='plain_dflash'), {}, 'beta_sweep', frozen_hash)
+                rows.append(dict(plain_row, swept_beta=0.0))
+                for arm in sweep_arms:
+                    base_setting = dict(settings['selected'][arm])
+                    for beta_val in betas:
+                        setting = dict(base_setting, beta=beta_val)
+                        job = dict(base_job, arm=arm, force_setting_beta=True)
+                        row = execute_job(runner, job, setting, 'beta_sweep', frozen_hash)
+                        rows.append(dict(row, swept_beta=beta_val))
+    by_curve = defaultdict(list)
+    for row in rows:
+        if row['condition'].startswith('long_') and row['generation']['repetition_dominated']:
+            continue
+        key = (row['arm'], row['swept_beta'], row['condition'], row['temperature'],
+               json.dumps(row['sampling_warp_config'], sort_keys=True))
+        by_curve[key].append(row)
+    curves = []
+    for (arm, beta_val, condition, temperature, warp), group in sorted(by_curve.items()):
+        curves.append({
+            'arm': arm,
+            'beta': beta_val,
+            'condition': condition,
+            'temperature': temperature,
+            'sampling_warp_config': json.loads(warp),
+            'requests': len(group),
+            'mean_accepted_length': prompt_bootstrap(group, 'mean_accepted_length'),
+            'target_forwards_per_generated_token': prompt_bootstrap(group, 'target_forwards_per_generated_token'),
+            'tokens_per_second_observational': prompt_bootstrap(group, 'tokens_per_second'),
+        })
+    report = {
+        'scale': args.scale,
+        'stage': args.stage,
+        'mode': 'beta_sweep',
+        'status': 'complete' if args.world_size == 1 else 'rank_complete',
+        'split': split,
+        'rank': args.rank,
+        'world_size': args.world_size,
+        'beta_grid': betas,
+        'swept_arms': list(sweep_arms),
+        'frozen_settings_hash': frozen_hash,
+        'requests': len(rows),
+        'curves': curves,
+    }
+    out_name = 'beta_sweep.json' if args.world_size == 1 else f'beta_sweep-rank{args.rank}.json'
+    atomic_json(args.output / args.stage / out_name, report)
+    return report
+
+
+def server_eval(args, prompt_manifest):
+    """Resumable M5 OpenAI-compatible serving benchmark (`Qwen35ServerClient`)."""
+    if args.stage != 'm5':
+        raise ValueError('--mode server_eval is restricted to --stage m5')
+    if not getattr(args, 'm5_server_url', None):
+        raise ValueError('--mode server_eval requires --m5_server_url')
+    from .m5_baselines import Qwen35ServerClient
+    client = Qwen35ServerClient(
+        args.m5_server_url,
+        model=args.m5_server_model,
+        api_key=args.m5_server_api_key,
+        timeout_seconds=args.m5_server_timeout,
+    )
+    prompts = select_prompts(prompt_manifest, 'test', args.scale)
+    prompt_rank = {p['prompt_id']: i % args.world_size for i, p in enumerate(prompts)}
+    directory = args.output / 'm5' / 'server_eval'
+    manifest = Manifest(directory / f'manifest-rank{args.rank}.json')
+    rows = []
+    for prompt in prompts:
+        if prompt_rank[prompt['prompt_id']] != args.rank:
+            continue
+        cap = args.smoke_tokens if args.scale == 'smoke' else (
+            args.long_max_new_tokens if prompt['condition'].startswith('long_') else args.max_new_tokens
+        )
+        for name, temperature, warp in sampling_conditions(prompt['condition']):
+            seeds = 1 if (temperature == 0 or args.scale == 'smoke') else (
+                3 if prompt['condition'] == 'standard_nonthinking' or args.scale == 'full' else 1
+            )
+            for s_idx in range(seeds):
+                seed_val = args.seed + s_idx
+                identity = {
+                    'stage': 'm5', 'mode': 'server_eval', 'scale': args.scale,
+                    'model_pair': [client.model, 'server_managed_drafter'],
+                    'endpoint': client.base_url, 'server_model': client.model,
+                    'prompt': prompt['prompt_id'],
+                    'prompt_id': prompt['prompt_id'], 'prompt_payload_hash': fingerprint(prompt),
+                    'condition': prompt['condition'], 'sampling_name': name,
+                    'temperature': temperature, 'sampling_warp_config': asdict(warp),
+                    'verification_rule': 'greedy' if temperature == 0 else 'ratio',
+                    'proposal_mode': 'openai_server_dflash',
+                    'checkpoint': client.base_url,
+                    'adapter_version': 0,
+                    'max_tokens': cap, 'seed': seed_val,
+                }
+                key = manifest.key(identity)
+                path = directory / f'rank{args.rank}' / f'{key}.json'
+                if manifest.completed(identity):
+                    entry = manifest.data['jobs'][key]
+                    if entry.get('result_sha256') and entry['result_sha256'] != file_sha256(path):
+                        raise ValueError('completed server_eval result checksum changed')
+                    rows.append(json.loads(path.read_text()))
+                    continue
+                resp = client.chat_completion(
+                    prompt['text'],
+                    temperature=temperature,
+                    top_p=warp.top_p,
+                    top_k=-1 if warp.top_k is None else warp.top_k,
+                    max_tokens=cap,
+                    seed=seed_val,
+                    enable_thinking=(prompt['condition'] == 'long_thinking'),
+                )
+                row = {
+                    'identity': identity,
+                    'prompt_id': prompt['prompt_id'],
+                    'condition': prompt['condition'],
+                    'sampling_name': name,
+                    'temperature': temperature,
+                    'sampling_warp_config': asdict(warp),
+                    'seed': seed_val,
+                    **resp,
+                }
+                atomic_json(path, row)
+                manifest.data['jobs'][key] = {
+                    'identity': identity, 'status': 'complete',
+                    'result_path': str(path), 'result_sha256': file_sha256(path),
+                }
+                atomic_json(manifest.path, manifest.data)
+                rows.append(row)
+    by_cond = defaultdict(list)
+    for row in rows:
+        by_cond[(row['condition'], row['temperature'], json.dumps(row['sampling_warp_config'], sort_keys=True))].append(row)
+    groups = []
+    for (condition, temperature, warp), group in sorted(by_cond.items()):
+        tps_rows = [{'prompt_id': r['prompt_id'], 'seed': r['seed'], 'tokens_per_second': r['tokens_per_second']} for r in group]
+        logical_acc = [
+            {'prompt_id': r['prompt_id'], 'seed': r['seed'],
+             'logical_mean_accepted_length': r['server_meta_info']['logical_mean_accepted_length']}
+            for r in group if r.get('server_meta_info', {}).get('logical_mean_accepted_length') is not None
+        ]
+        groups.append({
+            'condition': condition,
+            'temperature': temperature,
+            'sampling_warp_config': json.loads(warp),
+            'requests': len(group),
+            'tokens_per_second': prompt_bootstrap(tps_rows, 'tokens_per_second'),
+            'logical_mean_accepted_length': prompt_bootstrap(logical_acc, 'logical_mean_accepted_length') if logical_acc else None,
+        })
+    report = {
+        'scale': args.scale,
+        'stage': 'm5',
+        'mode': 'server_eval',
+        'status': 'complete' if args.world_size == 1 else 'rank_complete',
+        'endpoint': client.base_url,
+        'server_model': client.model,
+        'rank': args.rank,
+        'world_size': args.world_size,
+        'completed_requests': len(rows),
+        'groups': groups,
+    }
+    out_name = 'server_eval.json' if args.world_size == 1 else f'server_eval-rank{args.rank}.json'
+    atomic_json(args.output / 'm5' / out_name, report)
+    return report
+
+
 def aggregate(args, prompt_manifest, settings):
     from types import SimpleNamespace
     runner = SimpleNamespace(args=args, tiny=args.scale == 'smoke', checkpoint_hashes=settings['checkpoint_hashes'],
                              model_pair=settings['model_pair'], model_revisions=settings['model_revisions'],
                              generation_environment=settings.get('generation_environment'))
     prompts = select_prompts(prompt_manifest, 'test', args.scale)
-    jobs = evaluation_jobs(prompts, args.stage, args.scale, args.seed)
+    jobs = evaluation_jobs(
+        prompts, args.stage, args.scale, args.seed,
+        m5_arms=getattr(args, 'm5_arms', None),
+        include_long_oracle=bool(getattr(args, 'm5_oracle_checkpoint', None)),
+    )
     frozen_hash = fingerprint(settings)
     directory = args.output / args.stage / 'evaluate'
     available = {}
@@ -1317,6 +1833,16 @@ def aggregate(args, prompt_manifest, settings):
     atomic_json(greedy_path, greedy_report)
     greedy_complete = greedy_report['status'] == 'complete'
     status = 'complete' if not missing and timing_valid and feature_context_valid and greedy_complete else 'incomplete'
+    if args.stage == 'm5':
+        active_set = set(_arms_from_args(args))
+        ext_map = [
+            ('token_recycling_tree', 'full tree-based Token Recycling'),
+            ('tts', 'Test-Time Speculation'),
+            ('sharp_draft', 'SharpDraft'),
+        ]
+        external_not_run = [label for arm_key, label in ext_map if arm_key not in active_set]
+    else:
+        external_not_run = ['full tree-based Token Recycling', 'Test-Time Speculation', 'SharpDraft']
     report = {'scale': args.scale, 'label': 'synthetic' if args.scale == 'smoke' else args.scale,
               'stage': args.stage, 'status': status, 'expected_requests': len(jobs), 'completed_requests': len(rows),
               'missing_requests': missing, 'settings': settings, 'groups': summarize_rows(rows),
@@ -1327,10 +1853,18 @@ def aggregate(args, prompt_manifest, settings):
               'feature_context': feature_context,
               'isolated_timing_complete': timing_valid, 'timing_report': str(timing_path) if timing_valid else None,
               'timing_evidence': timing_evidence,
-              'external_baselines_not_run': ['full tree-based Token Recycling', 'Test-Time Speculation', 'SharpDraft'],
+              'external_baselines_not_run': external_not_run,
               'baseline_naming': 'online_bigram is the normalized committed-transition baseline, not full Token Recycling',
               'long_condition': sorted({p['condition'] for p in prompts if p['condition'].startswith('long_')}),
               'thinking_drafter_distribution': 'out_of_distribution' if any(p['condition'] == 'long_thinking' for p in prompts) else 'long_thinking unavailable or not selected; see prompt manifest'}
+    if args.stage == 'm5':
+        report['matched_support_comparisons'] = compute_matched_support_comparisons(
+            rows, timed if timing_valid else None
+        )
+        if settings.get('triton_gate_report') is not None:
+            report['triton_gate_report'] = settings['triton_gate_report']
+        if settings.get('torch_compile_gate_report') is not None:
+            report['torch_compile_gate_report'] = settings['torch_compile_gate_report']
     atomic_json(args.output / args.stage / 'summary.json', report)
     return report
 
@@ -1343,8 +1877,9 @@ def smoke_manifest():
 
 def main(argv=None):
     parser = common_parser(__doc__)
-    parser.add_argument('--stage', choices=['m3', 'm4'], default='m3')
-    parser.add_argument('--mode', choices=['tune', 'evaluate', 'timing', 'summarize', 'all'], default='all')
+    parser.add_argument('--stage', choices=['m3', 'm4', 'm5'], default='m3')
+    parser.add_argument('--mode', choices=['tune', 'evaluate', 'timing', 'summarize', 'all',
+                                           'beta_sweep', 'server_eval'], default='all')
     parser.add_argument('--fresh_session', action='store_true', help='start new dev/timing measurements instead of resuming complete comparison bundles')
     parser.add_argument('--rank', type=int, default=0)
     parser.add_argument('--world_size', type=int, default=1)
@@ -1357,13 +1892,29 @@ def main(argv=None):
     parser.add_argument('--long_max_new_tokens', type=int, default=24576)
     parser.add_argument('--smoke_tokens', type=int, default=32)
     parser.add_argument('--standard_dev_prompts', type=int, default=8)
-    parser.add_argument('--long_dev_prompts', type=int, default=12)
+    parser.add_argument('--long_dev_prompts', type=int, default=None)
     parser.add_argument('--timing_prompts', type=int, default=0, help='0 times every required test prompt; positive values are incomplete pilot subsets')
     parser.add_argument('--timing_repeats', type=int, default=3)
     parser.add_argument('--timing_warmups', type=int, default=1)
+    parser.add_argument('--beta_grid', type=float, nargs='+', default=[0., .25, .5, .75, 1., 1.25, 1.5])
+    parser.add_argument('--beta_sweep_split', choices=['dev', 'test'], default='dev')
+    parser.add_argument('--beta_sweep_arms', nargs='+', default=None)
+    parser.add_argument('--m5_arms', nargs='+', default=None)
+    parser.add_argument('--m5_oracle_checkpoint', type=Path, default=None)
+    parser.add_argument('--sparse_overflow_policy', choices=['freeze_new', 'error'], default='freeze_new')
+    parser.add_argument('--m5_triton', action='store_true', default=False)
+    parser.add_argument('--m5_torch_compile', action='store_true', default=False)
+    parser.add_argument('--m5_server_url', default=None)
+    parser.add_argument('--m5_server_model', default='default')
+    parser.add_argument('--m5_server_api_key', default='EMPTY')
+    parser.add_argument('--m5_server_timeout', type=float, default=600.)
     args = parse_config(parser, argv)
+    if args.long_dev_prompts is None:
+        args.long_dev_prompts = 32 if args.scale == 'full' else 12
     for name in ('prompts_manifest', 'dense_checkpoint', 'sparse_checkpoint', 'projection'):
         setattr(args, name, Path(getattr(args, name)))
+    if args.m5_oracle_checkpoint is not None:
+        args.m5_oracle_checkpoint = Path(args.m5_oracle_checkpoint)
     if args.world_size < 1 or not 0 <= args.rank < args.world_size:
         parser.error('rank must lie in 0..world_size-1')
     if args.timing_repeats < 2 or args.timing_warmups < 1 or args.timing_prompts < 0:
@@ -1372,12 +1923,28 @@ def main(argv=None):
         parser.error('generation caps must be positive')
     if args.mode == 'all' and args.world_size != 1:
         parser.error('shard only --mode evaluate; tune/timing run once on an idle GPU')
+    if args.stage != 'm5' and (args.m5_arms or args.m5_oracle_checkpoint or args.m5_triton
+                               or args.m5_torch_compile or args.mode == 'server_eval'):
+        parser.error('M5-specific options (--m5_*, --mode server_eval) require --stage m5')
     record_run(args, f'{args.stage}-{args.mode}')
     torch.set_num_threads(1)
     prompt_manifest = smoke_manifest() if args.scale == 'smoke' else json.loads(args.prompts_manifest.read_text())
+    if args.mode == 'server_eval':
+        if args.scale != 'smoke':
+            n_std_eval, n_long_eval = (128, 64) if args.scale == 'full' else (64, 32)
+            preflight(args, n_std_eval * args.max_new_tokens + n_long_eval * args.long_max_new_tokens)
+        result = server_eval(args, prompt_manifest)
+        print(json.dumps({'stage': args.stage, 'scale': args.scale, 'mode': args.mode, 'status': result['status']}))
+        return
     if args.scale != 'smoke':
         if args.mode != 'summarize':
-            preflight(args, (args.standard_dev_prompts * args.max_new_tokens + args.long_dev_prompts * args.long_max_new_tokens) if args.mode == 'tune' else 64 * args.max_new_tokens + 32 * args.long_max_new_tokens)
+            n_std_eval, n_long_eval = (128, 64) if args.scale == 'full' else (64, 32)
+            expected_tokens = (
+                args.standard_dev_prompts * args.max_new_tokens + args.long_dev_prompts * args.long_max_new_tokens
+                if args.mode == 'tune'
+                else n_std_eval * args.max_new_tokens + n_long_eval * args.long_max_new_tokens
+            )
+            preflight(args, expected_tokens)
         if args.mode in ('tune', 'timing', 'all'):
             from .bench_adapter import assert_idle
             assert_idle(torch.device(args.device))
@@ -1387,11 +1954,23 @@ def main(argv=None):
         settings = tune(runner, prompt_manifest)
     else:
         settings = json.loads(settings_path.read_text())
-    current_hashes = (runner.checkpoint_hashes if runner is not None else dict(settings['checkpoint_hashes'], implementation=implementation_hash())) if args.scale == 'smoke' else checkpoint_hashes(args)
-    validate_frozen_settings(settings, args.stage, args.scale, current_hashes, prompt_manifest,
-        generation_caps(args), runner.model_pair if runner is not None else [args.target, args.drafter] if args.scale != 'smoke' else settings['model_pair'],
+    current_hashes = (
+        runner.checkpoint_hashes if runner is not None
+        else dict(settings['checkpoint_hashes'], implementation=implementation_hash(args.stage))
+    ) if args.scale == 'smoke' else checkpoint_hashes(args)
+    validate_frozen_settings(
+        settings, args.stage, args.scale, current_hashes, prompt_manifest,
+        generation_caps(args),
+        runner.model_pair if runner is not None else [args.target, args.drafter] if args.scale != 'smoke' else settings['model_pair'],
         runner.model_revisions if runner is not None else None,
-        runner.generation_environment if runner is not None else None)
+        runner.generation_environment if runner is not None else None,
+        m5_arms=getattr(args, 'm5_arms', None),
+        include_long_oracle=bool(getattr(args, 'm5_oracle_checkpoint', None)),
+    )
+    if args.mode == 'beta_sweep':
+        result = beta_sweep(runner, prompt_manifest, settings)
+        print(json.dumps({'stage': args.stage, 'scale': args.scale, 'mode': args.mode, 'status': result['status']}))
+        return
     if args.mode in ('evaluate', 'all'):
         evaluate(runner, prompt_manifest, settings)
     if args.mode in ('timing', 'all'):

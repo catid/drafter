@@ -18,10 +18,11 @@ import time
 import torch
 from torch.nn import functional as F
 
-from .adapter import DenseAdapter, loss_weights, prev_token, union_rest_grouped
+from .adapter import (DenseAdapter, loss_weights, next_token, prev_token,
+                      two_sided_pseudolikelihood_loss, union_rest_grouped)
 from .features import HiddenProjection
 from .runtime import ROOT, atomic_json, common_parser, fingerprint, git_commit, parse_config, preflight, record_run, resolved_config
-from .sparse import SignedHash
+from .sparse import ExactObservedPairs, SignedHash
 from .sparse_stats import SparseAccessRecorder, pack_keys
 from .traces import read_shard
 
@@ -37,6 +38,34 @@ def primary_eligible(record, *, split=None):
     warp = record.get('sampling_warp_config', {})
     return (temperature is not None and abs(temperature - .7) < 1e-10
             and warp.get('top_k') == 20 and warp.get('top_p') == .8 and warp.get('min_p', 0.) == 0.)
+
+
+def long_oracle_eligible(record, *, split=None):
+    if split is not None and record.get('split') != split:
+        return False
+    if record.get('condition') not in {'long_thinking', 'long_nonthinking'}:
+        return False
+    if record.get('repetition_dominated', False):
+        return False
+    temperature = record.get('collection_temperature', record.get('temperature'))
+    warp = record.get('sampling_warp_config', {})
+    if record.get('condition') == 'long_thinking':
+        return (temperature is not None and abs(temperature - .6) < 1e-10
+                and warp.get('top_k') == 20 and warp.get('top_p') == .95 and warp.get('min_p', 0.) == 0.)
+    return (temperature is not None and abs(temperature - .7) < 1e-10
+            and warp.get('top_k') == 20 and warp.get('top_p') == .8 and warp.get('min_p', 0.) == 0.)
+
+
+def pure_t1_eligible(record, *, split=None):
+    if split is not None and record.get('split') != split:
+        return False
+    if record.get('condition') != 'standard_nonthinking':
+        return False
+    temperature = record.get('collection_temperature', record.get('temperature'))
+    warp = record.get('sampling_warp_config', {})
+    return (temperature is not None and abs(temperature - 1.) < 1e-10
+            and warp.get('top_k', 0) in (0, None)
+            and warp.get('top_p', 1.) == 1. and warp.get('min_p', 0.) == 0.)
 
 
 def file_digest(path):
@@ -73,7 +102,7 @@ class ShardInfo:
     identity: dict
 
 
-def trace_index(directory, accepted_paths=None):
+def trace_index(directory, accepted_paths=None, *, eligibility_fn=primary_eligible, regime='primary'):
     """Index immutable per-generation sidecars without holding traces in RAM."""
     entries, excluded, seen, prompt_splits = [], {}, set(), {}
     paths = sorted(Path(p) for p in accepted_paths) if accepted_paths is not None else sorted(Path(directory).glob('rank*/*.pt'))
@@ -101,7 +130,7 @@ def trace_index(directory, accepted_paths=None):
         candidate = {**generation, 'condition': identity['condition'],
                      'temperature': identity['temperature'],
                      'sampling_warp_config': identity['sampling_warp_config']}
-        if not primary_eligible(candidate):
+        if not eligibility_fn(candidate):
             reason = f"{split}/{identity['condition']}/T={identity['temperature']}"
             excluded[reason] = excluded.get(reason, 0) + generation_length(generation)
             continue
@@ -110,17 +139,24 @@ def trace_index(directory, accepted_paths=None):
         entries.append(ShardInfo(path, split, prompt, generation_length(generation),
                                  int(side['blocks']), side['sha256'], identity))
     if not entries:
-        raise ValueError('No eligible primary traces')
+        if regime == 'long_oracle_m5':
+            raise RuntimeError('blocked: insufficient long-condition train/dev/test traces for M5 long oracle ablation')
+        raise ValueError(f'No eligible {regime} traces')
     summaries = {split: {'generated_output_tokens': sum(x.output_tokens for x in entries if x.split == split),
                         'prompts': len({x.prompt_id for x in entries if x.split == split}),
                         'shards': sum(x.split == split for x in entries),
                         'blocks': sum(x.blocks for x in entries if x.split == split)}
                  for split in ['train', 'dev', 'test']}
     if any(summaries[s]['blocks'] == 0 for s in summaries):
+        if regime == 'long_oracle_m5':
+            raise RuntimeError('blocked: M5 long oracle ablation requires disjoint nonempty long train, dev, and test traces')
         raise ValueError('Primary train, development, and test traces are all required')
-    return entries, {'primary': summaries, 'excluded_generated_tokens': excluded,
-                     'primary_train_tokens_by_temperature': {str(T): sum(e.output_tokens for e in entries if e.split == 'train' and e.identity['temperature'] == T) for T in [0., .7]},
-                     'source_fingerprint': fingerprint([{'identity': e.identity, 'sha256': e.sha256} for e in entries])}
+    report = {'primary': summaries, 'excluded_generated_tokens': excluded,
+              'primary_train_tokens_by_temperature': {str(T): sum(e.output_tokens for e in entries if e.split == 'train' and e.identity['temperature'] == T) for T in [0., .7]},
+              'source_fingerprint': fingerprint([{'identity': e.identity, 'sha256': e.sha256} for e in entries])}
+    if regime != 'primary':
+        report['regime'] = regime
+    return entries, report
 
 
 def generation_length(generation):
@@ -138,12 +174,22 @@ def validate_reference_gate(args, index_report, entries, projection, token_metad
     if audit.get('status') != 'passed' or audit.get('scale') != args.scale:
         raise RuntimeError('blocked: M1 collection/diagnostic audit must pass before M2')
     floor = 2_000_000 if args.scale == 'full' else 500_000
-    if index_report['primary']['train']['generated_output_tokens'] < floor:
-        raise RuntimeError(f'blocked: primary standard train traces have fewer than {floor} generated tokens')
-    if any(index_report['primary_train_tokens_by_temperature'][str(T)] < floor // 2 for T in [0., .7]):
-        raise RuntimeError('blocked: each primary collection temperature must supply half the training floor')
-    if index_report['primary']['test']['prompts'] < 64:
-        raise RuntimeError('blocked: fewer than 64 standard test prompts')
+    if not getattr(args, 'allow_long_oracle_fit', False) and not getattr(args, 'allow_pure_t1_ablation', False):
+        if index_report['primary']['train']['generated_output_tokens'] < floor:
+            raise RuntimeError(f'blocked: primary standard train traces have fewer than {floor} generated tokens')
+        if args.scale == 'full':
+            max_tokens = getattr(args, 'max_primary_train_tokens', None) or 4_000_000
+            if index_report['primary']['train']['generated_output_tokens'] > max_tokens:
+                raise RuntimeError(f'blocked: full-scale primary train traces exceed {max_tokens} token ceiling')
+        if any(index_report['primary_train_tokens_by_temperature'][str(T)] < floor // 2 for T in [0., .7]):
+            raise RuntimeError('blocked: each primary collection temperature must supply half the training floor')
+        test_floor = 128 if args.scale == 'full' else 64
+        if index_report['primary']['test']['prompts'] < test_floor:
+            raise RuntimeError(f'blocked: fewer than {test_floor} standard test prompts')
+    elif getattr(args, 'allow_long_oracle_fit', False):
+        min_long = getattr(args, 'min_long_oracle_train_tokens', None) or 50_000
+        if index_report['primary']['train']['generated_output_tokens'] < min_long:
+            raise RuntimeError(f'blocked: M5 long oracle train traces have fewer than {min_long} tokens')
     manifest = json.loads(Path(args.prompts).read_text())
     prompts = {p['prompt_id']: p for p in manifest['prompts']}
     for entry in entries:
@@ -219,7 +265,35 @@ def epoch_references(entries, split, seed=None):
     return [(shard, i) for shard in chosen for i in range(shard.blocks)]
 
 
-def batches(references, batch_blocks, *, start_batch=0, head_metadata=None):
+def _block_own_committed(block) -> list[int]:
+    if block.get('committed_tokens') is not None:
+        return [int(x) for x in block['committed_tokens']]
+    acc = int(block['accepted_length'])
+    K = int(block['block_length'])
+    own = [int(x) for x in block['draft_tokens'][:acc]]
+    if acc < K and block.get('replacement_token') is not None:
+        own.append(int(block['replacement_token']))
+    elif acc == K and block.get('bonus_token') is not None:
+        own.append(int(block['bonus_token']))
+    return own
+
+
+def _annotate_verified_stream(payload_blocks, history_depth: int):
+    own_lists = [_block_own_committed(b) for b in payload_blocks]
+    for idx, block in enumerate(payload_blocks):
+        own = own_lists[idx]
+        future: list[int] = []
+        j = idx + 1
+        while j < len(own_lists) and len(future) < history_depth:
+            need = history_depth - len(future)
+            future.extend(own_lists[j][:need])
+            j += 1
+        block['_verified_committed_window'] = own + future
+        block['_verified_eval_slots'] = max(1, min(int(block['block_length']), len(own)))
+
+
+def batches(references, batch_blocks, *, start_batch=0, head_metadata=None,
+            eligibility_fn=primary_eligible, history_depth: int = 4):
     """Only one compact shard and one block batch are resident at a time."""
     cached_path, payload = None, None
     for batch_index in range(start_batch, (len(references) + batch_blocks - 1) // batch_blocks):
@@ -233,9 +307,10 @@ def batches(references, batch_blocks, *, start_batch=0, head_metadata=None):
                 cached_path = shard.path
                 if len(payload['blocks']) != shard.blocks:
                     raise ValueError('Shard block count differs from immutable sidecar')
+                _annotate_verified_stream(payload['blocks'], history_depth)
             block = payload['blocks'][index]
-            if block['split'] != shard.split or block['prompt_id'] != shard.prompt_id or not primary_eligible(block):
-                raise ValueError('Block metadata differs from eligible primary shard identity')
+            if block['split'] != shard.split or block['prompt_id'] != shard.prompt_id or not eligibility_fn(block):
+                raise ValueError('Block metadata differs from eligible shard identity')
             if head_metadata is not None and block['draft_lm_head'] != head_metadata:
                 raise ValueError('Mixed frozen head artifacts are forbidden in one fit')
             result.append(block)
@@ -300,7 +375,78 @@ def batch_targets(blocks, device):
     return ids, probabilities, rest, torch.cat(weights)
 
 
-def batch_loss(adapter, blocks, l_unit, *, collect_sparse_keys=False):
+def two_sided_batch_scores_and_targets(adapter, blocks, l_unit_full, *, return_sparse_keys=False):
+    """Batched two-sided verified-stream scores on committed on-policy slots only."""
+    device = adapter.W.device
+    D = len(adapter.A)
+    h_rows, l_rows, prev_rows, succ_rows, target_ids, weight_rows = [], [], [], [], [], []
+    cursor = 0
+    for block in blocks:
+        K = int(block['block_length'])
+        committed = block.get('_verified_committed_window') or _block_own_committed(block)
+        n_eval = int(block.get('_verified_eval_slots', max(1, min(K, len(committed)))))
+        prefix = block['verified_prefix_tail']
+        h_rows.append(block['h'][:n_eval])
+        l_rows.append(l_unit_full[cursor:cursor + n_eval])
+        cursor += K
+        for i in range(n_eval):
+            prev_rows.append([prev_token(prefix, committed, i, d) for d in range(1, D + 1)])
+            succ_rows.append([next_token(committed, i, d) for d in range(1, D + 1)])
+            target_ids.append(int(committed[i]))
+        weight_rows.append(loss_weights(n_eval, device))
+    H = torch.cat(h_rows).to(device, dtype=torch.float32)
+    l_unit = torch.cat(l_rows)
+    previous = torch.tensor([[x if x is not None else -1 for x in row] for row in prev_rows],
+                            device=device, dtype=torch.long)
+    successor = torch.tensor([[x if x is not None else -1 for x in row] for row in succ_rows],
+                             device=device, dtype=torch.long)
+    pair = torch.zeros(len(H), adapter.E.shape[1], device=device, dtype=torch.float32)
+    for d in range(D):
+        rows_f = (previous[:, d] >= 0).nonzero(as_tuple=True)[0]
+        if len(rows_f):
+            part_f = adapter.E[previous[rows_f, d]].float() @ adapter.A[d].T
+            pair = pair.index_add(0, rows_f, part_f)
+        rows_b = (successor[:, d] >= 0).nonzero(as_tuple=True)[0]
+        if len(rows_b):
+            # (A[d].T @ E[succ])^T = E[succ] @ A[d]
+            part_b = adapter.E[successor[rows_b, d]].float() @ adapter.A[d]
+            pair = pair.index_add(0, rows_b, part_b)
+    dense = adapter.unary(H) + pair @ adapter.E.float().T
+    scores = l_unit - dense
+    observed_keys = []
+    if adapter.sparse is not None:
+        candidates = scores.topk(min(adapter.M_sparse, scores.shape[-1]), dim=-1).indices
+        values = torch.zeros_like(candidates, dtype=torch.float32)
+        V = adapter.E.shape[0]
+        for d in range(D):
+            rows_f = (previous[:, d] >= 0).nonzero(as_tuple=True)[0]
+            if len(rows_f):
+                corr_f = adapter.sparse.lookup(d + 1, previous[rows_f, d, None], candidates[rows_f])
+                values = values.index_add(0, rows_f, corr_f)
+                if return_sparse_keys:
+                    observed_keys.append(pack_keys(d + 1, previous[rows_f, d, None], candidates[rows_f], V).reshape(-1))
+            rows_b = (successor[:, d] >= 0).nonzero(as_tuple=True)[0]
+            if len(rows_b):
+                corr_b = adapter.sparse.lookup(d + 1, candidates[rows_b], successor[rows_b, d, None])
+                values = values.index_add(0, rows_b, corr_b)
+                if return_sparse_keys:
+                    observed_keys.append(pack_keys(d + 1, candidates[rows_b], successor[rows_b, d, None], V).reshape(-1))
+        scores = scores - torch.zeros_like(scores).scatter(1, candidates, values)
+    targets = torch.tensor(target_ids, device=device, dtype=torch.long)
+    weights = torch.cat(weight_rows)
+    if return_sparse_keys:
+        packed = torch.cat(observed_keys) if observed_keys else torch.empty(0, dtype=torch.long, device=device)
+        return scores, targets, weights, packed
+    return scores, targets, weights
+
+
+def batch_loss(adapter, blocks, l_unit, *, collect_sparse_keys=False, objective='union_rest_grouped'):
+    if objective == 'two_sided_pseudolikelihood':
+        out = two_sided_batch_scores_and_targets(adapter, blocks, l_unit, return_sparse_keys=collect_sparse_keys)
+        scores, targets, weights = out[:3]
+        loss = two_sided_pseudolikelihood_loss(scores, targets, weights)
+        result = (loss, weights.sum(), scores)
+        return (*result, out[3]) if collect_sparse_keys else result
     corrected = corrected_batch_scores(adapter, blocks, l_unit, return_sparse_keys=collect_sparse_keys)
     scores = corrected[0] if collect_sparse_keys else corrected
     ids, probabilities, rest, weights = batch_targets(blocks, scores.device)
@@ -309,55 +455,82 @@ def batch_loss(adapter, blocks, l_unit, *, collect_sparse_keys=False):
 
 
 @torch.no_grad()
-def evaluate(adapter, references, head, bias, args, head_metadata):
-    sums = dict(loss=0., weight=0., slots=0, union_overlap_lower=0., grouped_overlap_upper=0.,
-                full_overlap=0., full_top1=0., full_slots=0, full_loss=0., full_grouped_loss=0., full_weight=0.)
-    for _, blocks in batches(references, args.batch_blocks, head_metadata=head_metadata):
-        l_unit = reconstruct_batch(blocks, head, bias, vocab_chunk=args.vocab_chunk,
-                                   output_multiplier=head_metadata.get('output_multiplier', 1.))
-        loss, weight, scores = batch_loss(adapter, blocks, l_unit)
-        q_log = scores.log_softmax(-1)
-        q = q_log.exp()
-        sums['loss'] += float(loss)
-        sums['weight'] += float(weight)
-        cursor = 0
-        for block in blocks:
-            K = block['block_length']
-            rows = q[cursor:cursor + K]
-            log_rows = q_log[cursor:cursor + K]
-            ids, probabilities, rest, weights = batch_targets([block], q.device)
-            for i in range(K):
-                p = probabilities[i]
-                qi = rows[i, ids[i]]
-                lower = float(torch.minimum(p, qi).sum())
-                upper = lower + min(float(rest[i]), max(0., 1 - float(qi.double().sum())))
-                sums['union_overlap_lower'] += lower
-                sums['grouped_overlap_upper'] += upper
-            if 'live_full' in block:
-                P = block['live_full']['target_probs'].to(q.device)
-                full_kl = (torch.xlogy(P, P) - P * log_rows).sum(-1)
-                grouped = union_rest_grouped(scores[cursor:cursor + K], ids, probabilities, rest, weights)
-                sums['full_loss'] += float((full_kl * weights).sum())
-                sums['full_grouped_loss'] += float(grouped)
-                sums['full_weight'] += float(weights.sum())
-                sums['full_overlap'] += float(torch.minimum(P, rows).sum())
-                sums['full_top1'] += int((P.argmax(-1) == rows.argmax(-1)).sum())
-                sums['full_slots'] += K
-            sums['slots'] += K
-            cursor += K
-    full = sums['full_slots']
-    return {'loss_mode': 'union_rest_grouped', 'weighted_mean_kl': sums['loss'] / sums['weight'],
-            'weighted_kl_sum': sums['loss'], 'weight_sum': sums['weight'], 'logical_slots': sums['slots'],
-            'union_overlap_lower_bound': sums['union_overlap_lower'] / sums['slots'],
-            'grouped_overlap_upper_bound': sums['grouped_overlap_upper'] / sums['slots'],
-            'live_full_diagnostic': {'logical_slots': full,
-                'mean_overlap': sums['full_overlap'] / full if full else None,
-                'top1_agreement': sums['full_top1'] / full if full else None,
-                'weighted_mean_full_kl': sums['full_loss'] / sums['full_weight'] if full else None,
-                'weighted_mean_grouped_kl': sums['full_grouped_loss'] / sums['full_weight'] if full else None,
-                'full_minus_grouped_kl': (sums['full_loss'] - sums['full_grouped_loss']) / sums['full_weight'] if full else None,
-                'proposal_source': 'same reconstructed full-vocabulary q for both objectives'},
-            'T_train': 1., 'beta_train': 1., 'warpers_used_for_training': False}
+def evaluate(adapter, references, head, bias, args, head_metadata, *, eligibility_fn=primary_eligible):
+    was_training = adapter.training
+    adapter.eval()
+    try:
+        objective = getattr(args, 'objective', 'union_rest_grouped')
+        sums = dict(loss=0., weight=0., slots=0, union_overlap_lower=0., grouped_overlap_upper=0.,
+                    full_overlap=0., full_top1=0., full_slots=0, full_loss=0., full_grouped_loss=0.,
+                    full_weight=0., pl_loss=0., pl_weight=0., pl_slots=0, pl_top1=0)
+        for _, blocks in batches(references, args.batch_blocks, head_metadata=head_metadata,
+                                 eligibility_fn=eligibility_fn, history_depth=args.history_depth):
+            l_unit = reconstruct_batch(blocks, head, bias, vocab_chunk=args.vocab_chunk,
+                                       output_multiplier=head_metadata.get('output_multiplier', 1.))
+            loss, weight, scores = batch_loss(adapter, blocks, l_unit, objective='union_rest_grouped')
+            q_log = scores.log_softmax(-1)
+            q = q_log.exp()
+            sums['loss'] += float(loss)
+            sums['weight'] += float(weight)
+            if objective == 'two_sided_pseudolikelihood':
+                pl_scores, pl_targets, pl_weights = two_sided_batch_scores_and_targets(adapter, blocks, l_unit)
+                pl_val = two_sided_pseudolikelihood_loss(pl_scores, pl_targets, pl_weights)
+                sums['pl_loss'] += float(pl_val)
+                sums['pl_weight'] += float(pl_weights.sum())
+                sums['pl_slots'] += len(pl_targets)
+                sums['pl_top1'] += int((pl_scores.argmax(-1) == pl_targets).sum())
+            cursor = 0
+            for block in blocks:
+                K = block['block_length']
+                rows = q[cursor:cursor + K]
+                log_rows = q_log[cursor:cursor + K]
+                ids, probabilities, rest, weights = batch_targets([block], q.device)
+                for i in range(K):
+                    p = probabilities[i]
+                    qi = rows[i, ids[i]]
+                    lower = float(torch.minimum(p, qi).sum())
+                    upper = lower + min(float(rest[i]), max(0., 1 - float(qi.double().sum())))
+                    sums['union_overlap_lower'] += lower
+                    sums['grouped_overlap_upper'] += upper
+                if 'live_full' in block:
+                    P = block['live_full']['target_probs'].to(q.device)
+                    full_kl_row = (torch.xlogy(P, P) - P * log_rows).sum(-1)
+                    grouped = union_rest_grouped(scores[cursor:cursor + K], ids, probabilities, rest, weights)
+                    sums['full_loss'] += float((full_kl_row * weights).sum())
+                    sums['full_grouped_loss'] += float(grouped)
+                    sums['full_weight'] += float(weights.sum())
+                    sums['full_overlap'] += float(torch.minimum(P, rows).sum())
+                    sums['full_top1'] += int((P.argmax(-1) == rows.argmax(-1)).sum())
+                    sums['full_slots'] += K
+                sums['slots'] += K
+                cursor += K
+        full = sums['full_slots']
+        grouped_mean = sums['loss'] / sums['weight']
+        primary_metric = (sums['pl_loss'] / sums['pl_weight']) if objective == 'two_sided_pseudolikelihood' else grouped_mean
+        result = {'loss_mode': objective, 'weighted_mean_kl': primary_metric,
+                  'weighted_kl_sum': sums['pl_loss'] if objective == 'two_sided_pseudolikelihood' else sums['loss'],
+                  'weight_sum': sums['pl_weight'] if objective == 'two_sided_pseudolikelihood' else sums['weight'],
+                  'logical_slots': sums['slots'],
+                  'union_overlap_lower_bound': sums['union_overlap_lower'] / sums['slots'],
+                  'grouped_overlap_upper_bound': sums['grouped_overlap_upper'] / sums['slots'],
+                  'live_full_diagnostic': {'logical_slots': full,
+                      'mean_overlap': sums['full_overlap'] / full if full else None,
+                      'top1_agreement': sums['full_top1'] / full if full else None,
+                      'weighted_mean_full_kl': sums['full_loss'] / sums['full_weight'] if full else None,
+                      'weighted_mean_grouped_kl': sums['full_grouped_loss'] / sums['full_weight'] if full else None,
+                      'full_minus_grouped_kl': (sums['full_loss'] - sums['full_grouped_loss']) / sums['full_weight'] if full else None,
+                      'proposal_source': 'same reconstructed full-vocabulary q for both objectives'},
+                  'T_train': 1., 'beta_train': 1., 'warpers_used_for_training': False}
+        if objective == 'two_sided_pseudolikelihood':
+            result['two_sided_pseudolikelihood'] = {
+                'weighted_mean_nll': sums['pl_loss'] / sums['pl_weight'],
+                'verified_slots': sums['pl_slots'],
+                'verified_top1_accuracy': sums['pl_top1'] / sums['pl_slots'] if sums['pl_slots'] else None,
+                'causal_union_rest_grouped_kl': grouped_mean,
+            }
+        return result
+    finally:
+        adapter.train(was_training)
 
 
 def optimizer_for(adapter, args, stage):
@@ -376,21 +549,38 @@ def parameter_report(adapter):
                      'shape': list(value.shape), 'dtype': str(value.dtype)}
               for name, value in [('W', adapter.W), ('A', adapter.A), ('b', adapter.b)]}
     if adapter.sparse is not None:
-        result['S'] = {'norm': float(adapter.sparse.values.norm()),
-                       'exact_zero_fraction': float((adapter.sparse.values == 0).float().mean()),
-                       'nonzero_buckets': int(adapter.sparse.values.count_nonzero()),
-                       'capacity': adapter.sparse.capacity, 'memory_bytes': adapter.sparse.values.numel() * 4,
-                       'optimizer': 'SGD followed by explicit proximal L1'}
+        s_rep = {'norm': float(adapter.sparse.values.norm()),
+                 'exact_zero_fraction': float((adapter.sparse.values == 0).float().mean()),
+                 'nonzero_buckets': int(adapter.sparse.values.count_nonzero()),
+                 'capacity': adapter.sparse.capacity, 'memory_bytes': adapter.sparse.values.numel() * 4,
+                 'optimizer': 'SGD followed by explicit proximal L1'}
+        if isinstance(adapter.sparse, ExactObservedPairs):
+            s_rep.update({
+                'representation': 'exact_observed_pairs',
+                'occupied_entries': adapter.sparse.num_occupied,
+                'peak_occupied_entries': adapter.sparse.peak_occupied,
+                'overflow_events': adapter.sparse.overflow_events,
+                'dropped_unique_keys': adapter.sparse.dropped_unique_keys,
+                'memory_bytes': (adapter.sparse.values.numel() * 4
+                                 + adapter.sparse.key_table.numel() * 8
+                                 + adapter.sparse.slot_table.numel() * 8),
+            })
+        result['S'] = s_rep
     return result
 
 
 def checkpoint_payload(adapter, args, identity, stage, epoch, next_batch, dense_optimizer, sparse_optimizer, report):
+    adapter_cfg = {'p': adapter.W.shape[1], 'r': adapter.E.shape[1], 'D': len(adapter.A),
+                   'M_sparse': adapter.M_sparse,
+                   'sparse_capacity': adapter.sparse.capacity if adapter.sparse is not None else None}
+    sparse_backend = getattr(args, 'sparse_backend', 'signed_feature_hash')
+    if sparse_backend != 'signed_feature_hash':
+        adapter_cfg['sparse_backend'] = sparse_backend
+        adapter_cfg['sparse_overflow_policy'] = getattr(args, 'sparse_overflow_policy', 'freeze_new')
     return {'schema_version': 1, 'scale': args.scale, 'identity': identity,
             'stage': stage, 'epoch': epoch, 'next_batch': next_batch,
             'adapter_state': {k: v.detach().cpu() for k, v in adapter.state_dict().items()},
-            'adapter_config': {'p': adapter.W.shape[1], 'r': adapter.E.shape[1], 'D': len(adapter.A),
-                               'M_sparse': adapter.M_sparse,
-                               'sparse_capacity': adapter.sparse.capacity if adapter.sparse is not None else None},
+            'adapter_config': adapter_cfg,
             'dense_optimizer': dense_optimizer.state_dict() if dense_optimizer is not None else None,
             'sparse_optimizer': sparse_optimizer.state_dict() if sparse_optimizer is not None else None,
             'torch_rng': torch.get_rng_state(), 'python_rng': random.getstate(),
@@ -402,7 +592,18 @@ def checkpoint_payload(adapter, args, identity, stage, epoch, next_batch, dense_
 def load_adapter_checkpoint(path, device='cpu'):
     checkpoint = torch.load(path, map_location='cpu', weights_only=True)
     config = checkpoint['adapter_config']
-    sparse = SignedHash(config['sparse_capacity'], device=device) if config['sparse_capacity'] is not None else None
+    sparse_backend = config.get('sparse_backend', 'signed_feature_hash')
+    if config['sparse_capacity'] is None:
+        sparse = None
+    elif sparse_backend == 'exact_observed_pairs':
+        sparse = ExactObservedPairs(
+            config['sparse_capacity'],
+            vocab_size=checkpoint['adapter_state']['E'].shape[0],
+            overflow_policy=config.get('sparse_overflow_policy', 'freeze_new'),
+            device=device,
+        )
+    else:
+        sparse = SignedHash(config['sparse_capacity'], device=device)
     adapter = DenseAdapter(checkpoint['adapter_state']['E'].to(device), config['p'], config['D'], sparse, config['M_sparse'])
     adapter.load_state_dict(checkpoint['adapter_state'])
     adapter.eval()
@@ -410,9 +611,52 @@ def load_adapter_checkpoint(path, device='cpu'):
                      {'adapter_state', 'dense_optimizer', 'sparse_optimizer', 'torch_rng', 'python_rng', 'cuda_rng'}}
 
 
+def _resolve_fit_regime(args):
+    allow_long = bool(getattr(args, 'allow_long_oracle_fit', False))
+    allow_t1 = bool(getattr(args, 'allow_pure_t1_ablation', False))
+    if allow_long and allow_t1:
+        raise ValueError('Cannot combine --allow_long_oracle_fit and --allow_pure_t1_ablation in one fit')
+    sparse_backend = getattr(args, 'sparse_backend', 'signed_feature_hash')
+    objective = getattr(args, 'objective', 'union_rest_grouped')
+    custom_tag = getattr(args, 'm5_fit_tag', None)
+    if allow_long:
+        regime = 'long_oracle_m5'
+        eligibility_fn = long_oracle_eligible
+        base = custom_tag or 'm5_long_oracle'
+        subdir = f'{base}_smoke' if args.scale == 'smoke' else base
+        training_dist = 'long_oracle_m5'
+        scope = 'M5 long-condition oracle ablation shard sets; separate from primary M2 adaptation'
+        warning = 'M5 ablation only: fitted on long-condition traces; never reported as primary adaptation'
+    elif allow_t1:
+        regime = 'pure_T1_calibration_ablation_m5'
+        eligibility_fn = pure_t1_eligible
+        base = custom_tag or 'm5_pure_t1_calibration'
+        subdir = f'{base}_smoke' if args.scale == 'smoke' else base
+        training_dist = 'pure_T1_calibration_ablation_m5'
+        scope = 'M5 pure-T=1.0 unwarped calibration ablation shard sets; separate from primary M2 adaptation'
+        warning = 'M5 calibration ablation only: fitted on pure T=1.0 unwarped traces; never reported as primary adaptation'
+    else:
+        regime = 'primary'
+        eligibility_fn = primary_eligible
+        training_dist = 'standard_nonthinking, greedy or model-card T=.7 topk20 topp.8 minp0 contexts; unwarped T_train=beta_train=1'
+        scope = 'complete eligible train/dev/test shard sets; no long/pure-temperature fitting'
+        warning = None
+        if custom_tag or sparse_backend != 'signed_feature_hash' or objective != 'union_rest_grouped':
+            base = custom_tag or f'm5_{objective}_{sparse_backend}'
+            subdir = f'{base}_smoke' if args.scale == 'smoke' else base
+        else:
+            subdir = 'm2_smoke' if args.scale == 'smoke' else 'm2'
+    return regime, eligibility_fn, subdir, f'{subdir}.json', training_dist, scope, warning
+
+
 def fit(entries, index_report, E, head, bias, head_metadata, args, *, stop_after_steps=None):
     """Two predeclared fit phases. Optional stop hook tests exact resumption."""
-    outdir = args.output / ('m2_smoke' if args.scale == 'smoke' else 'm2')
+    regime, eligibility_fn, subdir, json_name, training_dist, scope_text, ablation_warning = _resolve_fit_regime(args)
+    sparse_backend = getattr(args, 'sparse_backend', 'signed_feature_hash')
+    sparse_overflow_policy = getattr(args, 'sparse_overflow_policy', 'freeze_new')
+    objective = getattr(args, 'objective', 'union_rest_grouped')
+    stats_memory_limit = getattr(args, 'stats_memory_limit', None) or ('16GB' if args.scale == 'full' else '512MB')
+    outdir = args.output / subdir
     outdir.mkdir(parents=True, exist_ok=True)
     latest = outdir / 'latest.pt'
     config = resolved_config(args)
@@ -422,11 +666,15 @@ def fit(entries, index_report, E, head, bias, head_metadata, args, *, stop_after
     identity = fingerprint({'config': identity_config, 'sources': index_report['source_fingerprint'], 'head': head_metadata,
                             'implementation_sha256': implementation,
                             'E_sha256': hashlib.sha256(E.detach().cpu().numpy().tobytes()).hexdigest()})
-    stats_recorder = SparseAccessRecorder(args.output / 'm2_sparse_stats', identity, len(E))
+    stats_dir = args.output / ('m2_sparse_stats' if subdir in {'m2', 'm2_smoke'} else f'{subdir}_sparse_stats')
+    stats_recorder = SparseAccessRecorder(stats_dir, identity, len(E))
     references = {split: epoch_references(entries, split) for split in ['train', 'dev', 'test']}
     first = read_shard(entries[0].path)['blocks'][0]
     p = first['h'].shape[1]
     adapter = DenseAdapter(E, p, args.history_depth, M_sparse=args.M_sparse)
+    post_rejection_desc = ('committed verified stream only (no post-rejection canvas slots)'
+                           if objective == 'two_sided_pseudolikelihood'
+                           else 'off-policy teacher data retained with exp(-i/5) weights')
     report = {'scale': args.scale, 'data': 'synthetic' if args.scale == 'smoke' else args.scale,
               'identity': identity, 'trace_index': index_report, 'head_metadata': head_metadata,
               'model_pair': entries[0].identity['model_pair'],
@@ -437,9 +685,16 @@ def fit(entries, index_report, E, head, bias, head_metadata, args, *, stop_after
               'optimizer': {'dense': 'AdamW', 'learning_rate': args.learning_rate, 'weight_decay_W_A': args.weight_decay,
                             'weight_decay_b': args.bias_weight_decay, 'sparse': 'SGD+proximal_L1',
                             'sparse_learning_rate': args.sparse_learning_rate, 'lambda_l1': args.lambda_l1},
-              'training_distribution': 'standard_nonthinking, greedy or model-card T=.7 topk20 topp.8 minp0 contexts; unwarped T_train=beta_train=1',
-              'post_rejection_canvas': 'off-policy teacher data retained with exp(-i/5) weights',
+              'training_distribution': training_dist,
+              'post_rejection_canvas': post_rejection_desc,
               'fixed_required_phases': ['dense', 'dense_sparse'], 'extra_tuning_or_sweeps': False, 'stages': {}}
+    if ablation_warning is not None:
+        report['ablation_warning'] = ablation_warning
+    if objective != 'union_rest_grouped':
+        report['objective'] = objective
+    if sparse_backend != 'signed_feature_hash':
+        report['sparse_backend'] = sparse_backend
+        report['sparse_overflow_policy'] = sparse_overflow_policy
     resumed = None
     if latest.exists() and args.resume:
         resumed = torch.load(latest, map_location='cpu', weights_only=True)
@@ -452,11 +707,13 @@ def fit(entries, index_report, E, head, bias, head_metadata, args, *, stop_after
         if E.is_cuda:
             torch.cuda.set_rng_state(resumed['cuda_rng'], E.device)
         if resumed['stage'] == 'complete':
-            atomic_json(args.output / ('m2_smoke.json' if args.scale == 'smoke' else 'm2.json'), report)
+            atomic_json(args.output / json_name, report)
             return report
     if not report.get('baseline'):
-        report['baseline'] = {split: evaluate(adapter, refs, head, bias, args, head_metadata) for split, refs in references.items()}
-    if any(report['baseline'][s]['live_full_diagnostic']['logical_slots'] == 0 for s in ['dev', 'test']):
+        report['baseline'] = {split: evaluate(adapter, refs, head, bias, args, head_metadata,
+                                              eligibility_fn=eligibility_fn)
+                              for split, refs in references.items()}
+    if regime == 'primary' and any(report['baseline'][s]['live_full_diagnostic']['logical_slots'] == 0 for s in ['dev', 'test']):
         raise RuntimeError('Held-out dev/test live_full shards are required before fitting to report exact metrics')
     steps_this_run = 0
     begun = time.perf_counter()
@@ -465,7 +722,14 @@ def fit(entries, index_report, E, head, bias, head_metadata, args, *, stop_after
         if resumed is not None and stages.index(next(x for x in stages if x[0] == resumed['stage'])) > stage_index:
             continue
         if stage == 'dense_sparse' and adapter.sparse is None:
-            adapter.sparse = SignedHash(args.sparse_capacity, device=E.device)
+            if sparse_backend == 'exact_observed_pairs':
+                adapter.sparse = ExactObservedPairs(
+                    args.sparse_capacity, vocab_size=len(E),
+                    overflow_policy=sparse_overflow_policy, device=E.device,
+                )
+            else:
+                adapter.sparse = SignedHash(args.sparse_capacity, device=E.device)
+        adapter.train()
         dense_optimizer, sparse_optimizer = optimizer_for(adapter, args, stage)
         start_epoch, start_batch = 0, 0
         if resumed is not None and resumed['stage'] == stage:
@@ -474,15 +738,19 @@ def fit(entries, index_report, E, head, bias, head_metadata, args, *, stop_after
                 sparse_optimizer.load_state_dict(resumed['sparse_optimizer'])
             start_epoch, start_batch = resumed['epoch'], resumed['next_batch']
         for epoch in range(start_epoch, epochs):
+            adapter.train()
             train_refs = epoch_references(entries, 'train', seed=args.seed + 1000 * stage_index + epoch)
             for batch_index, blocks in batches(train_refs, args.batch_blocks, start_batch=start_batch,
-                                                head_metadata=head_metadata):
+                                               head_metadata=head_metadata, eligibility_fn=eligibility_fn,
+                                               history_depth=args.history_depth):
                 l_unit = reconstruct_batch(blocks, head, bias, vocab_chunk=args.vocab_chunk,
                                            output_multiplier=head_metadata.get('output_multiplier', 1.))
                 dense_optimizer.zero_grad(set_to_none=True)
                 if sparse_optimizer is not None:
                     sparse_optimizer.zero_grad(set_to_none=True)
-                computed = batch_loss(adapter, blocks, l_unit, collect_sparse_keys=stage == 'dense_sparse')
+                computed = batch_loss(adapter, blocks, l_unit,
+                                      collect_sparse_keys=stage == 'dense_sparse',
+                                      objective=objective)
                 loss, weight = computed[:2]
                 normalized = loss / weight
                 if not bool(torch.isfinite(normalized)):
@@ -501,7 +769,8 @@ def fit(entries, index_report, E, head, bias, head_metadata, args, *, stop_after
                 if stop_after_steps == steps_this_run:
                     return {'status': 'interrupted_for_resume_test', 'checkpoint': str(latest)}
             start_batch = 0
-            dev = evaluate(adapter, references['dev'], head, bias, args, head_metadata)
+            dev = evaluate(adapter, references['dev'], head, bias, args, head_metadata,
+                           eligibility_fn=eligibility_fn)
             base = report['baseline']['dev']['weighted_mean_kl']
             gain = (base - dev['weighted_mean_kl']) / max(base, 1e-12)
             report.setdefault('epoch_development', []).append({'stage': stage, 'epoch': epoch, 'dev': dev,
@@ -513,16 +782,31 @@ def fit(entries, index_report, E, head, bias, head_metadata, args, *, stop_after
                 atomic_torch_save(latest, checkpoint_payload(adapter, args, identity, stage, epochs, 0,
                                                              dense_optimizer, sparse_optimizer, report))
                 break
+        adapter.eval()
         # Test is read only after each predeclared phase is finished; its metrics
         # never choose parameters, epochs, learning rates, or checkpoints.
-        report['stages'][stage] = {split: evaluate(adapter, refs, head, bias, args, head_metadata)
+        report['stages'][stage] = {split: evaluate(adapter, refs, head, bias, args, head_metadata,
+                                                   eligibility_fn=eligibility_fn)
                                     for split, refs in references.items()}
         report['stages'][stage]['parameters'] = parameter_report(adapter)
         if stage == 'dense_sparse':
-            report['stages'][stage]['sparse_collision_statistics'] = stats_recorder.finalize(
+            collision_stats = stats_recorder.finalize(
                 report['sparse_statistics_chunks'], adapter.sparse,
-                memory_limit=getattr(args, 'stats_memory_limit', '512MB'),
+                memory_limit=stats_memory_limit,
                 benchmark_entries=getattr(args, 'stats_benchmark_entries', 1_000_000), seed=args.seed)
+            if isinstance(adapter.sparse, ExactObservedPairs) and isinstance(collision_stats, dict) and collision_stats.get('status') == 'measured':
+                collision_stats = dict(
+                    collision_stats,
+                    representation='exact_observed_pairs',
+                    counterfactual_signed_hash_collision_count=collision_stats['collision_count'],
+                    counterfactual_signed_hash_frequency_weighted_collisions=collision_stats['frequency_weighted_collision_count'],
+                    active_representation_collision_count=0,
+                    occupied_exact_entries=adapter.sparse.num_occupied,
+                    peak_occupied_exact_entries=adapter.sparse.peak_occupied,
+                    overflow_events=adapter.sparse.overflow_events,
+                    dropped_unique_keys=adapter.sparse.dropped_unique_keys,
+                )
+            report['stages'][stage]['sparse_collision_statistics'] = collision_stats
         atomic_torch_save(outdir / f'{stage}.pt', checkpoint_payload(adapter, args, identity, stage, epochs, 0,
                                                                     dense_optimizer, sparse_optimizer, report))
         resumed = None
@@ -533,11 +817,11 @@ def fit(entries, index_report, E, head, bias, head_metadata, args, *, stop_after
                    'fit_elapsed_seconds_this_invocation': time.perf_counter() - begun,
                    'checkpoints': {'dense': str(outdir / 'dense.pt'), 'dense_sparse': str(outdir / 'dense_sparse.pt')},
                    'checkpoint_selection': 'last completed epoch of each predeclared phase; test never selects',
-                   'scope': 'complete eligible train/dev/test shard sets; no long/pure-temperature fitting'})
-    if any(report['stages']['dense_sparse'][s]['live_full_diagnostic']['logical_slots'] == 0 for s in ['dev', 'test']):
+                   'scope': scope_text})
+    if regime == 'primary' and any(report['stages']['dense_sparse'][s]['live_full_diagnostic']['logical_slots'] == 0 for s in ['dev', 'test']):
         raise RuntimeError('Held-out live_full shards are required to report grouped loss gap and exact overlap')
     atomic_torch_save(latest, checkpoint_payload(adapter, args, identity, 'complete', 0, 0, None, None, report))
-    atomic_json(args.output / ('m2_smoke.json' if args.scale == 'smoke' else 'm2.json'), report)
+    atomic_json(args.output / json_name, report)
     return report
 
 
@@ -555,15 +839,31 @@ def smoke_bundle(args):
     projection = fit_hidden_projection([draft.draft(x, 4).h_raw for x in calibration], 12, 6,
                                        seed=args.seed, prompt_ids=[f'synthetic-train-{i}' for i in range(64)])
     E, _ = fit_token_features(target.embedding, 4, args.seed, torch.tensor(sum(calibration, [])))
-    writer = TraceShardWriter(args.output / 'm2_smoke_traces')
+    allow_long = bool(getattr(args, 'allow_long_oracle_fit', False))
+    allow_t1 = bool(getattr(args, 'allow_pure_t1_ablation', False))
+    trace_subdir = ('m2_smoke_long_traces' if allow_long
+                    else 'm2_smoke_t1_traces' if allow_t1
+                    else 'm2_smoke_traces')
+    writer = TraceShardWriter(args.output / trace_subdir)
+    if allow_long:
+        condition = 'long_thinking'
+        temp_arms = [(.6, SamplingWarper(top_k=20, top_p=.95))]
+        partition_name = 'long_oracle_train'
+    elif allow_t1:
+        condition = 'standard_nonthinking'
+        temp_arms = [(1., SamplingWarper())]
+        partition_name = 'diagnostic'
+    else:
+        condition = 'standard_nonthinking'
+        temp_arms = [(0., SamplingWarper()), (.7, SamplingWarper(top_k=20, top_p=.8))]
+        partition_name = 'primary'
     for split, count in [('train', 8), ('dev', 2), ('test', 2)]:
         for i in range(count):
             prompt = f'synthetic-{split}-{i}'
             prefix = [(i + len(split)) % 8, (3 * i + 1) % 8, (i + 4) % 8, i % 8]
-            for temperature in [0., .7]:
-                warper = SamplingWarper() if temperature == 0 else SamplingWarper(top_k=20, top_p=.8)
+            for temperature, warper in temp_arms:
                 identity = {'model_pair': ['builtin-target', 'builtin-drafter'], 'prompt': prompt,
-                            'condition': 'standard_nonthinking', 'seed': args.seed + i,
+                            'condition': condition, 'seed': args.seed + i,
                             'temperature': temperature, 'verification_rule': 'greedy' if temperature == 0 else 'ratio',
                             'proposal_mode': 'plain_dflash', 'checkpoint': 'synthetic-v1', 'adapter_version': 0,
                             'sampling_warp_config': warper.to_dict()}
@@ -572,20 +872,20 @@ def smoke_bundle(args):
                 result = generate_toy(target, draft, prefix, 32, temperature=temperature, warper=warper,
                                       projection=projection, retain_tensors=True,
                                       generator=torch.Generator().manual_seed(args.seed + i))
-                metadata = {'prompt_id': prompt, 'split': split, 'condition': 'standard_nonthinking',
+                metadata = {'prompt_id': prompt, 'split': split, 'condition': condition,
                             'seed': args.seed + i, 'scale': 'smoke', 'model_pair': identity['model_pair'],
                             'projection_metadata': projection.metadata, 'history_depth': args.history_depth}
                 blocks = [compact_block(record, metadata, M_draft=2, M_target=1,
                                          retain_live_full=split != 'train' or j == 0)
                           for j, record in enumerate(result.blocks)]
                 writer.write(identity, blocks, {'generation': {'output_tokens': result.num_output_tokens,
-                    'realized_length': result.num_output_tokens, 'condition': 'standard_nonthinking', 'split': split,
+                    'realized_length': result.num_output_tokens, 'condition': condition, 'split': split,
                     'seed': args.seed + i, 'temperature': temperature, 'sampling_warp_config': warper.to_dict(),
-                    'partition': 'primary', 'complete': True, 'capped': True, 'eos_reached': False}})
-    return args.output / 'm2_smoke_traces', E, draft.draft_lm_head.weight, draft.draft_lm_head.bias, draft.head_metadata()
+                    'partition': partition_name, 'complete': True, 'capped': True, 'eos_reached': False}})
+    return args.output / trace_subdir, E, draft.draft_lm_head.weight, draft.draft_lm_head.bias, draft.head_metadata()
 
 
-def main():
+def main(argv=None):
     parser = common_parser(__doc__)
     parser.add_argument('--trace_dir', type=Path, default=ROOT / 'artifacts/traces')
     parser.add_argument('--m1_audit', type=Path, default=ROOT / 'artifacts/m1_audit.json')
@@ -606,17 +906,32 @@ def main():
     parser.add_argument('--epochs_dense', type=int, default=1)
     parser.add_argument('--epochs_sparse', type=int, default=1)
     parser.add_argument('--checkpoint_every', type=int, default=100)
-    parser.add_argument('--stats_memory_limit', default='512MB')
+    parser.add_argument('--stats_memory_limit', default=None)
     parser.add_argument('--stats_benchmark_entries', type=int, default=1_000_000)
+    parser.add_argument('--sparse_backend', choices=['signed_feature_hash', 'exact_observed_pairs'],
+                        default='signed_feature_hash')
+    parser.add_argument('--sparse_overflow_policy', choices=['freeze_new', 'error'], default='freeze_new')
+    parser.add_argument('--objective', choices=['union_rest_grouped', 'two_sided_pseudolikelihood'],
+                        default='union_rest_grouped')
+    parser.add_argument('--allow_long_oracle_fit', action='store_true', default=False,
+                        help='M5 ablation only: fit separate long-condition oracle adapter without overwriting m2/')
+    parser.add_argument('--min_long_oracle_train_tokens', type=int, default=50_000)
+    parser.add_argument('--allow_pure_t1_ablation', action='store_true', default=False,
+                        help='M5 calibration ablation: fit separate pure-T=1.0 adapter without overwriting m2/')
+    parser.add_argument('--max_primary_train_tokens', type=int, default=4_000_000)
+    parser.add_argument('--m5_fit_tag', default=None)
     parser.add_argument('--resume', action='store_true', default=True)
     parser.add_argument('--no_resume', action='store_false', dest='resume')
-    args = parse_config(parser)
+    args = parse_config(parser, argv)
+    if args.stats_memory_limit is None:
+        args.stats_memory_limit = '16GB' if args.scale == 'full' else '512MB'
     if args.m1_diagnostic is None:
         args.m1_diagnostic = args.output / f'diagnostic_{args.scale}.json'
     if min(args.batch_blocks, args.vocab_chunk, args.epochs_dense, args.epochs_sparse, args.checkpoint_every) < 1:
         raise ValueError('Training counts must be positive')
     if min(args.learning_rate, args.sparse_learning_rate) <= 0 or min(args.weight_decay, args.bias_weight_decay, args.lambda_l1) < 0:
         raise ValueError('Learning rates must be positive and regularization nonnegative')
+    regime, eligibility_fn, *_ = _resolve_fit_regime(args)
     torch.manual_seed(args.seed)
     random.seed(args.seed)
     if args.scale == 'smoke':
@@ -624,13 +939,14 @@ def main():
         args.sparse_capacity = min(args.sparse_capacity, 256)
         args.M_sparse = min(args.M_sparse, 4)
         args.trace_dir, E, head, bias, head_metadata = smoke_bundle(args)
-        entries, index_report = trace_index(args.trace_dir)
+        entries, index_report = trace_index(args.trace_dir, eligibility_fn=eligibility_fn, regime=regime)
     else:
-        preflight(args, 500_000)
+        preflight(args, 2_000_000 if args.scale == 'full' else 500_000)
         audit = json.loads(Path(args.m1_audit).read_text())
         if audit.get('status') != 'passed':
             raise RuntimeError('blocked: M1 audit has not passed')
-        entries, index_report = trace_index(args.trace_dir, accepted_paths=audit['shards'])
+        entries, index_report = trace_index(args.trace_dir, accepted_paths=audit['shards'],
+                                            eligibility_fn=eligibility_fn, regime=regime)
         feature = torch.load(args.features, map_location='cpu', weights_only=True)
         projection = HiddenProjection.load(args.projection)
         validate_reference_gate(args, index_report, entries, projection, feature['metadata'])
@@ -638,7 +954,7 @@ def main():
         first = read_shard(entries[0].path)['blocks'][0]
         head_metadata = first['draft_lm_head']
         head, bias = load_frozen_head(head_metadata, args.device)
-    record_run(args, 'train')
+    record_run(args, 'train' if regime == 'primary' else f'train-{regime}')
     report = fit(entries, index_report, E, head, bias, head_metadata, args)
     print(json.dumps({'scale': args.scale, 'status': report['status'],
                       'relative_dev_improvement': report['relative_dev_improvement'],

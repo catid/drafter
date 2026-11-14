@@ -20,6 +20,15 @@ def prev_token(prefix: Sequence[int], realized: Sequence[int], i: int, d: int) -
     return int(prefix[index]) if index >= 0 else None
 
 
+def next_token(committed: Sequence[int], i: int, d: int) -> int | None:
+    if d < 1:
+        raise ValueError('offset d must be positive; there is no self-interaction')
+    if i < 0 or i >= len(committed):
+        raise ValueError('slot i must index a committed verified position')
+    k = i + d
+    return int(committed[k]) if k < len(committed) else None
+
+
 def top_candidates(scores: torch.Tensor, count: int) -> torch.Tensor:
     if count < 1:
         raise ValueError('candidate count must be positive')
@@ -52,6 +61,42 @@ def slot_correction(E, A, U_i, l_unit_i, prefix, realized, i, sparse=None, M_spa
         offsets = torch.tensor([d for d, _ in predecessors], device=dense.device)[:, None]
         previous = torch.tensor([p for _, p in predecessors], device=dense.device)[:, None]
         values = sparse.lookup(offsets, previous, candidates[None, :]).to(dense.dtype).sum(0)
+        correction = dense + torch.zeros_like(dense).scatter(0, candidates, values)
+    return correction
+
+
+def two_sided_slot_correction(E, A, U_i, l_unit_i, prefix, committed, i,
+                              sparse=None, M_sparse=256, beta=1.0, timer=None):
+    """Exact two-sided energy correction on committed verified token stream `committed`."""
+    if i < 0 or i >= len(committed):
+        raise ValueError('two-sided correction requires slot i on the committed verified stream')
+    with _phase(timer, 'dense_pair_score'):
+        message = torch.zeros(E.shape[1], dtype=A.dtype, device=A.device)
+        predecessors = []
+        successors = []
+        for d in range(1, len(A) + 1):
+            previous = prev_token(prefix, committed, i, d)
+            if previous is not None:
+                message = message + A[d - 1] @ E[previous].to(A.dtype)
+                predecessors.append((d, previous))
+            successor = next_token(committed, i, d)
+            if successor is not None:
+                message = message + A[d - 1].T @ E[successor].to(A.dtype)
+                successors.append((d, successor))
+        dense = U_i + E.to(A.dtype) @ message
+    if sparse is None or (not predecessors and not successors):
+        return dense
+    with _phase(timer, 'sparse_lookup'):
+        candidates = top_candidates(l_unit_i - beta * dense, M_sparse)
+        values = torch.zeros(len(candidates), dtype=dense.dtype, device=dense.device)
+        if predecessors:
+            offsets_f = torch.tensor([d for d, _ in predecessors], device=dense.device)[:, None]
+            prev_ids = torch.tensor([p for _, p in predecessors], device=dense.device)[:, None]
+            values = values + sparse.lookup(offsets_f, prev_ids, candidates[None, :]).to(dense.dtype).sum(0)
+        if successors:
+            offsets_b = torch.tensor([d for d, _ in successors], device=dense.device)[:, None]
+            succ_ids = torch.tensor([s for _, s in successors], device=dense.device)[:, None]
+            values = values + sparse.lookup(offsets_b, candidates[None, :], succ_ids).to(dense.dtype).sum(0)
         correction = dense + torch.zeros_like(dense).scatter(0, candidates, values)
     return correction
 
@@ -156,11 +201,29 @@ class DenseAdapter(nn.Module):
         scores = l_unit.float() - self.correction(l_unit.float(), H.float(), prefix, tokens)
         return full_kl(scores, target_logits, weights)
 
+    def two_sided_correction(self, l_unit, H, prefix, committed, eval_slots=None, beta=1.0):
+        n_slots = min(len(H), len(committed)) if eval_slots is None else int(eval_slots)
+        if n_slots < 1 or n_slots > min(len(H), len(committed)):
+            raise ValueError('eval_slots must lie in 1..min(len(H), len(committed))')
+        U = self.unary(H[:n_slots])
+        return torch.stack([
+            two_sided_slot_correction(self.E, self.A, U[i], l_unit[i], prefix, committed, i,
+                                      self.sparse, self.M_sparse, beta)
+            for i in range(n_slots)
+        ])
+
+    def two_sided_loss(self, l_unit, H, prefix, committed, weights=None, eval_slots=None):
+        n_slots = min(len(H), len(committed)) if eval_slots is None else int(eval_slots)
+        scores = l_unit[:n_slots].float() - self.two_sided_correction(
+            l_unit.float(), H.float(), prefix, committed, eval_slots=n_slots, beta=1.0
+        )
+        return two_sided_pseudolikelihood_loss(scores, committed[:n_slots], weights)
+
     def snapshot(self, version=0, C0=None):
         sparse = self.sparse.snapshot() if self.sparse is not None else None
         is_zero = all(not bool(torch.count_nonzero(x)) for x in (self.W, self.A, self.b))
-        if self.sparse is not None:
-            is_zero = is_zero and not bool(torch.count_nonzero(self.sparse.values))
+        if sparse is not None:
+            is_zero = is_zero and not bool(torch.count_nonzero(sparse.values))
         return ProposalSnapshot(self.E.detach(), self.W.detach().clone(), self.A.detach().clone(),
                                 self.b.detach().clone(), version, sparse, self.M_sparse,
                                 None if C0 is None else tuple(c.detach().clone() for c in C0), is_zero)
@@ -188,6 +251,22 @@ def full_kl(scores, target_logits, weights=None):
     if weights is None:
         weights = loss_weights(len(scores), scores.device)
     return (per_slot * weights).sum()
+
+
+def two_sided_pseudolikelihood_loss(scores, committed_targets: Sequence[int] | torch.Tensor, weights=None):
+    """Exact Besag two-sided negative log-pseudolikelihood over all V tokens (`T_train=beta_train=1`)."""
+    if scores.ndim != 2 or len(scores) == 0:
+        raise ValueError('scores must have shape [L, V] with L >= 1')
+    targets = torch.as_tensor(committed_targets, dtype=torch.long, device=scores.device)
+    if targets.shape != (len(scores),):
+        raise ValueError('committed_targets must have one verified token ID per score row')
+    if bool((targets < 0).any() or (targets >= scores.shape[-1]).any()):
+        raise ValueError('committed token ID outside vocabulary')
+    q_log = torch.log_softmax(scores.float(), -1)
+    per_slot_nll = -q_log.gather(-1, targets[:, None])[:, 0]
+    if weights is None:
+        weights = loss_weights(len(scores), scores.device)
+    return (per_slot_nll * weights).sum()
 
 
 def union_rest_grouped(scores, union_ids, target_union_probabilities, target_rest_mass, weights=None):
@@ -225,7 +304,8 @@ def union_rest_grouped(scores, union_ids, target_union_probabilities, target_res
         # by zero. A constant sentinel gives these zero-mass rows finite math.
         tail_scores = tail_scores.index_put((full, torch.zeros_like(full)), q_log.new_zeros(len(full)))
     log_q_rest = torch.logsumexp(tail_scores, -1)
-    rest_loss = torch.xlogy(rest_p, rest_p) - rest_p * log_q_rest
+    rest_term = torch.where(rest_p > 0, rest_p * log_q_rest, torch.zeros_like(rest_p))
+    rest_loss = torch.xlogy(rest_p, rest_p) - rest_term
     if weights is None:
         weights = loss_weights(N, scores.device)
     return ((union_loss + rest_loss) * weights).sum()
@@ -274,14 +354,49 @@ class LookaheadState:
         return token, probs
 
 
-def initialize_lookahead(snapshot, l_unit, H, prefix, domain='candidate_masked', T_relax=1., beta_relax=1.):
+@dataclass(frozen=True)
+class LookaheadConfig:
+    mode: str = 'off'
+    domain: str = 'candidate_masked'
+    R_init: int = 2
+    R_clamp: int = 1
+    eta: float = 0.5
+    T_relax: float = 1.0
+    beta_relax: float | None = None
+
+    def __post_init__(self):
+        if self.mode not in ('off', 'static', 'rerelax'):
+            raise ValueError("lookahead mode must be 'off', 'static', or 'rerelax'")
+        if self.domain not in ('candidate_masked', 'full_vocabulary'):
+            raise ValueError("lookahead domain must be 'candidate_masked' or 'full_vocabulary'")
+        if self.T_relax <= 0:
+            raise ValueError('T_relax must be strictly positive')
+        if not 0 < self.eta <= 1:
+            raise ValueError('eta must lie in (0, 1]')
+        if self.mode != 'off' and self.R_init < 1:
+            raise ValueError('active lookahead requires R_init >= 1')
+        if self.mode == 'rerelax' and self.R_clamp < 1:
+            raise ValueError('rerelax lookahead requires R_clamp >= 1')
+
+
+def compute_frozen_candidates(snapshot: ProposalSnapshot, l_unit: torch.Tensor,
+                              U_all: torch.Tensor, beta_relax: float = 1.0) -> tuple[torch.Tensor, ...]:
+    """Single authoritative frozen C0[j] constructor shared by causal dense_candidate and lookahead."""
+    if snapshot.C0 is not None:
+        return snapshot.C0
+    raw = top_candidates(l_unit - beta_relax * U_all, snapshot.M_sparse)
+    return tuple(c.detach().clone() for c in raw)
+
+
+def initialize_lookahead(snapshot, l_unit, H, prefix, domain='candidate_masked',
+                         T_relax=1., beta_relax=1., U_precomputed=None):
     if T_relax <= 0:
         raise ValueError('T_relax must be strictly positive')
     if domain not in ('candidate_masked', 'full_vocabulary'):
         raise ValueError('unknown belief domain')
-    U = snapshot.unary(H)
+    U = snapshot.unary(H) if U_precomputed is None else U_precomputed
     if snapshot.C0 is None:
-        snapshot = snapshot.with_candidates(top_candidates(l_unit - beta_relax * U, snapshot.M_sparse))
+        snapshot = snapshot.with_candidates(compute_frozen_candidates(snapshot, l_unit, U, beta_relax))
     support = [ids.clone() for ids in snapshot.C0]
     state = LookaheadState(snapshot, l_unit, U, tuple(prefix), support, [None] * len(H), [], [], U.clone(), domain, T_relax, beta_relax)
     for i in range(len(H)):
@@ -296,36 +411,48 @@ def initialize_lookahead(snapshot, l_unit, H, prefix, domain='candidate_masked',
 def lookahead_fields(state: LookaheadState):
     """Pure fwd/back fields: transpose A backwards, raw masked sparse mass."""
     snap, E, A = state.snapshot, state.snapshot.E, state.snapshot.A
-    forward, backward = [], []
+    dtype = state.g.dtype
+    E_cast = E.to(dtype)
+    A_cast = A.to(dtype)
     K = len(state.r)
+    r_dim = E.shape[1]
+    msg_fwd = torch.zeros((K, r_dim), dtype=dtype, device=state.g.device)
+    msg_bwd = torch.zeros((K, r_dim), dtype=dtype, device=state.g.device)
+    sparse_fwd = []
+    sparse_bwd = []
     for i in range(K):
-        f = torch.zeros_like(state.g[i])
-        b = torch.zeros_like(f)
         own = state.support[i]
-        for d in range(1, len(A) + 1):
+        sf = torch.zeros(len(own), dtype=dtype, device=state.g.device) if snap.sparse is not None else None
+        sb = torch.zeros(len(own), dtype=dtype, device=state.g.device) if snap.sparse is not None else None
+        for d in range(1, len(A_cast) + 1):
             k = i - d
             if k >= 0:
-                f = f + E @ (A[d - 1] @ state.mu[k])
+                msg_fwd[i] = msg_fwd[i] + A_cast[d - 1] @ state.mu[k].to(dtype)
                 if snap.sparse is not None:
-                    table = snap.sparse.lookup(d, state.support[k][:, None], own[None, :])
-                    msg = state.raw_support_mass(k) @ table
-                    f = f + torch.zeros_like(f).scatter(0, own, msg)
+                    table = snap.sparse.lookup(d, state.support[k][:, None], own[None, :]).to(dtype)
+                    sf = sf + state.raw_support_mass(k).to(dtype) @ table
             else:
                 previous = prev_token(state.prefix, (), i, d)
                 if previous is not None:
-                    f = f + E @ (A[d - 1] @ E[previous])
+                    msg_fwd[i] = msg_fwd[i] + A_cast[d - 1] @ E_cast[previous]
                     if snap.sparse is not None:
-                        f = f + torch.zeros_like(f).scatter(0, own, snap.sparse.lookup(d, previous, own))
+                        sf = sf + snap.sparse.lookup(d, previous, own).to(dtype)
             k = i + d
             if k < K:
-                b = b + E @ (A[d - 1].T @ state.mu[k])
+                msg_bwd[i] = msg_bwd[i] + A_cast[d - 1].T @ state.mu[k].to(dtype)
                 if snap.sparse is not None:
-                    table = snap.sparse.lookup(d, own[:, None], state.support[k][None, :])
-                    msg = table @ state.raw_support_mass(k)
-                    b = b + torch.zeros_like(b).scatter(0, own, msg)
-        forward.append(f)
-        backward.append(b)
-    return torch.stack(forward), torch.stack(backward)
+                    table = snap.sparse.lookup(d, own[:, None], state.support[k][None, :]).to(dtype)
+                    sb = sb + table @ state.raw_support_mass(k).to(dtype)
+        sparse_fwd.append(sf)
+        sparse_bwd.append(sb)
+    forward = msg_fwd @ E_cast.T
+    backward = msg_bwd @ E_cast.T
+    if snap.sparse is not None:
+        for i in range(K):
+            own = state.support[i]
+            forward[i].scatter_add_(0, own, sparse_fwd[i])
+            backward[i].scatter_add_(0, own, sparse_bwd[i])
+    return forward, backward
 
 
 def lookahead_energy(state: LookaheadState):

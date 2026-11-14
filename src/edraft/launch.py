@@ -26,17 +26,23 @@ def selected_gpus_idle(indices):
         raise RuntimeError('Selected GPU has an existing compute process: ' + '; '.join(occupied))
 
 
-def main():
+def main(argv=None):
     parser = common_parser(__doc__)
-    parser.add_argument('--task', choices=['collect', 'm3', 'm4'], default='collect')
+    parser.add_argument('--task', choices=['collect', 'm3', 'm4', 'm5'], default='collect')
     parser.add_argument('--gpus', default='0,1,2,3,4,5,6')
     parser.add_argument('--partitions', nargs='+', default=['train_primary', 'standard_eval', 'diagnostic', 'long'],
-                        choices=['train_primary', 'standard_eval', 'diagnostic', 'long'])
+                        choices=['train_primary', 'standard_eval', 'diagnostic', 'long', 'long_oracle_train'])
     parser.add_argument('--train_tokens_per_temperature', type=int)
     parser.add_argument('--standard_max_new_tokens', type=int, default=1024)
     parser.add_argument('--long_max_new_tokens', type=int, default=24576)
     parser.add_argument('--evaluation_max_new_tokens', type=int, default=2048)
-    args = parse_config(parser)
+    parser.add_argument('--eval_mode', choices=['evaluate', 'beta_sweep', 'server_eval'], default='evaluate')
+    parser.add_argument('--m5_arms', nargs='+', default=None)
+    parser.add_argument('--m5_oracle_checkpoint', type=Path, default=None)
+    parser.add_argument('--m5_triton', action='store_true', default=False)
+    parser.add_argument('--m5_torch_compile', action='store_true', default=False)
+    parser.add_argument('--m5_server_url', default=None)
+    args = parse_config(parser, argv)
     if args.train_tokens_per_temperature is None:
         args.train_tokens_per_temperature = 1000000 if args.scale == 'full' else 250000
     record_run(args, 'launch')
@@ -51,10 +57,13 @@ def main():
     logdir.mkdir(parents=True, exist_ok=True)
     processes, streams = [], []
     label = 'collection' if args.task == 'collect' else args.task + '-evaluation'
-    log_label = 'collect' if args.task == 'collect' else args.task + '-evaluate'
+    log_label = 'collect' if args.task == 'collect' else f'{args.task}-{args.eval_mode}'
     state_path = args.output / f'{label}-processes.json'
     state = {'scale': args.scale, 'task': args.task, 'launcher_pid': os.getpid(),
              'started_at_unix': time.time(), 'workers': []}
+    src_path = str((ROOT / 'src').resolve())
+    existing_pythonpath = os.environ.get('PYTHONPATH', '')
+    worker_pythonpath = f'{src_path}{os.pathsep}{existing_pythonpath}' if existing_pythonpath else src_path
     try:
         for rank, gpu in enumerate(gpus):
             shared = ['--scale', args.scale, '--rank', str(rank), '--world_size', str(len(gpus)), '--device', 'cuda:0',
@@ -66,15 +75,27 @@ def main():
                            '--standard_max_new_tokens', str(args.standard_max_new_tokens), '--partitions', *args.partitions]
             else:
                 command = [sys.executable, '-m', 'edraft.eval_closed_loop', '--stage', args.task,
-                           '--mode', 'evaluate', *shared, '--max_new_tokens', str(args.evaluation_max_new_tokens),
+                           '--mode', args.eval_mode, *shared, '--max_new_tokens', str(args.evaluation_max_new_tokens),
                            '--dense_checkpoint', str(args.output / 'm2/dense.pt'),
                            '--sparse_checkpoint', str(args.output / 'm2/dense_sparse.pt'),
                            '--projection', str(args.output / 'h_proj.pt'),
                            '--prompts_manifest', str(args.output / 'prompts.json')]
+                if args.task == 'm5':
+                    if args.m5_arms:
+                        command.extend(['--m5_arms', *args.m5_arms])
+                    if args.m5_oracle_checkpoint is not None:
+                        command.extend(['--m5_oracle_checkpoint', str(args.m5_oracle_checkpoint)])
+                    if args.m5_triton:
+                        command.append('--m5_triton')
+                    if args.m5_torch_compile:
+                        command.append('--m5_torch_compile')
+                    if args.m5_server_url:
+                        command.extend(['--m5_server_url', args.m5_server_url])
             if args.allow_large_run:
                 command.append('--allow_large_run')
             # Downloads must already be resolved once by the parent preparation step.
             env = dict(os.environ, CUDA_VISIBLE_DEVICES=str(gpu), RANK=str(rank), WORLD_SIZE=str(len(gpus)),
+                       PYTHONPATH=worker_pythonpath,
                        HF_HUB_OFFLINE='1', HF_DATASETS_OFFLINE='1', TOKENIZERS_PARALLELISM='false',
                        OMP_NUM_THREADS='4')
             log_path = logdir / f'{log_label}-rank{rank}.log'

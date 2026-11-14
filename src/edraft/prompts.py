@@ -84,20 +84,38 @@ def build_manifest(args):
                                   'content. Avoid padding or repeating earlier passages.\n\nProblem:\n' + problem})
     long_rows = stable_order(long_rows, args.seed)
     long_dev_count, long_test_count = (32, 96) if args.scale == 'full' else (12, 32)
+    m5_long_train = int(getattr(args, 'm5_long_train_prompts', 0) or 0)
+    if m5_long_train < 0:
+        raise ValueError('m5_long_train_prompts must be nonnegative')
+    if long_dev_count + long_test_count + m5_long_train > len(long_rows):
+        raise ValueError('requested long dev + test + m5_long_train exceeds MATH-500 size')
+    long_train_start = long_dev_count + long_test_count
+    long_train_end = long_train_start + m5_long_train
     for i, row in enumerate(long_rows):
-        row['split'] = 'dev' if i < long_dev_count else 'test'
+        if i < long_dev_count:
+            row['split'] = 'dev'
+        elif long_train_start <= i < long_train_end:
+            row['split'] = 'train'
+            row['m5_long_oracle_train'] = True
+        else:
+            row['split'] = 'test'
         row['reference_selected'] = i < long_dev_count + long_test_count
         row['drafter_distribution'] = 'out_of_distribution_thinking'
+    split_policy = (f'GSM8K main train: deterministic 64 dev, remainder train; all HumanEval held-out test '
+                    f'({test_count} selected); MATH-500 long: deterministic {long_dev_count} dev '
+                    f'and {long_test_count} selected test, remainder test reserve.')
+    if m5_long_train:
+        split_policy += f' M5 oracle reserve carved: {m5_long_train} disjoint long train prompts.'
     result = {'scale': args.scale, 'seed': args.seed,
               'dataset_revisions': {d: env['dataset_artifacts'][d]['revision'] for d in DATASETS},
               'complete_heldout_dataset': DATASETS[1],
               'calibration_ids': calibration, 'calibration_condition': 'standard_nonthinking',
               'prompts': ordered + heldout + long_rows,
-              'split_policy': f'GSM8K main train: deterministic 64 dev, remainder train; all HumanEval held-out test '
-                              f'({test_count} selected); MATH-500 long: deterministic {long_dev_count} dev '
-                              f'and {long_test_count} selected test, remainder test reserve.',
+              'split_policy': split_policy,
               'long_output_policy': 'natural EOS or 24576 cap; no min_new_tokens; detect/exclude repetition; '
                                     'report realized length and empty 8K/16K bins without filling them.'}
+    if m5_long_train:
+        result['m5_long_train_prompts'] = m5_long_train
     ids = [row['prompt_id'] for row in result['prompts']]
     if len(ids) != len(set(ids)):
         raise ValueError('duplicate prompt IDs')
@@ -106,7 +124,10 @@ def build_manifest(args):
 
 
 def main():
-    result = build_manifest(parse_config(common_parser(__doc__)))
+    p = common_parser(__doc__)
+    p.add_argument('--m5_long_train_prompts', type=int, default=0,
+                   help='M5 long-oracle ablation only: carve N disjoint MATH-500 reserve prompts as split=train')
+    result = build_manifest(parse_config(p))
     print(json.dumps({'scale': result['scale'], 'prompts': len(result['prompts']),
                       'calibration_prompts': len(result['calibration_ids'])}))
 
