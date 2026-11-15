@@ -4,7 +4,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from .runtime import ROOT, atomic_json, common_parser, fingerprint, parse_config, record_run
+from .runtime import (ROOT, atomic_json, call_with_output_dir, common_parser, fingerprint,
+                      parse_config, record_run, resolve_artifact_path)
 
 DATASETS = ['openai/gsm8k', 'openai/openai_humaneval', 'HuggingFaceH4/MATH-500']
 
@@ -42,8 +43,9 @@ def build_manifest(args):
         result = {'scale': 'smoke', 'seed': args.seed, 'prompts': rows, 'calibration_ids': ['synthetic-0']}
         atomic_json(args.output / 'prompts-smoke.json', result)
         return result
-    locations = {dataset: fetch_dataset(dataset, args.allow_download) for dataset in DATASETS}
-    env = json.loads((ROOT / 'artifacts/environment.json').read_text())
+    locations = {dataset: call_with_output_dir(fetch_dataset, dataset, args.allow_download, output_dir=args.output)
+                 for dataset in DATASETS}
+    env = json.loads(resolve_artifact_path('environment.json', args.output, root=ROOT).read_text())
     gsm = local_rows(locations[DATASETS[0]], subset='main', split='train')
     standard = []
     for index, row in enumerate(gsm):

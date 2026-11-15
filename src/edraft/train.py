@@ -28,7 +28,8 @@ from .adapter import (DenseAdapter, PrecollatedGroupedTargets, collate_grouped_t
 from .fastpath import _fresh_compile
 from .features import HiddenProjection
 from .optimizers import AdamATan2, AnchorMuon, PaceMuon, compute_lr_multiplier
-from .runtime import ROOT, atomic_json, common_parser, fingerprint, git_commit, parse_config, preflight, record_run, resolved_config
+from .runtime import (ROOT, atomic_json, common_parser, fingerprint, git_commit, parse_config,
+                      preflight, record_run, resolve_artifact_path, resolved_config)
 from .sparse import ExactObservedPairs, SignedHash, hash_keys, pack_exact_keys
 from .sparse_stats import SparseAccessRecorder, pack_keys
 from .traces import read_shard
@@ -346,13 +347,13 @@ def validate_reference_gate(args, index_report, entries, projection, token_metad
         raise RuntimeError('blocked: M1b diagnostics do not cover the current eligible trace shards')
 
 
-def load_frozen_head(metadata, device):
+def load_frozen_head(metadata, device, *, output_dir=None):
     """Load exactly the referenced output projection, without the target model."""
     from safetensors import safe_open
 
     location = Path(metadata['artifact_id'])
     if not location.is_dir():
-        env = json.loads((ROOT / 'artifacts/environment.json').read_text())
+        env = json.loads(resolve_artifact_path('environment.json', output_dir, root=ROOT).read_text())
         info = env['model_artifacts'].get(metadata['artifact_id'])
         if not info or info['revision'] != metadata['revision']:
             raise ValueError('Frozen head artifact/revision is not locally available')
@@ -780,7 +781,7 @@ def batch_targets(blocks, device):
 
 
 def two_sided_batch_scores_and_targets(adapter, blocks, l_unit_full, *, return_sparse_keys=False,
-                                       sparse_override=None):
+                                       sparse_override=None, bf16_gemm: bool = False):
     """Batched two-sided verified-stream scores on committed on-policy slots only."""
     device = adapter.W.device
     D = len(adapter.A)
@@ -816,17 +817,31 @@ def two_sided_batch_scores_and_targets(adapter, blocks, l_unit_full, *, return_s
     successor = torch.tensor([[x if x is not None else -1 for x in row] for row in succ_rows],
                              device=device, dtype=torch.long)
     pair = torch.zeros(len(H), adapter.E.shape[1], device=device, dtype=torch.float32)
-    for d in range(D):
-        rows_f = (previous[:, d] >= 0).nonzero(as_tuple=True)[0]
-        if len(rows_f):
-            part_f = adapter.E[previous[rows_f, d]].float() @ adapter.A[d].T
-            pair = pair.index_add(0, rows_f, part_f)
-        rows_b = (successor[:, d] >= 0).nonzero(as_tuple=True)[0]
-        if len(rows_b):
-            # (A[d].T @ E[succ])^T = E[succ] @ A[d]
-            part_b = adapter.E[successor[rows_b, d]].float() @ adapter.A[d]
-            pair = pair.index_add(0, rows_b, part_b)
-    dense = adapter.unary(H) + pair @ adapter.E.float().T
+    if bf16_gemm:
+        E_bf16 = adapter._token_features_bf16()
+        for d in range(D):
+            rows_f = (previous[:, d] >= 0).nonzero(as_tuple=True)[0]
+            if len(rows_f):
+                part_f = (E_bf16.index_select(0, previous[rows_f, d]) @ adapter.A[d].to(torch.bfloat16).T).float()
+                pair = pair.index_add(0, rows_f, part_f)
+            rows_b = (successor[:, d] >= 0).nonzero(as_tuple=True)[0]
+            if len(rows_b):
+                # (A[d].T @ E[succ])^T = E[succ] @ A[d]
+                part_b = (E_bf16.index_select(0, successor[rows_b, d]) @ adapter.A[d].to(torch.bfloat16)).float()
+                pair = pair.index_add(0, rows_b, part_b)
+        dense = adapter.unary(H, bf16_gemm=True) + (pair.to(torch.bfloat16) @ E_bf16.T).float()
+    else:
+        for d in range(D):
+            rows_f = (previous[:, d] >= 0).nonzero(as_tuple=True)[0]
+            if len(rows_f):
+                part_f = adapter.E[previous[rows_f, d]].float() @ adapter.A[d].T
+                pair = pair.index_add(0, rows_f, part_f)
+            rows_b = (successor[:, d] >= 0).nonzero(as_tuple=True)[0]
+            if len(rows_b):
+                # (A[d].T @ E[succ])^T = E[succ] @ A[d]
+                part_b = adapter.E[successor[rows_b, d]].float() @ adapter.A[d]
+                pair = pair.index_add(0, rows_b, part_b)
+        dense = adapter.unary(H, bf16_gemm=False) + pair @ adapter.E.float().T
     scores = l_unit - dense
     observed_keys = []
     sparse_table = sparse_override if sparse_override is not None else adapter.sparse
@@ -861,7 +876,8 @@ def batch_loss(adapter, blocks, l_unit, *, collect_sparse_keys=False, sparse_ove
     if objective == 'two_sided_pseudolikelihood':
         out = two_sided_batch_scores_and_targets(adapter, blocks, l_unit,
                                                  return_sparse_keys=collect_sparse_keys,
-                                                 sparse_override=sparse_override)
+                                                 sparse_override=sparse_override,
+                                                 bf16_gemm=bf16_gemm)
         scores, targets, weights = out[:3]
         if len(targets) == 0:
             zero_loss = 0.0 * adapter.b.sum()
@@ -904,7 +920,9 @@ def evaluate(adapter, references, head, bias, args, head_metadata, *, rank=0, wo
             sums['loss'] += float(loss)
             sums['weight'] += float(weight)
             if objective == 'two_sided_pseudolikelihood':
-                pl_scores, pl_targets, pl_weights = two_sided_batch_scores_and_targets(adapter, blocks, l_unit)
+                pl_scores, pl_targets, pl_weights = two_sided_batch_scores_and_targets(
+                    adapter, blocks, l_unit, bf16_gemm=bf16_gemm,
+                )
                 if len(pl_targets) > 0:
                     pl_val = two_sided_pseudolikelihood_loss(pl_scores, pl_targets, pl_weights)
                     sums['pl_loss'] += float(pl_val)
@@ -1099,12 +1117,17 @@ def calibrate_beta_on_dev_live_full(adapter, references_dev, head, bias, args, h
                                          for d in range(1, len(adapter.A) + 1)])
             previous = torch.tensor([[x if x is not None else -1 for x in row] for row in predecessors],
                                     device=adapter.W.device, dtype=torch.long)
-            pair = torch.zeros(len(H), adapter.E.shape[1], device=H.device, dtype=torch.float32)
-            for d in range(len(adapter.A)):
-                rows = (previous[:, d] >= 0).nonzero(as_tuple=True)[0]
-                if len(rows):
-                    pair = pair.index_add(0, rows, adapter.E[previous[rows, d]].float() @ adapter.A[d].T)
-            dense = adapter.unary(H) + pair @ adapter.E.float().T
+            valid_rows, valid_cols = (previous >= 0).nonzero(as_tuple=True)
+            prev_ids = (
+                previous[valid_rows, valid_cols]
+                if valid_rows.numel()
+                else torch.empty(0, device=H.device, dtype=torch.long)
+            )
+            E_bf16 = adapter._token_features_bf16() if bf16_gemm else None
+            dense = _dense_correction_tensor(
+                adapter.W, adapter.A, adapter.b, adapter.E, E_bf16,
+                H, valid_rows, valid_cols, prev_ids, bf16_gemm=bf16_gemm,
+            )
 
             ids_all, probs_all, rest_all, weights_all = batch_targets(blocks, l_unit.device)
             grouped_weight += float(weights_all.sum())
@@ -1127,15 +1150,18 @@ def calibrate_beta_on_dev_live_full(adapter, references_dev, head, bias, args, h
                 if b == 0.0:
                     scores = l_unit
                 else:
-                    scores = l_unit - b * dense
-                    if adapter.sparse is not None:
+                    scores = (l_unit - dense) if b == 1.0 else (l_unit - b * dense)
+                    if adapter.sparse is not None and valid_rows.numel():
                         cands = scores.topk(min(adapter.M_sparse, scores.shape[-1]), dim=-1).indices
-                        vals = torch.zeros_like(cands, dtype=torch.float32)
-                        for d in range(len(adapter.A)):
-                            rows = (previous[:, d] >= 0).nonzero(as_tuple=True)[0]
-                            if len(rows):
-                                vals = vals.index_add(0, rows, adapter.sparse.lookup(d + 1, previous[rows, d, None], cands[rows]))
-                        scores = scores - b * torch.zeros_like(scores).scatter(1, cands, vals)
+                        d_pair = (valid_cols + 1)[:, None]
+                        prev_pair = prev_ids[:, None]
+                        cands_pair = cands.index_select(0, valid_rows)
+                        corrections = adapter.sparse.lookup(d_pair, prev_pair, cands_pair)
+                        vals = torch.zeros(len(scores), cands.shape[1], device=scores.device, dtype=torch.float32).index_add(
+                            0, valid_rows, corrections,
+                        )
+                        scaled_vals = -vals if b == 1.0 else (-b * vals)
+                        scores = scores.scatter_add(1, cands, scaled_vals)
                 grouped_sums[b] += float(union_rest_grouped(scores, ids_all, probs_all, rest_all, weights_all))
                 if live_slices:
                     log_q = scores.log_softmax(-1)
@@ -2131,7 +2157,7 @@ def main(argv=None):
             E = feature['E'].to(args.device, dtype=torch.float32)
             first = read_shard(entries[0].path)['blocks'][0]
             head_metadata = first['draft_lm_head']
-            head, bias = load_frozen_head(head_metadata, args.device)
+            head, bias = load_frozen_head(head_metadata, args.device, output_dir=args.output)
         if args.rank == 0:
             record_run(args, 'train' if regime == 'primary' else f'train-{regime}')
         report = fit(entries, index_report, E, head, bias, head_metadata, args)

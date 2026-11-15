@@ -647,6 +647,7 @@ def build_gated_torch_compile(
     r: int = 64,
     p: int = 128,
     K: int = 15,
+    bf16_gemm: bool = False,
     speed_margin: float = 0.98,
     strict: bool = False,
     return_callables: bool = False,
@@ -663,27 +664,42 @@ def build_gated_torch_compile(
     v_bench = min(int(vocab_size), 8192 if dev.type == 'cpu' else int(vocab_size))
     gen = torch.Generator(device=dev).manual_seed(2026)
     E = torch.randn((v_bench, r), generator=gen, device=dev, dtype=torch.float32)
+    E_bf16_bench = E.bfloat16() if bf16_gemm else None
     W = torch.randn((r, p), generator=gen, device=dev, dtype=torch.float32)
     b = torch.randn((v_bench,), generator=gen, device=dev, dtype=torch.float32)
     H = torch.randn((K, p), generator=gen, device=dev, dtype=torch.float32)
 
     def ref_unary():
-        return block_unary(E, W, b, H)
+        return block_unary(E, W, b, H, bf16_gemm=bf16_gemm, E_bf16=E_bf16_bench)
 
     compiled_unary = None
     try:
-        raw_compiled = torch.compile(block_unary, dynamic=True)
+        def _fp32_unary(E_in: torch.Tensor, W_in: torch.Tensor, b_in: torch.Tensor, H_in: torch.Tensor) -> torch.Tensor:
+            return (H_in.to(W_in.dtype) @ W_in.T) @ E_in.to(W_in.dtype).T + b_in
 
-        def compiled_unary(E_in, W_in, b_in, H_in):
+        def _bf16_unary(E_b16: torch.Tensor, W_in: torch.Tensor, b_in: torch.Tensor, H_in: torch.Tensor) -> torch.Tensor:
+            return ((H_in.bfloat16() @ W_in.bfloat16().T) @ E_b16.T).to(b_in.dtype) + b_in
+
+        raw_compiled_fp32 = torch.compile(_fp32_unary, dynamic=True)
+        raw_compiled_bf16 = torch.compile(_bf16_unary, dynamic=True) if bf16_gemm else None
+
+        def compiled_unary(E_in, W_in, b_in, H_in, *, bf16_gemm: bool = bf16_gemm, E_bf16=None):
             if any(t.requires_grad for t in (E_in, W_in, b_in, H_in)) and torch.is_grad_enabled():
-                return block_unary(E_in, W_in, b_in, H_in)
+                return block_unary(E_in, W_in, b_in, H_in, bf16_gemm=bf16_gemm, E_bf16=E_bf16)
             with torch.no_grad():
-                return raw_compiled(E_in, W_in, b_in, H_in)
+                if bf16_gemm:
+                    nonlocal raw_compiled_bf16
+                    if raw_compiled_bf16 is None:
+                        raw_compiled_bf16 = torch.compile(_bf16_unary, dynamic=True)
+                    e_b16 = E_in.bfloat16() if E_bf16 is None else E_bf16
+                    return raw_compiled_bf16(e_b16, W_in, b_in, H_in)
+                return raw_compiled_fp32(E_in, W_in, b_in, H_in)
 
-        _ = compiled_unary(E, W, b, H)
+        compiled_unary._supports_bf16_gemm = True
+        _ = compiled_unary(E, W, b, H, bf16_gemm=bf16_gemm, E_bf16=E_bf16_bench)
 
         def cand_unary():
-            return compiled_unary(E, W, b, H)
+            return compiled_unary(E, W, b, H, bf16_gemm=bf16_gemm, E_bf16=E_bf16_bench)
     except Exception:
         compiled_unary = None
         cand_unary = None

@@ -101,7 +101,15 @@ def _sample_proposal(draft_logits, h_raw, prefix, *, temperature, warper, genera
     K = len(draft_logits)
     probs_fn = None if fastpath is None else fastpath.probabilities
     compact_probs_fn = None if fastpath is None else fastpath.compact_probabilities
-    unary_fn = None if fastpath is None else fastpath.unary
+    unary_fn = (
+        fastpath.unary
+        if (fastpath is not None and (
+            fastpath.config.compile
+            or fastpath.config.cuda_graph
+            or fastpath.config.simulate_cpu_graph
+        ))
+        else None
+    )
     bf16_gemm = bool(fastpath is not None and fastpath.bf16_gemm)
     lookahead_mode = 'off' if lookahead is None else lookahead.mode
     if proposal_mode not in ('dense_full', 'dense_candidate'):

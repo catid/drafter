@@ -777,12 +777,386 @@ def test_post_m4_suite_smoke_all_and_resume(tmp_path):
     for v in cal['variants']:
         assert math.isfinite(v['offline_dense_kl']['test']['weighted_mean_kl'])
         assert math.isfinite(v['offline_dense_sparse_kl']['test']['weighted_mean_kl'])
+        assert v['closed_loop']['status'] == 'complete'
+        assert 'plain_dflash' in v['closed_loop']
+        assert 'dense' in v['closed_loop']
         assert 'dense_sparse' in v['closed_loop']
+        assert v['closed_loop']['dense']['effective_beta'] == 1.0
+        assert v['closed_loop']['dense_sparse']['effective_beta'] == 1.0
 
-    # Resumed invocation reuses completed sub-suite artifacts instantaneously
+    # Resumed invocation with identical CLI config reuses completed sub-suite artifacts instantaneously
     summary_resumed = post_m4_suite.main([
         '--scale', 'smoke',
         '--suite', 'all',
         '--output', str(out_dir),
+        '--bench_warmups', '1',
+        '--bench_repeats', '2',
+        '--timing_warmups', '1',
+        '--timing_repeats', '2',
+        '--smoke_tokens', '16',
     ])
     assert summary_resumed['status'] == 'complete'
+    for s_name in ('fastpath_bench', 'online_head_to_head', 'm2_refit_calibration'):
+        assert (
+            summary_resumed['suites'][s_name]['config_fingerprint']
+            == summary['suites'][s_name]['config_fingerprint']
+        )
+
+
+# ---------------------------------------------------------------------------
+# 6. Phase-1 Review Regression Tests (INT-BUG-1 .. INT-BUG-7)
+# ---------------------------------------------------------------------------
+
+def test_int_bug_1_and_2_m2_refit_reference_prereqs_and_matched_bundle(tmp_path, monkeypatch):
+    # Create a fake frozen reference artifacts_root and verify:
+    # (1) INT-BUG-1: diagnostic_reference.json is linked into ws and passed via --m1_diagnostic to train.main;
+    # (2) INT-BUG-2: EvaluationRunner is instantiated ONCE, evaluates plain_dflash + all 5*(dense, dense_sparse)
+    #     arms at fixed beta=1.0 (zero dev re-tuning on pre-scaled checkpoints), and matches smoke schema.
+    art_root = tmp_path / 'frozen_ref_artifacts'
+    (art_root / 'traces').mkdir(parents=True)
+    (art_root / 'm2').mkdir(parents=True)
+    (art_root / 'm3').mkdir(parents=True)
+    (art_root / 'm4').mkdir(parents=True)
+
+    # Seed baseline smoke checkpoints to reuse valid tensor payloads for mocked reference checkpoints
+    seed_fit = tmp_path / 'seed_smoke'
+    train.main(['--scale', 'smoke', '--output', str(seed_fit)])
+    proj_sha = 'proj-sha-ref-123'
+
+    def _make_ref_ckpt(src_pt: Path, dst_pt: Path, stage_lbl: str):
+        payload = torch.load(src_pt, map_location='cpu', weights_only=True)
+        payload['scale'] = 'reference'
+        payload['stage'] = stage_lbl
+        payload['report'] = {
+            'model_pair': ['Qwen/Qwen3-8B', 'z-lab/Qwen3-8B-DFlash-b16'],
+            'model_revisions': ['rev-t', 'rev-d'],
+            'frozen_artifacts': {'hidden_projection_sha256': proj_sha},
+        }
+        train.atomic_torch_save(dst_pt, payload)
+
+    _make_ref_ckpt(seed_fit / 'm2_smoke' / 'dense.pt', art_root / 'm2' / 'dense.pt', 'dense')
+    _make_ref_ckpt(seed_fit / 'm2_smoke' / 'dense_sparse.pt', art_root / 'm2' / 'dense_sparse.pt', 'dense_sparse')
+    (art_root / 'm1_audit.json').write_text(json.dumps({'status': 'passed', 'shards': []}))
+    (art_root / 'diagnostic_reference.json').write_text(json.dumps({'status': 'measured', 'scale': 'reference'}))
+    (art_root / 'h_proj.pt').write_bytes(b'proj')
+    (art_root / 'token_features.pt').write_bytes(b'feat')
+    (art_root / 'm2.json').write_text(json.dumps({'status': 'passed', 'scale': 'reference', 'identity': 'id-m2'}))
+    (art_root / 'm3' / 'summary.json').write_text(json.dumps({'status': 'complete', 'scale': 'reference'}))
+    (art_root / 'm4' / 'summary.json').write_text(json.dumps({'status': 'complete', 'scale': 'reference'}))
+    (art_root / 'smoke.json').write_text(json.dumps({'status': 'passed', 'tokens_per_second': 1000.0}))
+    (art_root / 'environment.json').write_text(json.dumps({'status': 'recorded'}))
+    prompts_payload = {
+        'scale': 'reference',
+        'prompts': [
+            {
+                'prompt_id': f'ref-test-{cond}-{i}',
+                'split': 'test',
+                'condition': cond,
+                'text': f'Prompt {i}',
+                'dataset': 'test_ds',
+                'reference_selected': True,
+            }
+            for cond, n_req in (('standard_nonthinking', 64), ('long_thinking', 32))
+            for i in range(n_req)
+        ],
+    }
+    (art_root / 'prompts.json').write_text(json.dumps(prompts_payload))
+
+    captured_train_cli = {}
+
+    def _fake_train_main(cli_list):
+        captured_train_cli['argv'] = list(cli_list)
+        out_ws = Path(cli_list[cli_list.index('--output') + 1])
+        tag = cli_list[cli_list.index('--m5_fit_tag') + 1]
+        # Verify diagnostic_reference.json was linked BEFORE train.main runs!
+        diag_arg = Path(cli_list[cli_list.index('--m1_diagnostic') + 1])
+        assert diag_arg.is_file(), 'diagnostic_reference.json was not linked into refit workspace!'
+        rdir = out_ws / tag
+        rdir.mkdir(parents=True, exist_ok=True)
+        _make_ref_ckpt(seed_fit / 'm2_smoke' / 'dense.pt', rdir / 'dense.pt', 'dense')
+        _make_ref_ckpt(seed_fit / 'm2_smoke' / 'dense_sparse.pt', rdir / 'dense_sparse.pt', 'dense_sparse')
+        train.scale_adapter_checkpoint(rdir / 'dense.pt', rdir / 'dense_calibrated.pt', 0.35, preserve_fit_identity=True)
+        train.scale_adapter_checkpoint(rdir / 'dense_sparse.pt', rdir / 'dense_sparse_calibrated.pt', 0.35, preserve_fit_identity=True)
+        rep = {
+            'status': 'passed',
+            'stages': {
+                'dense': {'beta_calibration': {'optimal_beta': 0.35}},
+                'dense_sparse': {'beta_calibration': {'optimal_beta': 0.35}},
+            },
+        }
+        (out_ws / f'{tag}.json').write_text(json.dumps(rep))
+        return rep
+
+    runner_instances = []
+    seen_runs = []
+
+    class _FakeEvaluationRunner:
+        def __init__(self, ns):
+            runner_instances.append(ns)
+            self.args = ns
+            self.device = torch.device('cpu')
+            self.tiny = False
+            self.model_pair = ['Qwen/Qwen3-8B', 'z-lab/Qwen3-8B-DFlash-b16']
+            self.model_revisions = ['rev-t', 'rev-d']
+            self.checkpoint_hashes = {'projection': proj_sha}
+            self.dense, _ = train.load_adapter_checkpoint(ns.dense_checkpoint, 'cpu')
+            self.dense_sparse, _ = train.load_adapter_checkpoint(ns.sparse_checkpoint, 'cpu')
+
+        def run(self, job, setting, profile=False):
+            beta = setting.get('beta', 1.0)
+            if job.get('max_new_tokens_override') is None:
+                seen_runs.append((job['arm'], beta, job['prompt']['prompt_id']))
+            return {
+                'effective_beta': beta,
+                'generated_tokens': 32,
+                'elapsed_seconds': 0.5,
+                'tokens_per_second': 64.0,
+                'mean_accepted_length': 2.5 if job['arm'] != 'plain_dflash' else 2.0,
+                'median_accepted_length': 2.5 if job['arm'] != 'plain_dflash' else 2.0,
+                'target_forwards_per_generated_token': 0.35,
+            }
+
+    monkeypatch.setattr(train, 'main', _fake_train_main)
+    monkeypatch.setattr(post_m4_suite, 'EvaluationRunner', _FakeEvaluationRunner)
+    monkeypatch.setattr(post_m4_suite, 'assert_idle', lambda dev: {'mocked': True})
+    monkeypatch.setattr(post_m4_suite, 'assert_no_external_gpu_processes', lambda dev: None)
+    monkeypatch.setattr(post_m4_suite, '_prepare_offline_eval_context', lambda a, w, d: ('ctx', {}, None, None, {}))
+    monkeypatch.setattr(
+        post_m4_suite,
+        '_offline_kl_summary',
+        lambda ctx, ckpt, dev: {
+            'checkpoint': str(ckpt),
+            'dev': {'weighted_mean_kl': 0.12},
+            'test': {'weighted_mean_kl': 0.13},
+        },
+    )
+
+    out_suite = tmp_path / 'ref_suite_out'
+    monkeypatch.setattr('shutil.disk_usage', lambda p: type('DU', (), {'free': 200 * 2**30})())
+    res = post_m4_suite.main([
+        '--scale', 'reference',
+        '--device', 'cpu',
+        '--suite', 'm2_refit_calibration',
+        '--artifacts_root', str(art_root),
+        '--output', str(out_suite),
+        '--timing_repeats', '2',
+        '--timing_warmups', '1',
+    ])
+
+    assert '--m1_diagnostic' in captured_train_cli['argv']
+    assert len(runner_instances) == 1, 'Backend/EvaluationRunner must be instantiated once, not 5x!'
+    assert all(b == 1.0 for _, b, _ in seen_runs), 'All checkpoints must be evaluated at fixed beta=1.0!'
+    arms_seen = {arm for arm, _, _ in seen_runs}
+    assert arms_seen == {'plain_dflash', 'dense', 'dense_sparse'}, 'Both dense and dense_sparse must be evaluated!'
+    cal_rep = res['suites']['m2_refit_calibration']
+    assert cal_rep['status'] == 'complete'
+    scales_seen = [v['closed_loop']['dense']['checkpoint_scale'] for v in cal_rep['variants']]
+    assert math.isclose(scales_seen[0], 1.0)
+    assert math.isclose(scales_seen[1], 0.20)
+    assert math.isclose(scales_seen[2], 1.0)
+    assert math.isclose(scales_seen[3], 0.35)
+    assert math.isclose(scales_seen[4], 0.20)
+
+
+def test_int_bug_3_isolated_artifacts_root_and_notes_clean(tmp_path, monkeypatch):
+    from types import SimpleNamespace
+    from edraft.runtime import preflight, resolve_artifact_path
+
+    notes_path = ROOT / 'NOTES.md'
+    notes_before = notes_path.read_bytes()
+
+    isolated_out = tmp_path / 'isolated_output'
+    isolated_out.mkdir(parents=True)
+    (isolated_out / 'smoke.json').write_text(json.dumps({'status': 'passed', 'tokens_per_second': 500.0}))
+    (isolated_out / 'environment.json').write_text(json.dumps({'marker': 'from_isolated_output'}))
+
+    assert resolve_artifact_path('smoke.json', isolated_out) == isolated_out / 'smoke.json'
+    assert resolve_artifact_path('environment.json', isolated_out) == isolated_out / 'environment.json'
+
+    env_override_dir = tmp_path / 'env_override'
+    env_override_dir.mkdir()
+    (env_override_dir / 'environment.json').write_text(json.dumps({'marker': 'from_env_var'}))
+    monkeypatch.setenv('EDRAFT_ARTIFACTS_ROOT', str(env_override_dir))
+    assert resolve_artifact_path('environment.json', tmp_path / 'nonexistent') == env_override_dir / 'environment.json'
+
+    monkeypatch.setattr('shutil.disk_usage', lambda p: type('DU', (), {'free': 200 * 2**30})())
+    rec = preflight(SimpleNamespace(scale='reference', output=isolated_out), 2500)
+    assert math.isclose(rec['cpu_smoke_extrapolation_seconds'], 5.0)
+    assert (isolated_out / 'preflight_estimates.jsonl').is_file()
+    assert notes_path.read_bytes() == notes_before, 'Isolated preflight must NEVER mutate ROOT/NOTES.md!'
+
+
+def test_int_bug_4_and_5_pilot_status_config_aware_resume_and_threads(tmp_path):
+    orig_threads = torch.get_num_threads()
+    torch.set_num_threads(3)
+    try:
+        out_dir = tmp_path / 'suite_h2h'
+        # 1) Pilot run (--timing_prompts 1) with kappa=4.0 -> MUST be 'pilot_complete', NOT 'complete'
+        res_pilot = post_m4_suite.main([
+            '--scale', 'smoke',
+            '--suite', 'online_head_to_head',
+            '--output', str(out_dir),
+            '--online_arms', 'plain_dflash', 'online_bigram_count_gated',
+            '--bigram_count_gate_kappa', '4.0',
+            '--timing_prompts', '1',
+            '--timing_repeats', '2',
+            '--smoke_tokens', '12',
+        ])
+        assert torch.get_num_threads() == 3, 'post_m4_suite.main must restore caller CPU thread count!'
+        assert res_pilot['status'] == 'pilot_complete'
+        assert res_pilot['suites']['online_head_to_head']['status'] == 'pilot_complete'
+
+        # 2) Full run (--timing_prompts 0) with kappa=64.0 and extra arm 'online_dbS_zero_init' on SAME --output:
+        #    default --resume MUST NOT return the stale pilot report!
+        res_full = post_m4_suite.main([
+            '--scale', 'smoke',
+            '--suite', 'online_head_to_head',
+            '--output', str(out_dir),
+            '--online_arms', 'plain_dflash', 'online_bigram_count_gated', 'online_dbS_zero_init',
+            '--bigram_count_gate_kappa', '64.0',
+            '--timing_prompts', '0',
+            '--timing_repeats', '2',
+            '--smoke_tokens', '12',
+        ])
+        assert res_full['status'] == 'complete'
+        h2h_full = res_full['suites']['online_head_to_head']
+        assert h2h_full['status'] == 'complete'
+        assert h2h_full['bigram_count_gate_kappa'] == 64.0
+        assert 'online_dbS_zero_init' in h2h_full['arms']
+
+        # 3) Changing m2_refit_calibration hyperparameters on SAME --output invalidates --resume cleanly
+        out_m2 = tmp_path / 'suite_m2'
+        m2_r1 = post_m4_suite.main([
+            '--scale', 'smoke',
+            '--suite', 'm2_refit_calibration',
+            '--output', str(out_m2),
+            '--weight_decay', '0.01',
+            '--fixed_checkpoint_scale', '0.20',
+            '--smoke_tokens', '12',
+        ])
+        m2_r2 = post_m4_suite.main([
+            '--scale', 'smoke',
+            '--suite', 'm2_refit_calibration',
+            '--output', str(out_m2),
+            '--weight_decay', '0.25',
+            '--fixed_checkpoint_scale', '0.50',
+            '--smoke_tokens', '12',
+        ])
+        hp2 = m2_r2['suites']['m2_refit_calibration']['refit_hyperparameters']
+        assert math.isclose(hp2['weight_decay'], 0.25)
+        assert math.isclose(hp2['fixed_checkpoint_scale'], 0.50)
+        assert (
+            m2_r2['suites']['m2_refit_calibration']['config_fingerprint']
+            != m2_r1['suites']['m2_refit_calibration']['config_fingerprint']
+        )
+        v_names = [v['variant'] for v in m2_r2['suites']['m2_refit_calibration']['variants']]
+        assert 'baseline_m2_scale_0p50' in v_names
+        assert 'refit_shuf_wd_scale_0p50' in v_names
+    finally:
+        torch.set_num_threads(orig_threads)
+
+
+def test_int_bug_6_train_bf16_gemm_calibrate_beta_and_two_sided_parity(tmp_path):
+    for bf16_flag in (False, True):
+        out_dir = tmp_path / f'fit_bf16_{int(bf16_flag)}'
+        cli = [
+            '--scale', 'smoke',
+            '--output', str(out_dir),
+            '--epochs_dense', '3',
+            '--epochs_sparse', '3',
+            '--learning_rate', '0.05',
+            '--calibrate_beta',
+            '--apply_calibrated_beta',
+            '--calibrate_beta_grid', '1.0',
+            '--m5_fit_tag', 'repro6',
+        ]
+        if bf16_flag:
+            cli.append('--bf16_gemm')
+        train.main(cli)
+        rep = json.loads((out_dir / 'repro6_smoke.json').read_text())
+        st = rep['stages']['dense_sparse']
+        pt1 = [pt for pt in st['beta_calibration']['grid_curve'] if abs(pt['beta'] - 1.0) < 1e-9][0]
+        cal_gkl = pt1['dev_union_rest_grouped_kl']
+        ev_gkl = st['dev']['weighted_mean_kl'] if 'dev' in st else st['eval']['dev']['weighted_mean_kl']
+        assert abs(cal_gkl - ev_gkl) < 1e-7, (
+            f'bf16_gemm={bf16_flag}: calibrate_beta(1.0)={cal_gkl} disagreed with evaluate()={ev_gkl}'
+        )
+
+    # Verify two_sided_pseudolikelihood + --bf16_gemm end-to-end training & evaluation parity
+    out_pl = tmp_path / 'fit_pl_bf16'
+    rep_pl = train.main([
+        '--scale', 'smoke',
+        '--output', str(out_pl),
+        '--objective', 'two_sided_pseudolikelihood',
+        '--bf16_gemm',
+        '--epochs_dense', '2',
+        '--epochs_sparse', '2',
+        '--m5_fit_tag', 'pl_bf16',
+    ])
+    assert math.isfinite(rep_pl['stages']['dense_sparse']['dev']['weighted_mean_kl'])
+
+
+def test_int_bug_7_snapshot_vs_adapter_unary_bf16_and_m5_torch_compile():
+    from edraft.fastpath import FastPathConfig, FastPathRuntime
+    from edraft.triton_ops import build_gated_torch_compile
+
+    gen = torch.Generator().manual_seed(42)
+    E = torch.randn(32, 8, generator=gen)
+    H = torch.randn(4, 6, generator=gen)
+
+    calls = {'n': 0}
+
+    def custom_4arg_unary(E_in, W_in, b_in, H_in):
+        calls['n'] += 1
+        return (H_in @ W_in.T) @ E_in.T + b_in + 0.123
+
+    adapter = DenseAdapter(E, p=6, D=4, unary_fn=custom_4arg_unary)
+    with torch.no_grad():
+        adapter.W.copy_(torch.randn_like(adapter.W, generator=gen) * 0.1)
+        adapter.b.copy_(torch.randn_like(adapter.b, generator=gen) * 0.05)
+    snap = adapter.snapshot()
+
+    # Under bf16_gemm=False, both DenseAdapter and ProposalSnapshot invoke custom_4arg_unary
+    u_ad_fp32 = adapter.unary(H, bf16_gemm=False)
+    u_sn_fp32 = snap.unary(H, bf16_gemm=False)
+    assert calls['n'] == 2
+    assert torch.equal(u_ad_fp32, u_sn_fp32)
+
+    # Under bf16_gemm=True, both bypass un-flagged 4-arg unary_fn and match BF16 block_unary identically
+    u_ad_bf16 = adapter.unary(H, bf16_gemm=True)
+    u_sn_bf16 = snap.unary(H, bf16_gemm=True)
+    assert calls['n'] == 2
+    assert torch.equal(u_ad_bf16, u_sn_bf16)
+
+    # Under build_gated_torch_compile(bf16_gemm=True), _supports_bf16_gemm=True is honored by both
+    # AND FastPathRuntime(bf16_gemm=True, compile=False) does NOT shadow snapshot.unary_fn!
+    tc_fns, _ = build_gated_torch_compile(
+        'cpu', vocab_size=32, r=8, p=6, K=4, bf16_gemm=True, speed_margin=100.0, return_callables=True,
+    )
+    tc_fn = tc_fns['torch_compile_block_unary']
+    if tc_fn is not None:
+        assert getattr(tc_fn, '_supports_bf16_gemm', False) is True
+        adapter.unary_fn = tc_fn
+        snap_tc = adapter.snapshot()
+        assert torch.allclose(adapter.unary(H, bf16_gemm=True), u_ad_bf16, atol=1e-5, rtol=1e-5)
+        assert torch.allclose(snap_tc.unary(H, bf16_gemm=True), u_sn_bf16, atol=1e-5, rtol=1e-5)
+
+        seen_tc = {'count': 0}
+
+        def wrapped_tc(E_in, W_in, b_in, H_in, *, bf16_gemm=False, E_bf16=None):
+            seen_tc['count'] += 1
+            return tc_fn(E_in, W_in, b_in, H_in, bf16_gemm=bf16_gemm, E_bf16=E_bf16)
+
+        wrapped_tc._supports_bf16_gemm = True
+        adapter.unary_fn = wrapped_tc
+        fp_bf16_only = FastPathRuntime(FastPathConfig(bf16_gemm=True), static_block_length=4)
+        logits = torch.randn(4, 32, generator=gen)
+        _sample_proposal(
+            logits, H, [1, 2, 3, 4],
+            temperature=0.7, warper=SamplingWarper(top_k=5, top_p=0.9),
+            generator=torch.Generator().manual_seed(9),
+            snapshot=adapter.snapshot(), projection=None, beta=1.0, bigram=None,
+            timer=PhaseTimer('cpu', False), fastpath=fp_bf16_only,
+        )
+        assert seen_tc['count'] == 1, 'FastPathRuntime(bf16_gemm=True, compile=False) must not shadow snapshot.unary_fn!'
+

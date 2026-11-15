@@ -19,8 +19,8 @@ from .diagnose import (prompt_bootstrap, output_bin, context_bin, generation_dia
                        DEFAULT_CONTEXT_EDGES, OUTPUT_LABELS)
 from .features import HiddenProjection
 from .online import OnlineBigram, OnlineState
-from .runtime import (ROOT, Manifest, atomic_json, common_parser, fingerprint, parse_config,
-                      preflight, record_run, resolved_config)
+from .runtime import (ROOT, Manifest, atomic_json, call_with_output_dir, common_parser, fingerprint, parse_config,
+                      preflight, record_run, resolve_artifact_path, resolved_config)
 from .sampler import SamplingWarper
 
 M3_ARMS = ('plain_dflash', 'online_bigram', 'dense', 'dense_sparse')
@@ -336,9 +336,9 @@ class EvaluationRunner:
             self.projection = HiddenProjection.load(args.projection).to(args.device)
             if self.dense.W.shape[1] != self.projection.matrix.shape[0]:
                 raise ValueError('checkpoint and frozen hidden projection dimensions differ')
-            target = fetch_model(args.target, args.allow_download)
-            drafter = fetch_model(args.drafter, args.allow_download)
-            env = json.loads((ROOT / 'artifacts/environment.json').read_text())
+            target = call_with_output_dir(fetch_model, args.target, args.allow_download, output_dir=args.output)
+            drafter = call_with_output_dir(fetch_model, args.drafter, args.allow_download, output_dir=args.output)
+            env = json.loads(resolve_artifact_path('environment.json', args.output, root=ROOT).read_text())
             self.model_revisions = [env['model_artifacts'][name]['revision'] for name in (args.target, args.drafter)]
             for label, metadata in [('dense', self.dense_metadata), ('dense_sparse', self.sparse_metadata)]:
                 report = metadata.get('report', {})
@@ -427,6 +427,7 @@ class EvaluationRunner:
                 r=self.dense.E.shape[1],
                 p=self.dense.W.shape[1],
                 K=4 if self.tiny else (self.backend.block_size - 1),
+                bf16_gemm=bool(getattr(args, 'bf16_gemm', False)),
                 return_callables=True,
             )
             self.torch_compile_gate_report = {k: v.to_dict() for k, v in tc_reports.items()}

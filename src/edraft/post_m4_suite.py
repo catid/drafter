@@ -23,38 +23,33 @@ frozen M0-M4 artifacts:
      - Scalar `0.20 * dense.pt` / `0.20 * dense_sparse.pt` calibration checkpoints
        via `scale_adapter_checkpoint`,
      - Held-out offline KL (`dev` & `test` `live_full` and `union_rest_grouped`)
-       and closed-loop acceptance/throughput comparison across uncalibrated,
-       dev-calibrated, and `0.20`-scaled checkpoints.
+       and single-session matched-bundle closed-loop acceptance/throughput
+       comparison across uncalibrated, dev-calibrated, and `0.20`-scaled
+       `dense` and `dense_sparse` checkpoints at fixed `beta = 1.0`.
 """
 from __future__ import annotations
 
-import copy
-from dataclasses import asdict
 import json
 import math
 from pathlib import Path
 import statistics
-import time
 from types import SimpleNamespace
 import torch
 
-from .adapter import DenseAdapter, top_candidates
+from .adapter import DenseAdapter
 from .bench_adapter import assert_idle, assert_no_external_gpu_processes, measure
-from .dflash_loop import generate_toy
 from .diagnose import OUTPUT_LABELS
 from .eval_closed_loop import (
     EvaluationRunner,
-    evaluation_jobs,
     implementation_hash,
     sampling_conditions,
     select_prompts,
     smoke_manifest,
 )
 from .fastpath import FastPathConfig, FastPathRuntime
-from .features import HiddenProjection, fit_hidden_projection
+from .features import fit_hidden_projection
 from .online import OnlineBigram
 from .runtime import (
-    ROOT,
     atomic_json,
     common_parser,
     fingerprint,
@@ -67,11 +62,11 @@ from .runtime import (
 )
 from .sampler import SamplingWarper, sample_from_top_scaled, sample_token_compact
 from .sparse import SignedHash
-from .toy import ToyParallelDrafter, ToyTarget
 from .traces import read_shard
 from .train import (
     epoch_references,
     evaluate as evaluate_offline,
+    file_digest,
     load_adapter_checkpoint,
     load_frozen_head,
     scale_adapter_checkpoint,
@@ -109,6 +104,103 @@ def _link_prereqs(src_root: Path, dst_root: Path, names: tuple[str, ...]) -> Non
             continue
         dst.parent.mkdir(parents=True, exist_ok=True)
         dst.symlink_to(src)
+
+
+def _update_latest_ws_symlink(link_path: Path, target_dir: Path) -> None:
+    target_dir.mkdir(parents=True, exist_ok=True)
+    if link_path.is_symlink():
+        link_path.unlink()
+    if not link_path.exists():
+        link_path.symlink_to(target_dir.name)
+
+
+def _prereq_identity(artifacts_root: Path, scale: str) -> dict:
+    if scale == 'smoke':
+        return {'scale': 'smoke'}
+    root_resolved = artifacts_root.resolve()
+    files = {}
+    for rel in (
+        'm2.json',
+        'm1_audit.json',
+        f'diagnostic_{scale}.json',
+        'prompts.json',
+        'h_proj.pt',
+        'token_features.pt',
+        'm2/dense.pt',
+        'm2/dense_sparse.pt',
+        'm3/summary.json',
+        'm4/summary.json',
+        'm4/settings.json',
+    ):
+        p = root_resolved / rel
+        if p.is_file():
+            files[rel] = file_digest(p)
+    return {'scale': scale, 'artifacts_root': str(root_resolved), 'files': files}
+
+
+def _suite_config_fingerprint(suite_name: str, args, artifacts_root: Path) -> str:
+    payload: dict = {
+        'suite': suite_name,
+        'scale': args.scale,
+        'seed': int(args.seed),
+        'prereqs': _prereq_identity(artifacts_root, args.scale),
+    }
+    if args.scale != 'smoke':
+        payload['device'] = str(args.device)
+        payload['target'] = str(args.target)
+        payload['drafter'] = str(args.drafter)
+    if suite_name == 'fastpath_bench':
+        payload.update({
+            'bench_warmups': int(args.bench_warmups),
+            'bench_repeats': int(args.bench_repeats),
+            'bigram_count_gate_kappa': float(args.bigram_count_gate_kappa),
+            'timing_warmups': int(args.timing_warmups),
+            'timing_repeats': int(args.timing_repeats),
+            'timing_prompts': int(args.timing_prompts),
+            'max_new_tokens': int(args.max_new_tokens),
+            'long_max_new_tokens': int(args.long_max_new_tokens),
+            'smoke_tokens': int(args.smoke_tokens),
+        })
+    elif suite_name == 'online_head_to_head':
+        payload.update({
+            'online_arms': list(args.online_arms),
+            'bigram_count_gate_kappa': float(args.bigram_count_gate_kappa),
+            'timing_warmups': int(args.timing_warmups),
+            'timing_repeats': int(args.timing_repeats),
+            'timing_prompts': int(args.timing_prompts),
+            'max_new_tokens': int(args.max_new_tokens),
+            'long_max_new_tokens': int(args.long_max_new_tokens),
+            'smoke_tokens': int(args.smoke_tokens),
+        })
+    elif suite_name == 'm2_refit_calibration':
+        payload.update({
+            'refit_tag': str(args.refit_tag),
+            'block_shuffle_window': int(args.block_shuffle_window),
+            'weight_decay': float(args.weight_decay),
+            'fixed_checkpoint_scale': float(args.fixed_checkpoint_scale),
+            'timing_warmups': int(args.timing_warmups),
+            'timing_repeats': int(args.timing_repeats),
+            'timing_prompts': int(args.timing_prompts),
+            'max_new_tokens': int(args.max_new_tokens),
+            'long_max_new_tokens': int(args.long_max_new_tokens),
+            'smoke_tokens': int(args.smoke_tokens),
+        })
+    else:
+        raise ValueError(f'Unknown suite_name: {suite_name}')
+    return fingerprint(payload)
+
+
+def _can_resume_report(report_path: Path, args, expected_fingerprint: str) -> dict | None:
+    if not (args.resume and report_path.is_file()):
+        return None
+    existing = json.loads(report_path.read_text())
+    if (
+        existing.get('status') == 'complete'
+        and existing.get('scale') == args.scale
+        and existing.get('config_fingerprint') == expected_fingerprint
+    ):
+        return existing
+    return None
 
 
 def _cli_base_flags(args, output_dir: Path) -> list[str]:
@@ -285,22 +377,35 @@ def _default_closed_loop_setting(arm: str, kappa: float) -> dict:
     }
 
 
+def _select_test_prompts(prompt_manifest: dict, scale: str, timing_prompts: int) -> tuple[list[dict], list[dict], bool]:
+    all_test = select_prompts(prompt_manifest, 'test', scale)
+    selected_prompts = []
+    limit = int(timing_prompts)
+    for cond in sorted({p['condition'] for p in all_test}):
+        c_prompts = [p for p in all_test if p['condition'] == cond]
+        selected_prompts.extend(c_prompts if limit == 0 else c_prompts[:limit])
+    is_pilot = len(selected_prompts) < len(all_test)
+    return all_test, selected_prompts, is_pilot
+
+
 def _run_matched_closed_loop_fastpath_bench(args, artifacts_root: Path, bench_dir: Path) -> dict:
     ws = bench_dir / 'closed_loop_workspace'
     if args.scale != 'smoke':
-        _link_prereqs(artifacts_root, ws, ('m2.json', 'm2', 'm3', 'm4', 'prompts.json', 'h_proj.pt', 'environment.json'))
+        _link_prereqs(
+            artifacts_root,
+            ws,
+            (
+                'm2.json', 'm2', 'm3', 'm4', 'prompts.json', 'h_proj.pt',
+                'environment.json', 'smoke.json', f'diagnostic_{args.scale}.json',
+            ),
+        )
 
     prompt_manifest = (
         smoke_manifest()
         if args.scale == 'smoke'
         else json.loads((ws / 'prompts.json').read_text())
     )
-    all_test = select_prompts(prompt_manifest, 'test', args.scale)
-    selected_prompts = []
-    limit = args.timing_prompts
-    for cond in sorted({p['condition'] for p in all_test}):
-        c_prompts = [p for p in all_test if p['condition'] == cond]
-        selected_prompts.extend(c_prompts if limit == 0 else c_prompts[:limit])
+    all_test, selected_prompts, is_pilot = _select_test_prompts(prompt_manifest, args.scale, args.timing_prompts)
 
     m4_settings_path = ws / 'm4' / 'settings.json'
     frozen_selected = (
@@ -473,6 +578,10 @@ def _run_matched_closed_loop_fastpath_bench(args, artifacts_root: Path, bench_di
         })
 
     return {
+        'status': 'pilot_complete' if is_pilot else 'complete',
+        'is_pilot_subset': is_pilot,
+        'selected_prompt_count': len(selected_prompts),
+        'total_test_prompt_count': len(all_test),
         'arms': list(arms),
         'modes': [m[0] for m in modes],
         'prompt_ids': [p['prompt_id'] for p in selected_prompts],
@@ -488,40 +597,53 @@ def _run_matched_closed_loop_fastpath_bench(args, artifacts_root: Path, bench_di
 def run_fastpath_bench(args, artifacts_root: Path, suite_root: Path) -> dict:
     from . import bench_adapter, bench_grouped
 
+    cfg_fp = _suite_config_fingerprint('fastpath_bench', args, artifacts_root)
+    sub_dir = suite_root / f'fastpath_bench_{cfg_fp[:12]}'
+    report_path = suite_root / 'fastpath_bench.json'
+    cached = _can_resume_report(report_path, args, cfg_fp)
+    if cached is not None:
+        if sub_dir.is_dir():
+            _update_latest_ws_symlink(suite_root / 'fastpath_bench', sub_dir)
+        return cached
+
+    caller_threads = torch.get_num_threads()
     device = torch.device(args.device)
     inventory = assert_idle(device)
-    sub_dir = suite_root / 'fastpath_bench'
-    sub_dir.mkdir(parents=True, exist_ok=True)
-    report_path = suite_root / 'fastpath_bench.json'
-    if args.resume and report_path.is_file():
-        existing = json.loads(report_path.read_text())
-        if existing.get('status') == 'complete' and existing.get('scale') == args.scale:
-            return existing
-
+    _update_latest_ws_symlink(suite_root / 'fastpath_bench', sub_dir)
     adapter_dir = sub_dir / 'adapter'
     grouped_dir = sub_dir / 'grouped'
-    adapter_report = bench_adapter.main(
-        _cli_base_flags(args, adapter_dir) + [
-            '--warmups', str(args.bench_warmups),
-            '--repeats', str(args.bench_repeats),
-            '--compile',
-        ]
-    )
-    grouped_report = bench_grouped.main(
-        _cli_base_flags(args, grouped_dir) + [
-            '--warmups', str(args.bench_warmups),
-            '--repeats', str(args.bench_repeats),
-            '--compile',
-        ]
-    )
-    with torch.no_grad():
-        round3_micro = _measure_round3_compact_microbench(args, device)
-    closed_loop = _run_matched_closed_loop_fastpath_bench(args, artifacts_root, sub_dir)
+    if args.scale != 'smoke':
+        _link_prereqs(artifacts_root, adapter_dir, ('smoke.json', 'environment.json'))
+        _link_prereqs(artifacts_root, grouped_dir, ('smoke.json', 'environment.json'))
+
+    try:
+        adapter_report = bench_adapter.main(
+            _cli_base_flags(args, adapter_dir) + [
+                '--warmups', str(args.bench_warmups),
+                '--repeats', str(args.bench_repeats),
+                '--compile',
+            ]
+        )
+        grouped_report = bench_grouped.main(
+            _cli_base_flags(args, grouped_dir) + [
+                '--warmups', str(args.bench_warmups),
+                '--repeats', str(args.bench_repeats),
+                '--compile',
+            ]
+        )
+        with torch.no_grad():
+            round3_micro = _measure_round3_compact_microbench(args, device)
+        if args.scale != 'smoke':
+            torch.set_num_threads(caller_threads)
+        closed_loop = _run_matched_closed_loop_fastpath_bench(args, artifacts_root, sub_dir)
+    finally:
+        torch.set_num_threads(caller_threads)
 
     report = {
         'suite': 'fastpath_bench',
         'scale': args.scale,
-        'status': 'complete',
+        'status': closed_loop['status'],
+        'config_fingerprint': cfg_fp,
         'device': str(device),
         'device_inventory': inventory,
         'adapter_microbenchmark': {
@@ -547,18 +669,24 @@ def run_fastpath_bench(args, artifacts_root: Path, suite_root: Path) -> dict:
 def run_online_head_to_head(args, artifacts_root: Path, suite_root: Path) -> dict:
     from . import eval_closed_loop
 
+    cfg_fp = _suite_config_fingerprint('online_head_to_head', args, artifacts_root)
+    sub_ws = suite_root / f'online_head_to_head_ws_{cfg_fp[:12]}'
     report_path = suite_root / 'online_head_to_head.json'
-    if args.resume and report_path.is_file():
-        existing = json.loads(report_path.read_text())
-        if existing.get('status') == 'complete' and existing.get('scale') == args.scale:
-            return existing
+    cached = _can_resume_report(report_path, args, cfg_fp)
+    if cached is not None:
+        if sub_ws.is_dir():
+            _update_latest_ws_symlink(suite_root / 'online_head_to_head_workspace', sub_ws)
+        return cached
 
-    sub_ws = suite_root / 'online_head_to_head_workspace'
+    _update_latest_ws_symlink(suite_root / 'online_head_to_head_workspace', sub_ws)
     if args.scale != 'smoke':
         _link_prereqs(
             artifacts_root,
             sub_ws,
-            ('m2.json', 'm2', 'm3', 'm4', 'prompts.json', 'h_proj.pt', 'environment.json'),
+            (
+                'm2.json', 'm2', 'm3', 'm4', 'prompts.json', 'h_proj.pt',
+                'environment.json', 'smoke.json', f'diagnostic_{args.scale}.json',
+            ),
         )
 
     arms = list(args.online_arms)
@@ -584,10 +712,24 @@ def run_online_head_to_head(args, artifacts_root: Path, suite_root: Path) -> dic
     timing = json.loads((sub_ws / 'm5' / 'timing.json').read_text())
     settings = json.loads((sub_ws / 'm5' / 'settings.json').read_text())
 
+    missing_reqs = summary.get('missing_requests')
+    no_missing = isinstance(missing_reqs, list) and len(missing_reqs) == 0
+    if summary.get('status') == 'complete' and timing.get('status') == 'complete':
+        suite_status = 'complete'
+    elif (
+        no_missing
+        and summary.get('greedy_output_comparisons_complete', False)
+        and timing.get('status') in ('complete', 'pilot_complete')
+    ):
+        suite_status = 'pilot_complete'
+    else:
+        suite_status = 'incomplete'
+
     report = {
         'suite': 'online_head_to_head',
         'scale': args.scale,
-        'status': 'complete',
+        'status': suite_status,
+        'config_fingerprint': cfg_fp,
         'arms': arms,
         'bigram_count_gate_kappa': args.bigram_count_gate_kappa,
         'offset_labels': list(OUTPUT_LABELS),
@@ -617,72 +759,219 @@ def _ensure_smoke_baseline_m2(args, ws: Path) -> None:
         train.main(_cli_base_flags(args, ws))
 
 
-def _smoke_closed_loop_checkpoint_eval(
+def _evaluate_refit_variants_closed_loop(
     args,
-    dense_ckpt: Path,
-    sparse_ckpt: Path,
-) -> dict:
-    device = torch.device('cpu')
-    target = ToyTarget(vocab_size=8, hidden_size=12, seed=args.seed)
-    drafter = ToyParallelDrafter(target, seed=args.seed + 1)
-    calibration = [[i % 8, (i + 3) % 8, (i * 3 + 1) % 8] for i in range(64)]
-    projection = fit_hidden_projection(
-        [drafter.draft(x, 4).h_raw for x in calibration],
-        12,
-        6,
-        seed=args.seed,
-        prompt_ids=[f'synthetic-train-{i}' for i in range(64)],
-    ).to(device)
-    dense_adapter, _ = load_adapter_checkpoint(dense_ckpt, device)
-    sparse_adapter, _ = load_adapter_checkpoint(sparse_ckpt, device)
-    dense_adapter.eval()
-    sparse_adapter.eval()
+    ws: Path,
+    variants: list[tuple[str, Path, Path]],
+) -> tuple[str, dict[str, dict]]:
+    """Evaluate `plain_dflash` + all 5 `(dense, dense_sparse)` variants in a single matched session at fixed `beta = 1.0`."""
+    device = torch.device(args.device)
+    if args.scale != 'smoke':
+        assert_idle(device)
 
-    prompts = select_prompts(smoke_manifest(), 'test', 'smoke')
-    arms = (
-        ('plain_dflash', None),
-        ('dense', dense_adapter),
-        ('dense_sparse', sparse_adapter),
+    base_subdir = 'm2_smoke' if args.scale == 'smoke' else 'm2'
+    runner_ns = SimpleNamespace(
+        scale=args.scale,
+        stage='m3',
+        mode='timing',
+        seed=args.seed,
+        device=args.device,
+        target=args.target,
+        drafter=args.drafter,
+        allow_download=getattr(args, 'allow_download', False),
+        allow_large_run=getattr(args, 'allow_large_run', False),
+        output=ws,
+        prompts_manifest=ws / 'prompts.json',
+        dense_checkpoint=ws / base_subdir / 'dense.pt',
+        sparse_checkpoint=ws / base_subdir / 'dense_sparse.pt',
+        projection=ws / 'h_proj.pt',
+        max_new_tokens=args.max_new_tokens,
+        long_max_new_tokens=args.long_max_new_tokens,
+        smoke_tokens=args.smoke_tokens,
+        compile=False,
+        cuda_graph=False,
+        simulate_cpu_graph=False,
+        bf16_gemm=False,
+        compile_drafter=False,
+        compile_online=False,
+        disable_round3_compact=False,
+        m5_oracle_checkpoint=None,
+        checkpoint_scale=None,
+        m5_triton=False,
+        m5_torch_compile=False,
     )
-    by_arm = {name: [] for name, _ in arms}
-    for p in prompts:
-        prefix = [1, 2, 3, int(fingerprint(p['prompt_id'])[:4], 16) % 8]
-        for s_name, temp, warp in sampling_conditions(p['condition'], primary_only=False):
-            eff_warp = SamplingWarper(
-                top_k=min(warp.top_k, 7) if warp.top_k > 0 else 0,
-                top_p=warp.top_p,
-                min_p=warp.min_p,
-            )
-            for arm_name, adapter in arms:
-                gen = torch.Generator(device=device).manual_seed(args.seed)
-                t0 = time.perf_counter()
-                res = generate_toy(
-                    target, drafter, prefix, args.smoke_tokens,
-                    temperature=temp, warper=eff_warp, generator=gen,
-                    adapter=adapter,
-                    projection=projection if adapter is not None else None,
-                    beta=1.0,
-                )
-                elapsed = max(time.perf_counter() - t0, 1e-12)
-                acc = statistics.mean(b['accepted_length'] for b in res.blocks) if res.blocks else 0.0
-                by_arm[arm_name].append({
-                    'prompt_id': p['prompt_id'],
+    runner = EvaluationRunner(runner_ns)
+    if runner.tiny:
+        cal = [[i % 8, (i + 3) % 8, (i * 3 + 1) % 8] for i in range(64)]
+        runner.projection = fit_hidden_projection(
+            [runner.drafter.draft(x, 4).h_raw for x in cal],
+            12,
+            6,
+            seed=args.seed,
+            prompt_ids=[f'synthetic-train-{i}' for i in range(64)],
+        ).to(runner.device)
+
+    loaded_variants = []
+    for v_name, d_ckpt, s_ckpt in variants:
+        d_ad, d_meta = load_adapter_checkpoint(d_ckpt, runner.device)
+        s_ad, s_meta = load_adapter_checkpoint(s_ckpt, runner.device)
+        if d_meta.get('stage') != 'dense' or s_meta.get('stage') != 'dense_sparse':
+            raise ValueError(f'Variant {v_name} checkpoints must have stages dense and dense_sparse')
+        if not runner.tiny:
+            for meta in (d_meta, s_meta):
+                rep = meta.get('report', {})
+                if rep.get('model_pair') != runner.model_pair or rep.get('model_revisions') != runner.model_revisions:
+                    raise ValueError(f'Variant {v_name} checkpoint model pair/revisions mismatch backend')
+                if rep.get('frozen_artifacts', {}).get('hidden_projection_sha256') != runner.checkpoint_hashes['projection']:
+                    raise ValueError(f'Variant {v_name} checkpoint hidden projection mismatch')
+        d_ad.eval()
+        s_ad.eval()
+        loaded_variants.append((v_name, d_ad, d_meta, s_ad, s_meta))
+
+    prompt_manifest = (
+        smoke_manifest()
+        if args.scale == 'smoke'
+        else json.loads((ws / 'prompts.json').read_text())
+    )
+    all_test, selected_prompts, is_pilot = _select_test_prompts(prompt_manifest, args.scale, args.timing_prompts)
+
+    # 11-arm matched bundle at fixed beta=1.0 (preserving each checkpoint's baked-in scale without dev re-tuning)
+    bundle_arms: list[tuple[str, str, DenseAdapter | None, float | None]] = [
+        ('plain_dflash', 'plain_dflash', None, None),
+    ]
+    for v_name, d_ad, d_meta, s_ad, s_meta in loaded_variants:
+        bundle_arms.append((f'{v_name}::dense', 'dense', d_ad, float(d_meta.get('checkpoint_scale', 1.0))))
+        bundle_arms.append((f'{v_name}::dense_sparse', 'dense_sparse', s_ad, float(s_meta.get('checkpoint_scale', 1.0))))
+
+    orig_dense, orig_sparse = runner.dense, runner.dense_sparse
+
+    def _invoke_bundle_arm(arm_kind: str, adapter_obj: DenseAdapter | None, base_job: dict) -> dict:
+        job = dict(base_job, arm=arm_kind, force_setting_beta=True)
+        setting = {} if arm_kind == 'plain_dflash' else {'beta': 1.0}
+        try:
+            if arm_kind == 'dense':
+                assert adapter_obj is not None
+                runner.dense = adapter_obj
+            elif arm_kind == 'dense_sparse':
+                assert adapter_obj is not None
+                runner.dense_sparse = adapter_obj
+            return runner.run(job, setting, profile=False)
+        finally:
+            runner.dense = orig_dense
+            runner.dense_sparse = orig_sparse
+
+    warmup_cap = min(64, args.smoke_tokens) if runner.tiny else 64
+    for cond in sorted({p['condition'] for p in selected_prompts}):
+        w_prompt = next(p for p in selected_prompts if p['condition'] == cond)
+        w_name, w_temp, w_warp = sampling_conditions(cond, primary_only=True)[0]
+        base_w_job = {
+            'prompt': w_prompt,
+            'sampling_name': w_name,
+            'temperature': w_temp,
+            'warper': w_warp,
+            'seed': args.seed,
+            'max_new_tokens_override': warmup_cap,
+        }
+        for _ in range(args.timing_warmups):
+            for _, arm_kind, ad_obj, _ in bundle_arms:
+                _invoke_bundle_arm(arm_kind, ad_obj, base_w_job)
+
+    rows_by_key: dict[str, list[dict]] = {key: [] for key, _, _, _ in bundle_arms}
+    for p_idx, prompt in enumerate(selected_prompts):
+        s_name, temperature, warp = sampling_conditions(prompt['condition'], primary_only=True)[0]
+        base_job = {
+            'prompt': prompt,
+            'sampling_name': s_name,
+            'temperature': temperature,
+            'warper': warp,
+            'seed': args.seed,
+        }
+        for rep in range(args.timing_repeats):
+            rot = (p_idx + rep) % len(bundle_arms)
+            ordered = bundle_arms[rot:] + bundle_arms[:rot]
+            for arm_key, arm_kind, ad_obj, _ in ordered:
+                assert_no_external_gpu_processes(runner.device)
+                row = _invoke_bundle_arm(arm_kind, ad_obj, base_job)
+                rows_by_key[arm_key].append({
+                    'prompt_id': prompt['prompt_id'],
+                    'condition': prompt['condition'],
                     'sampling_name': s_name,
-                    'mean_accepted_length': acc,
-                    'tokens_per_second': res.num_output_tokens / elapsed,
-                    'target_forwards_per_generated_token': len(res.blocks) / max(res.num_output_tokens, 1),
+                    'repeat': rep,
+                    'effective_beta': float(row['effective_beta']),
+                    'generated_tokens': int(row['generated_tokens']),
+                    'elapsed_seconds': float(row['elapsed_seconds']),
+                    'tokens_per_second': float(row['tokens_per_second']),
+                    'mean_accepted_length': float(row['mean_accepted_length']),
+                    'median_accepted_length': float(row['median_accepted_length']),
+                    'target_forwards_per_generated_token': float(row['target_forwards_per_generated_token']),
                 })
-    out = {}
-    for arm_name, rows in by_arm.items():
-        out[arm_name] = {
+
+    plain_rows = rows_by_key['plain_dflash']
+    plain_by_slot = {(r['prompt_id'], r['repeat']): r for r in plain_rows}
+
+    def _summarize_arm_rows(rows: list[dict], *, ckpt_scale: float | None = None, paired_vs_plain: bool = False) -> dict:
+        by_cond = {}
+        for cond in sorted({r['condition'] for r in rows}):
+            c_rows = [r for r in rows if r['condition'] == cond]
+            by_cond[cond] = {
+                'requests': len(c_rows),
+                'mean_accepted_length': statistics.mean(r['mean_accepted_length'] for r in c_rows),
+                'mean_tokens_per_second': statistics.mean(r['tokens_per_second'] for r in c_rows),
+                'median_tokens_per_second': statistics.median(r['tokens_per_second'] for r in c_rows),
+                'mean_target_forwards_per_token': statistics.mean(
+                    r['target_forwards_per_generated_token'] for r in c_rows
+                ),
+            }
+        entry = {
             'requests': len(rows),
-            'mean_accepted_length': statistics.mean(r['mean_accepted_length'] for r in rows),
-            'mean_tokens_per_second': statistics.mean(r['tokens_per_second'] for r in rows),
-            'mean_target_forwards_per_token': statistics.mean(
-                r['target_forwards_per_generated_token'] for r in rows
+            'mean_accepted_length': statistics.mean(r['mean_accepted_length'] for r in rows) if rows else 0.0,
+            'median_accepted_length': statistics.median(r['mean_accepted_length'] for r in rows) if rows else 0.0,
+            'mean_tokens_per_second': statistics.mean(r['tokens_per_second'] for r in rows) if rows else 0.0,
+            'median_tokens_per_second': statistics.median(r['tokens_per_second'] for r in rows) if rows else 0.0,
+            'mean_target_forwards_per_token': (
+                statistics.mean(r['target_forwards_per_generated_token'] for r in rows) if rows else 0.0
+            ),
+            'by_condition': by_cond,
+        }
+        if ckpt_scale is not None:
+            entry['checkpoint_scale'] = ckpt_scale
+            entry['effective_beta'] = 1.0
+        if paired_vs_plain:
+            tps_ratios = []
+            acc_deltas = []
+            for r in rows:
+                p_ref = plain_by_slot.get((r['prompt_id'], r['repeat']))
+                if p_ref is not None:
+                    acc_deltas.append(r['mean_accepted_length'] - p_ref['mean_accepted_length'])
+                    if p_ref['tokens_per_second'] > 0:
+                        tps_ratios.append(r['tokens_per_second'] / p_ref['tokens_per_second'])
+            entry['paired_tps_ratio_vs_plain'] = statistics.mean(tps_ratios) if tps_ratios else None
+            entry['paired_accepted_length_delta_vs_plain'] = statistics.mean(acc_deltas) if acc_deltas else None
+        return entry
+
+    plain_summary = _summarize_arm_rows(plain_rows, ckpt_scale=None, paired_vs_plain=False)
+    cl_status = 'pilot_complete' if is_pilot else 'complete'
+    out_by_variant: dict[str, dict] = {}
+    for v_name, _, d_meta, _, s_meta in loaded_variants:
+        d_scale = float(d_meta.get('checkpoint_scale', 1.0))
+        s_scale = float(s_meta.get('checkpoint_scale', 1.0))
+        out_by_variant[v_name] = {
+            'status': cl_status,
+            'is_pilot_subset': is_pilot,
+            'selected_prompt_count': len(selected_prompts),
+            'total_test_prompt_count': len(all_test),
+            'repeats': args.timing_repeats,
+            'warmups': args.timing_warmups,
+            'evaluation_beta': 1.0,
+            'plain_dflash': plain_summary,
+            'dense': _summarize_arm_rows(
+                rows_by_key[f'{v_name}::dense'], ckpt_scale=d_scale, paired_vs_plain=True
+            ),
+            'dense_sparse': _summarize_arm_rows(
+                rows_by_key[f'{v_name}::dense_sparse'], ckpt_scale=s_scale, paired_vs_plain=True
             ),
         }
-    return out
+    return cl_status, out_by_variant
 
 
 def _prepare_offline_eval_context(args, ws: Path, device: torch.device):
@@ -706,7 +995,7 @@ def _prepare_offline_eval_context(args, ws: Path, device: torch.device):
         entries, _ = trace_index(ws / 'traces', accepted_paths=audit['shards'])
         first = read_shard(entries[0].path)['blocks'][0]
         head_metadata = first['draft_lm_head']
-        head, bias = load_frozen_head(head_metadata, device)
+        head, bias = load_frozen_head(head_metadata, device, output_dir=ws)
     refs = {
         'dev': epoch_references(entries, 'dev'),
         'test': epoch_references(entries, 'test'),
@@ -729,16 +1018,22 @@ def _offline_kl_summary(eval_ctx, ckpt_path: Path, device: torch.device) -> dict
     }
 
 
-def run_m2_refit_calibration(args, artifacts_root: Path, suite_root: Path) -> dict:
-    from . import eval_closed_loop, train
+def run_m2_refit_calibration(args, artifacts_root: Path, suite_root: Path, *, cpu_threads: int | None = None) -> dict:
+    from . import train
 
+    cfg_fp = _suite_config_fingerprint('m2_refit_calibration', args, artifacts_root)
+    ws = suite_root / f'm2_refit_ws_{cfg_fp[:12]}'
     report_path = suite_root / 'm2_refit_calibration.json'
-    if args.resume and report_path.is_file():
-        existing = json.loads(report_path.read_text())
-        if existing.get('status') == 'complete' and existing.get('scale') == args.scale:
-            return existing
+    cached = _can_resume_report(report_path, args, cfg_fp)
+    if cached is not None:
+        if ws.is_dir():
+            _update_latest_ws_symlink(suite_root / 'm2_refit_workspace', ws)
+        return cached
 
-    ws = suite_root / 'm2_refit_workspace'
+    if cpu_threads is not None and args.scale != 'smoke':
+        torch.set_num_threads(cpu_threads)
+
+    _update_latest_ws_symlink(suite_root / 'm2_refit_workspace', ws)
     if args.scale == 'smoke':
         _ensure_smoke_baseline_m2(args, ws)
     else:
@@ -746,8 +1041,10 @@ def run_m2_refit_calibration(args, artifacts_root: Path, suite_root: Path) -> di
             artifacts_root,
             ws,
             (
-                'traces', 'm1_audit.json', 'h_proj.pt', 'token_features.pt',
-                'm2.json', 'm2', 'm3', 'm4', 'prompts.json', 'environment.json',
+                'traces', 'm1_audit.json', f'diagnostic_{args.scale}.json',
+                'h_proj.pt', 'token_features.pt',
+                'm2.json', 'm2', 'm3', 'm4', 'prompts.json',
+                'environment.json', 'smoke.json',
             ),
         )
 
@@ -764,6 +1061,7 @@ def run_m2_refit_calibration(args, artifacts_root: Path, suite_root: Path) -> di
         train_cli.extend([
             '--trace_dir', str(ws / 'traces'),
             '--m1_audit', str(ws / 'm1_audit.json'),
+            '--m1_diagnostic', str(ws / f'diagnostic_{args.scale}.json'),
             '--features', str(ws / 'token_features.pt'),
             '--projection', str(ws / 'h_proj.pt'),
             '--prompts', str(ws / 'prompts.json'),
@@ -771,6 +1069,9 @@ def run_m2_refit_calibration(args, artifacts_root: Path, suite_root: Path) -> di
     refit_report = train.main(train_cli)
     if refit_report is None:
         refit_report = json.loads((ws / f'{fit_subdir}.json').read_text())
+
+    if cpu_threads is not None and args.scale != 'smoke':
+        torch.set_num_threads(cpu_threads)
 
     refit_dir = ws / fit_subdir
     base_dir = ws / base_subdir
@@ -780,7 +1081,7 @@ def run_m2_refit_calibration(args, artifacts_root: Path, suite_root: Path) -> di
     scale_adapter_checkpoint(refit_dir / 'dense.pt', refit_dense_s, args.fixed_checkpoint_scale)
     scale_adapter_checkpoint(refit_dir / 'dense_sparse.pt', refit_sparse_s, args.fixed_checkpoint_scale)
 
-    base_scaled_dir = suite_root / 'baseline_m2_scaled'
+    base_scaled_dir = ws / 'baseline_m2_scaled'
     base_dense_s = base_scaled_dir / f'dense_scale{scale_tag}.pt'
     base_sparse_s = base_scaled_dir / f'dense_sparse_scale{scale_tag}.pt'
     scale_adapter_checkpoint(base_dir / 'dense.pt', base_dense_s, args.fixed_checkpoint_scale)
@@ -800,56 +1101,32 @@ def run_m2_refit_calibration(args, artifacts_root: Path, suite_root: Path) -> di
 
     device = torch.device(args.device)
     eval_ctx = _prepare_offline_eval_context(args, ws, device)
+    offline_by_variant = {}
+    for v_name, d_ckpt, s_ckpt in variants:
+        offline_by_variant[v_name] = (
+            _offline_kl_summary(eval_ctx, d_ckpt, device),
+            _offline_kl_summary(eval_ctx, s_ckpt, device),
+        )
+
+    cl_status, cl_by_variant = _evaluate_refit_variants_closed_loop(args, ws, variants)
     variant_reports = []
     for v_name, d_ckpt, s_ckpt in variants:
-        dense_kl = _offline_kl_summary(eval_ctx, d_ckpt, device)
-        sparse_kl = _offline_kl_summary(eval_ctx, s_ckpt, device)
-        if args.scale == 'smoke':
-            cl_summary = _smoke_closed_loop_checkpoint_eval(args, d_ckpt, s_ckpt)
-        else:
-            v_ws = suite_root / 'closed_loop_variants' / v_name
-            _link_prereqs(
-                ws,
-                v_ws,
-                ('m2.json', 'm2', 'm3', 'm4', 'prompts.json', 'h_proj.pt', 'environment.json'),
-            )
-            eval_closed_loop.main(
-                _cli_base_flags(args, v_ws) + [
-                    '--stage', 'm5',
-                    '--mode', 'all',
-                    '--dense_checkpoint', str(d_ckpt),
-                    '--sparse_checkpoint', str(s_ckpt),
-                    '--projection', str(ws / 'h_proj.pt'),
-                    '--prompts_manifest', str(ws / 'prompts.json'),
-                    '--timing_repeats', str(args.timing_repeats),
-                    '--timing_warmups', str(args.timing_warmups),
-                    '--timing_prompts', str(args.timing_prompts),
-                    '--max_new_tokens', str(args.max_new_tokens),
-                    '--long_max_new_tokens', str(args.long_max_new_tokens),
-                    '--m5_arms', 'plain_dflash', 'dense_full',
-                ]
-            )
-            v_sum = json.loads((v_ws / 'm5' / 'summary.json').read_text())
-            v_tim = json.loads((v_ws / 'm5' / 'timing.json').read_text())
-            cl_summary = {
-                'evaluation_groups': v_sum.get('groups', []),
-                'isolated_timing_groups': v_tim.get('groups', []),
-                'summary_json': str((v_ws / 'm5' / 'summary.json').resolve()),
-                'timing_json': str((v_ws / 'm5' / 'timing.json').resolve()),
-            }
+        dense_kl, sparse_kl = offline_by_variant[v_name]
         variant_reports.append({
             'variant': v_name,
             'dense_checkpoint': str(d_ckpt.resolve()),
             'sparse_checkpoint': str(s_ckpt.resolve()),
             'offline_dense_kl': dense_kl,
             'offline_dense_sparse_kl': sparse_kl,
-            'closed_loop': cl_summary,
+            'closed_loop': cl_by_variant[v_name],
         })
 
     report = {
         'suite': 'm2_refit_calibration',
         'scale': args.scale,
-        'status': 'complete',
+        'status': cl_status,
+        'config_fingerprint': cfg_fp,
+        'refit_fit_gate_status': refit_report.get('status'),
         'refit_hyperparameters': {
             'm5_fit_tag': fit_tag,
             'block_shuffle_window': args.block_shuffle_window,
@@ -920,26 +1197,50 @@ def main(argv=None):
     artifacts_root = Path(args.artifacts_root) if args.artifacts_root is not None else Path(args.output)
     suite_root = Path(args.output) / 'post_m4_suite'
     suite_root.mkdir(parents=True, exist_ok=True)
+    if not tiny:
+        _link_prereqs(artifacts_root, Path(args.output), ('smoke.json', 'environment.json'))
+        _link_prereqs(artifacts_root, suite_root, ('smoke.json', 'environment.json'))
     record = record_run(args, f'post_m4_suite-{args.suite}')
     if not tiny:
-        preflight(args, 4096)
+        preflight(SimpleNamespace(scale=args.scale, output=suite_root), 4096)
 
-    torch.set_num_threads(1)
-    selected_suites = (
-        ['fastpath_bench', 'online_head_to_head', 'm2_refit_calibration']
-        if args.suite == 'all'
-        else [args.suite]
-    )
-    results = {}
-    if 'fastpath_bench' in selected_suites:
-        results['fastpath_bench'] = run_fastpath_bench(args, artifacts_root, suite_root)
-    if 'online_head_to_head' in selected_suites:
-        results['online_head_to_head'] = run_online_head_to_head(args, artifacts_root, suite_root)
-    if 'm2_refit_calibration' in selected_suites:
-        results['m2_refit_calibration'] = run_m2_refit_calibration(args, artifacts_root, suite_root)
+    orig_threads = torch.get_num_threads()
+    try:
+        if tiny:
+            torch.set_num_threads(1)
+        selected_suites = (
+            ['fastpath_bench', 'online_head_to_head', 'm2_refit_calibration']
+            if args.suite == 'all'
+            else [args.suite]
+        )
+        results = {}
+        if 'fastpath_bench' in selected_suites:
+            results['fastpath_bench'] = run_fastpath_bench(args, artifacts_root, suite_root)
+            if not tiny:
+                torch.set_num_threads(orig_threads)
+        if 'online_head_to_head' in selected_suites:
+            results['online_head_to_head'] = run_online_head_to_head(args, artifacts_root, suite_root)
+            if not tiny:
+                torch.set_num_threads(orig_threads)
+        if 'm2_refit_calibration' in selected_suites:
+            results['m2_refit_calibration'] = run_m2_refit_calibration(
+                args, artifacts_root, suite_root, cpu_threads=orig_threads,
+            )
+            if not tiny:
+                torch.set_num_threads(orig_threads)
+    finally:
+        torch.set_num_threads(orig_threads)
+
+    statuses = [r.get('status') for r in results.values()]
+    if statuses and all(s == 'complete' for s in statuses):
+        master_status = 'complete'
+    elif statuses and all(s in ('complete', 'pilot_complete') for s in statuses):
+        master_status = 'pilot_complete'
+    else:
+        master_status = 'incomplete'
 
     summary = {
-        'status': 'complete' if all(r.get('status') == 'complete' for r in results.values()) else 'incomplete',
+        'status': master_status,
         'scale': args.scale,
         'requested_suite': args.suite,
         'executed_suites': selected_suites,

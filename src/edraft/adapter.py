@@ -216,9 +216,17 @@ class ProposalSnapshot:
 
     def unary(self, H, proposal_mode='dense_full', *, unary_fn=None, bf16_gemm: bool = False):
         if proposal_mode == 'dense_full':
-            eff_unary = unary_fn if unary_fn is not None else self.unary_fn
-            if eff_unary is not None:
-                return eff_unary(self.E, self.W, self.b, H)
+            if unary_fn is not None:
+                return unary_fn(self.E, self.W, self.b, H)
+            if self.unary_fn is not None:
+                if getattr(self.unary_fn, '_supports_bf16_gemm', False):
+                    return self.unary_fn(
+                        self.E, self.W, self.b, H,
+                        bf16_gemm=bf16_gemm,
+                        E_bf16=self._token_features_bf16() if bf16_gemm else None,
+                    )
+                if not bf16_gemm:
+                    return self.unary_fn(self.E, self.W, self.b, H)
             return block_unary(
                 self.E, self.W, self.b, H,
                 bf16_gemm=bf16_gemm,
@@ -508,8 +516,15 @@ class DenseAdapter(nn.Module):
         return self._cached_E_bf16
 
     def unary(self, H, *, bf16_gemm: bool = False):
-        if self.unary_fn is not None and not bf16_gemm:
-            return self.unary_fn(self.E, self.W, self.b, H)
+        if self.unary_fn is not None:
+            if getattr(self.unary_fn, '_supports_bf16_gemm', False):
+                return self.unary_fn(
+                    self.E, self.W, self.b, H,
+                    bf16_gemm=bf16_gemm,
+                    E_bf16=self._token_features_bf16() if bf16_gemm else None,
+                )
+            if not bf16_gemm:
+                return self.unary_fn(self.E, self.W, self.b, H)
         return block_unary(
             self.E, self.W, self.b, H,
             bf16_gemm=bf16_gemm,

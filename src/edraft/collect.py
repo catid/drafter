@@ -15,8 +15,8 @@ from types import SimpleNamespace
 import torch
 
 from .features import HiddenProjection, fit_hidden_projection, fit_token_features
-from .runtime import (ROOT, Manifest, WorkQueue, atomic_json, common_parser, fingerprint, git_commit,
-                      parse_config, preflight, record_run, resolved_config)
+from .runtime import (ROOT, Manifest, WorkQueue, atomic_json, call_with_output_dir, common_parser, fingerprint,
+                      git_commit, parse_config, preflight, record_run, resolve_artifact_path, resolved_config)
 from .sampler import SamplingWarper
 from .traces import TraceShardWriter, compact_block, read_shard, reconstruction_diagnostic
 
@@ -128,7 +128,7 @@ def check_reference_gates(args):
     if (numerics.get("status") != "passed" or not numerics.get("head_reconstruction", {}).get("passed")
             or not mismatch_ids <= examined):
         raise RuntimeError("blocked: M0 numerics must cover every target-only mismatch and the real hidden/head hook")
-    env = json.loads((ROOT / "artifacts/environment.json").read_text())
+    env = json.loads(resolve_artifact_path("environment.json", args.output, root=ROOT).read_text())
     for model in [args.target, args.drafter]:
         revision = env.get("model_artifacts", {}).get(model, {}).get("revision")
         if revision is None or numerics.get("model_revisions", {}).get(model) != revision:
@@ -183,9 +183,9 @@ class CollectionBackend:
         else:
             from .backend import ReferenceBackend
             from .download import fetch_model
-            target_path = fetch_model(args.target, args.allow_download)
-            draft_path = fetch_model(args.drafter, args.allow_download)
-            env = json.loads((ROOT / "artifacts/environment.json").read_text())
+            target_path = call_with_output_dir(fetch_model, args.target, args.allow_download, output_dir=args.output)
+            draft_path = call_with_output_dir(fetch_model, args.drafter, args.allow_download, output_dir=args.output)
+            env = json.loads(resolve_artifact_path("environment.json", args.output, root=ROOT).read_text())
             self.model_pair = [args.target, args.drafter]
             self.revisions = [env["model_artifacts"][model]["revision"] for model in self.model_pair]
             self.real = ReferenceBackend.from_pretrained(target_path, draft_path, device=args.device,
