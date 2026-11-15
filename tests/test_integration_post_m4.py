@@ -1082,18 +1082,101 @@ def test_int_bug_6_train_bf16_gemm_calibrate_beta_and_two_sided_parity(tmp_path)
             f'bf16_gemm={bf16_flag}: calibrate_beta(1.0)={cal_gkl} disagreed with evaluate()={ev_gkl}'
         )
 
-    # Verify two_sided_pseudolikelihood + --bf16_gemm end-to-end training & evaluation parity
-    out_pl = tmp_path / 'fit_pl_bf16'
-    rep_pl = train.main([
-        '--scale', 'smoke',
-        '--output', str(out_pl),
-        '--objective', 'two_sided_pseudolikelihood',
-        '--bf16_gemm',
-        '--epochs_dense', '2',
-        '--epochs_sparse', '2',
-        '--m5_fit_tag', 'pl_bf16',
-    ])
+    # Verify two_sided_pseudolikelihood + --bf16_gemm end-to-end training & evaluation parity (INT-BUG-8)
+    seen_bf16_calls = {'train': [], 'eval': []}
+    orig_two_sided = train.two_sided_batch_scores_and_targets
+
+    def _spy_two_sided(*a, **kw):
+        bucket = 'train' if torch.is_grad_enabled() else 'eval'
+        seen_bf16_calls[bucket].append(bool(kw.get('bf16_gemm', False)))
+        return orig_two_sided(*a, **kw)
+
+    train.two_sided_batch_scores_and_targets = _spy_two_sided
+    try:
+        out_pl = tmp_path / 'fit_pl_bf16'
+        rep_pl = train.main([
+            '--scale', 'smoke',
+            '--output', str(out_pl),
+            '--objective', 'two_sided_pseudolikelihood',
+            '--bf16_gemm',
+            '--epochs_dense', '2',
+            '--epochs_sparse', '2',
+            '--m5_fit_tag', 'pl_bf16',
+        ])
+    finally:
+        train.two_sided_batch_scores_and_targets = orig_two_sided
+    assert len(seen_bf16_calls['train']) > 0 and all(seen_bf16_calls['train']), (
+        f"INT-BUG-8: fit() two_sided_pseudolikelihood training calls missed bf16_gemm=True: {seen_bf16_calls['train']}"
+    )
+    assert len(seen_bf16_calls['eval']) > 0 and all(seen_bf16_calls['eval'])
     assert math.isfinite(rep_pl['stages']['dense_sparse']['dev']['weighted_mean_kl'])
+
+
+def test_int_bug_9_post_m4_suite_long_repetition_dominated_primary_exclusion(tmp_path, monkeypatch):
+    # Verify both _run_matched_closed_loop_fastpath_bench and _evaluate_refit_variants_closed_loop
+    # exclude long_* repetition_dominated generations from primary summaries & paired ratios while
+    # reporting repetition_excluded counts and all_runs separately (prompt.md:772, 777).
+    orig_runner = post_m4_suite.EvaluationRunner
+
+    class _RepInjectingRunner(orig_runner):
+        def run(self, job, setting, profile=False):
+            row = super().run(job, setting, profile=profile)
+            pid = job['prompt']['prompt_id']
+            # Inject pathological outlier ONLY on synthetic-test-long_thinking-0 for online_bigram & dense
+            if pid == 'synthetic-test-long_thinking-0' and job['arm'] in ('online_bigram', 'dense'):
+                row = dict(row)
+                row['generation'] = dict(row['generation'], repetition_dominated=True)
+                row['tokens_per_second'] = 999_999.0
+                row['mean_accepted_length'] = 999.0
+            return row
+
+    monkeypatch.setattr(post_m4_suite, 'EvaluationRunner', _RepInjectingRunner)
+
+    out_dir = tmp_path / 'rep_excl_suite'
+    res = post_m4_suite.main([
+        '--scale', 'smoke',
+        '--suite', 'all',
+        '--output', str(out_dir),
+        '--bench_warmups', '1',
+        '--bench_repeats', '2',
+        '--timing_warmups', '1',
+        '--timing_repeats', '2',
+        '--smoke_tokens', '12',
+    ])
+
+    # 1) Check fastpath_bench closed-loop matched comparison
+    cl_fp = res['suites']['fastpath_bench']['closed_loop_matched_comparison']
+    bg_summaries = [s for s in cl_fp['summary_by_mode_and_arm'] if s['arm'] == 'online_bigram']
+    assert len(bg_summaries) == 3
+    for s in bg_summaries:
+        # 4 smoke test prompts * 2 repeats = 8 timed_runs; 1 long prompt * 2 repeats = 2 excluded -> 6 primary
+        assert s['timed_runs'] == 8
+        assert s['repetition_excluded'] == 2
+        assert s['primary_timed_runs'] == 6
+        assert s['mean_tokens_per_second'] < 50_000.0, '999,999 outlier leaked into primary mean_tokens_per_second!'
+        assert s['all_runs_mean_tokens_per_second'] > 200_000.0
+        assert s['by_condition']['long_thinking']['repetition_excluded'] == 2
+        assert s['by_condition']['long_thinking']['primary_timed_runs'] == 2
+        assert s['by_condition']['long_thinking']['mean_tokens_per_second'] < 50_000.0
+        assert s['by_condition']['standard_nonthinking']['repetition_excluded'] == 0
+    bg_pair = next(p for p in cl_fp['paired_speedups'] if p['arm'] == 'online_bigram')
+    assert bg_pair['repetition_excluded_pairs'] == 2
+    assert bg_pair['pairs'] == 6
+    assert bg_pair['by_condition']['long_thinking']['pairs'] == 2
+
+    # 2) Check m2_refit_calibration closed-loop variants
+    for v in res['suites']['m2_refit_calibration']['variants']:
+        d_cl = v['closed_loop']['dense']
+        assert d_cl['requests'] == 8
+        assert d_cl['repetition_excluded'] == 2
+        assert d_cl['primary_requests'] == 6
+        assert d_cl['mean_accepted_length'] < 50.0, '999.0 outlier leaked into primary mean_accepted_length!'
+        assert d_cl['all_runs']['mean_accepted_length'] > 200.0
+        assert d_cl['by_condition']['long_thinking']['repetition_excluded'] == 2
+        assert d_cl['by_condition']['long_thinking']['primary_requests'] == 2
+        assert d_cl['repetition_excluded_comparison_pairs'] == 2
+        assert d_cl['paired_primary_requests'] == 6
+        assert d_cl['paired_tps_ratio_vs_plain'] < 100.0, '999,999 outlier leaked into paired_tps_ratio_vs_plain!'
 
 
 def test_int_bug_7_snapshot_vs_adapter_unary_bf16_and_m5_torch_compile():

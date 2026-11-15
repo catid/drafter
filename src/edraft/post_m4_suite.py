@@ -388,6 +388,10 @@ def _select_test_prompts(prompt_manifest: dict, scale: str, timing_prompts: int)
     return all_test, selected_prompts, is_pilot
 
 
+def _is_repetition_excluded(row: dict) -> bool:
+    return str(row.get('condition', '')).startswith('long_') and bool(row.get('repetition_dominated', False))
+
+
 def _run_matched_closed_loop_fastpath_bench(args, artifacts_root: Path, bench_dir: Path) -> dict:
     ws = bench_dir / 'closed_loop_workspace'
     if args.scale != 'smoke':
@@ -509,6 +513,7 @@ def _run_matched_closed_loop_fastpath_bench(args, artifacts_root: Path, bench_di
                     'prompt_id': job['prompt']['prompt_id'],
                     'condition': job['prompt']['condition'],
                     'repeat': rep,
+                    'repetition_dominated': bool(row.get('generation', {}).get('repetition_dominated', False)),
                     'generated_tokens': row['generated_tokens'],
                     'elapsed_seconds': row['elapsed_seconds'],
                     'tokens_per_second': row['tokens_per_second'],
@@ -522,6 +527,7 @@ def _run_matched_closed_loop_fastpath_bench(args, artifacts_root: Path, bench_di
                 'arm': job['arm'],
                 'prompt_id': job['prompt']['prompt_id'],
                 'condition': job['prompt']['condition'],
+                'repetition_dominated': bool(p_row.get('generation', {}).get('repetition_dominated', False)),
                 'phase_ms': p_row['phase_ms'],
                 'generated_tokens': p_row['generated_tokens'],
             })
@@ -533,24 +539,45 @@ def _run_matched_closed_loop_fastpath_bench(args, artifacts_root: Path, bench_di
     for mode_name, _, _ in modes:
         for arm in arms:
             m_rows = [r for r in speed_rows if r['fastpath_mode'] == mode_name and r['arm'] == arm]
+            m_primary = [r for r in m_rows if not _is_repetition_excluded(r)]
             p_rows = [r for r in profile_rows if r['fastpath_mode'] == mode_name and r['arm'] == arm]
-            phase_keys = sorted({k for r in p_rows for k in (r.get('phase_ms') or {})})
+            p_primary = [r for r in p_rows if not _is_repetition_excluded(r)]
+            phase_keys = sorted({k for r in p_primary for k in (r.get('phase_ms') or {})})
             phase_means = {
-                k: statistics.mean(float(r['phase_ms'][k]) for r in p_rows if k in r['phase_ms'])
+                k: statistics.mean(float(r['phase_ms'][k]) for r in p_primary if k in r['phase_ms'])
                 for k in phase_keys
             }
+            by_cond = {}
+            for cond in sorted({r['condition'] for r in m_rows}):
+                c_all = [r for r in m_rows if r['condition'] == cond]
+                c_prim = [r for r in c_all if not _is_repetition_excluded(r)]
+                by_cond[cond] = {
+                    'timed_runs': len(c_all),
+                    'primary_timed_runs': len(c_prim),
+                    'repetition_excluded': len(c_all) - len(c_prim),
+                    'mean_tokens_per_second': statistics.mean(r['tokens_per_second'] for r in c_prim) if c_prim else None,
+                    'median_tokens_per_second': statistics.median(r['tokens_per_second'] for r in c_prim) if c_prim else None,
+                    'mean_accepted_length': statistics.mean(r['mean_accepted_length'] for r in c_prim) if c_prim else None,
+                    'all_runs_mean_tokens_per_second': statistics.mean(r['tokens_per_second'] for r in c_all) if c_all else None,
+                    'all_runs_mean_accepted_length': statistics.mean(r['mean_accepted_length'] for r in c_all) if c_all else None,
+                }
             summary_by_mode_arm.append({
                 'fastpath_mode': mode_name,
                 'arm': arm,
                 'timed_runs': len(m_rows),
-                'mean_tokens_per_second': statistics.mean(r['tokens_per_second'] for r in m_rows) if m_rows else None,
-                'median_tokens_per_second': statistics.median(r['tokens_per_second'] for r in m_rows) if m_rows else None,
-                'mean_accepted_length': statistics.mean(r['mean_accepted_length'] for r in m_rows) if m_rows else None,
+                'primary_timed_runs': len(m_primary),
+                'repetition_excluded': len(m_rows) - len(m_primary),
+                'mean_tokens_per_second': statistics.mean(r['tokens_per_second'] for r in m_primary) if m_primary else None,
+                'median_tokens_per_second': statistics.median(r['tokens_per_second'] for r in m_primary) if m_primary else None,
+                'mean_accepted_length': statistics.mean(r['mean_accepted_length'] for r in m_primary) if m_primary else None,
+                'all_runs_mean_tokens_per_second': statistics.mean(r['tokens_per_second'] for r in m_rows) if m_rows else None,
+                'all_runs_mean_accepted_length': statistics.mean(r['mean_accepted_length'] for r in m_rows) if m_rows else None,
+                'by_condition': by_cond,
                 'mean_phase_ms': phase_means,
             })
 
     by_slot = {
-        (r['fastpath_mode'], r['arm'], r['prompt_id'], r['repeat']): r['tokens_per_second']
+        (r['fastpath_mode'], r['arm'], r['prompt_id'], r['repeat']): r
         for r in speed_rows
     }
     paired_speedups = []
@@ -558,23 +585,49 @@ def _run_matched_closed_loop_fastpath_bench(args, artifacts_root: Path, bench_di
         r3_over_eager = []
         comp_over_r3 = []
         comp_over_eager = []
-        for (m_name, a_name, pid, rep), tps_eager in by_slot.items():
+        excluded_pairs = 0
+        by_cond_pairs: dict[str, dict[str, list[float]]] = {}
+        for (m_name, a_name, pid, rep), r_eager in by_slot.items():
+            tps_eager = r_eager['tokens_per_second']
             if m_name != 'eager_pre_round3' or a_name != arm or tps_eager <= 0:
                 continue
-            tps_r3 = by_slot.get(('round3_compact', arm, pid, rep))
-            tps_cmp = by_slot.get(('round3_compile', arm, pid, rep))
-            if tps_r3 is not None:
-                r3_over_eager.append(tps_r3 / tps_eager)
-            if tps_cmp is not None and tps_r3 and tps_r3 > 0:
-                comp_over_r3.append(tps_cmp / tps_r3)
-            if tps_cmp is not None:
-                comp_over_eager.append(tps_cmp / tps_eager)
+            r_r3 = by_slot.get(('round3_compact', arm, pid, rep))
+            r_cmp = by_slot.get(('round3_compile', arm, pid, rep))
+            cond = r_eager['condition']
+            cond_bucket = by_cond_pairs.setdefault(
+                cond, {'r3_over_eager': [], 'comp_over_r3': [], 'comp_over_eager': []}
+            )
+            if any(x is not None and _is_repetition_excluded(x) for x in (r_eager, r_r3, r_cmp)):
+                excluded_pairs += 1
+                continue
+            if r_r3 is not None:
+                ratio_r3 = r_r3['tokens_per_second'] / tps_eager
+                r3_over_eager.append(ratio_r3)
+                cond_bucket['r3_over_eager'].append(ratio_r3)
+            if r_cmp is not None and r_r3 is not None and r_r3['tokens_per_second'] > 0:
+                ratio_c_r3 = r_cmp['tokens_per_second'] / r_r3['tokens_per_second']
+                comp_over_r3.append(ratio_c_r3)
+                cond_bucket['comp_over_r3'].append(ratio_c_r3)
+            if r_cmp is not None:
+                ratio_c_e = r_cmp['tokens_per_second'] / tps_eager
+                comp_over_eager.append(ratio_c_e)
+                cond_bucket['comp_over_eager'].append(ratio_c_e)
         paired_speedups.append({
             'arm': arm,
             'round3_over_eager_mean_ratio': statistics.mean(r3_over_eager) if r3_over_eager else None,
             'compile_over_round3_mean_ratio': statistics.mean(comp_over_r3) if comp_over_r3 else None,
             'compile_over_eager_mean_ratio': statistics.mean(comp_over_eager) if comp_over_eager else None,
             'pairs': len(r3_over_eager),
+            'repetition_excluded_pairs': excluded_pairs,
+            'by_condition': {
+                c: {
+                    'round3_over_eager_mean_ratio': statistics.mean(b['r3_over_eager']) if b['r3_over_eager'] else None,
+                    'compile_over_round3_mean_ratio': statistics.mean(b['comp_over_r3']) if b['comp_over_r3'] else None,
+                    'compile_over_eager_mean_ratio': statistics.mean(b['comp_over_eager']) if b['comp_over_eager'] else None,
+                    'pairs': len(b['r3_over_eager']),
+                }
+                for c, b in sorted(by_cond_pairs.items())
+            },
         })
 
     return {
@@ -897,6 +950,7 @@ def _evaluate_refit_variants_closed_loop(
                     'condition': prompt['condition'],
                     'sampling_name': s_name,
                     'repeat': rep,
+                    'repetition_dominated': bool(row.get('generation', {}).get('repetition_dominated', False)),
                     'effective_beta': float(row['effective_beta']),
                     'generated_tokens': int(row['generated_tokens']),
                     'elapsed_seconds': float(row['elapsed_seconds']),
@@ -910,27 +964,40 @@ def _evaluate_refit_variants_closed_loop(
     plain_by_slot = {(r['prompt_id'], r['repeat']): r for r in plain_rows}
 
     def _summarize_arm_rows(rows: list[dict], *, ckpt_scale: float | None = None, paired_vs_plain: bool = False) -> dict:
+        primary_rows = [r for r in rows if not _is_repetition_excluded(r)]
         by_cond = {}
         for cond in sorted({r['condition'] for r in rows}):
             c_rows = [r for r in rows if r['condition'] == cond]
+            c_prim = [r for r in c_rows if not _is_repetition_excluded(r)]
             by_cond[cond] = {
                 'requests': len(c_rows),
-                'mean_accepted_length': statistics.mean(r['mean_accepted_length'] for r in c_rows),
-                'mean_tokens_per_second': statistics.mean(r['tokens_per_second'] for r in c_rows),
-                'median_tokens_per_second': statistics.median(r['tokens_per_second'] for r in c_rows),
-                'mean_target_forwards_per_token': statistics.mean(
-                    r['target_forwards_per_generated_token'] for r in c_rows
+                'primary_requests': len(c_prim),
+                'repetition_excluded': len(c_rows) - len(c_prim),
+                'mean_accepted_length': statistics.mean(r['mean_accepted_length'] for r in c_prim) if c_prim else None,
+                'mean_tokens_per_second': statistics.mean(r['tokens_per_second'] for r in c_prim) if c_prim else None,
+                'median_tokens_per_second': statistics.median(r['tokens_per_second'] for r in c_prim) if c_prim else None,
+                'mean_target_forwards_per_token': (
+                    statistics.mean(r['target_forwards_per_generated_token'] for r in c_prim) if c_prim else None
                 ),
+                'all_runs_mean_accepted_length': statistics.mean(r['mean_accepted_length'] for r in c_rows) if c_rows else None,
+                'all_runs_mean_tokens_per_second': statistics.mean(r['tokens_per_second'] for r in c_rows) if c_rows else None,
             }
         entry = {
             'requests': len(rows),
-            'mean_accepted_length': statistics.mean(r['mean_accepted_length'] for r in rows) if rows else 0.0,
-            'median_accepted_length': statistics.median(r['mean_accepted_length'] for r in rows) if rows else 0.0,
-            'mean_tokens_per_second': statistics.mean(r['tokens_per_second'] for r in rows) if rows else 0.0,
-            'median_tokens_per_second': statistics.median(r['tokens_per_second'] for r in rows) if rows else 0.0,
+            'primary_requests': len(primary_rows),
+            'repetition_excluded': len(rows) - len(primary_rows),
+            'mean_accepted_length': statistics.mean(r['mean_accepted_length'] for r in primary_rows) if primary_rows else None,
+            'median_accepted_length': statistics.median(r['mean_accepted_length'] for r in primary_rows) if primary_rows else None,
+            'mean_tokens_per_second': statistics.mean(r['tokens_per_second'] for r in primary_rows) if primary_rows else None,
+            'median_tokens_per_second': statistics.median(r['tokens_per_second'] for r in primary_rows) if primary_rows else None,
             'mean_target_forwards_per_token': (
-                statistics.mean(r['target_forwards_per_generated_token'] for r in rows) if rows else 0.0
+                statistics.mean(r['target_forwards_per_generated_token'] for r in primary_rows) if primary_rows else None
             ),
+            'all_runs': {
+                'requests': len(rows),
+                'mean_accepted_length': statistics.mean(r['mean_accepted_length'] for r in rows) if rows else None,
+                'mean_tokens_per_second': statistics.mean(r['tokens_per_second'] for r in rows) if rows else None,
+            },
             'by_condition': by_cond,
         }
         if ckpt_scale is not None:
@@ -939,12 +1006,18 @@ def _evaluate_refit_variants_closed_loop(
         if paired_vs_plain:
             tps_ratios = []
             acc_deltas = []
+            excluded_pairs = 0
             for r in rows:
                 p_ref = plain_by_slot.get((r['prompt_id'], r['repeat']))
                 if p_ref is not None:
+                    if _is_repetition_excluded(r) or _is_repetition_excluded(p_ref):
+                        excluded_pairs += 1
+                        continue
                     acc_deltas.append(r['mean_accepted_length'] - p_ref['mean_accepted_length'])
                     if p_ref['tokens_per_second'] > 0:
                         tps_ratios.append(r['tokens_per_second'] / p_ref['tokens_per_second'])
+            entry['paired_primary_requests'] = len(acc_deltas)
+            entry['repetition_excluded_comparison_pairs'] = excluded_pairs
             entry['paired_tps_ratio_vs_plain'] = statistics.mean(tps_ratios) if tps_ratios else None
             entry['paired_accepted_length_delta_vs_plain'] = statistics.mean(acc_deltas) if acc_deltas else None
         return entry

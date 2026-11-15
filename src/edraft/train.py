@@ -1705,7 +1705,7 @@ def fit(entries, index_report, E, head, bias, head_metadata, args, *, stop_after
                                 compact_sparse = None
                             computed = two_sided_batch_scores_and_targets(
                                 adapter, mb_blocks, l_unit, return_sparse_keys=stage == 'dense_sparse',
-                                sparse_override=compact_sparse,
+                                sparse_override=compact_sparse, bf16_gemm=bf16_gemm,
                             )
                             scores, targets, weights = computed[:3]
                             if len(targets) > 0:
