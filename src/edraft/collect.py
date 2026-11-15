@@ -22,6 +22,7 @@ from .traces import TraceShardWriter, compact_block, read_shard, reconstruction_
 
 
 PARTITIONS = ("train_primary", "standard_eval", "diagnostic", "long")
+ALL_PARTITIONS = (*PARTITIONS, "long_oracle_train")
 STANDARD_ARMS = (("greedy", 0., SamplingWarper()),
                  ("recommended", .7, SamplingWarper(top_k=20, top_p=.8)),
                  ("pure_temperature_diagnostic", 1., SamplingWarper()))
@@ -32,9 +33,10 @@ def parser():
     p.add_argument("--stage", choices=["calibrate", "collect", "audit"], default="collect")
     p.add_argument("--rank", type=int, default=0)
     p.add_argument("--world_size", type=int, default=1)
-    p.add_argument("--partitions", nargs="+", choices=PARTITIONS, default=list(PARTITIONS))
+    p.add_argument("--partitions", nargs="+", choices=ALL_PARTITIONS, default=list(PARTITIONS))
     p.add_argument("--prompt_manifest", type=Path)
     p.add_argument("--train_tokens_per_temperature", type=int)
+    p.add_argument("--max_primary_train_tokens", type=int)
     p.add_argument("--standard_max_new_tokens", type=int, default=1024)
     p.add_argument("--long_max_new_tokens", type=int, default=24576)
     p.add_argument("--calibration_max_new_tokens", type=int, default=128)
@@ -61,6 +63,8 @@ def prepare_args(args):
         args.train_tokens_per_temperature = {"smoke": 32, "reference": 250000, "full": 1000000}[args.scale]
     if args.train_tokens_per_temperature < 1:
         raise ValueError("train_tokens_per_temperature must be positive")
+    if args.max_primary_train_tokens is not None and args.max_primary_train_tokens < 2 * args.train_tokens_per_temperature:
+        raise ValueError("max_primary_train_tokens must be at least 2 * train_tokens_per_temperature")
     if args.scale != "smoke" and args.calibration_prompts < 64:
         raise ValueError("reference calibration requires at least 64 train prompts")
     if args.scale == "smoke":
@@ -110,7 +114,8 @@ def check_reference_gates(args):
         numerics = json.loads((args.output / "m0_numerics.json").read_text())
     except FileNotFoundError as error:
         raise RuntimeError("blocked: M0 reproduction and numerical investigation must finish before M1") from error
-    if (m0.get("scale") != "reference" or m0.get("status") != "passed"
+    allowed_m0_scales = {"reference", "full"} if args.scale == "full" else {"reference"}
+    if (m0.get("scale") not in allowed_m0_scales or m0.get("status") != "passed"
             or m0.get("num_distinct_prompts", 0) < 20
             or m0["comparisons"]["upstream_local"]["mismatched_tokens"] != 0):
         raise RuntimeError("blocked: complete real M0 token reproduction gate has not passed")
@@ -327,11 +332,18 @@ def planned_jobs(args, prompts):
                        STANDARD_ARMS[2:], args.standard_max_new_tokens))
     if "long" in args.partitions:
         long_rows = [row for row in rows if row["condition"] in {"long_thinking", "long_nonthinking"}
-                     and row.get("reference_selected", True)]
+                     and row["split"] in {"dev", "test"} and row.get("reference_selected", True)]
         for condition in ["long_thinking", "long_nonthinking"]:
             selected = [row for row in long_rows if row["condition"] == condition]
             arm = ("recommended", .6, SamplingWarper(top_k=20, top_p=.95)) if condition == "long_thinking" else STANDARD_ARMS[1]
             groups.append(("long", selected, [arm], args.long_max_new_tokens))
+    if "long_oracle_train" in args.partitions:
+        oracle_rows = [row for row in rows if row["condition"] in {"long_thinking", "long_nonthinking"}
+                       and row["split"] == "train" and row.get("m5_long_oracle_train", False)]
+        for condition in ["long_thinking", "long_nonthinking"]:
+            selected = [row for row in oracle_rows if row["condition"] == condition]
+            arm = ("recommended", .6, SamplingWarper(top_k=20, top_p=.95)) if condition == "long_thinking" else STANDARD_ARMS[1]
+            groups.append(("long_oracle_train", selected, [arm], args.long_max_new_tokens))
     for partition, selected, arms, max_new_tokens in groups:
         for index, row in enumerate(selected):
             if index % args.world_size != args.rank:
@@ -407,7 +419,7 @@ def collect(args, prompts=None, backend=None):
             all_other_args = copy.copy(args)
             all_other_args.rank, all_other_args.world_size, all_other_args.partitions = 0, 1, other_partitions
             dynamic_jobs = list(planned_jobs(all_other_args, prompts))
-            dynamic_jobs.sort(key=lambda j: 0 if j["partition"] == "long" else 1)
+            dynamic_jobs.sort(key=lambda j: 0 if j["partition"] in {"long", "long_oracle_train"} else 1)
         else:
             dynamic_jobs = []
         scan_jobs = primary_jobs + dynamic_jobs
@@ -581,7 +593,9 @@ def audit(args):
     # expected set once to exclude superseded configurations and duplicate jobs
     # left by a run resumed with a different process count.
     all_args = copy.copy(args)
-    all_args.rank, all_args.world_size, all_args.partitions = 0, 1, list(PARTITIONS)
+    all_args.rank, all_args.world_size = 0, 1
+    has_oracle_prompts = any(r.get("m5_long_oracle_train", False) for r in prompt_manifest["prompts"])
+    all_args.partitions = [*PARTITIONS, "long_oracle_train"] if has_oracle_prompts else list(PARTITIONS)
     expected = {fingerprint(job_identity(args, job, backend_identity, calibration_record)):
                 job_identity(args, job, backend_identity, calibration_record)
                 for job in planned_jobs(all_args, prompt_manifest)}
@@ -646,7 +660,7 @@ def audit(args):
         if r.get("status") == "passed"
     }
     floors = {"train_tokens": 64 if args.scale == "smoke" else 500000 if args.scale == "reference" else 2000000,
-              "standard_test_prompts": 2 if args.scale == "smoke" else 64,
+              "standard_test_prompts": 2 if args.scale == "smoke" else 64 if args.scale == "reference" else 128,
               "long_dev_prompts": 1 if args.scale == "smoke" else 12 if args.scale == "reference" else 32,
               "long_test_prompts": 1 if args.scale == "smoke" else 32 if args.scale == "reference" else 96}
     requirements = {"primary_train_floor": totals["primary_train_total"] >= floors["train_tokens"],
@@ -659,6 +673,10 @@ def audit(args):
                         and all(row["status"] == "passed" for row in head_checks)
                         and len(passed_live_keys) >= expected_live_blocks
                     )}
+    if args.scale == "full" or getattr(args, "max_primary_train_tokens", None) is not None:
+        ceiling = getattr(args, "max_primary_train_tokens", None) or 4_000_000
+        floors["max_train_tokens"] = ceiling
+        requirements["primary_train_ceiling"] = totals["primary_train_total"] <= ceiling
     long_condition = "long_thinking" if any(g["condition"] == "long_thinking" for g in generations) else "long_nonthinking"
     long_T = .6 if long_condition == "long_thinking" else .7
     requirements["long_dev_generations"] = len(prompts[f"{long_condition}/dev/T={long_T}"]) >= floors["long_dev_prompts"]

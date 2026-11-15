@@ -178,8 +178,12 @@ def _make_compiled_full_kl(mode: str) -> Callable:
     def _full_kl_impl(scores: torch.Tensor, target_logits: torch.Tensor,
                       weights: torch.Tensor | None = None) -> torch.Tensor:
         p_log = torch.log_softmax(target_logits.float().detach(), -1)
+        p = p_log.exp()
         q_log = torch.log_softmax(scores.float(), -1)
-        per_slot = (p_log.exp() * (p_log - q_log)).sum(-1)
+        valid_p = p > 0
+        p_log_safe = torch.where(valid_p, p_log, torch.zeros_like(p_log))
+        q_log_safe = torch.where(valid_p, q_log, torch.zeros_like(q_log))
+        per_slot = torch.where(valid_p, p * (p_log_safe - q_log_safe), torch.zeros_like(q_log)).sum(-1)
         if weights is None:
             positions = torch.arange(scores.shape[0], device=scores.device, dtype=torch.float32)
             weights = torch.exp(-positions / 5.0)

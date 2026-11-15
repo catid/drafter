@@ -154,9 +154,15 @@ class Audit:
             self.require({p['condition'] for p in long} == {'long_thinking'}, 'authorized long condition changed')
             self.prompts[split] = standard[:ns] + long[:nl]
         self.require(s['development_prompt_ids'] == [p['prompt_id'] for p in self.prompts['dev']], 'development selection differs')
+        source_root = (self.args.source_repo or self.args.repo).resolve()
+        self.require((source_root / 'src/edraft/eval_closed_loop.py').is_file(),
+                     f'invalid source_repo: {source_root}')
+        optional_opt_files = {'fastpath.py', 'optimizers.py'}
         h = hashlib.sha256()
         for name in IMPLEMENTATION_FILES:
-            path = self.args.repo / 'src/edraft' / name
+            path = source_root / 'src/edraft' / name
+            if self.args.source_repo is not None and name in optional_opt_files and not path.exists():
+                continue
             data = path.read_bytes()
             h.update(name.encode()); h.update(data)
             self.files[str(path.resolve())] = hashlib.sha256(data).hexdigest()
@@ -491,14 +497,19 @@ def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__, parents=[preliminary])
     parser.add_argument('--scale', choices=('smoke', 'reference', 'full'), default='reference')
     parser.add_argument('--repo', type=Path, default=Path(__file__).resolve().parents[2])
+    parser.add_argument('--source_repo', type=Path, default=None,
+                        help='optional recorded source checkout root for frozen implementation hash verification (defaults to --repo)')
     parser.add_argument('--artifacts', type=Path, default=Path(__file__).resolve().parents[1])
     parser.add_argument('--seed', type=int, default=2026)
     parser.add_argument('--output', type=Path, required=True)
     if known.config:
         values = read(known.config)
-        if set(values) - {'scale', 'repo', 'artifacts', 'seed'}:
+        if set(values) - {'scale', 'repo', 'source_repo', 'artifacts', 'seed'}:
             parser.error('unsupported configuration key')
-        parser.set_defaults(**{k: Path(v) if k in ('repo', 'artifacts') else v for k, v in values.items()})
+        parser.set_defaults(**{
+            k: Path(v) if k in ('repo', 'source_repo', 'artifacts') and v is not None else v
+            for k, v in values.items()
+        })
     args = parser.parse_args(argv)
     audit = Audit(args)
     started = datetime.now(timezone.utc).isoformat()
@@ -507,12 +518,25 @@ def main(argv=None):
     except (OSError, ValueError, TypeError, KeyError, IndexError, AttributeError) as error:
         audit.failures.append(f'{type(error).__name__}: {error}')
     try:
-        commit = subprocess.check_output(['git', '-C', str(args.repo), 'rev-parse', 'HEAD'], text=True).strip()
+        commit = subprocess.check_output(
+            ['git', '-C', str(args.repo), 'rev-parse', 'HEAD'],
+            stderr=subprocess.DEVNULL, text=True,
+        ).strip()
     except (OSError, subprocess.CalledProcessError):
         commit = None
+    source_commit = commit
+    if args.source_repo is not None:
+        try:
+            source_commit = subprocess.check_output(
+                ['git', '-C', str(args.source_repo), 'rev-parse', 'HEAD'],
+                stderr=subprocess.DEVNULL, text=True,
+            ).strip()
+        except (OSError, subprocess.CalledProcessError):
+            source_commit = None
     result = {'status': 'passed' if not audit.failures else 'failed', 'scale': args.scale,
         'label': 'synthetic' if args.scale == 'smoke' else args.scale, 'started_at_utc': started,
         'completed_at_utc': datetime.now(timezone.utc).isoformat(), 'project_commit': commit,
+        'source_commit': source_commit,
         'resolved_config': {k: str(v) if isinstance(v, Path) else v for k, v in vars(args).items()},
         'source_sha256': {p.name: digest(p) for p in Path(__file__).parent.glob('*.py')},
         'checks': audit.checks, 'counts': dict(audit.counts), 'failures': audit.failures,

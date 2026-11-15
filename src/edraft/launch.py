@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import math
 import os
 from pathlib import Path
 import socket
@@ -35,11 +36,11 @@ def selected_gpus_idle(indices):
 
 def main(argv=None):
     parser = common_parser(__doc__)
-    parser.add_argument('--task', choices=['collect', 'm3', 'm4', 'train'], default='collect')
+    parser.add_argument('--task', choices=['collect', 'm3', 'm4', 'm5', 'train'], default='collect')
     parser.add_argument('--gpus', default='0,1,2,3,4,5,6')
     parser.add_argument('--schedule', choices=['modulo', 'dynamic'], default='modulo')
     parser.add_argument('--partitions', nargs='+', default=['train_primary', 'standard_eval', 'diagnostic', 'long'],
-                        choices=['train_primary', 'standard_eval', 'diagnostic', 'long'])
+                        choices=['train_primary', 'standard_eval', 'diagnostic', 'long', 'long_oracle_train'])
     parser.add_argument('--train_tokens_per_temperature', type=int)
     parser.add_argument('--standard_max_new_tokens', type=int, default=1024)
     parser.add_argument('--long_max_new_tokens', type=int, default=24576)
@@ -67,9 +68,85 @@ def main(argv=None):
     parser.add_argument('--no_ema_eval', action='store_false', dest='ema_eval')
     parser.add_argument('--pace_pullback', type=float)
     parser.add_argument('--anchor_soda', type=float)
+    parser.add_argument('--calibrate_beta', action='store_true', default=False)
+    parser.add_argument('--apply_calibrated_beta', action='store_true', default=False)
+    parser.add_argument('--calibrate_beta_grid', type=float, nargs='+', default=None)
+    parser.add_argument('--sparse_backend', choices=['signed_feature_hash', 'exact_observed_pairs'], default=None)
+    parser.add_argument('--objective', choices=['union_rest_grouped', 'two_sided_pseudolikelihood'], default=None)
+    parser.add_argument('--allow_long_oracle_fit', action='store_true', default=False)
+    parser.add_argument('--allow_pure_t1_ablation', action='store_true', default=False)
+    parser.add_argument('--m5_fit_tag', default=None)
     parser.add_argument('--resume', action='store_true', default=True)
     parser.add_argument('--no_resume', action='store_false', dest='resume')
+    parser.add_argument('--eval_mode', choices=['evaluate', 'beta_sweep', 'server_eval'], default='evaluate')
+    parser.add_argument('--beta_grid', type=float, nargs='+', default=None)
+    parser.add_argument('--beta_sweep_split', choices=['dev', 'test'], default=None)
+    parser.add_argument('--beta_sweep_arms', nargs='+', default=None)
+    parser.add_argument('--m5_arms', nargs='+', default=None)
+    parser.add_argument('--m5_oracle_checkpoint', type=Path, default=None)
+    parser.add_argument('--sparse_overflow_policy', choices=['freeze_new', 'error'], default=None)
+    parser.add_argument('--m5_triton', action='store_true', default=False)
+    parser.add_argument('--m5_torch_compile', action='store_true', default=False)
+    parser.add_argument('--m5_server_url', default=None)
+    parser.add_argument('--m5_server_model', default=None)
+    parser.add_argument('--m5_server_api_key', default=None)
+    parser.add_argument('--m5_server_timeout', type=float, default=None)
+    parser.add_argument('--bigram_count_gate_kappa', type=float, default=None)
+    parser.add_argument('--dense_checkpoint', type=Path, default=None)
+    parser.add_argument('--sparse_checkpoint', type=Path, default=None)
+    parser.add_argument('--checkpoint_scale', type=float, default=None)
+    parser.add_argument('--m5_beta_candidates', type=float, nargs=2, default=None)
+    parser.add_argument('--m5_beta_relax', type=float, default=None)
     args = parse_config(parser, argv)
+    if args.bigram_count_gate_kappa is not None:
+        if not math.isfinite(args.bigram_count_gate_kappa) or args.bigram_count_gate_kappa <= 0:
+            parser.error('--bigram_count_gate_kappa must be finite and > 0')
+    if args.m5_server_timeout is not None:
+        if not math.isfinite(args.m5_server_timeout) or args.m5_server_timeout <= 0:
+            parser.error('--m5_server_timeout must be finite and > 0')
+    if args.checkpoint_scale is not None:
+        if not math.isfinite(args.checkpoint_scale) or args.checkpoint_scale < 0:
+            parser.error('--checkpoint_scale must be finite and >= 0')
+    if args.m5_beta_candidates is not None:
+        b0, b1 = args.m5_beta_candidates
+        if not (math.isfinite(b0) and math.isfinite(b1)) or b0 < 0 or b1 < 0 or b0 == b1:
+            parser.error('--m5_beta_candidates requires two distinct finite nonnegative values')
+    if args.m5_beta_relax is not None:
+        if not math.isfinite(args.m5_beta_relax) or args.m5_beta_relax < 0:
+            parser.error('--m5_beta_relax must be finite and >= 0')
+    if args.beta_grid is not None:
+        if not args.beta_grid or any(not math.isfinite(b) or b < 0 for b in args.beta_grid):
+            parser.error('--beta_grid values must be finite and >= 0')
+    if args.calibrate_beta_grid is not None:
+        if not args.calibrate_beta_grid or any(not math.isfinite(b) or b < 0 for b in args.calibrate_beta_grid):
+            parser.error('--calibrate_beta_grid values must be finite and >= 0')
+    if args.task in ('collect', 'train') and (
+        args.eval_mode != 'evaluate' or args.beta_grid is not None
+        or args.beta_sweep_split is not None or args.beta_sweep_arms is not None
+    ):
+        parser.error(f'evaluation mode/beta_sweep options are invalid when --task {args.task}')
+    m5_only_used = bool(
+        args.eval_mode == 'server_eval'
+        or args.m5_arms
+        or args.m5_oracle_checkpoint is not None
+        or (args.sparse_overflow_policy is not None and args.task != 'train')
+        or args.m5_triton
+        or args.m5_torch_compile
+        or args.m5_server_url is not None
+        or args.m5_server_model is not None
+        or args.m5_server_api_key is not None
+        or args.m5_server_timeout is not None
+        or args.bigram_count_gate_kappa is not None
+        or args.dense_checkpoint is not None
+        or args.sparse_checkpoint is not None
+        or args.checkpoint_scale is not None
+        or args.m5_beta_candidates is not None
+        or args.m5_beta_relax is not None
+    )
+    if args.task != 'm5' and m5_only_used:
+        parser.error('M5-specific options (--m5_*, --dense_checkpoint, --sparse_checkpoint, --checkpoint_scale, --sparse_overflow_policy, --bigram_count_gate_kappa, --eval_mode server_eval) require --task m5')
+    if args.eval_mode == 'server_eval' and not args.m5_server_url:
+        parser.error('--eval_mode server_eval requires --m5_server_url')
     if args.train_tokens_per_temperature is None:
         args.train_tokens_per_temperature = 1000000 if args.scale == 'full' else 250000
     record_run(args, 'launch')
@@ -88,11 +165,15 @@ def main(argv=None):
     elif args.task == 'train':
         label, log_label = 'training', 'train'
     else:
-        label, log_label = args.task + '-evaluation', args.task + '-evaluate'
+        label = f'{args.task}-evaluation'
+        log_label = f'{args.task}-{args.eval_mode}'
     master_port = _free_localhost_port() if args.task == 'train' and len(gpus) > 1 else None
     state_path = args.output / f'{label}-processes.json'
     state = {'scale': args.scale, 'task': args.task, 'schedule': args.schedule,
              'launcher_pid': os.getpid(), 'started_at_unix': time.time(), 'workers': []}
+    src_path = str((ROOT / 'src').resolve())
+    existing_pythonpath = os.environ.get('PYTHONPATH', '')
+    worker_pythonpath = f'{src_path}{os.pathsep}{existing_pythonpath}' if existing_pythonpath else src_path
     try:
         for rank, gpu in enumerate(gpus):
             base = ['--scale', args.scale, '--rank', str(rank), '--world_size', str(len(gpus)), '--device', 'cuda:0',
@@ -126,10 +207,22 @@ def main(argv=None):
                     'learning_rate', 'weight_decay', 'bias_weight_decay',
                     'sparse_learning_rate', 'lambda_l1', 'epochs_dense',
                     'epochs_sparse', 'pace_pullback', 'anchor_soda',
+                    'sparse_backend', 'sparse_overflow_policy', 'objective',
+                    'm5_fit_tag',
                 ):
                     val = getattr(args, flag_name)
                     if val is not None:
                         command.extend([f'--{flag_name}', str(val)])
+                if args.calibrate_beta:
+                    command.append('--calibrate_beta')
+                if args.apply_calibrated_beta:
+                    command.append('--apply_calibrated_beta')
+                if args.calibrate_beta_grid is not None:
+                    command.extend(['--calibrate_beta_grid', *(str(b) for b in args.calibrate_beta_grid)])
+                if args.allow_long_oracle_fit:
+                    command.append('--allow_long_oracle_fit')
+                if args.allow_pure_t1_ablation:
+                    command.append('--allow_pure_t1_ablation')
                 if args.ema_eval is True:
                     command.append('--ema_eval')
                 elif args.ema_eval is False:
@@ -144,11 +237,13 @@ def main(argv=None):
                 if args.schedule == 'dynamic':
                     command.extend(['--schedule', 'dynamic'])
             else:
+                dense_ckpt = Path(args.dense_checkpoint) if args.dense_checkpoint is not None else (args.output / 'm2/dense.pt')
+                sparse_ckpt = Path(args.sparse_checkpoint) if args.sparse_checkpoint is not None else (args.output / 'm2/dense_sparse.pt')
                 command = [sys.executable, '-m', 'edraft.eval_closed_loop', '--stage', args.task,
-                           '--mode', 'evaluate', *base, '--long_max_new_tokens', str(args.long_max_new_tokens),
+                           '--mode', args.eval_mode, *base, '--long_max_new_tokens', str(args.long_max_new_tokens),
                            '--max_new_tokens', str(args.evaluation_max_new_tokens),
-                           '--dense_checkpoint', str(args.output / 'm2/dense.pt'),
-                           '--sparse_checkpoint', str(args.output / 'm2/dense_sparse.pt'),
+                           '--dense_checkpoint', str(dense_ckpt),
+                           '--sparse_checkpoint', str(sparse_ckpt),
                            '--projection', str(args.output / 'h_proj.pt'),
                            '--prompts_manifest', str(args.output / 'prompts.json')]
                 if args.schedule == 'dynamic':
@@ -163,10 +258,44 @@ def main(argv=None):
                     command.append('--compile_drafter')
                 if args.compile_online:
                     command.append('--compile_online')
+                if args.beta_grid is not None:
+                    command.extend(['--beta_grid', *(str(b) for b in args.beta_grid)])
+                if args.beta_sweep_split is not None:
+                    command.extend(['--beta_sweep_split', args.beta_sweep_split])
+                if args.beta_sweep_arms is not None:
+                    command.extend(['--beta_sweep_arms', *args.beta_sweep_arms])
+                if args.task == 'm5':
+                    if args.m5_arms:
+                        command.extend(['--m5_arms', *args.m5_arms])
+                    if args.m5_oracle_checkpoint is not None:
+                        command.extend(['--m5_oracle_checkpoint', str(args.m5_oracle_checkpoint)])
+                    if args.sparse_overflow_policy is not None:
+                        command.extend(['--sparse_overflow_policy', args.sparse_overflow_policy])
+                    if args.m5_triton:
+                        command.append('--m5_triton')
+                    if args.m5_torch_compile:
+                        command.append('--m5_torch_compile')
+                    if args.m5_server_url is not None:
+                        command.extend(['--m5_server_url', args.m5_server_url])
+                    if args.m5_server_model is not None:
+                        command.extend(['--m5_server_model', args.m5_server_model])
+                    if args.m5_server_api_key is not None:
+                        command.extend(['--m5_server_api_key', args.m5_server_api_key])
+                    if args.m5_server_timeout is not None:
+                        command.extend(['--m5_server_timeout', str(args.m5_server_timeout)])
+                    if args.bigram_count_gate_kappa is not None:
+                        command.extend(['--bigram_count_gate_kappa', str(args.bigram_count_gate_kappa)])
+                    if args.checkpoint_scale is not None:
+                        command.extend(['--checkpoint_scale', str(args.checkpoint_scale)])
+                    if args.m5_beta_candidates is not None:
+                        command.extend(['--m5_beta_candidates', *(str(b) for b in args.m5_beta_candidates)])
+                    if args.m5_beta_relax is not None:
+                        command.extend(['--m5_beta_relax', str(args.m5_beta_relax)])
             if args.allow_large_run:
                 command.append('--allow_large_run')
             # Downloads must already be resolved once by the parent preparation step.
             env = dict(os.environ, CUDA_VISIBLE_DEVICES=str(gpu), RANK=str(rank), WORLD_SIZE=str(len(gpus)),
+                       PYTHONPATH=worker_pythonpath,
                        HF_HUB_OFFLINE='1', HF_DATASETS_OFFLINE='1', TOKENIZERS_PARALLELISM='false',
                        OMP_NUM_THREADS='4')
             if master_port is not None:
