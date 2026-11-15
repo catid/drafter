@@ -320,6 +320,13 @@ class ProposalSnapshot:
         Returns `(None, full_score)` when `avail == 0` (no sparse lookup) or `beta == 0`/`is_zero`,
         or `(selected_scores[k_eff], selected_ids[k_eff])` (`k_eff == 1` at `temperature == 0`
         with exact lowest-ID tie-breaking; `scaled_top_scores[k_eff]` at `temperature > 0`).
+
+        Exactness scope: `C_i` is the identical `topk(u, M_sparse)` set, and the result is
+        bit-exact with `score_slot_tensor` + `probabilities` except on exactly tied scores
+        straddling a `top_k`/`top_p` truncation boundary, where the full-`V` reference
+        order is implementation-defined (CPU/CUDA `topk` tie order); ties here resolve
+        by ascending token ID. Ratio verification stays exact because `verify_block`
+        uses this same proposal `q`.
         """
         if not math.isfinite(temperature) or temperature < 0:
             raise ValueError('temperature must be finite and nonnegative')

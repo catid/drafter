@@ -159,6 +159,12 @@ class OnlineBigram:
     diagnostic, so a reappearing retained ID never receives an approximate count.
     Memory reports include that ledger; this ablation does not claim bounded
     memory savings over exact counts.
+
+    Contract: mutate the table only through `update()`. Direct edits of `counts`
+    (or its inner `Counter`s) bypass dirty tracking for the device-resident
+    tables used by `score_tensor`/`merge_compact_candidates`; that is unsupported.
+    Removing whole keys, or clearing `counts`, is detected and triggers a rebuild,
+    as a convenience.
     """
     def __init__(self, vocab_size: int, alpha: float = 1., lambda_tr: float = 0.1, k_ret: int | None = None):
         if alpha <= 0:
@@ -427,8 +433,16 @@ class OnlineBigram:
 
         When `temperature == 0` (`k_eff == 1`), returns `(win_score[1], win_id[1])` with
         exact lowest-ID tie-breaking. When `temperature > 0`, returns
-        `(scaled_top_scores[k_eff], top_ids[k_eff])` preserving `N_total=0` (`r == 0`)
-        bit-exact plain-DFlash tie-breaking via `stable=True` sort.
+        `(scaled_top_scores[k_eff], top_ids[k_eff])`.
+
+        Exactness scope: bit-exact with full-`V` `score` + `probabilities` when
+        `N_total == 0` or `lambda_tr == 0` (preserves the batched plain-DFlash `topk`
+        order via `stable=True` sort, `prompt.md` section 9) and at `temperature == 0`
+        (lowest-ID argmax). For `N_total > 0` it is bit-exact except on exactly tied
+        scores straddling a `top_k`/`top_p` truncation boundary, where the reference
+        order is implementation-defined (CPU/CUDA `topk` tie order); this path orders
+        ties by `base_ids_i` followed by ascending retained IDs. Ratio verification
+        stays exact because `verify_block` uses this same proposal `q`.
         """
         if self.lambda_tr < 0:
             raise ValueError("merge_compact_candidates requires nonnegative lambda_tr")

@@ -1943,7 +1943,9 @@ def test_round3_fastpath1_online_bigram_compact_merge_adversarial_parity(k_ret):
             ref_g.append(int(torch.argmax(s_i).item()))
         assert toks_g == ref_g
 
-        # 2. Stochastic `top_k=20` (`top_p=0.8` and `top_p=0.95, min_p=0.05`) -> 0-ULP `torch.equal` vs `09a5469`
+        # 2. Stochastic `top_k=20` (`top_p=0.8` and `top_p=0.95, min_p=0.05`) -> `torch.equal` vs `09a5469`
+        #    (continuous FP32 rows have no exact ties at truncation boundaries; tied rows are
+        #    covered by `test_round3_tie_scope_valid_q_and_verify_law`).
         for T, w in (
             (0.7, SamplingWarper(top_k=20, top_p=0.8)),
             (0.6, SamplingWarper(top_k=20, top_p=0.95, min_p=0.05)),
@@ -2291,6 +2293,97 @@ def test_round3_direct_api_edge_cases_and_guards():
     v_emp_c = verify_block([], cp_empty, t_logits_0, 0.7, w10, torch.Generator().manual_seed(5))
     v_emp_d = verify_block([], torch.empty((0, V)), t_logits_0, 0.7, w10, torch.Generator().manual_seed(5))
     assert v_emp_c == v_emp_d
+
+
+def test_round3_tie_scope_valid_q_and_verify_law():
+    """#81: on exactly tied scores straddling a truncation boundary the compact Fastpath 1/3
+    `q` may keep a different tied token than full-`V` `topk` (implementation-defined order).
+    Require (1) `q` is a valid normalized distribution, (2) it differs from the reference only
+    among exactly tied tokens (same sorted probability multiset), and (3) ratio verification
+    with that `q` still emits tokens with the target law (TV check, tolerance from N)."""
+    from edraft.sampler import warp_top_scaled_scores
+    from edraft.verify import CompactProposal, verify_block
+
+    def _check_tie_scope(q_fast, q_ref, ref_scores):
+        assert bool((q_fast >= 0).all())
+        assert abs(float(q_fast.double().sum()) - 1.0) <= 1e-6
+        diff = (q_fast != q_ref).nonzero().squeeze(-1)
+        for j in diff.tolist():
+            partners = (ref_scores[diff] == ref_scores[j]).sum()
+            assert int(partners) >= 2, f"token {j} differs without an exactly tied partner"
+        torch.testing.assert_close(q_fast.sort().values, q_ref.sort().values, rtol=1e-6, atol=1e-7)
+        return int(diff.numel() > 0)
+
+    g = torch.Generator().manual_seed(8181)
+    diverged = 0
+    # (1)+(2) Fastpath 1 (`OnlineBigram`, `N_total > 0`) on exactly tied rows
+    for V in (64, 512):
+        bg = OnlineBigram(V, alpha=1.0, lambda_tr=0.3, k_ret=8)
+        bg.update([1, 1, 2, 1, 3, 1], [4, 5, 6, 4, 7, 8])
+        st = bg._sync_device_table(torch.device("cpu"), torch.float32)
+        for trial in range(60):
+            lu = (torch.randn(2, V, generator=g) * 1.5).bfloat16().float()
+            if trial % 2:
+                # Force a 3-way exact tie at the top so `top_p=0.5` cuts between tied tokens
+                perm = torch.randperm(V, generator=g)
+                lu[0] = torch.linspace(-2.0, -5.0, V)[perm]
+                lu[0, perm[0]], lu[0, perm[1]], lu[0, perm[2]] = 4.1, 4.0, 4.0
+            for T, w in ((0.7, SamplingWarper(top_k=20, top_p=0.5)), (1.0, SamplingWarper(top_k=20, top_p=0.95))):
+                _, bi = torch.topk(lu / T, 20, dim=-1)
+                bv = lu.gather(-1, bi)
+                ss, si = bg.merge_compact_candidates(lu[0], bv[0], bi[0], torch.tensor(1), temperature=T, k_eff=20, state=st)
+                q_fast = torch.zeros(V).scatter(0, si, warp_top_scaled_scores(ss, w))
+                ref_s = bg.score(lu[0], 1)
+                diverged += _check_tie_scope(q_fast, _ref_09a5469_probabilities(ref_s, T, w), ref_s)
+
+    # (1)+(2) Fastpath 3 (`sparse_lookup` pool) on BF16 rows with zero dense term
+    V, M = 48, 12
+    sh = SignedHash(128)
+    with torch.no_grad():
+        sh.values.normal_(0, 0.5)
+        snap = ProposalSnapshot(torch.zeros(V, 4), torch.zeros(4, 6), torch.zeros(2, 4, 4), torch.zeros(V),
+                                0, sh, M, None, False)
+        offs, prevs = torch.tensor([[1], [2]]), torch.tensor([1, 2])
+        for trial in range(60):
+            lu = (torch.randn(1, V, generator=g) * 0.5).bfloat16().float().log_softmax(-1)
+            U = torch.zeros_like(lu)
+            for T, w in ((1.0, SamplingWarper(top_k=20, top_p=1.0)), (0.7, SamplingWarper(top_k=20, top_p=0.8))):
+                pre = snap.precompute_sparse_pool(lu, U, temperature=T, k_eff=20, beta=1.0)
+                ss, si = snap.score_slot_compact_candidates(lu[0], U[0], offs, prevs, temperature=T, k_eff=20,
+                                                            beta=1.0, precomputed_ids=(pre[0][0], pre[1][0]))
+                q_fast = torch.zeros(V).scatter(0, si, warp_top_scaled_scores(ss, w))
+                ref_s = snap.score_slot_tensor(lu[0], U[0], offs, prevs, beta=1.0)
+                diverged += _check_tie_scope(q_fast, _ref_09a5469_probabilities(ref_s, T, w), ref_s)
+    assert diverged >= 0  # divergence count is implementation-defined; property must hold either way
+
+    # (3) Ratio verification with the tie-resolved compact `q` emits the target law
+    V, K = 8, 2
+    bg = OnlineBigram(V, alpha=1.0, lambda_tr=0.5)
+    bg.update([3], [1, 3, 1])
+    draft_logits = torch.tensor([[2.0, 2.0, 2.0, 1.0, 1.0, 0.0, 0.0, -1.0],
+                                 [1.0, 1.0, 0.5, 0.5, 0.5, 0.0, -1.0, -1.0]])
+    target_logits = torch.tensor([[1.5, 0.5, 2.0, 1.0, 0.0, 0.0, -1.0, 0.5],
+                                  [0.0, 1.0, 1.0, 0.0, 2.0, 0.0, 0.0, 0.0],
+                                  [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0]])
+    w = SamplingWarper(top_k=3, top_p=0.8)
+    T = 0.9
+    P0 = _ref_09a5469_probabilities(target_logits[0], T, w)
+    gen = torch.Generator().manual_seed(4242)
+    N = 6000
+    counts = torch.zeros(V, dtype=torch.float64)
+    for _ in range(N):
+        toks, q_c, _, _ = _sample_proposal(
+            draft_logits, torch.zeros(K, 4), [3], temperature=T, warper=w, generator=gen,
+            snapshot=None, projection=None, beta=1.0, bigram=bg,
+            timer=PhaseTimer("cpu", False), need_training_tensors=False,
+            _return_token_tensor=True, _allow_compact_q=True,
+        )
+        assert isinstance(q_c, CompactProposal)
+        ver = verify_block(toks, q_c, target_logits, T, w, gen)
+        counts[ver.emitted_tokens[0]] += 1
+    tv = 0.5 * float((counts / N - P0.double()).abs().sum())
+    tol = 1.5 * (V / N) ** 0.5
+    assert tv <= tol, f"first-token TV {tv:.4f} exceeds sample-size tolerance {tol:.4f}"
 
 
 
