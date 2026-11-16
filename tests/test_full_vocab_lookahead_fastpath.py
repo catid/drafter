@@ -343,3 +343,72 @@ def test_full_vocab_lookahead_qwen3_scale_benchmark_and_parity():
         assert toks_fast == toks_ref, f'{mode}: token mismatch {toks_fast} vs {toks_ref}'
         assert max_q_diff <= 1e-5, f'{mode}: max_q_diff={max_q_diff}'
         assert fast_ms < eager_ms, f'{mode}: expected speedup, got fast={fast_ms:.1f}ms vs eager={eager_ms:.1f}ms'
+
+
+def test_full_vocab_zero_host_sync_clamp_and_all_clamped_alias_detach(monkeypatch):
+    """Verify #228 Section 3: zero .item()/.tolist()/.nonzero() syncs in hot loop & all-clamped g_exposed detach."""
+    snap, l_unit, H = _build_fixture(V=48, r_dim=8, p_dim=10, D=4, M=6, K=5, sparse_kind='signed_hash', seed=707)
+    prefix = [3, 14, 25]
+
+    # Reference uncached run with mixed inside-C0 and outside-C0 clamps:
+    st_ref = initialize_lookahead(snap, l_unit, H, prefix, domain='full_vocabulary', T_relax=0.85, beta_relax=0.75, use_fast_lookahead=False)
+    damped_lookahead_step(st_ref, eta=0.5)
+    chosen = []
+    for i in range(5):
+        c0_set = set(st_ref.snapshot.C0[i].tolist())
+        tok = int(st_ref.snapshot.C0[i][0].item()) if i % 2 == 0 else next(t for t in range(48) if t not in c0_set)
+        chosen.append(tok)
+        st_ref.clamp(i, tok)
+        if i + 1 < 5:
+            damped_lookahead_step(st_ref, eta=0.5)
+
+    # Warm neighbor/pair index caches once, then ban .item(), .tolist(), and .nonzero() completely:
+    st_warm = initialize_lookahead(snap, l_unit, H, prefix, domain='full_vocabulary', T_relax=0.85, beta_relax=0.75, use_fast_lookahead=True)
+    for i in range(5):
+        st_warm.clamp(i, chosen[i])
+
+    def _forbid_sync(*_args, **_kwargs):
+        raise RuntimeError('D2H host sync (.item/.tolist/.nonzero) forbidden on full_vocabulary fastpath!')
+
+    monkeypatch.setattr(torch.Tensor, 'item', _forbid_sync)
+    monkeypatch.setattr(torch.Tensor, 'tolist', _forbid_sync)
+    monkeypatch.setattr(torch.Tensor, 'nonzero', _forbid_sync)
+
+    # 1a. Python-int clamp(i, tok) with zero D2H syncs:
+    st_int = initialize_lookahead(snap, l_unit, H, prefix, domain='full_vocabulary', T_relax=0.85, beta_relax=0.75, use_fast_lookahead=True)
+    damped_lookahead_step(st_int, eta=0.5)
+    for i in range(5):
+        _ = st_int.full_slot_scores(i, beta=0.6)
+        st_int.clamp(i, chosen[i])
+        if i + 1 < 5:
+            damped_lookahead_step(st_int, eta=0.5)
+
+    # 1b. Pure tensor _clamp_full_vocab_tensor(i, tok_t) with zero D2H or H2D syncs:
+    chosen_gpu = [torch.tensor(t, dtype=torch.long) for t in chosen]
+    st_ten = initialize_lookahead(snap, l_unit, H, prefix, domain='full_vocabulary', T_relax=0.85, beta_relax=0.75, use_fast_lookahead=True)
+    damped_lookahead_step(st_ten, eta=0.5)
+    for i in range(5):
+        _ = st_ten.full_slot_scores(i, beta=0.6)
+        st_ten._clamp_full_vocab_tensor(i, chosen_gpu[i])
+        if i + 1 < 5:
+            damped_lookahead_step(st_ten, eta=0.5)
+
+    # 2. All-clamped (`n_clamped == K`) g_exposed detach check (#228 Section 3 Item 2):
+    g_before_all_clamped = st_int.g
+    damped_lookahead_step(st_int, eta=0.5)
+    g_after_all_clamped = st_int.g
+    assert g_after_all_clamped is not g_before_all_clamped
+    assert torch.equal(g_after_all_clamped, g_before_all_clamped)
+
+    monkeypatch.undo()
+
+    # Verify both st_int and st_ten materialize exact g, r, mu, support, and clamped matching st_ref:
+    for st_cand in (st_int, st_ten):
+        assert st_cand.clamped == chosen
+        assert [s.tolist() for s in st_cand.support] == [[t] for t in chosen]
+        torch.testing.assert_close(st_cand.g, st_ref.g, atol=1e-5, rtol=1e-5)
+        for rc, rr in zip(st_cand.r, st_ref.r):
+            torch.testing.assert_close(rc, rr, atol=1e-5, rtol=1e-5)
+        for mc, mr in zip(st_cand.mu, st_ref.mu):
+            torch.testing.assert_close(mc, mr, atol=1e-5, rtol=1e-5)
+

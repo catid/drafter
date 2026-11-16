@@ -1199,14 +1199,46 @@ class _CandidateLookaheadCache:
         self.g_version: int = -1
 
 
+_SLOT_CLAMP_NEIGHBOR_CACHE: dict[
+    tuple[int, int, int, torch.device],
+    tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor],
+] = {}
+
+
+def _get_slot_clamp_neighbors(
+    K: int, D: int, i: int, device: torch.device
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+    key = (K, D, i, device)
+    cached = _SLOT_CLAMP_NEIGHBOR_CACHE.get(key)
+    if cached is not None:
+        return cached
+    empty_1d = torch.empty(0, dtype=torch.long, device=device)
+    empty_2d = torch.empty((0, 1), dtype=torch.long, device=device)
+    fwd_targets = [i + d for d in range(1, D + 1) if i + d < K]
+    if fwd_targets:
+        f_slots = _async_long_tensor(fwd_targets, device)
+        f_d = _async_long_tensor([[j - i] for j in fwd_targets], device)
+    else:
+        f_slots, f_d = empty_1d, empty_2d
+    bwd_targets = [i - d for d in range(1, D + 1) if i - d >= 0]
+    if bwd_targets:
+        b_slots = _async_long_tensor(bwd_targets, device)
+        b_d = _async_long_tensor([[i - j] for j in bwd_targets], device)
+    else:
+        b_slots, b_d = empty_1d, empty_2d
+    res = (f_slots, f_d, b_slots, b_d)
+    _SLOT_CLAMP_NEIGHBOR_CACHE[key] = res
+    return res
+
+
 class _FullVocabLookaheadCache:
     """Precomputed block-static candidate tensors and batched [K, V] full-vocab lookahead buffers."""
     __slots__ = (
         'K', 'V', 'M', 'r_dim', 'D', 'dtype', 'device',
-        'c0_mat', 'c0_pos_maps', 'E_cast', 'A_cast', 'l_w', 'U', 'sparse',
+        'c0_mat', 'E_cast', 'A_cast', 'l_w', 'U', 'sparse',
         'msg_pref', 'sparse_base', 'pair_k', 'pair_i', 'S_pairs',
         'g_mat', 'r_mat', 'mu_mat', 'r_sup_mat',
-        'clamped_list', 'first_unclamped', 'n_clamped', 'unclamped_idx_gpu',
+        'clamped_mask_py', 'clamped_tokens_gpu', 'first_unclamped', 'n_clamped', 'unclamped_idx_gpu',
         'g_dirty', 'g_exposed', 'r_dirty', 'mu_dirty', 'support_dirty',
         'support_refs', 'support_versions', 'clamped_py',
         'r_refs', 'r_versions', 'mu_refs', 'mu_versions', 'g_ref', 'g_version',
@@ -1231,7 +1263,6 @@ class _FullVocabLookaheadCache:
         self.dtype = U.dtype
         self.device = U.device
         self.c0_mat = c0_mat
-        self.c0_pos_maps: list[dict[int, int]] | None = None
         self.E_cast = E_cast
         self.A_cast = A_cast
         self.l_w = l_w
@@ -1248,7 +1279,7 @@ class _FullVocabLookaheadCache:
         self.msg_pref = torch.zeros((self.K, self.r_dim), dtype=self.dtype, device=self.device)
         self.sparse_base: torch.Tensor | None = None
         if pref_rows:
-            p_t = torch.tensor(pref_rows, dtype=torch.long, device=self.device)
+            p_t = _async_long_tensor(pref_rows, self.device)
             p_slots, p_d0, p_d1, p_prev = p_t[:, 0], p_t[:, 1], p_t[:, 2], p_t[:, 3]
             e_prev = E_cast.index_select(0, p_prev)
             p_msgs = torch.bmm(A_cast.index_select(0, p_d0), e_prev.unsqueeze(-1)).squeeze(-1)
@@ -1277,7 +1308,8 @@ class _FullVocabLookaheadCache:
         self.mu_mat = torch.mm(self.r_mat, E_cast)
         self.r_sup_mat = torch.gather(self.r_mat, 1, c0_mat)
 
-        self.clamped_list: list[int | None] = [None] * self.K
+        self.clamped_mask_py: list[bool] = [False] * self.K
+        self.clamped_tokens_gpu = torch.full((self.K,), -1, dtype=torch.long, device=self.device)
         self.first_unclamped: int = 0
         self.n_clamped: int = 0
         self.unclamped_idx_gpu: torch.Tensor | None = None
@@ -1364,7 +1396,7 @@ class LookaheadState:
         if isinstance(fast, _FullVocabLookaheadCache):
             rows: list[torch.Tensor] = []
             for i in range(fast.K):
-                tok_c = fast.clamped_list[i]
+                tok_c = self._clamped[i]
                 if tok_c is not None:
                     oh = torch.zeros(fast.V, device=self._device, dtype=self._dtype)
                     oh[tok_c] = 1.0
@@ -1571,64 +1603,69 @@ class LookaheadState:
             return self.r[i]
         return torch.zeros(self.snapshot.E.shape[0], device=self._device, dtype=self.r[i].dtype).scatter(0, self.support[i], self.r[i])
 
+    def _apply_full_vocab_clamp_gpu(self, i: int, tok_1d: torch.Tensor) -> None:
+        """Zero-D2H-sync state update on `_FullVocabLookaheadCache` for slot `i` and 1-element `tok_1d`."""
+        fast = self._fast
+        assert isinstance(fast, _FullVocabLookaheadCache)
+        fast.clamped_mask_py[i] = True
+        fast.n_clamped += 1
+        while fast.first_unclamped < fast.K and fast.clamped_mask_py[fast.first_unclamped]:
+            fast.first_unclamped += 1
+        if fast.first_unclamped != fast.n_clamped:
+            rem = [j for j, flag in enumerate(fast.clamped_mask_py) if not flag]
+            fast.unclamped_idx_gpu = _async_long_tensor(rem, fast.device) if rem else None
+        else:
+            fast.unclamped_idx_gpu = None
+
+        fast.mu_mat[i] = fast.E_cast.index_select(0, tok_1d).squeeze(0)
+        if fast.sparse is None:
+            fast.r_sup_mat[i].zero_()
+        else:
+            match_mask = fast.c0_mat[i] == tok_1d
+            fast.r_sup_mat[i] = match_mask.to(fast.dtype)
+            outside_mask = ~match_mask.any()
+            f_slots, f_d, b_slots, b_d = _get_slot_clamp_neighbors(fast.K, fast.D, i, fast.device)
+            if f_slots.numel() > 0 or b_slots.numel() > 0:
+                if fast.sparse_base is None:
+                    fast.sparse_base = torch.zeros((fast.K, fast.M), dtype=fast.dtype, device=fast.device)
+                tok_col = tok_1d[:, None]
+                if f_slots.numel() > 0:
+                    f_cands = fast.c0_mat.index_select(0, f_slots)
+                    f_vals = fast.sparse.lookup(f_d, tok_col, f_cands).to(fast.dtype)
+                    fast.sparse_base.index_add_(
+                        0, f_slots, torch.where(outside_mask, f_vals, torch.zeros_like(f_vals))
+                    )
+                if b_slots.numel() > 0:
+                    b_cands = fast.c0_mat.index_select(0, b_slots)
+                    b_vals = fast.sparse.lookup(b_d, b_cands, tok_col).to(fast.dtype)
+                    fast.sparse_base.index_add_(
+                        0, b_slots, torch.where(outside_mask, b_vals, torch.zeros_like(b_vals))
+                    )
+        fast.clamped_tokens_gpu[i : i + 1].copy_(tok_1d)
+        fast.r_dirty = True
+        fast.mu_dirty = True
+
+    def _clamp_full_vocab_tensor(self, i: int, tok_t: torch.Tensor) -> None:
+        """Zero-sync GPU tensor clamping for `full_vocabulary` lookahead."""
+        fast = self._fast
+        assert isinstance(fast, _FullVocabLookaheadCache)
+        assert 0 <= i < fast.K and not fast.clamped_mask_py[i]
+        tok_1d = tok_t.reshape(1).to(device=fast.device, dtype=torch.long)
+        self._apply_full_vocab_clamp_gpu(i, tok_1d)
+        fast.support_dirty = True
+
     def clamp(self, i: int, token: int):
         tok = int(token)
         if self._fast is not None and self._check_fast_integrity():
             fast = self._fast
             if isinstance(fast, _FullVocabLookaheadCache):
-                if 0 <= i < fast.K and 0 <= tok < fast.V and fast.clamped_list[i] is None:
-                    fast.clamped_list[i] = tok
-                    fast.n_clamped += 1
-                    while fast.first_unclamped < fast.K and fast.clamped_list[fast.first_unclamped] is not None:
-                        fast.first_unclamped += 1
-                    if fast.first_unclamped != fast.n_clamped:
-                        rem = [j for j, c in enumerate(fast.clamped_list) if c is None]
-                        fast.unclamped_idx_gpu = (
-                            torch.tensor(rem, dtype=torch.long, device=fast.device) if rem else None
-                        )
-                    else:
-                        fast.unclamped_idx_gpu = None
-
-                    fast.mu_mat[i] = fast.E_cast[tok]
-                    fast.r_sup_mat[i].zero_()
-                    if fast.sparse is not None:
-                        if fast.c0_pos_maps is None:
-                            fast.c0_pos_maps = [
-                                {int(tid): col for col, tid in enumerate(row)}
-                                for row in fast.c0_mat.tolist()
-                            ]
-                        pos = fast.c0_pos_maps[i].get(tok)
-                        if pos is not None:
-                            fast.r_sup_mat[i, pos] = 1.0
-                        else:
-                            if fast.sparse_base is None:
-                                fast.sparse_base = torch.zeros(
-                                    (fast.K, fast.M), dtype=fast.dtype, device=fast.device
-                                )
-                            fwd_targets = [i + d for d in range(1, fast.D + 1) if i + d < fast.K]
-                            if fwd_targets:
-                                f_slots = torch.tensor(fwd_targets, dtype=torch.long, device=fast.device)
-                                f_d = torch.tensor(
-                                    [j - i for j in fwd_targets], dtype=torch.long, device=fast.device
-                                )[:, None]
-                                f_cands = fast.c0_mat.index_select(0, f_slots)
-                                f_vals = fast.sparse.lookup(f_d, tok, f_cands).to(fast.dtype)
-                                fast.sparse_base.index_add_(0, f_slots, f_vals)
-                            bwd_targets = [i - d for d in range(1, fast.D + 1) if i - d >= 0]
-                            if bwd_targets:
-                                b_slots = torch.tensor(bwd_targets, dtype=torch.long, device=fast.device)
-                                b_d = torch.tensor(
-                                    [i - j for j in bwd_targets], dtype=torch.long, device=fast.device
-                                )[:, None]
-                                b_cands = fast.c0_mat.index_select(0, b_slots)
-                                b_vals = fast.sparse.lookup(b_d, b_cands, tok).to(fast.dtype)
-                                fast.sparse_base.index_add_(0, b_slots, b_vals)
-
+                self._sync_clamped_python()
+                if 0 <= i < fast.K and 0 <= tok < fast.V and not fast.clamped_mask_py[i]:
+                    tok_1d = _async_long_tensor([tok], fast.device)
+                    self._apply_full_vocab_clamp_gpu(i, tok_1d)
                     self._clamped[i] = tok
-                    self._support[i] = torch.tensor([tok], device=self._device, dtype=torch.long)
+                    self._support[i] = tok_1d
                     self._record_support_snapshot()
-                    fast.r_dirty = True
-                    fast.mu_dirty = True
                     return
                 self._abandon_fast()
             else:
@@ -1883,11 +1920,12 @@ def damped_lookahead_step(state: LookaheadState, eta=0.5):
         with torch.no_grad():
             fast = state._fast
             if isinstance(fast, _FullVocabLookaheadCache):
-                if fast.n_clamped >= fast.K:
-                    return state
                 if fast.g_exposed:
                     fast.g_mat = fast.g_mat.clone()
                     fast.g_exposed = False
+                if fast.n_clamped >= fast.K:
+                    fast.g_dirty = True
+                    return state
                 K, r_dim = fast.K, fast.r_dim
                 A_cast = fast.A_cast
                 D_eff = min(len(A_cast), K - 1)
