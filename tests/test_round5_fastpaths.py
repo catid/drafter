@@ -577,3 +577,139 @@ def test_round5_fastpath_bench_includes_lookahead_microbenchmark():
     r5_ms = (time.perf_counter() - t1) * 1e3
 
     assert pre_ms > r5_ms * 2.0, f"Expected >2x speedup at V=32768, got {pre_ms:.2f}ms vs {r5_ms:.2f}ms"
+
+
+# ---------------------------------------------------------------------------
+# 5. Regression tests for R5-BUG-1, R5-BUG-2, and R5-BUG-3
+# ---------------------------------------------------------------------------
+
+
+def test_r5_bug_1_m5_resume_preserves_frozen_settings_hash_and_skips_completed_warmup(tmp_path):
+    ws = tmp_path / "m5_resume_ws"
+    arms = ["plain_dflash", "lookahead_rerelax_candidate"]
+    args = SimpleNamespace(
+        scale="smoke", seed=2026, device="cpu", resume=True,
+        timing_repeats=2, timing_warmups=1, timing_prompts=0,
+        max_new_tokens=32, long_max_new_tokens=32, smoke_tokens=16,
+    )
+    post_m4_suite._execute_m5_stage_pipeline(
+        args, ws, arms, [0, 1], extra_m5_flags=["--m5_torch_compile"],
+    )
+    settings_before = json.loads((ws / "m5/settings.json").read_text())
+    hash_before = fingerprint(settings_before)
+
+    # Second call with `resume=True` must NOT mutate `settings.json` / `frozen_settings_hash` or crash `m5-timing`!
+    spawned_labels: list[str] = []
+    orig_spawn = post_m4_suite._spawn_parallel_workers
+
+    def _spy_spawn(worker_specs, logdir, label, **kw):
+        spawned_labels.append(label)
+        return orig_spawn(worker_specs, logdir, label, **kw)
+
+    with mock.patch.object(post_m4_suite, "_spawn_parallel_workers", side_effect=_spy_spawn):
+        post_m4_suite._execute_m5_stage_pipeline(
+            args, ws, arms, [0, 1], extra_m5_flags=["--m5_torch_compile"],
+        )
+    assert "m5-tune" not in spawned_labels
+    assert "m5-tune-summarize" not in spawned_labels
+    settings_after = json.loads((ws / "m5/settings.json").read_text())
+    assert fingerprint(settings_after) == hash_before
+
+    # Direct `eval_closed_loop.main --mode tune` on already-complete rank bundles must skip `warm_comparisons`
+    # AND `tune_summarize` must keep `settings.json` bit-identical!
+    warm_calls = 0
+    orig_warm = eval_closed_loop.warm_comparisons
+
+    def _count_warm(*a, **kw):
+        nonlocal warm_calls
+        warm_calls += 1
+        return orig_warm(*a, **kw)
+
+    sess = json.loads((ws / "m5/tune/sharding_plan.json").read_text())["logical_session"]
+    with mock.patch.object(eval_closed_loop, "warm_comparisons", side_effect=_count_warm):
+        eval_closed_loop.main([
+            "--scale", "smoke", "--device", "cpu",
+            "--stage", "m5", "--mode", "tune",
+            "--rank", "0", "--world_size", "2",
+            "--logical_session", sess,
+            "--m5_arms", *arms, "--m5_torch_compile",
+            "--max_new_tokens", "32", "--long_max_new_tokens", "32", "--smoke_tokens", "16",
+            "--output", str(ws),
+        ])
+    assert warm_calls == 0
+    eval_closed_loop.main([
+        "--scale", "smoke", "--device", "cpu",
+        "--stage", "m5", "--mode", "tune_summarize",
+        "--m5_arms", *arms, "--m5_torch_compile",
+        "--max_new_tokens", "32", "--long_max_new_tokens", "32", "--smoke_tokens", "16",
+        "--output", str(ws),
+    ])
+    assert fingerprint(json.loads((ws / "m5/settings.json").read_text())) == hash_before
+
+
+def test_r5_bug_2_support_and_clamped_list_mutations_invalidate_fast_cache():
+    gen = torch.Generator().manual_seed(77)
+    V, r, p, D, K, M = 32, 6, 8, 3, 4, 5
+    _, snap = _make_adapter_with_sparse(gen, V=V, r=r, p=p, D=D, M=M, sparse_kind="SignedHash")
+    l_u = torch.randn(K, V, generator=gen).log_softmax(-1)
+    H = torch.randn(K, p, generator=gen)
+    prefix = [2, 5, 9]
+    new_sup = torch.tensor([0, 1, 2, 3, 4], dtype=torch.long)
+
+    # 2a: list-element replacement `state.support[0] = new_sup`
+    st_fast = initialize_lookahead(snap, l_u, H, prefix, use_fast_candidate=True)
+    st_ref = initialize_lookahead(snap, l_u, H, prefix, use_fast_candidate=False)
+    st_fast.support[0] = new_sup
+    st_ref.support[0] = new_sup.clone()
+    damped_lookahead_step(st_fast, eta=0.5)
+    damped_lookahead_step(st_ref, eta=0.5)
+    assert st_fast._fast is None
+    torch.testing.assert_close(st_fast.g, st_ref.g, atol=1e-6, rtol=1e-6)
+
+    # 2b: in-place tensor mutation `state.support[0].copy_(new_sup)`
+    st_fast2 = initialize_lookahead(snap, l_u, H, prefix, use_fast_candidate=True)
+    st_ref2 = initialize_lookahead(snap, l_u, H, prefix, use_fast_candidate=False)
+    st_fast2.support[0].copy_(new_sup)
+    st_ref2.support[0].copy_(new_sup)
+    damped_lookahead_step(st_fast2, eta=0.5)
+    damped_lookahead_step(st_ref2, eta=0.5)
+    assert st_fast2._fast is None
+    torch.testing.assert_close(st_fast2.g, st_ref2.g, atol=1e-6, rtol=1e-6)
+
+    # 2c: direct list-element clamp `state.clamped[0] = tok0`
+    st_fast3 = initialize_lookahead(snap, l_u, H, prefix, use_fast_candidate=True)
+    st_ref3 = initialize_lookahead(snap, l_u, H, prefix, use_fast_candidate=False)
+    tok0 = int(st_ref3.support[0][0].item())
+    st_fast3.clamped[0] = tok0
+    st_ref3.clamped[0] = tok0
+    damped_lookahead_step(st_fast3, eta=0.5)
+    damped_lookahead_step(st_ref3, eta=0.5)
+    assert st_fast3._fast is None
+    for ra, rb in zip(st_fast3.r, st_ref3.r):
+        torch.testing.assert_close(ra, rb, atol=1e-6, rtol=1e-6)
+
+
+def test_r5_bug_3_dataloader_spawn_early_break_clean_shutdown(tmp_path):
+    from edraft.runtime import common_parser, parse_config
+
+    ws = tmp_path / "early_break_ws"
+    parser = common_parser("test")
+    parser.add_argument("--history_depth", type=int, default=4)
+    parser.add_argument("--M_sparse", type=int, default=4)
+    args = parse_config(parser, ["--scale", "smoke", "--output", str(ws)])
+    trace_dir, E, head, bias, head_meta = train.smoke_bundle(args)
+    entries, _ = train.trace_index(trace_dir)
+    refs = train.epoch_references(entries, "train")
+
+    # Early break from both `iter_prepared_batches` and `batches` with `num_workers=2` must shut down cleanly!
+    gen1 = train.iter_prepared_batches(
+        refs, 2, head_metadata=head_meta, vocab_size=len(E), num_workers=2, loader_seed=11,
+    )
+    first_item = next(gen1)
+    assert first_item.batch_index == 0
+    gen1.close()
+
+    gen2 = train.batches(refs, 2, head_metadata=head_meta, num_workers=2, loader_seed=11)
+    b_idx, blk_list = next(gen2)
+    assert b_idx == 0 and len(blk_list) > 0
+    gen2.close()

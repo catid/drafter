@@ -1087,6 +1087,7 @@ class _CandidateLookaheadCache:
         'g_sup', 'g_dense_msg', 'r_mat', 'mu_mat',
         'clamped_mask', 'clamped_tokens_gpu', 'one_scalar',
         'g_dirty', 'r_dirty', 'mu_dirty', 'support_dirty',
+        'support_refs', 'support_versions', 'clamped_py',
         'r_refs', 'r_versions', 'mu_refs', 'mu_versions', 'g_ref', 'g_version',
     )
 
@@ -1160,6 +1161,9 @@ class _CandidateLookaheadCache:
         self.r_dirty = True
         self.mu_dirty = True
         self.support_dirty = False
+        self.support_refs: tuple[torch.Tensor, ...] | None = None
+        self.support_versions: tuple[int, ...] | None = None
+        self.clamped_py: tuple[int | None, ...] | None = None
         self.r_refs: tuple[torch.Tensor, ...] | None = None
         self.r_versions: tuple[int, ...] | None = None
         self.mu_refs: tuple[torch.Tensor, ...] | None = None
@@ -1201,6 +1205,18 @@ class LookaheadState:
         self._r = r
         self._mu = mu
         self._g = g
+        if _fast is not None:
+            _fast.support_refs = tuple(support)
+            _fast.support_versions = tuple(t._version for t in support)
+            _fast.clamped_py = tuple(clamped)
+
+    def _record_support_snapshot(self) -> None:
+        fast = self._fast
+        if fast is None:
+            return
+        fast.support_refs = tuple(self._support)
+        fast.support_versions = tuple(t._version for t in self._support)
+        fast.clamped_py = tuple(self._clamped)
 
     def _sync_clamped_python(self) -> None:
         fast = self._fast
@@ -1212,15 +1228,17 @@ class LookaheadState:
                 self._clamped[idx] = int(tok_val)
                 self._support[idx] = fast.clamped_tokens_gpu[idx:idx + 1].clone()
         fast.support_dirty = False
+        self._record_support_snapshot()
 
     def _materialize_r(self) -> None:
         fast = self._fast
         if fast is None or not fast.r_dirty:
             return
         self._sync_clamped_python()
+        clamped_flags = fast.clamped_mask.tolist()
         self._r = [
             torch.ones(1, device=self._device, dtype=self._dtype)
-            if self._clamped[i] is not None
+            if clamped_flags[i]
             else fast.r_mat[i].clone()
             for i in range(fast.K)
         ]
@@ -1265,6 +1283,20 @@ class LookaheadState:
         fast = self._fast
         if fast is None:
             return False
+        if not fast.support_dirty and fast.support_refs is not None:
+            if (
+                tuple(self._clamped) != fast.clamped_py
+                or len(self._support) != fast.K
+                or any(
+                    a is not b or a._version != v
+                    for a, b, v in zip(self._support, fast.support_refs, fast.support_versions)
+                )
+            ):
+                self._materialize_r()
+                self._materialize_mu()
+                self._materialize_g()
+                self._fast = None
+                return False
         if not fast.r_dirty and fast.r_refs is not None:
             if len(self._r) != fast.K or any(
                 a is not b or a._version != v or a.requires_grad
@@ -1400,6 +1432,7 @@ class LookaheadState:
                 fast.mu_mat[i] = fast.E_sup[i, pos]
                 self._clamped[i] = tok
                 self._support[i] = torch.tensor([tok], device=self._device, dtype=torch.long)
+                self._record_support_snapshot()
                 fast.r_dirty = True
                 fast.mu_dirty = True
                 return
@@ -1553,6 +1586,8 @@ def initialize_lookahead(snapshot, l_unit, H, prefix, domain='candidate_masked',
 
 def lookahead_fields(state: LookaheadState):
     """Pure fwd/back fields: transpose A backwards, raw masked sparse mass."""
+    if state._fast is not None:
+        state._check_fast_integrity()
     snap, E, A = state.snapshot, state.snapshot.E, state.snapshot.A
     dtype = state.g.dtype
     E_cast = E.to(dtype)
@@ -1600,6 +1635,8 @@ def lookahead_fields(state: LookaheadState):
 
 def lookahead_energy(state: LookaheadState):
     """One shared masked scalar energy used to verify both message derivatives."""
+    if state._fast is not None:
+        state._check_fast_integrity()
     snap = state.snapshot
     dtype = state.g.dtype
     E_cast = snap.E.to(dtype)

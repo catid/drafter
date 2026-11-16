@@ -6,7 +6,8 @@ never enter the primary optimizer. Real fitting requires the M1 audit gate.
 """
 from __future__ import annotations
 
-from collections import OrderedDict
+from collections import OrderedDict, deque
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 import hashlib
 import json
@@ -15,6 +16,7 @@ import os
 from pathlib import Path
 import random
 import tempfile
+import threading
 import time
 
 import torch
@@ -495,24 +497,32 @@ class _ShardBatchDataset(Dataset):
         self.vocab_size = int(vocab_size)
         self.max_cached_shards = max(1, int(max_cached_shards))
         self.eligibility_fn = eligibility_fn
-        self._cache: OrderedDict[Path, dict] = OrderedDict()
+        self._tls = threading.local()
+
+    def _get_cache(self) -> OrderedDict[Path, dict]:
+        cache = getattr(self._tls, 'cache', None)
+        if cache is None:
+            cache = OrderedDict()
+            self._tls.cache = cache
+        return cache
 
     def __len__(self) -> int:
         return max(0, self.total_batches - self.start_batch)
 
     def _load_block(self, shard: ShardInfo, index: int) -> dict:
-        payload = self._cache.get(shard.path)
+        cache = self._get_cache()
+        payload = cache.get(shard.path)
         if payload is not None:
-            self._cache.move_to_end(shard.path)
+            cache.move_to_end(shard.path)
         else:
             if json.loads(shard.path.with_suffix('.pt.json').read_text())['sha256'] != shard.sha256:
                 raise ValueError('An indexed shard changed after the frozen training manifest was built')
             payload = read_shard(shard.path)
             if len(payload['blocks']) != shard.blocks:
                 raise ValueError('Shard block count differs from immutable sidecar')
-            self._cache[shard.path] = payload
-            while len(self._cache) > self.max_cached_shards:
-                self._cache.popitem(last=False)
+            cache[shard.path] = payload
+            while len(cache) > self.max_cached_shards:
+                cache.popitem(last=False)
         block = payload['blocks'][index]
         if block['split'] != shard.split or block['prompt_id'] != shard.prompt_id or not self.eligibility_fn(block):
             raise ValueError('Block metadata differs from eligible shard identity')
@@ -535,11 +545,43 @@ class _ShardBatchDataset(Dataset):
         return _PreparedBatch(batch_index=batch_index, weight_sum=weight_sum, microbatches=microbatches)
 
 
+def _threaded_prefetch_iter(dataset, num_workers: int, *, pin_fn=None):
+    total = len(dataset)
+    if total == 0:
+        return
+    eff_workers = int(num_workers)
+    if eff_workers <= 0:
+        for i in range(total):
+            item = dataset[i]
+            yield pin_fn(item) if pin_fn is not None else item
+        return
+    window = max(2, 2 * eff_workers)
+    ex = ThreadPoolExecutor(max_workers=eff_workers, thread_name_prefix='edraft-shard')
+    pending: deque = deque()
+    next_idx = 0
+    try:
+        while next_idx < min(total, window):
+            pending.append(ex.submit(dataset.__getitem__, next_idx))
+            next_idx += 1
+        while pending:
+            item = pending.popleft().result()
+            if next_idx < total:
+                pending.append(ex.submit(dataset.__getitem__, next_idx))
+                next_idx += 1
+            yield pin_fn(item) if pin_fn is not None else item
+    finally:
+        for fut in pending:
+            fut.cancel()
+        pending.clear()
+        ex.shutdown(wait=True, cancel_futures=True)
+
+
 def iter_prepared_batches(references, batch_blocks: int, *, start_batch: int = 0, head_metadata=None,
                           rank: int = 0, world_size: int = 1, microbatch_blocks: int | None = None,
                           history_depth: int = 4, vocab_size: int, num_workers: int = 0,
                           pin_memory: bool = False, loader_seed: int = 0, max_cached_shards: int = 1,
                           eligibility_fn=primary_eligible):
+    del loader_seed  # Deterministic sequential order with zero global/worker RNG draws.
     dataset = _ShardBatchDataset(
         references, batch_blocks, start_batch=start_batch, head_metadata=head_metadata,
         rank=rank, world_size=world_size, microbatch_blocks=microbatch_blocks,
@@ -547,24 +589,8 @@ def iter_prepared_batches(references, batch_blocks: int, *, start_batch: int = 0
         eligibility_fn=eligibility_fn,
     )
     use_pin = bool(pin_memory and torch.cuda.is_available())
-    if int(num_workers) <= 0:
-        for i in range(len(dataset)):
-            item = dataset[i]
-            yield item.pin_memory() if use_pin else item
-        return
-    gen = torch.Generator()
-    gen.manual_seed(int(loader_seed))
-    loader = DataLoader(
-        dataset,
-        batch_size=None,
-        num_workers=int(num_workers),
-        pin_memory=use_pin,
-        prefetch_factor=2,
-        persistent_workers=False,
-        multiprocessing_context='spawn',
-        generator=gen,
-    )
-    yield from loader
+    pin_fn = (lambda item: item.pin_memory()) if use_pin else None
+    yield from _threaded_prefetch_iter(dataset, int(num_workers), pin_fn=pin_fn)
 
 
 def _block_own_committed(block) -> list[int]:
@@ -630,21 +656,29 @@ class _RawShardBatchDataset(Dataset):
         self.eligibility_fn = eligibility_fn
         self.history_depth = int(history_depth)
         self.max_cached_shards = max(1, int(max_cached_shards))
-        self._cache: OrderedDict[Path, dict] = OrderedDict()
+        self._tls = threading.local()
+
+    def _get_cache(self) -> OrderedDict[Path, dict]:
+        cache = getattr(self._tls, 'cache', None)
+        if cache is None:
+            cache = OrderedDict()
+            self._tls.cache = cache
+        return cache
 
     def __len__(self) -> int:
         return max(0, self.total_batches - self.start_batch)
 
     def __getitem__(self, item: int) -> tuple[int, list[dict]]:
+        cache = self._get_cache()
         batch_index = self.start_batch + int(item)
         selected = self.references[batch_index * self.batch_blocks:(batch_index + 1) * self.batch_blocks]
         if self.world_size > 1:
             selected = selected[self.rank::self.world_size]
         result = []
         for shard, index in selected:
-            if shard.path in self._cache:
-                self._cache.move_to_end(shard.path)
-                payload = self._cache[shard.path]
+            if shard.path in cache:
+                cache.move_to_end(shard.path)
+                payload = cache[shard.path]
             else:
                 sidecar = json.loads(shard.path.with_suffix('.pt.json').read_text())
                 if sidecar['sha256'] != shard.sha256:
@@ -653,9 +687,9 @@ class _RawShardBatchDataset(Dataset):
                 if len(payload['blocks']) != shard.blocks:
                     raise ValueError('Shard block count differs from immutable sidecar')
                 _annotate_verified_stream(payload['blocks'], self.history_depth, sidecar_generation=sidecar.get('generation'))
-                self._cache[shard.path] = payload
-                while len(self._cache) > self.max_cached_shards:
-                    self._cache.popitem(last=False)
+                cache[shard.path] = payload
+                while len(cache) > self.max_cached_shards:
+                    cache.popitem(last=False)
             block = payload['blocks'][index]
             if block['split'] != shard.split or block['prompt_id'] != shard.prompt_id or not self.eligibility_fn(block):
                 raise ValueError('Block metadata differs from eligible shard identity')
@@ -670,28 +704,13 @@ def batches(references, batch_blocks, *, start_batch=0, head_metadata=None,
             history_depth: int = 4, shard_cache_size: int = 1,
             num_workers: int = 0, loader_seed: int = 0):
     """Bounded compact-shard LRU cache (`1` shard by default; `W` under multi-shard block shuffle)."""
+    del loader_seed
     dataset = _RawShardBatchDataset(
         references, batch_blocks, start_batch=start_batch, head_metadata=head_metadata,
         rank=rank, world_size=world_size, eligibility_fn=eligibility_fn,
         history_depth=history_depth, max_cached_shards=shard_cache_size,
     )
-    eff_workers = int(num_workers)
-    if eff_workers <= 0 or '<locals>' in getattr(eligibility_fn, '__qualname__', ''):
-        for i in range(len(dataset)):
-            yield dataset[i]
-        return
-    gen = torch.Generator()
-    gen.manual_seed(int(loader_seed))
-    loader = DataLoader(
-        dataset,
-        batch_size=None,
-        num_workers=eff_workers,
-        prefetch_factor=2,
-        persistent_workers=False,
-        multiprocessing_context='spawn',
-        generator=gen,
-    )
-    yield from loader
+    yield from _threaded_prefetch_iter(dataset, int(num_workers))
 
 
 @torch.no_grad()

@@ -1848,6 +1848,59 @@ def run_fastpath_bench(args, artifacts_root: Path, suite_root: Path) -> dict:
     return report
 
 
+def _m5_settings_already_valid(args, sub_ws: Path, arms: list[str], extra: list[str], prompt_manifest: dict) -> bool:
+    from . import eval_closed_loop
+
+    settings_path = sub_ws / 'm5' / 'settings.json'
+    if not (getattr(args, 'resume', True) and settings_path.is_file()):
+        return False
+    try:
+        existing = json.loads(settings_path.read_text())
+        if existing.get('settings_seed') != int(args.seed):
+            return False
+        dense_ckpt = Path(extra[extra.index('--dense_checkpoint') + 1]) if '--dense_checkpoint' in extra else (sub_ws / 'm2' / 'dense.pt')
+        sparse_ckpt = Path(extra[extra.index('--sparse_checkpoint') + 1]) if '--sparse_checkpoint' in extra else (sub_ws / 'm2' / 'dense_sparse.pt')
+        proj_ckpt = Path(extra[extra.index('--projection') + 1]) if '--projection' in extra else (sub_ws / 'h_proj.pt')
+        oracle_ckpt = Path(extra[extra.index('--m5_oracle_checkpoint') + 1]) if '--m5_oracle_checkpoint' in extra else None
+        ckpt_scale = float(extra[extra.index('--checkpoint_scale') + 1]) if '--checkpoint_scale' in extra else None
+        kappa = float(extra[extra.index('--bigram_count_gate_kappa') + 1]) if '--bigram_count_gate_kappa' in extra else None
+        m5_betas = None
+        if '--m5_beta_candidates' in extra:
+            bi = extra.index('--m5_beta_candidates')
+            m5_betas = [float(extra[bi + 1]), float(extra[bi + 2])]
+        m5_br = float(extra[extra.index('--m5_beta_relax') + 1]) if '--m5_beta_relax' in extra else None
+
+        if args.scale == 'smoke':
+            curr_hashes = dict(existing.get('checkpoint_hashes', {}), implementation=implementation_hash('m5'))
+            if ckpt_scale is not None:
+                curr_hashes['checkpoint_scale'] = ckpt_scale
+            else:
+                curr_hashes.pop('checkpoint_scale', None)
+            model_pair = existing.get('model_pair')
+        else:
+            ns = SimpleNamespace(
+                stage='m5', dense_checkpoint=dense_ckpt, sparse_checkpoint=sparse_ckpt,
+                projection=proj_ckpt, m5_oracle_checkpoint=oracle_ckpt, checkpoint_scale=ckpt_scale,
+            )
+            curr_hashes = eval_closed_loop.checkpoint_hashes(ns)
+            model_pair = [str(args.target), str(args.drafter)]
+        caps = {'standard': int(args.max_new_tokens), 'long': int(args.long_max_new_tokens), 'smoke': int(args.smoke_tokens)}
+        eval_closed_loop.validate_frozen_settings(
+            existing, 'm5', args.scale, curr_hashes, prompt_manifest, caps,
+            model_pair=model_pair, m5_arms=arms, include_long_oracle=(oracle_ckpt is not None),
+        )
+        cands_map = existing.get('candidates', {})
+        for arm in existing['selected']:
+            expected_grid = eval_closed_loop.candidate_settings(
+                arm, bigram_count_gate_kappa=kappa, m5_beta_candidates=m5_betas, m5_beta_relax=m5_br,
+            )
+            if [r.get('settings') for r in cands_map.get(arm, [])] != expected_grid:
+                return False
+        return True
+    except Exception:
+        return False
+
+
 def _execute_m5_stage_pipeline(
     args,
     sub_ws: Path,
@@ -1878,7 +1931,17 @@ def _execute_m5_stage_pipeline(
     ]
 
     if not use_cuda and len(gpus) == 1:
-        eval_closed_loop.main(_cli_base_flags(args, sub_ws) + ['--mode', 'all', *shared_stage_flags])
+        prompt_manifest_1 = (
+            smoke_manifest()
+            if args.scale == 'smoke'
+            else json.loads((sub_ws / 'prompts.json').read_text())
+        )
+        if _m5_settings_already_valid(args, sub_ws, arms, extra, prompt_manifest_1):
+            eval_closed_loop.main(_cli_base_flags(args, sub_ws) + ['--mode', 'evaluate', *shared_stage_flags])
+            eval_closed_loop.main(_cli_base_flags(args, sub_ws) + ['--mode', 'timing', *shared_stage_flags])
+        else:
+            fd_flags = [] if args.resume else ['--fresh_session']
+            eval_closed_loop.main(_cli_base_flags(args, sub_ws) + ['--mode', 'all', *fd_flags, *shared_stage_flags])
     else:
         worker_dev = 'cuda:0' if use_cuda else 'cpu'
         logdir = sub_ws / 'logs'
@@ -1897,56 +1960,57 @@ def _execute_m5_stage_pipeline(
             tune_w = max(1, min(len(gpus), len(dev_prompts)))
             tune_gpus = gpus[:tune_w]
 
-        # 1) Core-pinned snake-sharded M5 dev tune across min(W, len(dev_prompts)) workers
-        if tune_w == 1:
-            tune_cmd = [
-                sys.executable, '-m', 'edraft.eval_closed_loop',
-                *_cli_base_flags(args, sub_ws, device_override=worker_dev),
-                '--mode', 'tune',
-                '--rank', '0', '--world_size', '1',
-                *shared_stage_flags,
-            ]
-            if not args.resume:
-                tune_cmd.append('--fresh_session')
-            _spawn_parallel_workers(
-                [(0, tune_gpus[0], tune_cmd)], logdir, 'm5-tune',
-                scale=args.scale, device_str=str(args.device), omp_threads=2,
-            )
-        else:
-            tune_plan_path = sub_ws / 'm5' / 'tune' / 'sharding_plan.json'
-            tune_session = (
-                json.loads(tune_plan_path.read_text()).get('logical_session')
-                if (args.resume and tune_plan_path.is_file()
-                    and json.loads(tune_plan_path.read_text()).get('world_size') == tune_w)
-                else uuid.uuid4().hex
-            )
-            tune_specs = []
-            for r, gpu in enumerate(tune_gpus):
-                t_cmd = [
+        # 1) Core-pinned snake-sharded M5 dev tune across min(W, len(dev_prompts)) workers (skipped when valid on resume)
+        if not _m5_settings_already_valid(args, sub_ws, arms, extra, prompt_manifest):
+            if tune_w == 1:
+                tune_cmd = [
                     sys.executable, '-m', 'edraft.eval_closed_loop',
                     *_cli_base_flags(args, sub_ws, device_override=worker_dev),
                     '--mode', 'tune',
-                    '--rank', str(r), '--world_size', str(tune_w),
-                    '--logical_session', tune_session,
+                    '--rank', '0', '--world_size', '1',
                     *shared_stage_flags,
                 ]
                 if not args.resume:
-                    t_cmd.append('--fresh_session')
-                tune_specs.append((r, gpu, t_cmd))
-            _spawn_parallel_workers(
-                tune_specs, logdir, 'm5-tune',
-                scale=args.scale, device_str=str(args.device), omp_threads=2,
-            )
-            tune_sum_cmd = [
-                sys.executable, '-m', 'edraft.eval_closed_loop',
-                *_cli_base_flags(args, sub_ws, device_override='cpu'),
-                '--mode', 'tune_summarize',
-                *shared_stage_flags,
-            ]
-            _spawn_parallel_workers(
-                [(0, tune_gpus[0], tune_sum_cmd)], logdir, 'm5-tune-summarize',
-                scale='smoke', device_str='cpu', omp_threads=1,
-            )
+                    tune_cmd.append('--fresh_session')
+                _spawn_parallel_workers(
+                    [(0, tune_gpus[0], tune_cmd)], logdir, 'm5-tune',
+                    scale=args.scale, device_str=str(args.device), omp_threads=2,
+                )
+            else:
+                tune_plan_path = sub_ws / 'm5' / 'tune' / 'sharding_plan.json'
+                tune_session = (
+                    json.loads(tune_plan_path.read_text()).get('logical_session')
+                    if (args.resume and tune_plan_path.is_file()
+                        and json.loads(tune_plan_path.read_text()).get('world_size') == tune_w)
+                    else uuid.uuid4().hex
+                )
+                tune_specs = []
+                for r, gpu in enumerate(tune_gpus):
+                    t_cmd = [
+                        sys.executable, '-m', 'edraft.eval_closed_loop',
+                        *_cli_base_flags(args, sub_ws, device_override=worker_dev),
+                        '--mode', 'tune',
+                        '--rank', str(r), '--world_size', str(tune_w),
+                        '--logical_session', tune_session,
+                        *shared_stage_flags,
+                    ]
+                    if not args.resume:
+                        t_cmd.append('--fresh_session')
+                    tune_specs.append((r, gpu, t_cmd))
+                _spawn_parallel_workers(
+                    tune_specs, logdir, 'm5-tune',
+                    scale=args.scale, device_str=str(args.device), omp_threads=2,
+                )
+                tune_sum_cmd = [
+                    sys.executable, '-m', 'edraft.eval_closed_loop',
+                    *_cli_base_flags(args, sub_ws, device_override='cpu'),
+                    '--mode', 'tune_summarize',
+                    *shared_stage_flags,
+                ]
+                _spawn_parallel_workers(
+                    [(0, tune_gpus[0], tune_sum_cmd)], logdir, 'm5-tune-summarize',
+                    scale='smoke', device_str='cpu', omp_threads=1,
+                )
 
         # 2) Sharded evaluate across all W workers
         eval_specs = []

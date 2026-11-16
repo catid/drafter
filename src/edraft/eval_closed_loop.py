@@ -1090,6 +1090,11 @@ def comparison_session(runner, mode, configuration):
     else:
         logical = getattr(args, 'logical_session', None) or uuid.uuid4().hex
         state = {'logical_session': logical, 'configuration': config, 'created_at_unix': time.time(), 'epochs': [], 'bundles': {}}
+    if mode == 'tune' and args.stage == 'm5':
+        if state.get('triton_gate_report') is None and getattr(runner, 'triton_gate_report', None) is not None:
+            state['triton_gate_report'] = runner.triton_gate_report
+        if state.get('torch_compile_gate_report') is None and getattr(runner, 'torch_compile_gate_report', None) is not None:
+            state['torch_compile_gate_report'] = runner.torch_compile_gate_report
     rk = getattr(args, 'rank', 0)
     ws = getattr(args, 'world_size', 1)
     affinity = getattr(runner, 'affinity_info', None) or apply_gpu_cpu_affinity(torch.device('cpu'), rk)
@@ -1486,9 +1491,11 @@ def sharded_tune_session(runner, logical_session, configuration, plan_path, plan
         'cpu_affinity_applied': affinity['cpu_affinity_applied'],
         'timing_harness_implementation_sha256': implementation_hash(args.stage),
         'algorithm_implementation_sha256': algorithm_hash(),
-        'triton_gate_report': getattr(runner, 'triton_gate_report', None),
-        'torch_compile_gate_report': getattr(runner, 'torch_compile_gate_report', None),
     })
+    if state.get('triton_gate_report') is None and getattr(runner, 'triton_gate_report', None) is not None:
+        state['triton_gate_report'] = runner.triton_gate_report
+    if state.get('torch_compile_gate_report') is None and getattr(runner, 'torch_compile_gate_report', None) is not None:
+        state['torch_compile_gate_report'] = runner.torch_compile_gate_report
     epoch = uuid.uuid4().hex
     state['epochs'].append({'epoch': epoch, 'started_at_unix': time.time(), 'device': str(runner.device),
                             'physical_gpu': affinity['physical_gpu'], 'numa_node': affinity['numa_node'],
@@ -1618,6 +1625,15 @@ def summarize_sharded_tune(args, manifest):
         frozen['triton_gate_report'] = triton_rep
     if tc_rep is not None:
         frozen['torch_compile_gate_report'] = tc_rep
+    if settings_path.is_file() and not getattr(args, 'fresh_session', False):
+        existing = json.loads(settings_path.read_text())
+        stable_keys = (
+            'frozen', 'scale', 'stage', 'development_prompt_ids', 'prompt_manifest_hash',
+            'generation_caps', 'comparison_session', 'checkpoint_hashes', 'model_pair',
+            'model_revisions', 'selected', 'candidates', 'settings_seed',
+        )
+        if all(existing.get(k) == frozen.get(k) for k in stable_keys):
+            return existing
     atomic_json(settings_path, frozen)
     return frozen
 
@@ -1655,8 +1671,8 @@ def tune(runner, manifest):
             },
             plan_path, plan_sha256,
         )
-        warm_comparisons(runner, rank_prompts, arm_candidates)
-        completed_bundles = 0
+        rank_bundle_specs = []
+        need_warmup = False
         for prompt_index, prompt in enumerate(prompts):
             if prompt['prompt_id'] not in rank_pids:
                 continue
@@ -1665,20 +1681,26 @@ def tune(runner, manifest):
             jobs = [(arm, setting) for arm in active_arms for setting in arm_candidates[arm]]
             offset = prompt_index % len(jobs)
             comparisons = [(dict(base, arm=arm), setting) for arm, setting in jobs[offset:] + jobs[:offset]]
-            comparison_bundle(runner, 'tune', comparisons, '', session_path, session_state, epoch, 'dev')
-            completed_bundles += 1
+            prior = read_comparison_bundle(runner, 'tune', comparisons, '', session_state, 'dev')
+            if prior is None:
+                need_warmup = True
+            rank_bundle_specs.append((comparisons, prior))
+        if need_warmup:
+            warm_comparisons(runner, rank_prompts, arm_candidates)
+        for comparisons, prior in rank_bundle_specs:
+            if prior is None:
+                comparison_bundle(runner, 'tune', comparisons, '', session_path, session_state, epoch, 'dev')
         return {
             'stage': args.stage, 'scale': args.scale, 'mode': 'tune',
             'rank': args.rank, 'world_size': args.world_size,
-            'logical_session': logical_session, 'bundles': completed_bundles,
+            'logical_session': logical_session, 'bundles': len(rank_bundle_specs),
             'status': 'tune_rank_complete',
         }
 
     session_path, session_state, epoch = comparison_session(runner, 'tune', {'prompt_manifest_hash': fingerprint(manifest),
         'dev_ids': [p['prompt_id'] for p in prompts], 'candidates': arm_candidates})
-    warm_comparisons(runner, prompts, arm_candidates)
-    observations = defaultdict(lambda: defaultdict(list))
-    dev_rows = []
+    bundle_specs = []
+    need_warmup = False
     for prompt_index, prompt in enumerate(prompts):
         name, temperature, warp = sampling_conditions(prompt['condition'], primary_only=True)[0]
         base = {'prompt': prompt, 'sampling_name': name, 'temperature': temperature, 'warper': warp, 'seed': args.seed}
@@ -1686,7 +1708,16 @@ def tune(runner, manifest):
         # Rotate arm order across prompts to reduce systematic thermal/order bias.
         offset = prompt_index % len(jobs)
         comparisons = [(dict(base, arm=arm), setting) for arm, setting in jobs[offset:] + jobs[:offset]]
-        rows = comparison_bundle(runner, 'tune', comparisons, '', session_path, session_state, epoch, 'dev')
+        prior = read_comparison_bundle(runner, 'tune', comparisons, '', session_state, 'dev')
+        if prior is None:
+            need_warmup = True
+        bundle_specs.append((comparisons, prior))
+    if need_warmup:
+        warm_comparisons(runner, prompts, arm_candidates)
+    observations = defaultdict(lambda: defaultdict(list))
+    dev_rows = []
+    for comparisons, prior in bundle_specs:
+        rows = prior if prior is not None else comparison_bundle(runner, 'tune', comparisons, '', session_path, session_state, epoch, 'dev')
         for row in rows:
             dev_rows.append(row)
             observations[row['arm']][fingerprint(row['settings'])].append(row)
@@ -1701,11 +1732,27 @@ def tune(runner, manifest):
               'candidates': candidate_reports, 'selection_metric': 'mean across conditions of prompt throughput relative to same-prompt plain DFlash',
               'budget': 'two configurations per tuned arm, identical dev prompts, seeds and token caps; plain DFlash has no tuned parameters',
               'settings_seed': args.seed, 'created_at_unix': session_state['created_at_unix']}
-    if args.stage == 'm5' and getattr(runner, 'triton_gate_report', None) is not None:
-        frozen['triton_gate_report'] = runner.triton_gate_report
-    if args.stage == 'm5' and getattr(runner, 'torch_compile_gate_report', None) is not None:
-        frozen['torch_compile_gate_report'] = runner.torch_compile_gate_report
-    atomic_json(args.output / args.stage / 'settings.json', frozen)
+    triton_rep = session_state.get('triton_gate_report') if args.stage == 'm5' else None
+    if triton_rep is None and args.stage == 'm5':
+        triton_rep = getattr(runner, 'triton_gate_report', None)
+    tc_rep = session_state.get('torch_compile_gate_report') if args.stage == 'm5' else None
+    if tc_rep is None and args.stage == 'm5':
+        tc_rep = getattr(runner, 'torch_compile_gate_report', None)
+    if triton_rep is not None:
+        frozen['triton_gate_report'] = triton_rep
+    if tc_rep is not None:
+        frozen['torch_compile_gate_report'] = tc_rep
+    settings_path = args.output / args.stage / 'settings.json'
+    if settings_path.is_file() and not getattr(args, 'fresh_session', False):
+        existing = json.loads(settings_path.read_text())
+        stable_keys = (
+            'frozen', 'scale', 'stage', 'development_prompt_ids', 'prompt_manifest_hash',
+            'generation_caps', 'comparison_session', 'checkpoint_hashes', 'model_pair',
+            'model_revisions', 'selected', 'candidates', 'settings_seed',
+        )
+        if all(existing.get(k) == frozen.get(k) for k in stable_keys):
+            return existing
+    atomic_json(settings_path, frozen)
     return frozen
 
 
