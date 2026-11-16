@@ -1272,10 +1272,364 @@ def warm_comparisons(runner, prompts, selected_settings):
                 runner.run(job, setting, profile=False)
 
 
+def _select_from_dev_observations(active_arms, arm_candidates, observations):
+    plain_by_prompt = {row['prompt_id']: row for row in observations['plain_dflash'][fingerprint({})]}
+    selected, candidate_reports = {}, {}
+    for arm in active_arms:
+        reports = []
+        for setting in arm_candidates[arm]:
+            rows = observations[arm][fingerprint(setting)]
+            # Each condition receives equal weight; long completions do not dilute standard tuning.
+            by_condition = defaultdict(list)
+            excluded = 0
+            for row in rows:
+                plain = plain_by_prompt[row['prompt_id']]
+                if row['condition'].startswith('long_') and (row['generation']['repetition_dominated'] or plain['generation']['repetition_dominated']):
+                    excluded += 1
+                    continue
+                by_condition[row['condition']].append(row['tokens_per_second'] / plain['tokens_per_second'])
+            nonempty_conds = [values for values in by_condition.values() if values]
+            score = statistics.mean(statistics.mean(values) for values in nonempty_conds) if nonempty_conds else 0.0
+            reports.append({'settings': setting, 'selection_score': score, 'condition_normalized_throughput': {k: statistics.mean(v) for k, v in by_condition.items()},
+                            'dev_requests': len(rows), 'repetition_excluded_matched_pairs': excluded,
+                            'long_condition_data_sparsity': not any(k.startswith('long_') and v for k, v in by_condition.items()), 'generated_tokens': sum(row['generated_tokens'] for row in rows),
+                            'wall_seconds': sum(row['elapsed_seconds'] for row in rows)})
+        chosen = max(reports, key=lambda row: row['selection_score'])
+        selected[arm] = chosen['settings']
+        candidate_reports[arm] = reports
+    return selected, candidate_reports
+
+
+def compute_tune_sharding_plan(args, prompt_manifest, prompts, arm_candidates):
+    """Condition-stratified token-balanced snake assignment of dev prompts across `1..8` M5 tune ranks."""
+    token_sums = defaultdict(int)
+    weight_source = 'prompt_manifest_order_fallback'
+    has_weights = False
+    target_pids = {p['prompt_id'] for p in prompts}
+    for prior_stage in ('m4', 'm3'):
+        mpath = args.output / prior_stage / 'tune' / 'manifest-rank0.json'
+        if not mpath.is_file():
+            continue
+        stage_sums = defaultdict(int)
+        seen_pids = set()
+        for entry in Manifest(mpath).data.get('jobs', {}).values():
+            if entry.get('status') != 'complete':
+                continue
+            rpath = Path(entry.get('result_path', ''))
+            if not rpath.is_file() and rpath.name:
+                alt = mpath.parent / 'rank0' / rpath.name
+                if alt.is_file():
+                    rpath = alt
+            if not rpath.is_file():
+                continue
+            row = json.loads(rpath.read_text())
+            pid = row.get('prompt_id')
+            if pid in target_pids:
+                stage_sums[pid] += int(row.get('generated_tokens', 0))
+                seen_pids.add(pid)
+        if target_pids and target_pids <= seen_pids:
+            token_sums = stage_sums
+            weight_source = f'{prior_stage}_tune_realized_tokens'
+            has_weights = True
+            break
+
+    manifest_order = {p['prompt_id']: idx for idx, p in enumerate(prompt_manifest['prompts'])}
+    conditions_sorted = sorted({p['condition'] for p in prompts})
+    ordered_by_condition = {}
+    if has_weights:
+        prompt_token_sums = {p['prompt_id']: int(token_sums[p['prompt_id']]) for p in prompts}
+        for cond in conditions_sorted:
+            cond_prompts = [p for p in prompts if p['condition'] == cond]
+            ordered_by_condition[cond] = sorted(
+                cond_prompts,
+                key=lambda p: (-prompt_token_sums[p['prompt_id']], manifest_order[p['prompt_id']], p['prompt_id']),
+            )
+    else:
+        prompt_token_sums = {p['prompt_id']: None for p in prompts}
+        for cond in conditions_sorted:
+            cond_prompts = [p for p in prompts if p['condition'] == cond]
+            ordered_by_condition[cond] = sorted(cond_prompts, key=lambda p: (manifest_order[p['prompt_id']], p['prompt_id']))
+
+    prompt_to_rank = {}
+    if all(len(cond_prompts) >= args.world_size for cond_prompts in ordered_by_condition.values()):
+        for cond in conditions_sorted:
+            for k, p in enumerate(ordered_by_condition[cond]):
+                prompt_to_rank[p['prompt_id']] = _snake_rank(k, args.world_size)
+    else:
+        flat = [p for cond in conditions_sorted for p in ordered_by_condition[cond]]
+        for k, p in enumerate(flat):
+            prompt_to_rank[p['prompt_id']] = _snake_rank(k, args.world_size)
+
+    rank_prompts = {
+        r: [p['prompt_id'] for p in prompts if prompt_to_rank[p['prompt_id']] == r]
+        for r in range(args.world_size)
+    }
+    if any(not pids for pids in rank_prompts.values()):
+        raise ValueError('M5 tune sharding plan left at least one rank with zero dev prompts')
+    return {
+        'schema_version': 1,
+        'stage': args.stage,
+        'scale': args.scale,
+        'world_size': args.world_size,
+        'sharding_mode': f'sharded_{args.world_size}gpu',
+        'candidates_hash': fingerprint(arm_candidates),
+        'prompt_manifest_hash': fingerprint(prompt_manifest),
+        'selected_prompt_ids': [p['prompt_id'] for p in prompts],
+        'seed': args.seed,
+        'weight_source': weight_source,
+        'prompt_token_sums': prompt_token_sums,
+        'prompt_to_rank': prompt_to_rank,
+        'ranks': {str(r): rank_prompts[r] for r in range(args.world_size)},
+        'by_rank': {
+            str(r): {
+                'rank': r,
+                'prompt_ids': rank_prompts[r],
+                'prompt_count': len(rank_prompts[r]),
+                'realized_prior_tune_tokens': (
+                    sum(prompt_token_sums[pid] for pid in rank_prompts[r]) if has_weights else None
+                ),
+            }
+            for r in range(args.world_size)
+        },
+        'by_condition': {
+            cond: {
+                'ordered_prompt_ids': [p['prompt_id'] for p in ordered_by_condition[cond]],
+                'ranks': {
+                    str(r): [p['prompt_id'] for p in ordered_by_condition[cond] if prompt_to_rank[p['prompt_id']] == r]
+                    for r in range(args.world_size)
+                },
+            }
+            for cond in conditions_sorted
+        },
+    }
+
+
+def ensure_tune_sharding_plan(args, prompt_manifest, prompts, arm_candidates):
+    """Atomically persist or validate `m5/tune/sharding_plan.json` across concurrent rank startups."""
+    tune_dir = args.output / args.stage / 'tune'
+    tune_dir.mkdir(parents=True, exist_ok=True)
+    plan_path = tune_dir / 'sharding_plan.json'
+    lock_path = tune_dir / '.sharding_plan.lock'
+    computed = compute_tune_sharding_plan(args, prompt_manifest, prompts, arm_candidates)
+    compare_keys = (
+        'stage', 'scale', 'world_size', 'sharding_mode', 'candidates_hash',
+        'prompt_manifest_hash', 'selected_prompt_ids', 'seed', 'weight_source',
+        'prompt_token_sums', 'prompt_to_rank', 'ranks',
+    )
+    with lock_path.open('a+') as lock_stream:
+        fcntl.flock(lock_stream.fileno(), fcntl.LOCK_EX)
+        if plan_path.is_file() and not getattr(args, 'fresh_session', False):
+            existing = json.loads(plan_path.read_text())
+            for key in compare_keys:
+                if existing.get(key) != computed.get(key):
+                    raise ValueError(f'existing tune sharding_plan.json mismatch on {key}; pass --fresh_session to rebuild')
+            requested_session = getattr(args, 'logical_session', None)
+            if requested_session is not None and existing.get('logical_session') != requested_session:
+                raise ValueError('existing tune sharding_plan.json has a different logical_session; pass --fresh_session or omit --logical_session to resume')
+            return plan_path, existing, file_sha256(plan_path)
+        logical_session = getattr(args, 'logical_session', None) or uuid.uuid4().hex
+        plan = {'logical_session': logical_session, **computed}
+        atomic_json(plan_path, plan)
+        return plan_path, plan, file_sha256(plan_path)
+
+
+def sharded_tune_session(runner, logical_session, configuration, plan_path, plan_sha256):
+    args = runner.args
+    if getattr(runner, 'fastpath', None) is not None:
+        configuration = dict(configuration, fastpath=runner.fastpath.config.to_dict())
+    affinity = getattr(runner, 'affinity_info', None) or apply_gpu_cpu_affinity(torch.device('cpu'), args.rank)
+    config = {
+        'configuration': configuration,
+        'checkpoint_hashes': runner.checkpoint_hashes,
+        'model_pair': runner.model_pair,
+        'model_revisions': runner.model_revisions,
+        'generation_environment': getattr(runner, 'generation_environment', None),
+        'generation_caps': generation_caps(args),
+        'stage': args.stage,
+        'scale': args.scale,
+        'device': str(runner.device),
+        'visible_devices': os.environ.get('CUDA_VISIBLE_DEVICES'),
+        'rank': args.rank,
+        'world_size': args.world_size,
+        'physical_gpu': affinity['physical_gpu'],
+        'numa_node': affinity['numa_node'],
+        'cpu_affinity': affinity['cpu_affinity'],
+        'seed': args.seed,
+    }
+    path = args.output / args.stage / 'tune' / 'sessions' / f'{logical_session}-rank{args.rank}.json'
+    if path.exists() and not getattr(args, 'fresh_session', False):
+        state = json.loads(path.read_text())
+        if state.get('logical_session') != logical_session or state.get('rank') != args.rank or state.get('world_size') != args.world_size:
+            raise ValueError('existing sharded tune session identity/rank/world_size mismatch')
+        prior_cfg = state.get('configuration', {})
+        for key in ('configuration', 'checkpoint_hashes', 'model_pair', 'model_revisions',
+                    'generation_environment', 'generation_caps', 'stage', 'scale', 'rank', 'world_size', 'seed'):
+            if prior_cfg.get(key) != config.get(key):
+                raise ValueError(f'existing sharded tune session configuration mismatch on {key}')
+    else:
+        state = {
+            'logical_session': logical_session,
+            'rank': args.rank,
+            'world_size': args.world_size,
+            'sharding_mode': f'sharded_{args.world_size}gpu',
+            'sharding_plan_path': str(Path(plan_path).resolve()),
+            'sharding_plan_sha256': plan_sha256,
+            'configuration': config,
+            'created_at_unix': time.time(),
+            'epochs': [],
+            'bundles': {},
+        }
+    state.update({
+        'physical_gpu': affinity['physical_gpu'],
+        'numa_node': affinity['numa_node'],
+        'cpu_affinity': affinity['cpu_affinity'],
+        'cpu_affinity_applied': affinity['cpu_affinity_applied'],
+        'timing_harness_implementation_sha256': implementation_hash(args.stage),
+        'algorithm_implementation_sha256': algorithm_hash(),
+        'triton_gate_report': getattr(runner, 'triton_gate_report', None),
+        'torch_compile_gate_report': getattr(runner, 'torch_compile_gate_report', None),
+    })
+    epoch = uuid.uuid4().hex
+    state['epochs'].append({'epoch': epoch, 'started_at_unix': time.time(), 'device': str(runner.device),
+                            'physical_gpu': affinity['physical_gpu'], 'numa_node': affinity['numa_node'],
+                            'cpu_affinity': affinity['cpu_affinity']})
+    atomic_json(path, state)
+    return path, state, epoch
+
+
+def summarize_sharded_tune(args, manifest):
+    """Pure-CPU aggregation of sharded M5 dev comparison bundles into `m5/settings.json`."""
+    from types import SimpleNamespace
+    if args.stage != 'm5':
+        raise ValueError('summarize_sharded_tune is only supported for stage m5')
+    tune_dir = args.output / args.stage / 'tune'
+    plan_path = tune_dir / 'sharding_plan.json'
+    settings_path = args.output / args.stage / 'settings.json'
+    if not plan_path.is_file():
+        if settings_path.is_file():
+            return json.loads(settings_path.read_text())
+        raise FileNotFoundError(f'missing M5 tune sharding_plan.json: {plan_path}')
+    plan = json.loads(plan_path.read_text())
+    if plan.get('stage') != args.stage or plan.get('scale') != args.scale:
+        raise ValueError('M5 tune sharding_plan.json stage/scale mismatch')
+    world_size = int(plan['world_size'])
+    if world_size < 2 or world_size > 8:
+        raise ValueError('M5 tune sharding_plan.json world_size must lie in 2..8')
+    active_arms = _arms_from_args(args)
+    kappa = getattr(args, 'bigram_count_gate_kappa', None)
+    m5_betas = getattr(args, 'm5_beta_candidates', None)
+    m5_br = getattr(args, 'm5_beta_relax', None)
+    arm_candidates = {
+        a: candidate_settings(a, bigram_count_gate_kappa=kappa, m5_beta_candidates=m5_betas, m5_beta_relax=m5_br)
+        for a in active_arms
+    }
+    if plan.get('candidates_hash') != fingerprint(arm_candidates):
+        raise ValueError('M5 tune sharding_plan.json candidates_hash differs from requested M5 arms/candidates')
+    prompts = select_prompts(manifest, 'dev', args.scale, args.standard_dev_prompts, args.long_dev_prompts)
+    if [p['prompt_id'] for p in prompts] != plan.get('selected_prompt_ids'):
+        raise ValueError('M5 tune sharding_plan.json selected_prompt_ids mismatch')
+    logical_session = plan['logical_session']
+    session_paths = [tune_dir / 'sessions' / f'{logical_session}-rank{r}.json' for r in range(world_size)]
+    manifest_paths = [tune_dir / f'manifest-rank{r}.json' for r in range(world_size)]
+    if not all(p.is_file() for p in session_paths + manifest_paths):
+        raise RuntimeError('sharded M5 tune is incomplete; missing rank session or manifest files')
+    rank_sessions = [json.loads(p.read_text()) for p in session_paths]
+    rank_manifests = [json.loads(p.read_text()) for p in manifest_paths]
+
+    cfg0 = rank_sessions[0]['configuration']
+    rank_affinity = {}
+    seen_gpus, seen_cpus = set(), set()
+    for r, sess in enumerate(rank_sessions):
+        rcfg = sess.get('configuration', {})
+        for key in ('checkpoint_hashes', 'model_pair', 'model_revisions', 'generation_environment',
+                    'generation_caps', 'stage', 'scale', 'seed'):
+            if rcfg.get(key) != cfg0.get(key):
+                raise ValueError(f'sharded M5 tune rank {r} configuration mismatch on {key}')
+        phys_gpu = sess.get('physical_gpu')
+        numa_node = sess.get('numa_node')
+        cpus = list(sess.get('cpu_affinity') or [])
+        if phys_gpu is None or numa_node is None or not cpus:
+            raise ValueError(f'sharded M5 tune session rank {r} lacks GPU/NUMA/CPU affinity metadata')
+        if phys_gpu in seen_gpus:
+            raise ValueError(f'duplicate physical_gpu {phys_gpu} across sharded M5 tune ranks')
+        if seen_cpus.intersection(cpus):
+            raise ValueError(f'overlapping cpu_affinity across sharded M5 tune ranks on rank {r}')
+        seen_gpus.add(phys_gpu)
+        seen_cpus.update(cpus)
+        rank_affinity[str(r)] = {
+            'physical_gpu': phys_gpu,
+            'numa_node': numa_node,
+            'cpu_affinity': cpus,
+            'cpu_affinity_applied': bool(sess.get('cpu_affinity_applied', False)),
+        }
+
+    stub_args = copy.copy(args)
+    stub_args.world_size = world_size
+    stub = SimpleNamespace(
+        args=stub_args, tiny=args.scale == 'smoke',
+        checkpoint_hashes=cfg0['checkpoint_hashes'],
+        model_pair=cfg0['model_pair'],
+        model_revisions=cfg0['model_revisions'],
+        generation_environment=cfg0.get('generation_environment'),
+    )
+    prompt_to_rank = {pid: int(rk) for pid, rk in plan['prompt_to_rank'].items()}
+    observations = defaultdict(lambda: defaultdict(list))
+    for prompt_index, prompt in enumerate(prompts):
+        r = prompt_to_rank[prompt['prompt_id']]
+        name, temperature, warp = sampling_conditions(prompt['condition'], primary_only=True)[0]
+        base = {'prompt': prompt, 'sampling_name': name, 'temperature': temperature, 'warper': warp, 'seed': args.seed}
+        jobs = [(arm, setting) for arm in active_arms for setting in arm_candidates[arm]]
+        offset = prompt_index % len(jobs)
+        comparisons = [(dict(base, arm=arm), setting) for arm, setting in jobs[offset:] + jobs[:offset]]
+        rows = read_comparison_bundle(
+            stub, 'tune', comparisons, '', rank_sessions[r], 'dev', False,
+            manifest=rank_manifests[r], rank=r,
+        )
+        if rows is None:
+            raise RuntimeError(f'sharded M5 tune is incomplete; missing completed dev bundle for {prompt["prompt_id"]} on rank {r}')
+        for row in rows:
+            observations[row['arm']][fingerprint(row['settings'])].append(row)
+
+    selected, candidate_reports = _select_from_dev_observations(active_arms, arm_candidates, observations)
+    frozen = {
+        'schema_version': 1, 'frozen': True, 'scale': args.scale, 'stage': args.stage,
+        'development_prompt_ids': [p['prompt_id'] for p in prompts],
+        'prompt_manifest_hash': fingerprint(manifest), 'generation_caps': generation_caps(args),
+        'comparison_session': logical_session,
+        'sharding_mode': f'sharded_{world_size}gpu',
+        'world_size': world_size,
+        'sharding_plan_path': str(plan_path.resolve()),
+        'sharding_plan_sha256': file_sha256(plan_path),
+        'rank_affinity': rank_affinity,
+        'warmup_policy': 'all candidates on each rank condition before measured dev requests',
+        'checkpoint_hashes': cfg0['checkpoint_hashes'],
+        'model_pair': cfg0['model_pair'], 'model_revisions': cfg0['model_revisions'],
+        'selected': selected,
+        'generation_environment': cfg0.get('generation_environment'),
+        'candidates': candidate_reports,
+        'selection_metric': 'mean across conditions of prompt throughput relative to same-prompt plain DFlash',
+        'budget': 'two configurations per tuned arm, identical dev prompts, seeds and token caps; plain DFlash has no tuned parameters',
+        'settings_seed': args.seed,
+        'created_at_unix': min(s['created_at_unix'] for s in rank_sessions),
+    }
+    triton_rep = rank_sessions[0].get('triton_gate_report')
+    tc_rep = rank_sessions[0].get('torch_compile_gate_report')
+    if triton_rep is not None:
+        frozen['triton_gate_report'] = triton_rep
+    if tc_rep is not None:
+        frozen['torch_compile_gate_report'] = tc_rep
+    atomic_json(settings_path, frozen)
+    return frozen
+
+
 def tune(runner, manifest):
     args = runner.args
-    if args.rank != 0 or args.world_size != 1:
-        raise ValueError('dev selection is a single-process matched timing session')
+    if args.stage != 'm5':
+        if args.rank != 0 or args.world_size != 1:
+            raise ValueError('dev selection is a single-process matched timing session')
+    else:
+        if args.world_size < 1 or args.world_size > 8 or not (0 <= args.rank < args.world_size):
+            raise ValueError('M5 dev selection requires world_size in 1..8 and 0 <= rank < world_size')
     active_arms = _arms_from_args(args)
     kappa = getattr(args, 'bigram_count_gate_kappa', None)
     m5_betas = getattr(args, 'm5_beta_candidates', None) if args.stage == 'm5' else None
@@ -1285,6 +1639,41 @@ def tune(runner, manifest):
         for a in active_arms
     }
     prompts = select_prompts(manifest, 'dev', args.scale, args.standard_dev_prompts, args.long_dev_prompts)
+
+    if args.stage == 'm5' and args.world_size > 1:
+        plan_path, plan, plan_sha256 = ensure_tune_sharding_plan(args, manifest, prompts, arm_candidates)
+        logical_session = plan['logical_session']
+        rank_pids = set(plan['ranks'][str(args.rank)])
+        rank_prompts = [p for p in prompts if p['prompt_id'] in rank_pids]
+        session_path, session_state, epoch = sharded_tune_session(
+            runner, logical_session,
+            {
+                'prompt_manifest_hash': fingerprint(manifest),
+                'dev_ids': [p['prompt_id'] for p in prompts],
+                'rank_dev_ids': [p['prompt_id'] for p in rank_prompts],
+                'candidates': arm_candidates,
+            },
+            plan_path, plan_sha256,
+        )
+        warm_comparisons(runner, rank_prompts, arm_candidates)
+        completed_bundles = 0
+        for prompt_index, prompt in enumerate(prompts):
+            if prompt['prompt_id'] not in rank_pids:
+                continue
+            name, temperature, warp = sampling_conditions(prompt['condition'], primary_only=True)[0]
+            base = {'prompt': prompt, 'sampling_name': name, 'temperature': temperature, 'warper': warp, 'seed': args.seed}
+            jobs = [(arm, setting) for arm in active_arms for setting in arm_candidates[arm]]
+            offset = prompt_index % len(jobs)
+            comparisons = [(dict(base, arm=arm), setting) for arm, setting in jobs[offset:] + jobs[:offset]]
+            comparison_bundle(runner, 'tune', comparisons, '', session_path, session_state, epoch, 'dev')
+            completed_bundles += 1
+        return {
+            'stage': args.stage, 'scale': args.scale, 'mode': 'tune',
+            'rank': args.rank, 'world_size': args.world_size,
+            'logical_session': logical_session, 'bundles': completed_bundles,
+            'status': 'tune_rank_complete',
+        }
+
     session_path, session_state, epoch = comparison_session(runner, 'tune', {'prompt_manifest_hash': fingerprint(manifest),
         'dev_ids': [p['prompt_id'] for p in prompts], 'candidates': arm_candidates})
     warm_comparisons(runner, prompts, arm_candidates)
@@ -1301,29 +1690,7 @@ def tune(runner, manifest):
         for row in rows:
             dev_rows.append(row)
             observations[row['arm']][fingerprint(row['settings'])].append(row)
-    plain_by_prompt = {row['prompt_id']: row for row in observations['plain_dflash'][fingerprint({})]}
-    selected, candidate_reports = {}, {}
-    for arm in active_arms:
-        reports = []
-        for setting in arm_candidates[arm]:
-            rows = observations[arm][fingerprint(setting)]
-            # Each condition receives equal weight; long completions do not dilute standard tuning.
-            by_condition = defaultdict(list)
-            excluded = 0
-            for row in rows:
-                plain = plain_by_prompt[row['prompt_id']]
-                if row['condition'].startswith('long_') and (row['generation']['repetition_dominated'] or plain['generation']['repetition_dominated']):
-                    excluded += 1
-                    continue
-                by_condition[row['condition']].append(row['tokens_per_second'] / plain['tokens_per_second'])
-            score = statistics.mean(statistics.mean(values) for values in by_condition.values())
-            reports.append({'settings': setting, 'selection_score': score, 'condition_normalized_throughput': {k: statistics.mean(v) for k, v in by_condition.items()},
-                            'dev_requests': len(rows), 'repetition_excluded_matched_pairs': excluded,
-                            'long_condition_data_sparsity': not any(k.startswith('long_') and v for k, v in by_condition.items()), 'generated_tokens': sum(row['generated_tokens'] for row in rows),
-                            'wall_seconds': sum(row['elapsed_seconds'] for row in rows)})
-        chosen = max(reports, key=lambda row: row['selection_score'])
-        selected[arm] = chosen['settings']
-        candidate_reports[arm] = reports
+    selected, candidate_reports = _select_from_dev_observations(active_arms, arm_candidates, observations)
     frozen = {'schema_version': 1, 'frozen': True, 'scale': args.scale, 'stage': args.stage,
               'development_prompt_ids': [p['prompt_id'] for p in prompts],
               'prompt_manifest_hash': fingerprint(manifest), 'generation_caps': generation_caps(args),
@@ -3614,7 +3981,7 @@ def smoke_manifest():
 def main(argv=None):
     parser = common_parser(__doc__)
     parser.add_argument('--stage', choices=['m3', 'm4', 'm5'], default='m3')
-    parser.add_argument('--mode', choices=['tune', 'evaluate', 'timing', 'timing_calibration', 'summarize', 'all',
+    parser.add_argument('--mode', choices=['tune', 'tune_summarize', 'evaluate', 'timing', 'timing_calibration', 'summarize', 'all',
                                            'beta_sweep', 'server_eval'], default='all')
     parser.add_argument('--fresh_session', action='store_true', help='start new dev/timing measurements instead of resuming complete comparison bundles')
     parser.add_argument('--logical_session', type=str, default=None, help='shared logical session identifier across sharded timing ranks')
@@ -3675,8 +4042,13 @@ def main(argv=None):
         parser.error('timing requires repeats>=2, calibration_repeats>=2, warmups>=1 and prompts>=0 (0=all)')
     if min(args.max_new_tokens, args.long_max_new_tokens, args.smoke_tokens) < 1:
         parser.error('generation caps must be positive')
-    if args.mode in ('tune', 'timing_calibration', 'all') and (args.world_size != 1 or args.rank != 0):
-        parser.error('tune, timing_calibration, and all require world_size=1 and rank=0')
+    if args.mode in ('timing_calibration', 'all', 'tune_summarize') and (args.world_size != 1 or args.rank != 0):
+        parser.error('timing_calibration, tune_summarize, and all require world_size=1 and rank=0')
+    if args.mode == 'tune':
+        if args.stage != 'm5' and (args.world_size != 1 or args.rank != 0):
+            parser.error('M3/M4 tune requires world_size=1 and rank=0')
+        if args.stage == 'm5' and args.world_size > 8:
+            parser.error('M5 sharded tune world_size must lie in 1..8')
     if args.mode == 'timing' and args.world_size > 8:
         parser.error('timing world_size must lie in 1..8')
     if args.bigram_count_gate_kappa is not None:
@@ -3693,12 +4065,12 @@ def main(argv=None):
         if not math.isfinite(args.m5_beta_relax) or args.m5_beta_relax < 0:
             parser.error('--m5_beta_relax must be finite and >= 0')
     if args.stage != 'm5' and (args.m5_arms or args.m5_oracle_checkpoint or args.m5_triton
-                               or args.m5_torch_compile or args.mode == 'server_eval'
+                               or args.m5_torch_compile or args.mode in ('server_eval', 'tune_summarize')
                                or args.bigram_count_gate_kappa is not None
                                or args.checkpoint_scale is not None
                                or args.m5_beta_candidates is not None
                                or args.m5_beta_relax is not None):
-        parser.error('M5-specific options (--m5_*, --checkpoint_scale, --bigram_count_gate_kappa, --mode server_eval) require --stage m5')
+        parser.error('M5-specific options (--m5_*, --checkpoint_scale, --bigram_count_gate_kappa, --mode server_eval|tune_summarize) require --stage m5')
     record_run(args, f'{args.stage}-{args.mode}')
     torch.set_num_threads(1)
     prompt_manifest = smoke_manifest() if args.scale == 'smoke' else json.loads(args.prompts_manifest.read_text())
@@ -3711,7 +4083,7 @@ def main(argv=None):
         return
     cluster_idle_inventory = None
     if args.scale != 'smoke':
-        if args.mode != 'summarize':
+        if args.mode not in ('summarize', 'tune_summarize'):
             n_std_eval, n_long_eval = (128, 64) if args.scale == 'full' else (64, 32)
             expected_tokens = (
                 args.standard_dev_prompts * args.max_new_tokens + args.long_dev_prompts * args.long_max_new_tokens
@@ -3727,9 +4099,18 @@ def main(argv=None):
             from .bench_adapter import assert_idle
             assert_idle(torch.device(args.device))
     settings_path = args.output / args.stage / 'settings.json'
-    runner = None if args.mode == 'summarize' else EvaluationRunner(args)
-    if args.mode in ('tune', 'all'):
-        settings = tune(runner, prompt_manifest)
+    runner = None if args.mode in ('summarize', 'tune_summarize') else EvaluationRunner(args)
+    if args.mode == 'tune_summarize':
+        settings = summarize_sharded_tune(args, prompt_manifest)
+    elif args.mode in ('tune', 'all'):
+        tune_out = tune(runner, prompt_manifest)
+        if args.mode == 'tune' and args.world_size > 1:
+            print(json.dumps({
+                'stage': args.stage, 'scale': args.scale, 'mode': args.mode,
+                'rank': args.rank, 'world_size': args.world_size, 'status': tune_out['status'],
+            }))
+            return
+        settings = tune_out
     else:
         settings = json.loads(settings_path.read_text())
     if args.scale == 'smoke':

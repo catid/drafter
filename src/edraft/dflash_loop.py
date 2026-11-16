@@ -20,10 +20,12 @@ from .backend import crop_cache, extract_context_feature, make_cache
 from .sampler import (
     SamplingWarper,
     probabilities,
+    probability_dtype,
     sample_from_top_scaled,
     sample_token,
     sample_token_compact_with_prob,
     sample_token_tensor,
+    warp_top_scaled_scores,
 )
 from .verify import CompactProposal, verify_block
 
@@ -175,15 +177,91 @@ def _sample_proposal(draft_logits, h_raw, prefix, *, temperature, warper, genera
                 snapshot, l_unit, H, prefix,
                 domain=lookahead.domain, T_relax=lookahead.T_relax,
                 beta_relax=eff_beta_relax, U_precomputed=U_all,
+                use_fast_candidate=enable_round3_compact,
             )
             for _ in range(lookahead.R_init):
                 damped_lookahead_step(state, eta=lookahead.eta)
+        domain_tag = 'candidate' if lookahead.domain == 'candidate_masked' else 'full'
+        mode_label = f'lookahead_{lookahead.mode}_{domain_tag}'
+        if (
+            enable_round3_compact
+            and lookahead.domain == 'candidate_masked'
+            and bigram is None
+            and probs_fn is None
+            and state._fast is not None
+        ):
+            fast = state._fast
+            V = draft_logits.shape[-1]
+            M = fast.M
+            tok_buf = torch.empty(K, dtype=torch.long, device=draft_logits.device)
+            use_sub_topk = temperature > 0 and 0 < warper.top_k < M
+            comp_w = warper.top_k if use_sub_topk else M
+            prob_dt = torch.float64 if l_unit.dtype == torch.float64 else torch.float32
+            slot_probs = torch.empty((K, comp_w), dtype=prob_dt, device=draft_logits.device) if temperature > 0 else None
+            slot_indices = torch.empty((K, comp_w), dtype=torch.long, device=draft_logits.device) if temperature > 0 else None
+            q_sel_buf = torch.empty(K, dtype=prob_dt, device=draft_logits.device) if temperature > 0 else None
+            for i in range(K):
+                with timer.phase("sequential_sampling"):
+                    cand_scores = fast.l_sup[i] - beta * fast.g_sup[i]
+                    sort_perm_i = fast.sort_perm[i]
+                    ids_sorted_i = fast.ids_sorted[i]
+                    cand_sorted = cand_scores.gather(0, sort_perm_i)
+                    if temperature == 0:
+                        choice_sorted = torch.argmax(cand_sorted)
+                        tok_t = ids_sorted_i[choice_sorted]
+                        orig_pos = sort_perm_i[choice_sorted]
+                    elif use_sub_topk:
+                        scaled_sorted = probability_dtype(cand_sorted) / temperature
+                        top_sc, local_sorted_idx = torch.topk(scaled_sorted, warper.top_k, dim=-1)
+                        probs_sub = warp_top_scaled_scores(top_sc, warper)
+                        order_in_top = local_sorted_idx.argsort(dim=-1)
+                        sorted_sub_pos = local_sorted_idx.gather(-1, order_in_top)
+                        idx_sorted = ids_sorted_i.gather(-1, sorted_sub_pos)
+                        probs_sorted = probs_sub.gather(-1, order_in_top)
+                        choice_k = torch.multinomial(probs_sorted, 1, generator=generator)[0]
+                        choice_sorted = sorted_sub_pos[choice_k]
+                        tok_t = idx_sorted[choice_k]
+                        orig_pos = sort_perm_i[choice_sorted]
+                        slot_probs[i] = probs_sorted
+                        slot_indices[i] = idx_sorted
+                        q_sel_buf[i] = probs_sorted[choice_k]
+                    else:
+                        scaled_sorted = probability_dtype(cand_sorted) / temperature
+                        probs_sorted = warp_top_scaled_scores(scaled_sorted, warper)
+                        choice_sorted = torch.multinomial(probs_sorted, 1, generator=generator)[0]
+                        tok_t = ids_sorted_i[choice_sorted]
+                        orig_pos = sort_perm_i[choice_sorted]
+                        slot_probs[i] = probs_sorted
+                        slot_indices[i] = ids_sorted_i
+                        q_sel_buf[i] = probs_sorted[choice_sorted]
+                    tok_buf[i] = tok_t
+                    state._clamp_orig_pos(i, tok_t, orig_pos)
+                if lookahead.mode == 'rerelax' and i + 1 < K:
+                    with timer.phase("lookahead_iterations"):
+                        for _ in range(lookahead.R_clamp):
+                            damped_lookahead_step(state, eta=lookahead.eta)
+            if temperature == 0:
+                q_out = None
+            else:
+                comp_q = CompactProposal(
+                    slot_indices=slot_indices,
+                    slot_probs=slot_probs,
+                    q_selected=q_sel_buf,
+                    vocab_size=V,
+                )
+                q_out = comp_q if _allow_compact_q else comp_q.to_dense()
+            return _ret(tok_buf, q_out, state.snapshot.C0, mode_label)
+
         tokens, qs = [], []
         for i in range(K):
-            score = state.l_unit[i] - beta * state.g[i]
             if lookahead.domain == 'candidate_masked':
                 ids = state.snapshot.C0[i]
-                score = torch.full(score.shape, -torch.inf, device=score.device, dtype=score.dtype).scatter(0, ids, score[ids])
+                cand_scores = state.candidate_slot_scores(i, beta)
+                score = torch.full(
+                    (state.l_unit.shape[-1],), -torch.inf, device=cand_scores.device, dtype=cand_scores.dtype
+                ).scatter(0, ids, cand_scores)
+            else:
+                score = state.l_unit[i] - beta * state.g[i]
             if bigram is not None:
                 with timer.phase("bigram_score"):
                     previous = tokens[-1] if tokens else (prefix[-1] if prefix else None)
@@ -198,8 +276,6 @@ def _sample_proposal(draft_logits, h_raw, prefix, *, temperature, warper, genera
                 with timer.phase("lookahead_iterations"):
                     for _ in range(lookahead.R_clamp):
                         damped_lookahead_step(state, eta=lookahead.eta)
-        domain_tag = 'candidate' if lookahead.domain == 'candidate_masked' else 'full'
-        mode_label = f'lookahead_{lookahead.mode}_{domain_tag}'
         q_out = torch.stack(qs) if qs else None
         return _ret(tokens, q_out, state.snapshot.C0, mode_label)
     if proposal_mode == 'dense_candidate':

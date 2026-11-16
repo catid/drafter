@@ -427,7 +427,7 @@ def _suite_config_fingerprint(suite_name: str, args, artifacts_root: Path) -> st
         payload['drafter'] = str(args.drafter)
     if suite_name == 'fastpath_bench':
         payload.update({
-            'fastpath_bench_schema': 2,
+            'fastpath_bench_schema': 3,
             'bench_warmups': int(args.bench_warmups),
             'bench_repeats': int(args.bench_repeats),
             'bigram_count_gate_kappa': float(args.bigram_count_gate_kappa),
@@ -488,7 +488,10 @@ def _can_resume_report(report_path: Path, args, expected_fingerprint: str) -> di
         and existing.get('scale') == args.scale
         and existing.get('config_fingerprint') == expected_fingerprint
     ):
-        if report_path.name == 'fastpath_bench.json' and not existing.get('round4_online_microbenchmark'):
+        if report_path.name == 'fastpath_bench.json' and (
+            not existing.get('round4_online_microbenchmark')
+            or not existing.get('round5_lookahead_microbenchmark')
+        ):
             return None
         return existing
     return None
@@ -630,6 +633,7 @@ def _measure_round3_compact_microbench(args, device: torch.device) -> dict:
         return float(entry['synchronized_wall']['median_ms'])
 
     r4_online = _measure_round4_online_microbench(args, device)
+    r5_lookahead = _measure_round5_lookahead_microbench(args, device)
 
     return {
         'dimensions': {'V': V, 'K': K, 'r': r, 'p': p, 'D': D, 'M_sparse': M, 'top_k': top_k},
@@ -648,6 +652,107 @@ def _measure_round3_compact_microbench(args, device: torch.device) -> dict:
             'full_adapter_round3_over_round2': _med(t_full_r2) / max(_med(t_full_r3), 1e-12),
         },
         'round4_online_microbench': r4_online,
+        'round5_lookahead_microbench': r5_lookahead,
+    }
+
+
+def _measure_round5_lookahead_microbench(args, device: torch.device) -> dict:
+    """Measure candidate-masked `lookahead_rerelax_candidate` (`R_init=2, R_clamp=1`) pre- vs post-Round-5."""
+    from .adapter import LookaheadConfig, damped_lookahead_step, initialize_lookahead
+    from .dflash_loop import PhaseTimer, _sample_proposal
+
+    tiny = args.scale == 'smoke'
+    V = 64 if tiny else 151936
+    K = 4 if tiny else 15
+    r = 8 if tiny else 64
+    p = 8 if tiny else 256
+    D = 4
+    M = 8 if tiny else 256
+    cap = 257 if tiny else 2**20
+    warmups = 1 if tiny else max(1, min(args.bench_warmups, 3))
+    repeats = 2 if tiny else max(2, min(args.bench_repeats, 7))
+
+    gen = torch.Generator(device='cpu').manual_seed(int(args.seed) + 505)
+    E = (torch.randn(V, r, generator=gen) * 0.05).to(device)
+    sp = SignedHash(cap, device=device)
+    with torch.no_grad():
+        sp.values.copy_((torch.randn(cap, generator=gen) * 0.02).to(device))
+    adap = DenseAdapter(E, p=p, D=D, sparse=sp, M_sparse=M).to(device)
+    with torch.no_grad():
+        adap.W.copy_((torch.randn(r, p, generator=gen) * 0.05).to(device))
+        adap.A.copy_((torch.randn(D, r, r, generator=gen) * 0.05).to(device))
+        adap.b.copy_((torch.randn(V, generator=gen) * 0.01).to(device))
+    snap = adap.snapshot()
+
+    draft_logits = (torch.randn(K, V, generator=gen) * 1.5).to(device)
+    l_unit = draft_logits.log_softmax(-1)
+    H = torch.randn(K, p, generator=gen).to(device)
+    U_all = snap.unary(H)
+    prefix = [1, 2, 3, 4]
+    warper = SamplingWarper(top_k=min(20, V - 1), top_p=0.95)
+    la_cfg = LookaheadConfig(mode='rerelax', domain='candidate_masked', R_init=2, R_clamp=1, eta=0.5, T_relax=1.0, beta_relax=1.0)
+    timer = PhaseTimer(device, False)
+
+    def _run_pre_r5_relax():
+        st = initialize_lookahead(
+            snap, l_unit, H, prefix, domain='candidate_masked',
+            T_relax=1.0, beta_relax=1.0, U_precomputed=U_all, use_fast_candidate=False,
+        )
+        for _ in range(2):
+            damped_lookahead_step(st, eta=0.5)
+        for slot_i in range(K - 1):
+            st.clamp(slot_i, int(st.snapshot.C0[slot_i][0].item()))
+            damped_lookahead_step(st, eta=0.5)
+
+    def _run_r5_relax():
+        st = initialize_lookahead(
+            snap, l_unit, H, prefix, domain='candidate_masked',
+            T_relax=1.0, beta_relax=1.0, U_precomputed=U_all, use_fast_candidate=True,
+        )
+        for _ in range(2):
+            damped_lookahead_step(st, eta=0.5)
+        for slot_i in range(K - 1):
+            st._clamp_orig_pos(slot_i, st._fast.c0_mat[slot_i, 0], torch.zeros((), dtype=torch.long, device=device))
+            damped_lookahead_step(st, eta=0.5)
+
+    def _run_pre_r5_proposal():
+        rng = torch.Generator(device=device).manual_seed(77)
+        _sample_proposal(
+            draft_logits, H, prefix, temperature=0.7, warper=warper, generator=rng,
+            snapshot=snap, projection=None, beta=1.0, bigram=None, timer=timer,
+            need_training_tensors=False, proposal_mode='dense_candidate', lookahead=la_cfg,
+            _return_token_tensor=True, _allow_compact_q=False, enable_round3_compact=False,
+        )
+
+    def _run_r5_proposal():
+        rng = torch.Generator(device=device).manual_seed(77)
+        _sample_proposal(
+            draft_logits, H, prefix, temperature=0.7, warper=warper, generator=rng,
+            snapshot=snap, projection=None, beta=1.0, bigram=None, timer=timer,
+            need_training_tensors=False, proposal_mode='dense_candidate', lookahead=la_cfg,
+            _return_token_tensor=True, _allow_compact_q=True, enable_round3_compact=True,
+        )
+
+    t_relax_pre = measure(_run_pre_r5_relax, device, warmups, repeats, args.seed)
+    t_relax_r5 = measure(_run_r5_relax, device, warmups, repeats, args.seed)
+    t_prop_pre = measure(_run_pre_r5_proposal, device, warmups, repeats, args.seed)
+    t_prop_r5 = measure(_run_r5_proposal, device, warmups, repeats, args.seed)
+
+    def _med(entry: dict) -> float:
+        return float(entry['synchronized_wall']['median_ms'])
+
+    return {
+        'dimensions': {'V': V, 'K': K, 'r': r, 'p': p, 'D': D, 'M_sparse': M, 'R_init': 2, 'R_clamp': 1},
+        'timings': {
+            'rerelax_iterations_pre_round5': t_relax_pre,
+            'rerelax_iterations_round5_batched': t_relax_r5,
+            'rerelax_full_proposal_pre_round5': t_prop_pre,
+            'rerelax_full_proposal_round5_compact': t_prop_r5,
+        },
+        'speedups': {
+            'rerelax_iterations_round5_over_pre_round5': _med(t_relax_pre) / max(_med(t_relax_r5), 1e-12),
+            'rerelax_proposal_round5_over_pre_round5': _med(t_prop_pre) / max(_med(t_prop_r5), 1e-12),
+        },
     }
 
 
@@ -1729,6 +1834,7 @@ def run_fastpath_bench(args, artifacts_root: Path, suite_root: Path) -> dict:
         },
         'round3_compact_microbenchmark': round3_micro,
         'round4_online_microbenchmark': round3_micro.get('round4_online_microbench'),
+        'round5_lookahead_microbenchmark': round3_micro.get('round5_lookahead_microbench'),
         'grouped_kl_microbenchmark': {
             'path': str(grouped_dir / f'grouped_benchmark_{args.scale}.json'),
             'parity_passed': grouped_report['parity']['passed'],
@@ -1776,19 +1882,71 @@ def _execute_m5_stage_pipeline(
     else:
         worker_dev = 'cuda:0' if use_cuda else 'cpu'
         logdir = sub_ws / 'logs'
-
-        # 1) Dev tune on gpus[0] (world_size=1)
-        tune_cmd = [
-            sys.executable, '-m', 'edraft.eval_closed_loop',
-            *_cli_base_flags(args, sub_ws, device_override=worker_dev),
-            '--mode', 'tune',
-            '--rank', '0', '--world_size', '1',
-            *shared_stage_flags,
-        ]
-        _spawn_parallel_workers(
-            [(0, gpus[0], tune_cmd)], logdir, 'm5-tune',
-            scale=args.scale, device_str=str(args.device), omp_threads=2,
+        prompt_manifest = (
+            smoke_manifest()
+            if args.scale == 'smoke'
+            else json.loads((sub_ws / 'prompts.json').read_text())
         )
+        if len(gpus) <= 1:
+            tune_w = 1
+            tune_gpus = gpus[:1]
+        else:
+            std_dev_n = int(getattr(args, 'standard_dev_prompts', 8))
+            long_dev_n = int(getattr(args, 'long_dev_prompts', None) or (32 if args.scale == 'full' else 12))
+            dev_prompts = select_prompts(prompt_manifest, 'dev', args.scale, std_dev_n, long_dev_n)
+            tune_w = max(1, min(len(gpus), len(dev_prompts)))
+            tune_gpus = gpus[:tune_w]
+
+        # 1) Core-pinned snake-sharded M5 dev tune across min(W, len(dev_prompts)) workers
+        if tune_w == 1:
+            tune_cmd = [
+                sys.executable, '-m', 'edraft.eval_closed_loop',
+                *_cli_base_flags(args, sub_ws, device_override=worker_dev),
+                '--mode', 'tune',
+                '--rank', '0', '--world_size', '1',
+                *shared_stage_flags,
+            ]
+            if not args.resume:
+                tune_cmd.append('--fresh_session')
+            _spawn_parallel_workers(
+                [(0, tune_gpus[0], tune_cmd)], logdir, 'm5-tune',
+                scale=args.scale, device_str=str(args.device), omp_threads=2,
+            )
+        else:
+            tune_plan_path = sub_ws / 'm5' / 'tune' / 'sharding_plan.json'
+            tune_session = (
+                json.loads(tune_plan_path.read_text()).get('logical_session')
+                if (args.resume and tune_plan_path.is_file()
+                    and json.loads(tune_plan_path.read_text()).get('world_size') == tune_w)
+                else uuid.uuid4().hex
+            )
+            tune_specs = []
+            for r, gpu in enumerate(tune_gpus):
+                t_cmd = [
+                    sys.executable, '-m', 'edraft.eval_closed_loop',
+                    *_cli_base_flags(args, sub_ws, device_override=worker_dev),
+                    '--mode', 'tune',
+                    '--rank', str(r), '--world_size', str(tune_w),
+                    '--logical_session', tune_session,
+                    *shared_stage_flags,
+                ]
+                if not args.resume:
+                    t_cmd.append('--fresh_session')
+                tune_specs.append((r, gpu, t_cmd))
+            _spawn_parallel_workers(
+                tune_specs, logdir, 'm5-tune',
+                scale=args.scale, device_str=str(args.device), omp_threads=2,
+            )
+            tune_sum_cmd = [
+                sys.executable, '-m', 'edraft.eval_closed_loop',
+                *_cli_base_flags(args, sub_ws, device_override='cpu'),
+                '--mode', 'tune_summarize',
+                *shared_stage_flags,
+            ]
+            _spawn_parallel_workers(
+                [(0, tune_gpus[0], tune_sum_cmd)], logdir, 'm5-tune-summarize',
+                scale='smoke', device_str='cpu', omp_threads=1,
+            )
 
         # 2) Sharded evaluate across all W workers
         eval_specs = []
@@ -1808,11 +1966,6 @@ def _execute_m5_stage_pipeline(
         )
 
         # 3) Core-pinned snake-sharded timing across min(W, len(selected_test_prompts)) workers
-        prompt_manifest = (
-            smoke_manifest()
-            if args.scale == 'smoke'
-            else json.loads((sub_ws / 'prompts.json').read_text())
-        )
         _, selected_test, _ = _select_test_prompts(prompt_manifest, args.scale, args.timing_prompts)
         timing_w = max(1, min(len(gpus), len(selected_test)))
         timing_gpus = gpus[:timing_w]
@@ -1944,7 +2097,12 @@ def _run_training_fit(args, ws: Path, gpus: list[int], fit_tag: str, extra_train
 
     fit_subdir = f'{fit_tag}_smoke' if args.scale == 'smoke' else fit_tag
     stats_mem = _default_stats_memory_limit(args)
-    if _is_cuda_run(args):
+    use_cuda = _is_cuda_run(args)
+    raw_nw = getattr(args, 'train_num_workers', None)
+    eff_num_workers = (2 if use_cuda else 0) if raw_nw is None else int(raw_nw)
+    eff_mb = getattr(args, 'microbatch_blocks', None)
+    extra_list = list(extra_train_flags)
+    if use_cuda:
         ddp_cli = [
             '--scale', args.scale,
             '--seed', str(args.seed),
@@ -1956,8 +2114,12 @@ def _run_training_fit(args, ws: Path, gpus: list[int], fit_tag: str, extra_train
             '--m1_diagnostic', str(ws / f'diagnostic_{args.scale}.json'),
             '--stats_memory_limit', stats_mem,
             '--m5_fit_tag', fit_tag,
-            *extra_train_flags,
+            *extra_list,
         ]
+        if '--num_workers' not in extra_list and eff_num_workers > 0:
+            ddp_cli.extend(['--num_workers', str(eff_num_workers)])
+        if '--microbatch_blocks' not in extra_list and eff_mb is not None:
+            ddp_cli.extend(['--microbatch_blocks', str(eff_mb)])
         if getattr(args, 'allow_large_run', False):
             ddp_cli.append('--allow_large_run')
         if not args.resume:
@@ -1968,8 +2130,12 @@ def _run_training_fit(args, ws: Path, gpus: list[int], fit_tag: str, extra_train
     train_cli = _cli_base_flags(args, ws) + [
         '--stats_memory_limit', stats_mem,
         '--m5_fit_tag', fit_tag,
-        *extra_train_flags,
+        *extra_list,
     ]
+    if '--num_workers' not in extra_list and eff_num_workers > 0:
+        train_cli.extend(['--num_workers', str(eff_num_workers)])
+    if '--microbatch_blocks' not in extra_list and eff_mb is not None:
+        train_cli.extend(['--microbatch_blocks', str(eff_mb)])
     if args.scale != 'smoke':
         train_cli.extend([
             '--trace_dir', str(ws / 'traces'),
@@ -2725,6 +2891,10 @@ def main(argv=None):
     parser.add_argument('--m5_exact_overflow_policy', choices=['freeze_new', 'error'], default='freeze_new')
     parser.add_argument('--m5_exact_sparse_capacity', type=int, default=None)
     parser.add_argument('--stats_memory_limit', default=None)
+    parser.add_argument('--train_num_workers', type=int, default=None,
+                        help='DataLoader shard-prefetch workers per DDP rank (defaults to 2 on CUDA reference/full, 0 on CPU/smoke)')
+    parser.add_argument('--microbatch_blocks', type=int, default=None,
+                        help='optional gradient-accumulation microbatch block size forwarded to train.py')
     parser.add_argument('--block_shuffle_window', type=int, default=32)
     parser.add_argument('--weight_decay', type=float, default=1e-2)
     parser.add_argument('--fixed_checkpoint_scale', type=float, default=0.20)
@@ -2778,6 +2948,10 @@ def main(argv=None):
 
     if args.m5_exact_sparse_capacity is not None and args.m5_exact_sparse_capacity < 1:
         parser.error('--m5_exact_sparse_capacity must be >= 1')
+    if args.train_num_workers is not None and args.train_num_workers < 0:
+        parser.error('--train_num_workers must be >= 0')
+    if args.microbatch_blocks is not None and args.microbatch_blocks < 1:
+        parser.error('--microbatch_blocks must be >= 1')
     if not math.isfinite(args.bigram_count_gate_kappa) or args.bigram_count_gate_kappa <= 0:
         parser.error('--bigram_count_gate_kappa must be finite and > 0')
     if args.block_shuffle_window < 1:

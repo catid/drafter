@@ -614,21 +614,37 @@ def _annotate_verified_stream(payload_blocks, history_depth: int, *, sidecar_gen
         block['_verified_eval_slots'] = min(int(block['block_length']), len(own))
 
 
-def batches(references, batch_blocks, *, start_batch=0, head_metadata=None,
-            rank=0, world_size=1, eligibility_fn=primary_eligible,
-            history_depth: int = 4, shard_cache_size: int = 1):
-    """Bounded compact-shard LRU cache (`1` shard by default; `W` under multi-shard block shuffle)."""
-    max_cached = max(1, int(shard_cache_size))
-    shard_cache: OrderedDict[Path, dict] = OrderedDict()
-    for batch_index in range(start_batch, (len(references) + batch_blocks - 1) // batch_blocks):
-        selected = references[batch_index * batch_blocks:(batch_index + 1) * batch_blocks]
-        if world_size > 1:
-            selected = selected[rank::world_size]
+class _RawShardBatchDataset(Dataset):
+    """Parallel-prefetchable dataset yielding `(batch_index, list[block_dict])` for `two_sided_pseudolikelihood`."""
+
+    def __init__(self, references, batch_blocks: int, *, start_batch: int = 0, head_metadata=None,
+                 rank: int = 0, world_size: int = 1, eligibility_fn=primary_eligible,
+                 history_depth: int = 4, max_cached_shards: int = 1):
+        self.references = list(references)
+        self.batch_blocks = int(batch_blocks)
+        self.start_batch = int(start_batch)
+        self.total_batches = (len(self.references) + self.batch_blocks - 1) // self.batch_blocks
+        self.head_metadata = head_metadata
+        self.rank = int(rank)
+        self.world_size = int(world_size)
+        self.eligibility_fn = eligibility_fn
+        self.history_depth = int(history_depth)
+        self.max_cached_shards = max(1, int(max_cached_shards))
+        self._cache: OrderedDict[Path, dict] = OrderedDict()
+
+    def __len__(self) -> int:
+        return max(0, self.total_batches - self.start_batch)
+
+    def __getitem__(self, item: int) -> tuple[int, list[dict]]:
+        batch_index = self.start_batch + int(item)
+        selected = self.references[batch_index * self.batch_blocks:(batch_index + 1) * self.batch_blocks]
+        if self.world_size > 1:
+            selected = selected[self.rank::self.world_size]
         result = []
         for shard, index in selected:
-            if shard.path in shard_cache:
-                shard_cache.move_to_end(shard.path)
-                payload = shard_cache[shard.path]
+            if shard.path in self._cache:
+                self._cache.move_to_end(shard.path)
+                payload = self._cache[shard.path]
             else:
                 sidecar = json.loads(shard.path.with_suffix('.pt.json').read_text())
                 if sidecar['sha256'] != shard.sha256:
@@ -636,17 +652,46 @@ def batches(references, batch_blocks, *, start_batch=0, head_metadata=None,
                 payload = read_shard(shard.path)
                 if len(payload['blocks']) != shard.blocks:
                     raise ValueError('Shard block count differs from immutable sidecar')
-                _annotate_verified_stream(payload['blocks'], history_depth, sidecar_generation=sidecar.get('generation'))
-                shard_cache[shard.path] = payload
-                while len(shard_cache) > max_cached:
-                    shard_cache.popitem(last=False)
+                _annotate_verified_stream(payload['blocks'], self.history_depth, sidecar_generation=sidecar.get('generation'))
+                self._cache[shard.path] = payload
+                while len(self._cache) > self.max_cached_shards:
+                    self._cache.popitem(last=False)
             block = payload['blocks'][index]
-            if block['split'] != shard.split or block['prompt_id'] != shard.prompt_id or not eligibility_fn(block):
+            if block['split'] != shard.split or block['prompt_id'] != shard.prompt_id or not self.eligibility_fn(block):
                 raise ValueError('Block metadata differs from eligible shard identity')
-            if head_metadata is not None and block['draft_lm_head'] != head_metadata:
+            if self.head_metadata is not None and block['draft_lm_head'] != self.head_metadata:
                 raise ValueError('Mixed frozen head artifacts are forbidden in one fit')
             result.append(block)
-        yield batch_index, result
+        return batch_index, result
+
+
+def batches(references, batch_blocks, *, start_batch=0, head_metadata=None,
+            rank=0, world_size=1, eligibility_fn=primary_eligible,
+            history_depth: int = 4, shard_cache_size: int = 1,
+            num_workers: int = 0, loader_seed: int = 0):
+    """Bounded compact-shard LRU cache (`1` shard by default; `W` under multi-shard block shuffle)."""
+    dataset = _RawShardBatchDataset(
+        references, batch_blocks, start_batch=start_batch, head_metadata=head_metadata,
+        rank=rank, world_size=world_size, eligibility_fn=eligibility_fn,
+        history_depth=history_depth, max_cached_shards=shard_cache_size,
+    )
+    eff_workers = int(num_workers)
+    if eff_workers <= 0 or '<locals>' in getattr(eligibility_fn, '__qualname__', ''):
+        for i in range(len(dataset)):
+            yield dataset[i]
+        return
+    gen = torch.Generator()
+    gen.manual_seed(int(loader_seed))
+    loader = DataLoader(
+        dataset,
+        batch_size=None,
+        num_workers=eff_workers,
+        prefetch_factor=2,
+        persistent_workers=False,
+        multiprocessing_context='spawn',
+        generator=gen,
+    )
+    yield from loader
 
 
 @torch.no_grad()
@@ -1668,7 +1713,8 @@ def fit(entries, index_report, E, head, bias, head_metadata, args, *, stop_after
                 for batch_index, blocks in batches(train_refs, args.batch_blocks, start_batch=start_batch,
                                                    head_metadata=head_metadata, rank=rank, world_size=world_size,
                                                    eligibility_fn=eligibility_fn, history_depth=args.history_depth,
-                                                   shard_cache_size=max_cached_shards):
+                                                   shard_cache_size=max_cached_shards, num_workers=num_workers,
+                                                   loader_seed=epoch_seed + rank):
                     for param in dense_params:
                         param.grad = torch.zeros_like(param)
                     local_weight_val = 0.0

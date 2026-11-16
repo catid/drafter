@@ -146,6 +146,10 @@ def main(argv=None):
     if args.gpus is None:
         args.gpus = '0,1,2,3,4,5,6,7' if is_timing_task else '0,1,2,3,4,5,6'
 
+    if args.num_workers < 0:
+        parser.error('--num_workers must be >= 0')
+    if args.microbatch_blocks is not None and args.microbatch_blocks < 1:
+        parser.error('--microbatch_blocks must be >= 1')
     if args.bigram_count_gate_kappa is not None:
         if not math.isfinite(args.bigram_count_gate_kappa) or args.bigram_count_gate_kappa <= 0:
             parser.error('--bigram_count_gate_kappa must be finite and > 0')
