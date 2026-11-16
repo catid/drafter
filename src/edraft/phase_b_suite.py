@@ -358,6 +358,32 @@ def _spawn_parallel_workers(
             s.close()
 
 
+def _fastpath_config_and_flags(args) -> tuple[dict | None, list[str]]:
+    from .fastpath import FastPathConfig
+    fp = FastPathConfig(
+        compile=bool(getattr(args, 'compile', False)),
+        cuda_graph=bool(getattr(args, 'cuda_graph', False)),
+        bf16_gemm=bool(getattr(args, 'bf16_gemm', False)),
+        compile_drafter=bool(getattr(args, 'compile_drafter', False)),
+        compile_online=bool(getattr(args, 'compile_online', False)),
+        analytic_online_grad=bool(getattr(args, 'analytic_online_grad', True)),
+    )
+    flags: list[str] = []
+    if fp.compile:
+        flags.append('--compile')
+    if fp.cuda_graph:
+        flags.append('--cuda_graph')
+    if fp.bf16_gemm:
+        flags.append('--bf16_gemm')
+    if fp.compile_drafter:
+        flags.append('--compile_drafter')
+    if fp.compile_online:
+        flags.append('--compile_online')
+    if not fp.analytic_online_grad:
+        flags.append('--no_analytic_online_grad')
+    return (fp.to_dict() if fp.enabled else None), flags
+
+
 def _cli_base_flags(
     args,
     output_dir: Path,
@@ -475,6 +501,9 @@ def _suite_config_fingerprint(suite_name: str, args, reference_artifacts: Path) 
         'timing_warmups': int(args.timing_warmups),
         'timing_prompts': int(args.timing_prompts),
     }
+    fp_dict, _ = _fastpath_config_and_flags(args)
+    if fp_dict is not None:
+        payload['fastpath'] = fp_dict
     if suite_name in REF_SECONDARY_SUITES:
         payload['prereqs'] = _prereq_identity(reference_artifacts, eff_scale)
     if suite_name == 'bigram_eviction':
@@ -715,6 +744,8 @@ def _execute_closed_loop_stage(
     ]
     if stage == 'm5' and m5_arms:
         shared_flags.extend(['--m5_arms', *m5_arms])
+    _, fp_flags = _fastpath_config_and_flags(args)
+    shared_flags.extend(fp_flags)
     shared_flags.extend(extra)
 
     prompt_manifest = (
@@ -1340,13 +1371,13 @@ def _run_variant_bundle_on_prompts(
         max_new_tokens=args.max_new_tokens,
         long_max_new_tokens=args.long_max_new_tokens,
         smoke_tokens=args.smoke_tokens,
-        compile=False,
-        cuda_graph=False,
+        compile=bool(getattr(args, 'compile', False)),
+        cuda_graph=bool(getattr(args, 'cuda_graph', False)),
         simulate_cpu_graph=False,
-        bf16_gemm=False,
-        compile_drafter=False,
-        compile_online=False,
-        analytic_online_grad=True,
+        bf16_gemm=bool(getattr(args, 'bf16_gemm', False)),
+        compile_drafter=bool(getattr(args, 'compile_drafter', False)),
+        compile_online=bool(getattr(args, 'compile_online', False)),
+        analytic_online_grad=bool(getattr(args, 'analytic_online_grad', True)),
         disable_round3_compact=False,
         m5_oracle_checkpoint=None,
         checkpoint_scale=None,
@@ -1522,6 +1553,7 @@ def _evaluate_variants_closed_loop(
                 '--smoke_tokens', str(args.smoke_tokens),
                 '--max_new_tokens', str(args.max_new_tokens),
                 '--long_max_new_tokens', str(args.long_max_new_tokens),
+                *_fastpath_config_and_flags(args)[1],
                 '--_worker_mode', 'variant_eval_shard',
                 '--_worker_spec', str(spec_path),
                 '--_worker_out', str(out_path),
@@ -2123,6 +2155,12 @@ def main(argv=None):
     parser.add_argument('--max_new_tokens', type=int, default=2048)
     parser.add_argument('--long_max_new_tokens', type=int, default=24576)
     parser.add_argument('--smoke_tokens', type=int, default=32)
+    parser.add_argument('--compile', action='store_true', default=False)
+    parser.add_argument('--cuda_graph', action='store_true', default=False)
+    parser.add_argument('--bf16_gemm', action='store_true', default=False)
+    parser.add_argument('--compile_drafter', action='store_true', default=False)
+    parser.add_argument('--compile_online', action='store_true', default=False)
+    parser.add_argument('--no_analytic_online_grad', action='store_false', dest='analytic_online_grad', default=True)
     parser.add_argument(
         '--_worker_mode',
         choices=['dual_offline_kl', 'variant_eval_shard'],

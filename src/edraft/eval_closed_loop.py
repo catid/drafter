@@ -1599,6 +1599,22 @@ def summarize_sharded_tune(args, manifest):
     rank_manifests = [json.loads(p.read_text()) for p in manifest_paths]
 
     cfg0 = rank_sessions[0]['configuration']
+    fp0 = cfg0.get('configuration', {}).get('fastpath')
+    if (
+        any(getattr(args, k, False) for k in ('compile', 'cuda_graph', 'bf16_gemm', 'compile_drafter', 'compile_online'))
+        or not bool(getattr(args, 'analytic_online_grad', True))
+    ):
+        from .fastpath import FastPathConfig
+        cli_fp = FastPathConfig(
+            compile=bool(getattr(args, 'compile', False)),
+            cuda_graph=bool(getattr(args, 'cuda_graph', False)),
+            bf16_gemm=bool(getattr(args, 'bf16_gemm', False)),
+            compile_drafter=bool(getattr(args, 'compile_drafter', False)),
+            compile_online=bool(getattr(args, 'compile_online', False)),
+            analytic_online_grad=bool(getattr(args, 'analytic_online_grad', True)),
+        ).to_dict()
+        if fp0 != cli_fp:
+            raise ValueError('sharded tune rank 0 fastpath configuration differs from CLI fastpath flags')
     rank_affinity = {}
     seen_gpus, seen_cpus = set(), set()
     for r, sess in enumerate(rank_sessions):
@@ -1607,6 +1623,8 @@ def summarize_sharded_tune(args, manifest):
                     'generation_caps', 'stage', 'scale', 'seed'):
             if rcfg.get(key) != cfg0.get(key):
                 raise ValueError(f'sharded tune rank {r} configuration mismatch on {key}')
+        if rcfg.get('configuration', {}).get('fastpath') != fp0:
+            raise ValueError(f'sharded tune rank {r} fastpath configuration mismatch')
         phys_gpu = sess.get('physical_gpu')
         numa_node = sess.get('numa_node')
         cpus = list(sess.get('cpu_affinity') or [])
@@ -3028,6 +3046,38 @@ def reconcile_timing_isolation_calibration(
             generation_environment=settings.get('generation_environment'),
         )
         manifest_data = json.loads(manifest_path.read_bytes())
+        timing_report_path_pre = args.output / args.stage / 'timing.json'
+        report_fastpath = (
+            json.loads(timing_report_path_pre.read_text()).get('fastpath')
+            if timing_report_path_pre.is_file() else None
+        )
+        existing_cal_fastpath = (
+            json.loads(cal_out_existing.read_text()).get('fastpath')
+            if cal_out_existing.is_file() else None
+        )
+        expected_fp_opt = None
+        if (
+            any(getattr(args, k, False) for k in ('compile', 'cuda_graph', 'bf16_gemm', 'compile_drafter', 'compile_online'))
+            or not bool(getattr(args, 'analytic_online_grad', True))
+        ):
+            from .fastpath import FastPathConfig
+            cli_fp = FastPathConfig(
+                compile=bool(getattr(args, 'compile', False)),
+                cuda_graph=bool(getattr(args, 'cuda_graph', False)),
+                bf16_gemm=bool(getattr(args, 'bf16_gemm', False)),
+                compile_drafter=bool(getattr(args, 'compile_drafter', False)),
+                compile_online=bool(getattr(args, 'compile_online', False)),
+                analytic_online_grad=bool(getattr(args, 'analytic_online_grad', True)),
+            ).to_dict()
+            if report_fastpath is not None and report_fastpath != cli_fp:
+                if require_sharded:
+                    raise ValueError('timing_calibration fastpath configuration differs from timing.json')
+                return None
+            expected_fp_opt = cli_fp
+        elif report_fastpath is not None:
+            expected_fp_opt = report_fastpath
+        elif existing_cal_fastpath is not None:
+            expected_fp_opt = existing_cal_fastpath
         expected_cfg = {
             'frozen_settings_hash': frozen_hash,
             'prompt_manifest_hash': fingerprint(prompt_manifest),
@@ -3035,10 +3085,23 @@ def reconcile_timing_isolation_calibration(
             'repeats': cal_repeats,
             'warmups': args.timing_warmups,
         }
+        if expected_fp_opt is not None:
+            expected_cfg['fastpath'] = expected_fp_opt
+        expected_outer = {
+            'checkpoint_hashes': settings['checkpoint_hashes'],
+            'model_pair': settings['model_pair'],
+            'model_revisions': settings['model_revisions'],
+            'generation_environment': settings.get('generation_environment'),
+            'generation_caps': generation_caps(args),
+            'stage': args.stage,
+            'scale': args.scale,
+            'seed': args.seed,
+        }
         matched_sessions = []
         for sp in sorted((cal_dir / 'sessions').glob('*.json')):
             sess = json.loads(sp.read_text())
-            if sess.get('configuration', {}).get('configuration') == expected_cfg:
+            outer = sess.get('configuration', {})
+            if outer.get('configuration') == expected_cfg and all(outer.get(k) == v for k, v in expected_outer.items()):
                 matched_sessions.append((sp, sess))
         if len(matched_sessions) != 1:
             if require_sharded:
@@ -3207,6 +3270,9 @@ def reconcile_timing_isolation_calibration(
         'groups': groups,
         'by_prompt': by_prompt,
     }
+    sess_fp = session_state.get('configuration', {}).get('configuration', {}).get('fastpath') if session_state else None
+    if sess_fp is not None:
+        payload['fastpath'] = sess_fp
     cal_out = args.output / args.stage / 'timing_isolation_calibration.json'
     atomic_json(cal_out, payload)
     return payload

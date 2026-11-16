@@ -422,3 +422,80 @@ def test_launch_bigram_k_ret_forwarding_and_worktree_env_bootstrap(tmp_path, mon
     boot_env = json.loads((full_ws / 'environment.json').read_text())
     assert boot_env['model_artifacts']['Qwen/Qwen3-8B']['revision'] == 'rev-target'
     assert boot_env['dataset_artifacts']['openai/gsm8k']['revision'] == 'rev-gsm'
+
+
+def test_eval_bug_3_fastpath_calibration_reconcile_and_suite_forwarding(tmp_path):
+    # 1. Exact EVAL-BUG-3 reproduction & verification on FastPath-enabled timing_calibration + summarize
+    ws = tmp_path / 'eval_bug3_ws'
+    eval_closed_loop.main([
+        '--scale', 'smoke', '--stage', 'm3', '--mode', 'all',
+        '--smoke_tokens', '8', '--timing_repeats', '2', '--timing_warmups', '1',
+        '--no_analytic_online_grad',
+        '--output', str(ws),
+    ])
+    eval_closed_loop.main([
+        '--scale', 'smoke', '--stage', 'm3', '--mode', 'timing_calibration',
+        '--calibration_repeats', '2', '--smoke_tokens', '8', '--timing_warmups', '1',
+        '--no_analytic_online_grad',
+        '--output', str(ws),
+    ])
+    # Reconcile WITH matching --no_analytic_online_grad flag:
+    eval_closed_loop.main([
+        '--scale', 'smoke', '--stage', 'm3', '--mode', 'summarize',
+        '--reconcile_sharded_timing',
+        '--calibration_repeats', '2', '--smoke_tokens', '8', '--timing_warmups', '1',
+        '--no_analytic_online_grad',
+        '--output', str(ws),
+    ])
+    cal_json = json.loads((ws / 'm3' / 'timing_isolation_calibration.json').read_text())
+    assert cal_json['status'] == 'complete'
+    assert cal_json['reconciled_with_sharded_timing'] is True
+    assert cal_json['fastpath']['analytic_online_grad'] is False
+
+    # Reconcile WITHOUT repeating the CLI flag (inferred from timing.json['fastpath']):
+    eval_closed_loop.main([
+        '--scale', 'smoke', '--stage', 'm3', '--mode', 'summarize',
+        '--reconcile_sharded_timing',
+        '--calibration_repeats', '2', '--smoke_tokens', '8', '--timing_warmups', '1',
+        '--output', str(ws),
+    ])
+    # Conflicting CLI fastpath flag (--bf16_gemm) must still be rejected:
+    with pytest.raises(ValueError, match='fastpath'):
+        eval_closed_loop.main([
+            '--scale', 'smoke', '--stage', 'm3', '--mode', 'summarize',
+            '--reconcile_sharded_timing',
+            '--calibration_repeats', '2', '--smoke_tokens', '8', '--timing_warmups', '1',
+            '--bf16_gemm',
+            '--output', str(ws),
+        ])
+
+    # 2. phase_b_suite fastpath fingerprint separation + sharded forwarding
+    ref_dir = tmp_path / 'ref_fp'
+    ref_dir.mkdir(parents=True)
+    base_ns = SimpleNamespace(
+        scale='smoke', seed=2026, device='cpu', gpus='0,1',
+        target='Qwen/Qwen3-8B', drafter='z-lab/Qwen3-8B-DFlash-b16',
+        max_new_tokens=2048, long_max_new_tokens=24576, smoke_tokens=8,
+        timing_repeats=2, timing_warmups=1, timing_prompts=0,
+        bigram_eviction_arms=['plain_dflash', 'online_bigram', 'online_bigram_kret256'],
+        bigram_k_ret=4, bigram_count_gate_kappa=12.0,
+    )
+    fp_default = phase_b_suite._suite_config_fingerprint('bigram_eviction', base_ns, ref_dir)
+    fp_ns = copy.copy(base_ns)
+    fp_ns.analytic_online_grad = False
+    fp_active = phase_b_suite._suite_config_fingerprint('bigram_eviction', fp_ns, ref_dir)
+    assert fp_default != fp_active
+
+    suite_out = tmp_path / 'suite_fp_out'
+    res = phase_b_suite.main([
+        '--scale', 'smoke', '--suite', 'bigram_eviction',
+        '--gpus', '0,1',
+        '--output', str(suite_out), '--reference_artifacts', str(ref_dir),
+        '--smoke_tokens', '8', '--timing_repeats', '2', '--timing_warmups', '1',
+        '--bigram_eviction_arms', 'plain_dflash', 'online_bigram', 'online_bigram_kret256',
+        '--bigram_k_ret', '4',
+        '--no_analytic_online_grad',
+    ])
+    assert res['status'] == 'complete'
+    t_json = json.loads(Path(res['suites']['bigram_eviction']['artifacts']['timing_json']).read_text())
+    assert t_json['fastpath']['analytic_online_grad'] is False
