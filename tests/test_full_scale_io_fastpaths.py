@@ -97,13 +97,14 @@ def _write_valid_m0_bundle(root_dir: Path, *, m0_scale: str = "reference", misma
             "model_revisions": revs,
         },
     )
-    atomic_json(
-        m0_dir / "prompt0.json",
-        {
-            "identity": {"prompt": "p0"},
-            "local_target": {"sequence_equal": True},
-        },
-    )
+    for idx in range(20):
+        atomic_json(
+            m0_dir / f"prompt{idx:02d}.json",
+            {
+                "identity": {"prompt": f"p{idx}"},
+                "local_target": {"sequence_equal": True},
+            },
+        )
 
 
 def test_compact_block_trust_l_unit_and_default_safety(monkeypatch):
@@ -578,3 +579,93 @@ def test_diagnose_parallel_audit_sources_and_single_pass_main(tmp_path, monkeypa
     atomic_json(tampered.with_suffix(".pt.json"), sc)
     with pytest.raises(RuntimeError, match="Audited trace checksum changed"):
         audited_trace_sources(audit_path, "reference", out / "traces")
+
+
+def test_io_bug_1_hashing_writer_typed_and_partial_writes():
+    import array
+    import io
+    from edraft.traces import _HashingWriter
+
+    class _PartialTypedRawWriter(io.RawIOBase):
+        def __init__(self, *, max_chunk_bytes: int | None = None, return_none: bool = False):
+            self.buf = bytearray()
+            self.max_chunk_bytes = max_chunk_bytes
+            self.return_none = return_none
+
+        def writable(self) -> bool:
+            return True
+
+        def write(self, b) -> int | None:
+            raw_bytes = memoryview(b).tobytes()
+            if self.return_none:
+                self.buf.extend(raw_bytes)
+                return None
+            take = len(raw_bytes) if self.max_chunk_bytes is None else min(len(raw_bytes), self.max_chunk_bytes)
+            self.buf.extend(raw_bytes[:take])
+            return take
+
+    arr = array.array("I", [0x11223344, 0x55667788, 0x99AABBCC])
+    mv_typed = memoryview(arr)
+    assert len(mv_typed) == 3 and mv_typed.nbytes == 12 and mv_typed.itemsize == 4
+
+    # 1A: `written is None` on typed memoryview records exact byte count (`12`, not item count `3`).
+    raw_none = _PartialTypedRawWriter(return_none=True)
+    hw_none = _HashingWriter(raw_none)
+    ret = hw_none.write(mv_typed)
+    assert ret == 12 and hw_none.bytes_written == 12
+    assert hw_none.hexdigest == hashlib.sha256(raw_none.buf).hexdigest()
+
+    # 1B: POSIX partial write (`6` of `12` bytes) hashes exact byte slice `[:6]`, not `[:6]` items!
+    raw_partial = _PartialTypedRawWriter(max_chunk_bytes=6)
+    hw_partial = _HashingWriter(raw_partial)
+    byte_view = mv_typed.cast("B")
+    n1 = hw_partial.write(mv_typed)
+    n2 = hw_partial.write(byte_view[n1:])
+    assert n1 == 6 and n2 == 6 and hw_partial.bytes_written == 12
+    assert hw_partial.hexdigest == hashlib.sha256(raw_partial.buf).hexdigest()
+
+    # 1C: Non-contiguous 2D tensor view also hashes exact serialized bytes.
+    t2d = torch.arange(12, dtype=torch.int32).view(3, 4)[:, ::2].numpy()
+    assert not memoryview(t2d).c_contiguous
+    raw_nc = _PartialTypedRawWriter(max_chunk_bytes=5)
+    hw_nc = _HashingWriter(raw_nc)
+    nc_bytes = memoryview(t2d).tobytes()
+    off = 0
+    first = True
+    while off < len(nc_bytes):
+        wrote = hw_nc.write(memoryview(t2d) if first else memoryview(nc_bytes)[off:])
+        first = False
+        off += wrote
+    assert hw_nc.bytes_written == len(nc_bytes)
+    assert hw_nc.hexdigest == hashlib.sha256(raw_nc.buf).hexdigest()
+
+
+def test_io_bug_2_m0_gate_atomic_bundle_no_split_brain(tmp_path, monkeypatch):
+    ref_root = tmp_path / "ref_artifacts"
+    _write_valid_m0_bundle(ref_root, m0_scale="reference", mismatched_tokens=0)
+    # Inject an undocumented `sequence_equal == False` prompt in `ref_root/m0/prompt00.json`.
+    atomic_json(
+        ref_root / "m0" / "prompt00.json",
+        {"identity": {"prompt": "undocumented-mismatch"}, "local_target": {"sequence_equal": False}},
+    )
+    monkeypatch.setenv("EDRAFT_ARTIFACTS_ROOT", str(ref_root))
+
+    # Pre-existing empty `m0/` directory in isolated `--scale full` output MUST NOT split-brain bypass `ref_root/m0`!
+    full_out = tmp_path / "full_scale_out"
+    (full_out / "m0").mkdir(parents=True)
+    args_split = prepare_args(
+        parse_config(collect_parser(), ["--scale", "full", "--allow_large_run", "--output", str(full_out)])
+    )
+    with pytest.raises(RuntimeError, match="M0 numerics must cover every target-only mismatch"):
+        check_reference_gates(args_split)
+
+    # Local `m0.json` + `m0_numerics.json` with incomplete `m0/*.json` (< `num_distinct_prompts`) MUST block!
+    partial_local = tmp_path / "partial_local_m0"
+    _write_valid_m0_bundle(partial_local, m0_scale="reference", mismatched_tokens=0)
+    for extra in sorted((partial_local / "m0").glob("*.json"))[5:]:
+        extra.unlink()
+    args_partial = prepare_args(
+        parse_config(collect_parser(), ["--scale", "full", "--allow_large_run", "--output", str(partial_local)])
+    )
+    with pytest.raises(RuntimeError, match="token reproduction gate"):
+        check_reference_gates(args_partial)
