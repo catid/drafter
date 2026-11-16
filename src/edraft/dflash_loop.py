@@ -777,6 +777,8 @@ def generate_reference(
         return GenerationResult(output_ids[:, :min(start + 1, max_length)].clone(), n, blocks,
                                 time.perf_counter() - begun, phases)
     finally:
+        if use_tap and getattr(backend, "_feature_tap", None) is not None:
+            backend._feature_tap.clear()
         if pooled_caches and hasattr(backend, "release_decode_caches"):
             backend.release_decode_caches(True)
         if toggled_fast and hasattr(backend, "enable_fast_decode"):

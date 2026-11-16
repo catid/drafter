@@ -25,6 +25,7 @@ def register_edraft_sdpa_clr() -> str:
     if _FAST_SDPA_REGISTERED:
         return _FAST_SDPA_NAME
 
+    from torch.backends.cuda import SDPAParams, can_use_flash_attention
     from torch.nn.attention.bias import CausalBias, causal_lower_right
     from transformers.integrations.sdpa_attention import repeat_kv, sdpa_attention_forward
     from transformers.masking_utils import ALL_MASK_ATTENTION_FUNCTIONS
@@ -87,35 +88,32 @@ def register_edraft_sdpa_clr() -> str:
         position_bias: torch.Tensor | None = None,
         **kwargs: Any,
     ):
-        if position_bias is None and not kwargs.get("output_attentions", False):
-            q_len = int(query.shape[2])
-            kv_len = int(key.shape[2])
-            eff_causal = is_causal if is_causal is not None else bool(getattr(module, "is_causal", True))
-            clr_bias = None
-            if isinstance(attention_mask, CausalBias):
-                clr_bias = attention_mask
-            elif attention_mask is None and eff_causal and 1 < q_len < kv_len:
-                clr_bias = causal_lower_right(q_len, kv_len)
-            if clr_bias is not None:
-                kv_groups = int(getattr(module, "num_key_value_groups", 1))
-                can_gqa = key.shape[-1] == value.shape[-1] <= 256
-                if kv_groups > 1 and not can_gqa:
-                    key = repeat_kv(key, kv_groups)
-                    value = repeat_kv(value, kv_groups)
-                    enable_gqa = False
-                else:
-                    enable_gqa = kv_groups > 1
-                attn_out = F.scaled_dot_product_attention(
-                    query,
-                    key,
-                    value,
-                    attn_mask=clr_bias,
-                    dropout_p=dropout,
-                    scale=scaling,
-                    is_causal=False,
-                    enable_gqa=enable_gqa,
+        if position_bias is None and not kwargs.get("output_attentions", False) and isinstance(attention_mask, CausalBias):
+            kv_groups = int(getattr(module, "num_key_value_groups", 1))
+            can_gqa = key.shape[-1] == value.shape[-1] <= 256
+            if query.is_cuda:
+                allow_native_gqa = can_gqa and can_use_flash_attention(
+                    SDPAParams(query, key, value, None, dropout, False, kv_groups > 1)
                 )
-                return attn_out.transpose(1, 2).contiguous(), None
+            else:
+                allow_native_gqa = can_gqa
+            if kv_groups > 1 and not allow_native_gqa:
+                key = repeat_kv(key, kv_groups)
+                value = repeat_kv(value, kv_groups)
+                enable_gqa = False
+            else:
+                enable_gqa = kv_groups > 1
+            attn_out = F.scaled_dot_product_attention(
+                query,
+                key,
+                value,
+                attn_mask=attention_mask,
+                dropout_p=dropout,
+                scale=scaling,
+                is_causal=False,
+                enable_gqa=enable_gqa,
+            )
+            return attn_out.transpose(1, 2).contiguous(), None
         return sdpa_attention_forward(
             module,
             query,
@@ -233,10 +231,20 @@ def _build_preallocated_cache(config: Any, max_cache_len: int):
             self.values = self._v_buf[:, :new_len, :, :].transpose(1, 2)
 
         def reset_sequence(self, min_capacity: int = 0) -> None:
-            if min_capacity > self._initial_capacity:
-                self._initial_capacity = int(min_capacity)
+            req_cap = int(min_capacity)
+            if req_cap > self._initial_capacity:
+                self._initial_capacity = req_cap
             self._seq_len = 0
             if self.is_initialized and self._k_buf is not None and self._v_buf is not None:
+                if req_cap > self._capacity:
+                    bsz, _, num_heads, head_dim = self._k_buf.shape
+                    self._k_buf = torch.empty(
+                        (bsz, req_cap, num_heads, head_dim), dtype=self._k_buf.dtype, device=self._k_buf.device
+                    )
+                    self._v_buf = torch.empty(
+                        (bsz, req_cap, num_heads, head_dim), dtype=self._v_buf.dtype, device=self._v_buf.device
+                    )
+                    self._capacity = req_cap
                 self.keys = self._k_buf[:, :0, :, :].transpose(1, 2)
                 self.values = self._v_buf[:, :0, :, :].transpose(1, 2)
 
@@ -390,6 +398,7 @@ class ReferenceBackend:
     target_revision: str | None = None
     drafter_revision: str | None = None
     fast_decode: bool | None = None
+    _base_attn_impl: str = field(default="sdpa", init=False, repr=False)
     _feature_tap: _TargetFeatureTap | None = field(default=None, init=False, repr=False)
     _pooled_caches: tuple[Any, Any] | None = field(default=None, init=False, repr=False)
     _pooled_in_use: bool = field(default=False, init=False, repr=False)
@@ -409,6 +418,8 @@ class ReferenceBackend:
             raise ValueError("Nonlinear output softcapping cannot use the required linear head reconstruction")
         self.target.eval().requires_grad_(False)
         self.drafter.eval().requires_grad_(False)
+        cur_attn = str(getattr(self.target.config, "_attn_implementation", "sdpa") or "sdpa")
+        self._base_attn_impl = "sdpa" if cur_attn == _FAST_SDPA_NAME else cur_attn
         resolved_fast = (
             os.environ.get("EDRAFT_FAST_DECODE", "0") == "1"
             if self.fast_decode is None
@@ -426,13 +437,15 @@ class ReferenceBackend:
             if self._feature_tap is None:
                 self._feature_tap = _TargetFeatureTap(self.target, self.drafter.target_layer_ids)
         else:
-            _set_model_attn_implementation(self.target, "sdpa")
+            if self._feature_tap is not None:
+                self._feature_tap.clear()
+            _set_model_attn_implementation(self.target, self._base_attn_impl)
 
     def acquire_decode_caches(self, max_cache_len: int) -> tuple[Any, Any, bool]:
         cap = max(64, int(max_cache_len))
         if not self.fast_decode:
             return make_cache(self.target.config), make_cache(self.drafter.config), False
-        if not self._pooled_in_use and cap <= 32768:
+        if not self._pooled_in_use and cap <= 40960:
             if self._pooled_caches is None:
                 self._pooled_caches = (
                     make_cache(self.target.config, max_cache_len=cap, preallocate=True),
@@ -631,7 +644,7 @@ class ReferenceBackend:
             raise ValueError("Expected [1,N] token tensors")
         if not 0 <= accepted_length < proposed_tokens.shape[1]:
             raise ValueError("Rollback probe must reject within the proposal")
-        cache = make_cache(self.target.config)
+        cache = make_cache(self.target.config, preallocate=bool(self.fast_decode))
         self.target(prefix_ids, past_key_values=cache, use_cache=True, logits_to_keep=1)
         self.target(proposed_tokens, past_key_values=cache, use_cache=True, logits_to_keep=1)
         keep = prefix_ids.shape[1] + accepted_length
