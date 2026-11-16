@@ -360,3 +360,105 @@ def test_verify_block_tokens_out_and_out_of_vocab_guards():
         verify_block(torch.tensor([3, 99, 1, 2], dtype=torch.long), None, t_logits, 0.0)
     with pytest.raises(ValueError, match="draft token outside vocabulary"):
         verify_block(torch.tensor([-1, 4, 1, 2], dtype=torch.long), comp_q, t_logits, 0.7)
+
+
+def test_sdpa_clr_static_cache_rollback_probe_pool_grow_base_attn_and_tap_cleanup(monkeypatch):
+    from transformers.cache_utils import StaticCache
+    import edraft.backend as backend_mod
+
+    b_ref = _make_mini_qwen3_dflash_pair(seed=211, fast_decode=False)
+    b_fast = _make_mini_qwen3_dflash_pair(seed=211, fast_decode=True)
+
+    # 1. SDPA-CLR-BUG-1: StaticCache right-padded prefill (q_offset == 0, 1 < q_len < kv_len)
+    # Poison trailing KV slots [5..31] to prove q_offset == 0 never uses causal_lower_right(5, 32).
+    sc_ref = StaticCache(config=b_ref.target.config, max_cache_len=32)
+    sc_fast = StaticCache(config=b_fast.target.config, max_cache_len=32)
+    prefill_ids = torch.tensor([[2, 7, 13, 19, 23]], dtype=torch.long)
+    cache_pos = torch.arange(5, dtype=torch.long)
+    out_sc_ref = b_ref.target(prefill_ids, past_key_values=sc_ref, cache_position=cache_pos, use_cache=True).logits
+    out_sc_fast = b_fast.target(prefill_ids, past_key_values=sc_fast, cache_position=cache_pos, use_cache=True).logits
+    assert torch.allclose(out_sc_ref, out_sc_fast, atol=1e-6, rtol=1e-6)
+
+    # Re-run on StaticCache with non-zero garbage in trailing KV positions [5..31]
+    for lid in range(len(sc_ref.layers)):
+        torch.manual_seed(500 + lid)
+        noise_k = torch.randn_like(sc_ref.layers[lid].keys[:, :, 5:, :])
+        noise_v = torch.randn_like(sc_ref.layers[lid].values[:, :, 5:, :])
+        sc_ref.layers[lid].keys[:, :, 5:, :].copy_(noise_k)
+        sc_ref.layers[lid].values[:, :, 5:, :].copy_(noise_v)
+        sc_fast.layers[lid].keys[:, :, 5:, :].copy_(noise_k)
+        sc_fast.layers[lid].values[:, :, 5:, :].copy_(noise_v)
+    out_poison_ref = b_ref.target(prefill_ids, past_key_values=sc_ref, cache_position=cache_pos, use_cache=True).logits
+    out_poison_fast = b_fast.target(
+        prefill_ids, past_key_values=sc_fast, cache_position=cache_pos, use_cache=True
+    ).logits
+    assert torch.equal(out_poison_ref, out_poison_fast)
+
+    # 2. ROLLBACK-PROBE-BUG-2: check_cache_rollback must test PreallocatedDynamicLayer when fast_decode=True
+    seen_preallocate: list[bool] = []
+    orig_make_cache = backend_mod.make_cache
+
+    def _spy_make_cache(config, max_cache_len=None, *, preallocate=False):
+        seen_preallocate.append(bool(preallocate))
+        return orig_make_cache(config, max_cache_len=max_cache_len, preallocate=preallocate)
+
+    monkeypatch.setattr(backend_mod, "make_cache", _spy_make_cache)
+    rb0 = b_ref.check_cache_rollback(torch.tensor([[1, 2, 3, 4]]), torch.tensor([[5, 6, 7, 8]]), 2, 9)
+    rb1 = b_fast.check_cache_rollback(torch.tensor([[1, 2, 3, 4]]), torch.tensor([[5, 6, 7, 8]]), 2, 9)
+    monkeypatch.setattr(backend_mod, "make_cache", orig_make_cache)
+    assert seen_preallocate == [False, True]
+    assert rb0["argmax_equal"] and rb1["argmax_equal"]
+
+    # 3. Short-to-long pooled cache direct growth (0 mid-decode doublings) + 40960 pool cap
+    c_t, c_d, pooled = b_fast.acquire_decode_caches(128)
+    try:
+        assert pooled is True
+        _ = b_fast.target(prefill_ids, past_key_values=c_t, use_cache=True, logits_to_keep=1)
+        assert c_t.layers[0]._capacity == 128
+    finally:
+        b_fast.release_decode_caches(pooled)
+
+    c_t_long, _, pooled_long = b_fast.acquire_decode_caches(40960)
+    try:
+        assert pooled_long is True
+        assert c_t_long is c_t
+        assert c_t_long.get_seq_length() == 0
+        assert c_t_long.layers[0]._capacity == 40960
+        assert c_t_long.layers[0]._k_buf.shape[1] == 40960
+    finally:
+        b_fast.release_decode_caches(pooled_long)
+
+    _, _, pooled_over = b_fast.acquire_decode_caches(40961)
+    assert pooled_over is False
+
+    # 4. _base_attn_impl preserved across enable_fast_decode(True -> False)
+    b_eager = _make_mini_qwen3_dflash_pair(seed=211, fast_decode=False)
+    backend_mod._set_model_attn_implementation(b_eager.target, "eager")
+    b_eager_wrapped = ReferenceBackend(
+        target=b_eager.target,
+        drafter=b_eager.drafter,
+        tokenizer=None,
+        target_id="mini-qwen3",
+        drafter_id="mini-dflash",
+        fast_decode=False,
+    )
+    assert b_eager_wrapped._base_attn_impl == "eager"
+    b_eager_wrapped.enable_fast_decode(True)
+    assert b_eager_wrapped.target.config._attn_implementation == "edraft_sdpa_clr"
+    b_eager_wrapped.enable_fast_decode(False)
+    assert b_eager_wrapped.target.config._attn_implementation == "eager"
+
+    # 5. _feature_tap.clear() runs in generate_reference finally block on both normal exit and exception
+    res_ok = generate_reference(b_fast, prefill_ids, 12, temperature=0.0)
+    assert res_ok.output_ids.shape[1] > prefill_ids.shape[1]
+    assert b_fast._feature_tap._captured == {}
+    assert b_fast._pooled_in_use is False
+
+    def _boom_on_block(_block_info):
+        raise RuntimeError("simulated callback failure")
+
+    with pytest.raises(RuntimeError, match="simulated callback failure"):
+        generate_reference(b_fast, prefill_ids, 12, temperature=0.0, on_block=_boom_on_block)
+    assert b_fast._feature_tap._captured == {}
+    assert b_fast._pooled_in_use is False
+
