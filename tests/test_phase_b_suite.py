@@ -557,3 +557,60 @@ def test_phase_b_relpath_and_pilot_timing_prompts_semantics(tmp_path, monkeypatc
         '--bigram_eviction_arms', 'plain_dflash', 'online_bigram',
     ])
     assert res_p2_cached['status'] == 'complete'
+
+
+def test_fast_decode_wiring_across_collect_eval_launch_and_phase_b_suite(tmp_path):
+    from edraft import collect, launch
+
+    # 1. collect.parser() accepts --fast_decode (default False)
+    c_args_def = collect.prepare_args(collect.parser().parse_args(['--scale', 'smoke', '--output', str(tmp_path / 'c0')]))
+    assert c_args_def.fast_decode is False
+    c_args_fd = collect.prepare_args(collect.parser().parse_args(['--scale', 'smoke', '--output', str(tmp_path / 'c1'), '--fast_decode']))
+    assert c_args_fd.fast_decode is True
+
+    # 2. eval_closed_loop + timing_calibration + reconcile + launch --fast_decode end-to-end
+    ws = tmp_path / 'fd_ws'
+    eval_closed_loop.main([
+        '--scale', 'smoke', '--stage', 'm3', '--mode', 'tune',
+        '--device', 'cpu', '--output', str(ws), '--fast_decode',
+    ])
+    eval_closed_loop.main([
+        '--scale', 'smoke', '--stage', 'm3', '--mode', 'evaluate',
+        '--device', 'cpu', '--output', str(ws), '--fast_decode',
+    ])
+    launch.main([
+        '--task', 'm3_timing', '--scale', 'smoke', '--gpus', '0',
+        '--output', str(ws), '--timing_repeats', '2', '--timing_warmups', '1',
+        '--fast_decode',
+    ])
+    t_rep = json.loads((ws / 'm3' / 'timing.json').read_text())
+    assert t_rep['status'] == 'complete'
+    assert t_rep['fastpath']['fast_decode'] is True
+
+    eval_closed_loop.main([
+        '--scale', 'smoke', '--stage', 'm3', '--mode', 'timing_calibration',
+        '--calibration_repeats', '2', '--timing_warmups', '1',
+        '--output', str(ws), '--fast_decode',
+    ])
+    eval_closed_loop.main([
+        '--scale', 'smoke', '--stage', 'm3', '--mode', 'summarize',
+        '--reconcile_sharded_timing', '--calibration_repeats', '2', '--timing_warmups', '1',
+        '--output', str(ws), '--fast_decode',
+    ])
+    cal_rep = json.loads((ws / 'm3' / 'timing_isolation_calibration.json').read_text())
+    assert cal_rep['status'] == 'complete'
+    assert cal_rep['fastpath']['fast_decode'] is True
+
+    # 3. phase_b_suite --fast_decode forwards across full_scale (calibrate + collect + m3 + m4)
+    ref_dir = tmp_path / 'fd_ref'
+    ref_dir.mkdir(parents=True)
+    out_fd = tmp_path / 'fd_suite'
+    res = phase_b_suite.main([
+        '--scale', 'smoke', '--suite', 'full_scale',
+        '--output', str(out_fd), '--reference_artifacts', str(ref_dir),
+        '--smoke_tokens', '8', '--timing_repeats', '2', '--timing_warmups', '1',
+        '--fast_decode',
+    ])
+    assert res['status'] == 'complete'
+    m4_tim = json.loads(Path(res['suites']['full_scale']['m4_closed_loop']['timing_json']).read_text())
+    assert m4_tim['fastpath']['fast_decode'] is True

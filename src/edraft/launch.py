@@ -96,6 +96,7 @@ def main(argv=None):
     parser.add_argument('--bf16_gemm', action='store_true', default=False)
     parser.add_argument('--compile_drafter', action='store_true', default=False)
     parser.add_argument('--compile_online', action='store_true', default=False)
+    parser.add_argument('--fast_decode', action='store_true', default=False)
     parser.add_argument('--optimizer', choices=['adamw', 'muon', 'pacemuon', 'anchormuon', 'adam_atan2'], default='adamw')
     parser.add_argument('--lr_schedule', choices=['constant', 'wsd', 'cosine'], default='constant')
     parser.add_argument('--block_shuffle_window', type=int, default=0)
@@ -335,6 +336,8 @@ def main(argv=None):
                            '--standard_max_new_tokens', str(args.standard_max_new_tokens), '--partitions', *args.partitions]
                 if args.schedule == 'dynamic':
                     command.extend(['--schedule', 'dynamic'])
+                if args.fast_decode:
+                    command.append('--fast_decode')
             elif is_timing_task:
                 command = [sys.executable, '-m', 'edraft.eval_closed_loop', '--stage', stage,
                            '--mode', 'timing', *base,
@@ -361,6 +364,8 @@ def main(argv=None):
                     command.append('--compile_drafter')
                 if args.compile_online:
                     command.append('--compile_online')
+                if args.fast_decode:
+                    command.append('--fast_decode')
                 if stage == 'm5':
                     _append_m5_eval_flags(command, args)
             else:
@@ -383,6 +388,8 @@ def main(argv=None):
                     command.append('--compile_drafter')
                 if args.compile_online:
                     command.append('--compile_online')
+                if args.fast_decode:
+                    command.append('--fast_decode')
                 if args.beta_grid is not None:
                     command.extend(['--beta_grid', *(str(b) for b in args.beta_grid)])
                 if args.beta_sweep_split is not None:
@@ -471,6 +478,8 @@ def main(argv=None):
                 summarize_cmd.append('--compile_drafter')
             if args.compile_online:
                 summarize_cmd.append('--compile_online')
+            if args.fast_decode:
+                summarize_cmd.append('--fast_decode')
             if stage == 'm5':
                 _append_m5_eval_flags(summarize_cmd, args)
             if args.allow_large_run:

@@ -48,6 +48,7 @@ def parser():
     p.add_argument("--diagnostic_train_prompts", type=int, default=64)
     p.add_argument("--live_full_blocks", type=int, default=2)
     p.add_argument("--schedule", choices=["modulo", "dynamic"], default="modulo")
+    p.add_argument("--fast_decode", action="store_true", default=False)
     return p
 
 
@@ -216,8 +217,11 @@ class CollectionBackend:
             env = json.loads(resolve_artifact_path("environment.json", args.output, root=ROOT).read_text())
             self.model_pair = [args.target, args.drafter]
             self.revisions = [env["model_artifacts"][model]["revision"] for model in self.model_pair]
-            self.real = ReferenceBackend.from_pretrained(target_path, draft_path, device=args.device,
-                             target_revision=self.revisions[0], drafter_revision=self.revisions[1])
+            self.real = ReferenceBackend.from_pretrained(
+                target_path, draft_path, device=args.device,
+                target_revision=self.revisions[0], drafter_revision=self.revisions[1],
+                fast_decode=True if getattr(args, "fast_decode", False) else None,
+            )
             self.target, self.drafter = self.real.target, self.real.drafter
             self.hidden_size = self.target.config.hidden_size
             self.vocab_size = self.target.config.vocab_size

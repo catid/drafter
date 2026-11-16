@@ -461,6 +461,10 @@ def validate_frozen_settings(settings, stage, scale, checkpoint_hashes, prompt_m
                 raise ValueError('matched-support candidate arms must share identical beta_relax so frozen C0[j] matches')
 
 
+def _cli_or_env_fast_decode(args) -> bool:
+    return bool(getattr(args, 'fast_decode', False) or os.environ.get('EDRAFT_FAST_DECODE', '0') == '1')
+
+
 class EvaluationRunner:
     def __init__(self, args):
         self.args = args
@@ -566,8 +570,11 @@ class EvaluationRunner:
                     raise ValueError('m5_oracle_checkpoint must have training_distribution=="long_oracle_m5"')
                 if oracle_report.get('model_pair') != [args.target, args.drafter] or oracle_report.get('model_revisions') != self.model_revisions:
                     raise ValueError('long_oracle checkpoint model pair/revisions do not match evaluation backend')
-            self.backend = ReferenceBackend.from_pretrained(target, drafter, device=args.device,
-                target_revision=self.model_revisions[0], drafter_revision=self.model_revisions[1])
+            self.backend = ReferenceBackend.from_pretrained(
+                target, drafter, device=args.device,
+                target_revision=self.model_revisions[0], drafter_revision=self.model_revisions[1],
+                fast_decode=True if _cli_or_env_fast_decode(args) else None,
+            )
             self.model_pair = [args.target, args.drafter]
         if args.stage == 'm5' and getattr(args, 'checkpoint_scale', None) is not None:
             from .train import scale_adapter_inplace
@@ -593,6 +600,7 @@ class EvaluationRunner:
             compile_drafter=bool(getattr(args, 'compile_drafter', False)),
             compile_online=bool(getattr(args, 'compile_online', False)),
             analytic_online_grad=bool(getattr(args, 'analytic_online_grad', True)),
+            fast_decode=_cli_or_env_fast_decode(args),
         )
         static_k = 4 if self.tiny else (self.backend.block_size - 1)
         self.fastpath = FastPathRuntime(fp_cfg, static_block_length=static_k) if fp_cfg.enabled else None
@@ -1602,6 +1610,7 @@ def summarize_sharded_tune(args, manifest):
     fp0 = cfg0.get('configuration', {}).get('fastpath')
     if (
         any(getattr(args, k, False) for k in ('compile', 'cuda_graph', 'bf16_gemm', 'compile_drafter', 'compile_online'))
+        or _cli_or_env_fast_decode(args)
         or not bool(getattr(args, 'analytic_online_grad', True))
     ):
         from .fastpath import FastPathConfig
@@ -1612,6 +1621,7 @@ def summarize_sharded_tune(args, manifest):
             compile_drafter=bool(getattr(args, 'compile_drafter', False)),
             compile_online=bool(getattr(args, 'compile_online', False)),
             analytic_online_grad=bool(getattr(args, 'analytic_online_grad', True)),
+            fast_decode=_cli_or_env_fast_decode(args),
         ).to_dict()
         if fp0 != cli_fp:
             raise ValueError('sharded tune rank 0 fastpath configuration differs from CLI fastpath flags')
@@ -2559,7 +2569,7 @@ def audit_timing_evidence(runner, prompt_manifest, settings, report):
         if 'fastpath' in report:
             raw_fp = report['fastpath']
             req_fp_keys = {'compile', 'cuda_graph', 'compile_mode'}
-            opt_fp_keys = {'bf16_gemm', 'compile_drafter', 'compile_online', 'analytic_online_grad'}
+            opt_fp_keys = {'bf16_gemm', 'compile_drafter', 'compile_online', 'analytic_online_grad', 'fast_decode'}
             if (not isinstance(raw_fp, dict)
                     or not req_fp_keys <= set(raw_fp.keys()) <= (req_fp_keys | opt_fp_keys)
                     or type(raw_fp['compile']) is not bool
@@ -2576,6 +2586,7 @@ def audit_timing_evidence(runner, prompt_manifest, settings, report):
             expected_fp_opt = expected_fp
         elif (
             any(getattr(args, k, False) for k in ('compile', 'cuda_graph', 'bf16_gemm', 'compile_drafter', 'compile_online'))
+            or _cli_or_env_fast_decode(args)
             or not bool(getattr(args, 'analytic_online_grad', True))
         ):
             from .fastpath import FastPathConfig
@@ -2586,6 +2597,7 @@ def audit_timing_evidence(runner, prompt_manifest, settings, report):
                 compile_drafter=bool(getattr(args, 'compile_drafter', False)),
                 compile_online=bool(getattr(args, 'compile_online', False)),
                 analytic_online_grad=bool(getattr(args, 'analytic_online_grad', True)),
+                fast_decode=_cli_or_env_fast_decode(args),
             ).to_dict()
             if report_fastpath != cli_fp:
                 raise ValueError('timing session configuration mismatch')
@@ -3058,6 +3070,7 @@ def reconcile_timing_isolation_calibration(
         expected_fp_opt = None
         if (
             any(getattr(args, k, False) for k in ('compile', 'cuda_graph', 'bf16_gemm', 'compile_drafter', 'compile_online'))
+            or _cli_or_env_fast_decode(args)
             or not bool(getattr(args, 'analytic_online_grad', True))
         ):
             from .fastpath import FastPathConfig
@@ -3068,6 +3081,7 @@ def reconcile_timing_isolation_calibration(
                 compile_drafter=bool(getattr(args, 'compile_drafter', False)),
                 compile_online=bool(getattr(args, 'compile_online', False)),
                 analytic_online_grad=bool(getattr(args, 'analytic_online_grad', True)),
+                fast_decode=_cli_or_env_fast_decode(args),
             ).to_dict()
             if report_fastpath is not None and report_fastpath != cli_fp:
                 if require_sharded:
@@ -4244,6 +4258,7 @@ def main(argv=None):
     parser.add_argument('--bf16_gemm', action='store_true', default=False)
     parser.add_argument('--compile_drafter', action='store_true', default=False)
     parser.add_argument('--compile_online', action='store_true', default=False)
+    parser.add_argument('--fast_decode', action='store_true', default=False)
     parser.add_argument('--no_analytic_online_grad', action='store_false', dest='analytic_online_grad', default=True)
     parser.add_argument('--prompts_manifest', type=Path, default=ROOT / 'artifacts/prompts.json')
     parser.add_argument('--dense_checkpoint', type=Path, default=ROOT / 'artifacts/m2/dense.pt')

@@ -360,6 +360,9 @@ def _spawn_parallel_workers(
 
 def _fastpath_config_and_flags(args) -> tuple[dict | None, list[str]]:
     from .fastpath import FastPathConfig
+    want_fast_decode = bool(
+        getattr(args, 'fast_decode', False) or os.environ.get('EDRAFT_FAST_DECODE', '0') == '1'
+    )
     fp = FastPathConfig(
         compile=bool(getattr(args, 'compile', False)),
         cuda_graph=bool(getattr(args, 'cuda_graph', False)),
@@ -367,6 +370,7 @@ def _fastpath_config_and_flags(args) -> tuple[dict | None, list[str]]:
         compile_drafter=bool(getattr(args, 'compile_drafter', False)),
         compile_online=bool(getattr(args, 'compile_online', False)),
         analytic_online_grad=bool(getattr(args, 'analytic_online_grad', True)),
+        fast_decode=want_fast_decode,
     )
     flags: list[str] = []
     if fp.compile:
@@ -379,6 +383,8 @@ def _fastpath_config_and_flags(args) -> tuple[dict | None, list[str]]:
         flags.append('--compile_drafter')
     if fp.compile_online:
         flags.append('--compile_online')
+    if fp.fast_decode:
+        flags.append('--fast_decode')
     if not fp.analytic_online_grad:
         flags.append('--no_analytic_online_grad')
     return (fp.to_dict() if fp.enabled else None), flags
@@ -1122,6 +1128,43 @@ def _run_training_fit_isolated(
     base_name = fit_tag or 'm2'
     fit_subdir = f'{base_name}_smoke' if eff_scale == 'smoke' else base_name
 
+    report_json = ws / f'{fit_subdir}.json'
+    if (
+        getattr(args, 'resume', True)
+        and report_json.is_file()
+        and (ws / fit_subdir / 'dense.pt').is_file()
+        and (ws / fit_subdir / 'dense_sparse.pt').is_file()
+    ):
+        need_cal = ('--calibrate_beta' in extra_list or '--apply_calibrated_beta' in extra_list)
+        cal_ok = (
+            not need_cal
+            or (
+                (ws / fit_subdir / 'dense_calibrated.pt').is_file()
+                and (ws / fit_subdir / 'dense_sparse_calibrated.pt').is_file()
+            )
+        )
+        if cal_ok:
+            try:
+                rep_existing = json.loads(report_json.read_text())
+                impl_map = rep_existing.get('implementation_sha256')
+                src_dir = Path(train.__file__).resolve().parent
+                impl_ok = (
+                    isinstance(impl_map, dict)
+                    and bool(impl_map)
+                    and all(
+                        (src_dir / fname).is_file() and file_sha256(src_dir / fname) == digest
+                        for fname, digest in impl_map.items()
+                    )
+                )
+                if (
+                    rep_existing.get('status') == 'passed'
+                    and rep_existing.get('scale') == eff_scale
+                    and impl_ok
+                ):
+                    return rep_existing
+            except (OSError, ValueError):
+                pass
+
     if use_cuda:
         launch_src = Path(launch.__file__).read_text()
         ddp_cli = [
@@ -1376,6 +1419,7 @@ def _run_variant_bundle_on_prompts(
         bf16_gemm=bool(getattr(args, 'bf16_gemm', False)),
         compile_drafter=bool(getattr(args, 'compile_drafter', False)),
         compile_online=bool(getattr(args, 'compile_online', False)),
+        fast_decode=bool(getattr(args, 'fast_decode', False) or os.environ.get('EDRAFT_FAST_DECODE', '0') == '1'),
         analytic_online_grad=bool(getattr(args, 'analytic_online_grad', True)),
         disable_round3_compact=False,
         m5_oracle_checkpoint=None,
@@ -1913,6 +1957,8 @@ def run_full_scale_pipeline(args, reference_artifacts: Path, phase_b_root: Path)
             sys.executable, '-m', 'edraft.collect', '--stage', 'calibrate',
             *_cli_base_flags(args, full_ws, scale_override=eff_scale, device_override=worker_dev),
         ]
+        if getattr(args, 'fast_decode', False) or os.environ.get('EDRAFT_FAST_DECODE', '0') == '1':
+            cal_cmd.append('--fast_decode')
         _spawn_parallel_workers(
             [(0, gpus[0], cal_cmd)], logdir, 'full-m1-calibrate',
             scale=eff_scale, device_str=worker_dev, omp_threads=2,
@@ -1949,6 +1995,8 @@ def run_full_scale_pipeline(args, reference_artifacts: Path, phase_b_root: Path)
             ]
             if collect_w > 1:
                 c_cmd.extend(['--schedule', 'dynamic'])
+            if getattr(args, 'fast_decode', False) or os.environ.get('EDRAFT_FAST_DECODE', '0') == '1':
+                c_cmd.append('--fast_decode')
             collect_specs.append((r, gpu, c_cmd))
         _spawn_parallel_workers(
             collect_specs, logdir, 'full-m1a-collect',
@@ -2159,6 +2207,7 @@ def main(argv=None):
     parser.add_argument('--bf16_gemm', action='store_true', default=False)
     parser.add_argument('--compile_drafter', action='store_true', default=False)
     parser.add_argument('--compile_online', action='store_true', default=False)
+    parser.add_argument('--fast_decode', action='store_true', default=False)
     parser.add_argument('--no_analytic_online_grad', action='store_false', dest='analytic_online_grad', default=True)
     parser.add_argument(
         '--_worker_mode',
