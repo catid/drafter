@@ -51,7 +51,7 @@ LIMITATIONS = [
 
 def _valid_fastpath_dict(fp):
     req = {'compile', 'cuda_graph', 'compile_mode'}
-    opt = {'bf16_gemm', 'compile_drafter', 'compile_online'}
+    opt = {'bf16_gemm', 'compile_drafter', 'compile_online', 'analytic_online_grad'}
     return (isinstance(fp, dict)
             and req <= set(fp.keys()) <= (req | opt)
             and type(fp['compile']) is bool

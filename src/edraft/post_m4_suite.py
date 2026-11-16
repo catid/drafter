@@ -77,7 +77,7 @@ from .eval_closed_loop import (
 )
 from .fastpath import FastPathConfig, FastPathRuntime
 from .features import fit_hidden_projection
-from .online import OnlineBigram
+from .online import OnlineBigram, OnlineState
 from .runtime import (
     ROOT,
     Manifest,
@@ -92,7 +92,7 @@ from .runtime import (
     source_provenance,
 )
 from .sampler import SamplingWarper, sample_from_top_scaled, sample_token_compact
-from .sparse import SignedHash
+from .sparse import LazyHashSnapshot, SignedHash, SumSparse, hash_keys, proximal_l1
 from .traces import read_shard
 from .train import (
     epoch_references,
@@ -624,6 +624,8 @@ def _measure_round3_compact_microbench(args, device: torch.device) -> dict:
     def _med(entry):
         return float(entry['synchronized_wall']['median_ms'])
 
+    r4_online = _measure_round4_online_microbench(args, device)
+
     return {
         'dimensions': {'V': V, 'K': K, 'r': r, 'p': p, 'D': D, 'M_sparse': M, 'top_k': top_k},
         'count_gate_kappa': args.bigram_count_gate_kappa,
@@ -639,6 +641,275 @@ def _measure_round3_compact_microbench(args, device: torch.device) -> dict:
             'bigram_round3_over_round2': _med(t_bg_r2) / max(_med(t_bg_r3), 1e-12),
             'online_dbS_round3_over_round2': _med(t_dbS_r2) / max(_med(t_dbS_r3), 1e-12),
             'full_adapter_round3_over_round2': _med(t_full_r2) / max(_med(t_full_r3), 1e-12),
+        },
+        'round4_online_microbench': r4_online,
+    }
+
+
+def _measure_round4_online_microbench(args, device: torch.device) -> dict:
+    """Measure high-occupancy OnlineState.update (u=0 -> u=2000 & 400K active) + SumSparse scoring pre vs post Round-4."""
+    tiny = args.scale == 'smoke'
+    V = 64 if tiny else 151936
+    K = 4 if tiny else 15
+    r = 8 if tiny else 64
+    p = 8 if tiny else 256
+    D = 4
+    M = 8 if tiny else 256
+    cap = 257 if tiny else 2**20
+    offline_cap = 257 if tiny else 2**24
+    target_active = min(cap - 1, 180 if tiny else 400_000)
+    u_traj_steps = 64 if tiny else (2000 if device.type == 'cuda' else 200)
+    warmups = args.bench_warmups
+    repeats = args.bench_repeats
+
+    class _PreRound4LazySignedHash:
+        """Verbatim pre-Round-4 `116d7b1f` compact-list `unique` + `searchsorted` reference table."""
+        def __init__(self, capacity: int, dev: torch.device):
+            self.capacity = capacity
+            self.values = torch.zeros(capacity, dtype=torch.float32, device=dev)
+            self.last_u = torch.zeros(capacity, dtype=torch.int32, device=dev)
+            self.active = torch.empty(0, dtype=torch.int64, device=dev)
+            self.cum_thresh = [0.0]
+            self._cum_thresh_buf = torch.zeros(4096, dtype=torch.float32, device=dev)
+            self._cum_thresh_len = 1
+            self.u = 0
+            self.last_update_bytes = 0
+
+        def _thresholds(self) -> torch.Tensor:
+            n = len(self.cum_thresh)
+            if self._cum_thresh_len != n:
+                if n > self._cum_thresh_buf.numel():
+                    self._cum_thresh_buf = torch.empty(max(n, self._cum_thresh_buf.numel() * 2), dtype=torch.float32, device=self.values.device)
+                self._cum_thresh_buf[:n].copy_(torch.tensor(self.cum_thresh, device=self.values.device, dtype=torch.float32))
+                self._cum_thresh_len = n
+            return self._cum_thresh_buf[:n]
+
+        def read(self, indices: torch.Tensor):
+            thresholds = self._thresholds()
+            return proximal_l1(self.values[indices], thresholds[self.u] - thresholds[self.last_u[indices].long()])
+
+        def lookup(self, d, previous, current):
+            indices, signs = hash_keys(d, previous, current, self.capacity, self.values.device)
+            return self.read(indices) * signs
+
+        def snapshot(self):
+            # Intentionally exclude `_can_share_hash` via wrapper so pre-Round-4 SumSparse runs 2 hash_keys + searchsorted.
+            inner = LazyHashSnapshot(
+                self.active.clone(), self.values[self.active].clone(),
+                self.last_u[self.active].clone(), self._thresholds().clone(),
+                self.u, self.capacity,
+            )
+
+            class _PreR4SnapView:
+                def lookup(self_inner, d, previous, current):
+                    idx, sgn = hash_keys(d, previous, current, inner.capacity, device)
+                    return inner.read(idx) * sgn
+
+            return _PreR4SnapView()
+
+        @torch.no_grad()
+        def step_unique(self, unique: torch.Tensor, grad: torch.Tensor, lr: float, lambda_l1: float):
+            old = self.read(unique)
+            new_thresh = self.cum_thresh[-1] + lr * lambda_l1
+            self.u += 1
+            self.cum_thresh.append(new_thresh)
+            if self._cum_thresh_len + 1 == len(self.cum_thresh) and self.u < self._cum_thresh_buf.numel():
+                self._cum_thresh_buf[self.u] = new_thresh
+                self._cum_thresh_len = self.u + 1
+            else:
+                self._thresholds()
+            self.values[unique] = proximal_l1(old - lr * grad, lr * lambda_l1)
+            self.last_u[unique] = self.u
+            if unique.numel():
+                self.active = torch.unique(torch.cat((self.active, unique)), sorted=True)
+            if self.active.numel():
+                self.active = self.active[self.read(self.active) != 0]
+            self.last_update_bytes = unique.numel() * 16 + self.active.numel() * 12
+
+        @torch.no_grad()
+        def step(self, indices: torch.Tensor, gradients: torch.Tensor, lr: float, lambda_l1: float):
+            indices = indices.to(device=self.values.device, dtype=torch.int64).reshape(-1)
+            gradients = gradients.to(device=self.values.device, dtype=torch.float32).reshape(-1)
+            unique, inverse = torch.unique(indices, sorted=True, return_inverse=True)
+            grad = torch.zeros(len(unique), device=self.values.device, dtype=torch.float32)
+            grad.scatter_add_(0, inverse, gradients)
+            self.step_unique(unique, grad, lr, lambda_l1)
+
+    gen = torch.Generator(device=device).manual_seed(args.seed + 404)
+    E = torch.randn(V, r, device=device, generator=gen) / (r ** 0.5)
+    H = torch.randn(K, p, device=device, generator=gen)
+    l_unit = torch.log_softmax(torch.randn(K, V, device=device, generator=gen), dim=-1)
+    target_logits = torch.randn(K, V, device=device, generator=gen)
+    offline_sparse = SignedHash(offline_cap, device=device)
+    adapter = DenseAdapter(E, p, D, sparse=offline_sparse, M_sparse=M)
+    with torch.no_grad():
+        adapter.W.copy_(torch.randn(r, p, device=device, generator=gen) * 0.01)
+        adapter.A.copy_(torch.randn(D, r, r, device=device, generator=gen) * 0.01)
+        adapter.b.copy_(torch.randn(V, device=device, generator=gen) * 0.01)
+        offline_sparse.values.copy_(torch.randn(offline_cap, device=device, generator=gen) * 0.01)
+    base_snap = adapter.snapshot()
+
+    seed_indices = torch.randperm(cap, generator=gen, device=device)[:target_active].sort().values
+    seed_grads = torch.randn(target_active, device=device, generator=gen) * 5.0
+    seed_grads = torch.where(seed_grads.abs() < 0.5, torch.ones_like(seed_grads), seed_grads)
+
+    state_pre = OnlineState(
+        base_snap, lr=1e-4, update_stride=1, lambda_l2=0.01, lambda_l1_b=1e-6, lambda_l1_s=1e-5,
+        sparse_capacity=cap, enable_sparse=True, analytic_online_grad=False,
+    )
+    state_pre.dS = _PreRound4LazySignedHash(cap, device)
+    state_pre.dS.step_unique(seed_indices, seed_grads, lr=1e-2, lambda_l1=1e-6)
+    state_pre._snapshot = state_pre._make_snapshot()
+
+    state_r4 = OnlineState(
+        base_snap, lr=1e-4, update_stride=1, lambda_l2=0.01, lambda_l1_b=1e-6, lambda_l1_s=1e-5,
+        sparse_capacity=cap, enable_sparse=True, analytic_online_grad=True,
+    )
+    state_r4.dS.step_unique(seed_indices, seed_grads, lr=1e-2, lambda_l1=1e-6)
+    state_r4._snapshot = state_r4._make_snapshot()
+
+    prefix = [int(x) for x in torch.randint(V, (D,), generator=gen, device=device).cpu()]
+    fixed_tokens = [int(x) for x in torch.randint(V, (K,), generator=gen, device=device).cpu()]
+    top_k = min(20, max(1, V - 1))
+    warper = SamplingWarper(top_k=top_k, top_p=0.8)
+    temperature = 0.7
+
+    pre_r4_round = [0]
+    r4_round = [0]
+
+    def run_pre_r4_update():
+        pre_r4_round[0] += 1
+        state_pre.update(pre_r4_round[0], l_unit, target_logits, H, prefix, fixed_tokens)
+
+    def run_r4_update():
+        r4_round[0] += 1
+        state_r4.update(r4_round[0], l_unit, target_logits, H, prefix, fixed_tokens)
+
+    t_upd_pre = measure(run_pre_r4_update, device, warmups, repeats, args.seed)
+    t_upd_r4 = measure(run_r4_update, device, warmups, repeats, args.seed)
+
+    snap_prop_pre = state_pre.snapshot()
+    # Force uncached pair_is_zero sync behavior of pre-Round-4 ProposalSnapshot on each round:
+    snap_prop_r4 = state_r4.snapshot()
+
+    prefix_t = torch.tensor(prefix, dtype=torch.long, device=device)
+    rev_prefix_t = torch.tensor(prefix[::-1], dtype=torch.long, device=device)
+    ctx_buf = torch.empty(D + K, dtype=torch.long, device=device)
+    rev_tok_buf = torch.empty(D + K, dtype=torch.long, device=device)
+    offsets_all = torch.arange(1, D + 1, dtype=torch.long, device=device)
+    offs_2d_by_avail = [offsets_all[:a, None] for a in range(D + 1)]
+    rng = torch.Generator(device=device).manual_seed(args.seed + 505)
+
+    def run_proposal_pre_r4():
+        ctx_buf[:D] = prefix_t
+        _ = bool(snap_prop_pre.A.count_nonzero())
+        U = snap_prop_pre.unary(H)
+        for i in range(K):
+            prev_ids = ctx_buf[D + i - offsets_all]
+            sel_sc, sel_ids = snap_prop_pre.score_slot_compact_candidates(
+                l_unit[i], U[i], offsets_all[:, None], prev_ids,
+                temperature=temperature, k_eff=top_k, beta=1.0, contiguous_offsets=True,
+            )
+            tok_t, _, _, _ = sample_from_top_scaled(sel_sc, sel_ids, warper, rng)
+            ctx_buf[D + i] = tok_t
+        return ctx_buf[D:]
+
+    def run_proposal_r4():
+        ctx_buf[:D] = prefix_t
+        rev_tok_buf[K:K + D] = rev_prefix_t
+        E_cast = snap_prop_r4._token_features_for_A()
+        rev_E_buf = torch.empty((D + K, r), dtype=E_cast.dtype, device=device)
+        rev_E_buf[K:K + D] = E_cast.index_select(0, rev_prefix_t)
+        U = snap_prop_r4.unary(H)
+        for i in range(K):
+            prev_ids = rev_tok_buf[K - i:K - i + D]
+            e_flat = rev_E_buf[K - i:K - i + D].reshape(-1)
+            sel_sc, sel_ids = snap_prop_r4.score_slot_compact_candidates(
+                l_unit[i], U[i], offs_2d_by_avail[D], prev_ids,
+                temperature=temperature, k_eff=top_k, beta=1.0,
+                contiguous_offsets=True, precomputed_e_prev_flat=e_flat,
+            )
+            tok_t, _, _, _ = sample_from_top_scaled(sel_sc, sel_ids, warper, rng)
+            ctx_buf[D + i] = tok_t
+            if i + 1 < K:
+                rev_tok_buf[K - 1 - i] = tok_t
+                rev_E_buf[K - 1 - i] = E_cast[tok_t]
+        return ctx_buf[D:]
+
+    t_prop_pre = measure(run_proposal_pre_r4, device, warmups, repeats, args.seed)
+    t_prop_r4 = measure(run_proposal_r4, device, warmups, repeats, args.seed)
+
+    # Isolated 15-slot SumSparse lookup + LazySignedHash step+snapshot at high occupancy
+    c_queries = [torch.randint(V, (1, M), generator=gen, device=device) for _ in range(K)]
+    dirty_bench_idx = torch.randint(cap, (K * D * M,), generator=gen, device=device)
+    dirty_bench_grad = torch.randn(K * D * M, generator=gen, device=device)
+    t_lookup_pre = measure(
+        lambda: [snap_prop_pre.sparse.lookup(offs_2d_by_avail[D], prefix_t[:, None], cq) for cq in c_queries],
+        device, warmups, repeats, args.seed,
+    )
+    t_lookup_r4 = measure(
+        lambda: [snap_prop_r4.sparse.lookup(offs_2d_by_avail[D], prefix_t[:, None], cq) for cq in c_queries],
+        device, warmups, repeats, args.seed,
+    )
+    t_ds_step_pre = measure(
+        lambda: (state_pre.dS.step(dirty_bench_idx, dirty_bench_grad, 1e-4, 1e-5), state_pre.dS.snapshot()),
+        device, warmups, repeats, args.seed,
+    )
+    t_ds_step_r4 = measure(
+        lambda: (state_r4.dS.step(dirty_bench_idx, dirty_bench_grad, 1e-4, 1e-5), state_r4.dS.snapshot()),
+        device, warmups, repeats, args.seed,
+    )
+
+    # Full u=0 -> u=u_traj_steps trajectory on Round-4 OnlineState
+    traj_state = OnlineState(
+        base_snap, lr=1e-4, update_stride=1, lambda_l2=0.01, lambda_l1_b=1e-6, lambda_l1_s=1e-5,
+        sparse_capacity=cap, enable_sparse=True, analytic_online_grad=True,
+    )
+    traj_toks = [
+        [int(x) for x in torch.randint(V, (K,), generator=gen, device=device).cpu()]
+        for _ in range(min(u_traj_steps, 64))
+    ]
+    if device.type == 'cuda':
+        torch.cuda.synchronize(device)
+    t_traj0 = time.perf_counter()
+    for step_idx in range(1, u_traj_steps + 1):
+        tok_seq = traj_toks[(step_idx - 1) % len(traj_toks)]
+        traj_state.update(step_idx, l_unit, target_logits, H, prefix, tok_seq)
+    if device.type == 'cuda':
+        torch.cuda.synchronize(device)
+    traj_wall_ms = (time.perf_counter() - t_traj0) * 1000.0
+    traj_metrics = traj_state.metrics()
+
+    def _med(entry):
+        return float(entry['synchronized_wall']['median_ms'])
+
+    return {
+        'dimensions': {
+            'V': V, 'K': K, 'r': r, 'p': p, 'D': D, 'M_sparse': M,
+            'sparse_capacity': cap, 'seeded_active_buckets': int(target_active),
+            'trajectory_steps': int(u_traj_steps),
+        },
+        'timings': {
+            'online_update_high_occupancy_pre_round4': t_upd_pre,
+            'online_update_high_occupancy_round4': t_upd_r4,
+            'proposal_sum_sparse_high_occupancy_pre_round4': t_prop_pre,
+            'proposal_sum_sparse_high_occupancy_round4': t_prop_r4,
+            'sum_sparse_15slot_high_occupancy_pre_round4': t_lookup_pre,
+            'sum_sparse_15slot_high_occupancy_round4': t_lookup_r4,
+            'lazy_hash_step_snapshot_high_occupancy_pre_round4': t_ds_step_pre,
+            'lazy_hash_step_snapshot_high_occupancy_round4': t_ds_step_r4,
+        },
+        'trajectory_round4': {
+            'steps': int(u_traj_steps),
+            'total_wall_ms': float(traj_wall_ms),
+            'mean_step_ms': float(traj_wall_ms / max(u_traj_steps, 1)),
+            'final_active_buckets': int(traj_metrics['active_buckets']),
+        },
+        'speedups': {
+            'online_update_round4_over_pre_round4': _med(t_upd_pre) / max(_med(t_upd_r4), 1e-12),
+            'proposal_sum_sparse_round4_over_pre_round4': _med(t_prop_pre) / max(_med(t_prop_r4), 1e-12),
+            'sum_sparse_15slot_round4_over_pre_round4': _med(t_lookup_pre) / max(_med(t_lookup_r4), 1e-12),
+            'lazy_hash_step_snapshot_round4_over_pre_round4': _med(t_ds_step_pre) / max(_med(t_ds_step_r4), 1e-12),
         },
     }
 
@@ -1452,6 +1723,7 @@ def run_fastpath_bench(args, artifacts_root: Path, suite_root: Path) -> dict:
             },
         },
         'round3_compact_microbenchmark': round3_micro,
+        'round4_online_microbenchmark': round3_micro.get('round4_online_microbench'),
         'grouped_kl_microbenchmark': {
             'path': str(grouped_dir / f'grouped_benchmark_{args.scale}.json'),
             'parity_passed': grouped_report['parity']['passed'],

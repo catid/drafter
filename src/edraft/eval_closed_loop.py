@@ -570,6 +570,7 @@ class EvaluationRunner:
             bf16_gemm=bool(getattr(args, 'bf16_gemm', False)),
             compile_drafter=bool(getattr(args, 'compile_drafter', False)),
             compile_online=bool(getattr(args, 'compile_online', False)),
+            analytic_online_grad=bool(getattr(args, 'analytic_online_grad', True)),
         )
         static_k = 4 if self.tiny else (self.backend.block_size - 1)
         self.fastpath = FastPathRuntime(fp_cfg, static_block_length=static_k) if fp_cfg.enabled else None
@@ -778,6 +779,13 @@ class EvaluationRunner:
                     kwargs['loss_mode'] = 'two_sided_pseudolikelihood'
                 if args.stage == 'm5' and self.m5_active_kernels.get('rowwise_full_kl') is not None:
                     kwargs['kl_loss_fn'] = self.m5_active_kernels['rowwise_full_kl']
+                enable_r3 = not bool(getattr(args, 'disable_round3_compact', False))
+                analytic_grad = enable_r3 and (
+                    self.fastpath.config.analytic_online_grad
+                    if self.fastpath is not None
+                    else bool(getattr(args, 'analytic_online_grad', True))
+                )
+                kwargs.setdefault('analytic_online_grad', analytic_grad)
                 online = OnlineState(offline, enable_sparse=True, sparse_capacity=257 if self.tiny else 2**20,
                                      bias_sparse_only=arm in ('online_dbS', 'online_dbS_zero_init'),
                                      fastpath=self.fastpath, **kwargs)
@@ -2056,7 +2064,7 @@ def audit_timing_evidence(runner, prompt_manifest, settings, report):
         if 'fastpath' in report:
             raw_fp = report['fastpath']
             req_fp_keys = {'compile', 'cuda_graph', 'compile_mode'}
-            opt_fp_keys = {'bf16_gemm', 'compile_drafter', 'compile_online'}
+            opt_fp_keys = {'bf16_gemm', 'compile_drafter', 'compile_online', 'analytic_online_grad'}
             if (not isinstance(raw_fp, dict)
                     or not req_fp_keys <= set(raw_fp.keys()) <= (req_fp_keys | opt_fp_keys)
                     or type(raw_fp['compile']) is not bool
@@ -2071,7 +2079,10 @@ def audit_timing_evidence(runner, prompt_manifest, settings, report):
             if report_fastpath != expected_fp:
                 raise ValueError('timing session configuration mismatch')
             expected_fp_opt = expected_fp
-        elif any(getattr(args, k, False) for k in ('compile', 'cuda_graph', 'bf16_gemm', 'compile_drafter', 'compile_online')):
+        elif (
+            any(getattr(args, k, False) for k in ('compile', 'cuda_graph', 'bf16_gemm', 'compile_drafter', 'compile_online'))
+            or not bool(getattr(args, 'analytic_online_grad', True))
+        ):
             from .fastpath import FastPathConfig
             cli_fp = FastPathConfig(
                 compile=bool(getattr(args, 'compile', False)),
@@ -2079,6 +2090,7 @@ def audit_timing_evidence(runner, prompt_manifest, settings, report):
                 bf16_gemm=bool(getattr(args, 'bf16_gemm', False)),
                 compile_drafter=bool(getattr(args, 'compile_drafter', False)),
                 compile_online=bool(getattr(args, 'compile_online', False)),
+                analytic_online_grad=bool(getattr(args, 'analytic_online_grad', True)),
             ).to_dict()
             if report_fastpath != cli_fp:
                 raise ValueError('timing session configuration mismatch')
@@ -3616,6 +3628,7 @@ def main(argv=None):
     parser.add_argument('--bf16_gemm', action='store_true', default=False)
     parser.add_argument('--compile_drafter', action='store_true', default=False)
     parser.add_argument('--compile_online', action='store_true', default=False)
+    parser.add_argument('--no_analytic_online_grad', action='store_false', dest='analytic_online_grad', default=True)
     parser.add_argument('--prompts_manifest', type=Path, default=ROOT / 'artifacts/prompts.json')
     parser.add_argument('--dense_checkpoint', type=Path, default=ROOT / 'artifacts/m2/dense.pt')
     parser.add_argument('--sparse_checkpoint', type=Path, default=ROOT / 'artifacts/m2/dense_sparse.pt')

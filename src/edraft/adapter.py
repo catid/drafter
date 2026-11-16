@@ -181,6 +181,7 @@ class ProposalSnapshot:
     is_zero: bool = False
     unary_fn: object | None = None
     _A_flat: torch.Tensor | None = field(default=None, init=False, repr=False, compare=False)
+    _E_for_A: torch.Tensor | None = field(default=None, init=False, repr=False, compare=False)
     _E_bf16: torch.Tensor | None = field(default=None, repr=False, compare=False, kw_only=True)
     _pair_zero: bool | None = field(default=None, repr=False, compare=False, kw_only=True)
 
@@ -197,6 +198,13 @@ class ProposalSnapshot:
             D, r, _ = self.A.shape
             cached = self.A.permute(1, 0, 2).contiguous().view(r, D * r)
             object.__setattr__(self, '_A_flat', cached)
+        return cached
+
+    def _token_features_for_A(self) -> torch.Tensor:
+        cached = self._E_for_A
+        if cached is None or cached.device != self.E.device or cached.dtype != self.A.dtype:
+            cached = self.E if self.E.dtype == self.A.dtype else self.E.to(self.A.dtype)
+            object.__setattr__(self, '_E_for_A', cached)
         return cached
 
     def _token_features_bf16(self) -> torch.Tensor:
@@ -305,11 +313,13 @@ class ProposalSnapshot:
 
     def score_slot_tensor(self, l_unit_i, U_i, offsets: torch.Tensor, prev_ids: torch.Tensor,
                           beta=1.0, proposal_mode='dense_full', timer=None, *,
-                          contiguous_offsets: bool = False, bf16_gemm: bool = False):
+                          contiguous_offsets: bool = False, bf16_gemm: bool = False,
+                          precomputed_e_prev_flat: torch.Tensor | None = None):
         """Sync-free causal slot scoring when offsets [avail] or [avail, 1] and prev_ids [avail] reside on device."""
         if proposal_mode != 'dense_full':
             raise ValueError('score_slot_tensor requires dense_full proposal mode')
-        offs_1d = offsets.squeeze(-1) if offsets.ndim == 2 and offsets.shape[1] == 1 else offsets
+        is_col_offs = offsets.ndim == 2 and offsets.shape[1] == 1
+        offs_1d = offsets.squeeze(-1) if is_col_offs else offsets
         if offs_1d.ndim != 1 or prev_ids.ndim != 1 or offs_1d.numel() != prev_ids.numel():
             raise ValueError('offsets and prev_ids must be matching 1D predecessor tensors (or offsets [avail, 1])')
         avail = prev_ids.numel()
@@ -320,16 +330,22 @@ class ProposalSnapshot:
         with _phase(timer, 'dense_pair_score'):
             if avail and not self.pair_is_zero():
                 r = self.E.shape[1]
-                E_prev_2d = self.E.index_select(0, prev_ids).to(self.A.dtype)
+                E_cast = self._token_features_for_A()
                 if contiguous_offsets:
-                    message = self._pair_matrix()[:, :avail * r] @ E_prev_2d.reshape(-1)
+                    e_flat = (
+                        precomputed_e_prev_flat
+                        if precomputed_e_prev_flat is not None
+                        else E_cast.index_select(0, prev_ids).reshape(-1)
+                    )
+                    message = self._pair_matrix()[:, :avail * r] @ e_flat
                 else:
+                    E_prev_2d = E_cast.index_select(0, prev_ids)
                     A_sel = self.A.index_select(0, offs_1d - 1)
                     message = torch.bmm(A_sel, E_prev_2d.unsqueeze(-1)).squeeze(-1).sum(0)
                 if bf16_gemm:
                     dense = U_i + (self._token_features_bf16() @ message.bfloat16()).to(U_i.dtype)
                 else:
-                    dense = U_i + self.E.to(self.A.dtype) @ message
+                    dense = U_i + E_cast @ message
             else:
                 dense = U_i
         if self.sparse is None or avail == 0:
@@ -337,7 +353,7 @@ class ProposalSnapshot:
         else:
             with _phase(timer, 'sparse_lookup'):
                 candidates = top_candidates(l_unit_i - beta * dense, self.M_sparse)
-                offs_2d = offs_1d[:, None]
+                offs_2d = offsets if is_col_offs else offs_1d[:, None]
                 values = self.sparse.lookup(offs_2d, prev_ids[:, None], candidates[None, :]).to(dense.dtype).sum(0)
                 correction = dense.scatter_add(0, candidates, values)
         return l_unit_i - beta * correction
@@ -390,6 +406,7 @@ class ProposalSnapshot:
         contiguous_offsets: bool = False,
         bf16_gemm: bool = False,
         precomputed_ids: tuple[torch.Tensor, torch.Tensor] | None = None,
+        precomputed_e_prev_flat: torch.Tensor | None = None,
     ) -> tuple[torch.Tensor | None, torch.Tensor]:
         """Zero-sync `[M_sparse + k_eff]` sparse candidate scoring without `[V]` `scatter_add`.
 
@@ -408,7 +425,8 @@ class ProposalSnapshot:
             raise ValueError('temperature must be finite and nonnegative')
         if k_eff < 1:
             raise ValueError('k_eff must be positive')
-        offs_1d = offsets.squeeze(-1) if offsets.ndim == 2 and offsets.shape[1] == 1 else offsets
+        is_col_offs = offsets.ndim == 2 and offsets.shape[1] == 1
+        offs_1d = offsets.squeeze(-1) if is_col_offs else offsets
         if offs_1d.ndim != 1 or prev_ids.ndim != 1 or offs_1d.numel() != prev_ids.numel():
             raise ValueError('offsets and prev_ids must be matching 1D predecessor tensors (or offsets [avail, 1])')
         avail = prev_ids.numel()
@@ -419,16 +437,22 @@ class ProposalSnapshot:
         with _phase(timer, 'dense_pair_score'):
             if avail and not self.pair_is_zero():
                 r = self.E.shape[1]
-                E_prev_2d = self.E.index_select(0, prev_ids).to(self.A.dtype)
+                E_cast = self._token_features_for_A()
                 if contiguous_offsets:
-                    message = self._pair_matrix()[:, :avail * r] @ E_prev_2d.reshape(-1)
+                    e_flat = (
+                        precomputed_e_prev_flat
+                        if precomputed_e_prev_flat is not None
+                        else E_cast.index_select(0, prev_ids).reshape(-1)
+                    )
+                    message = self._pair_matrix()[:, :avail * r] @ e_flat
                 else:
+                    E_prev_2d = E_cast.index_select(0, prev_ids)
                     A_sel = self.A.index_select(0, offs_1d - 1)
                     message = torch.bmm(A_sel, E_prev_2d.unsqueeze(-1)).squeeze(-1).sum(0)
                 if bf16_gemm:
                     dense = U_i + (self._token_features_bf16() @ message.bfloat16()).to(U_i.dtype)
                 else:
-                    dense = U_i + self.E.to(self.A.dtype) @ message
+                    dense = U_i + E_cast @ message
             else:
                 dense = U_i
         if self.sparse is None or avail == 0:
@@ -456,16 +480,19 @@ class ProposalSnapshot:
                         r_ids = torch.max(u, dim=-1, keepdim=True).indices
                     else:
                         r_ids = torch.topk(u, r_k, dim=-1).indices
-            offs_2d = offs_1d[:, None]
+            offs_2d = offsets if is_col_offs else offs_1d[:, None]
             s_vals = self.sparse.lookup(offs_2d, prev_ids[:, None], c_ids[None, :]).to(dense.dtype).sum(0)
-            c_scores = l_unit_i.gather(0, c_ids) - beta * (dense.gather(0, c_ids) + s_vals)
             if r_ids.numel():
-                r_scores = l_unit_i.gather(0, r_ids) - beta * dense.gather(0, r_ids)
+                m_c = c_ids.numel()
                 cand_ids = torch.cat((c_ids, r_ids), dim=0)
+                l_both = l_unit_i.gather(0, cand_ids)
+                d_both = dense.gather(0, cand_ids)
+                c_scores = l_both[:m_c] - beta * (d_both[:m_c] + s_vals)
+                r_scores = l_both[m_c:] - beta * d_both[m_c:]
                 cand_vals = torch.cat((c_scores, r_scores), dim=0)
             else:
                 cand_ids = c_ids
-                cand_vals = c_scores
+                cand_vals = l_unit_i.gather(0, c_ids) - beta * (dense.gather(0, c_ids) + s_vals)
             if temperature == 0:
                 cand_ids, perm = cand_ids.sort(dim=0)
                 cand_vals = cand_vals.gather(0, perm)
@@ -569,13 +596,14 @@ class DenseAdapter(nn.Module):
 
     def snapshot(self, version=0, C0=None):
         sparse = self.sparse.snapshot() if self.sparse is not None else None
-        is_zero = all(not bool(torch.count_nonzero(x)) for x in (self.W, self.A, self.b))
+        a_zero = not bool(torch.count_nonzero(self.A))
+        is_zero = a_zero and not bool(torch.count_nonzero(self.W)) and not bool(torch.count_nonzero(self.b))
         if sparse is not None:
             is_zero = is_zero and not bool(torch.count_nonzero(sparse.values))
         return ProposalSnapshot(self.E.detach(), self.W.detach().clone(), self.A.detach().clone(),
                                 self.b.detach().clone(), version, sparse, self.M_sparse,
                                 None if C0 is None else tuple(c.detach().clone() for c in C0), is_zero,
-                                self.unary_fn, _E_bf16=self._cached_E_bf16)
+                                self.unary_fn, _E_bf16=self._cached_E_bf16, _pair_zero=a_zero)
 
 
 def loss_weights(K, device=None, mode='exponential', gamma=5., first_rejection=None):
@@ -670,6 +698,37 @@ def full_kl(scores, target_logits, weights=None):
     q_log_safe = torch.where(p > 0, q_log, torch.zeros_like(q_log))
     per_slot = torch.where(p > 0, p * (p_log_safe - q_log_safe), torch.zeros_like(q_log)).sum(-1)
     return (per_slot * weights).sum()
+
+
+def analytic_full_kl_and_correction_grad(
+    scores: torch.Tensor,
+    target_logits: torch.Tensor,
+    weights=None,
+) -> tuple[torch.Tensor, torch.Tensor]:
+    """Zero-autograd `(loss, G)` where `G = dL / d(correction) = w * (p - q)` for `scores = l_unit - correction`."""
+    K, V = scores.shape
+    w_f = _effective_slot_weights(weights, K, scores.device)
+    if K == 0 or V == 0:
+        return (
+            torch.zeros((), dtype=torch.float32, device=scores.device),
+            torch.zeros((K, V), dtype=torch.float32, device=scores.device),
+        )
+    t_f = target_logits.detach().float()
+    s_f = scores.detach().float()
+    row_active = torch.isfinite(t_f).any(dim=-1, keepdim=True)
+    t_safe = torch.where(row_active, t_f, 0.0)
+    s_safe = torch.where(row_active, s_f, 0.0)
+    p = torch.softmax(t_safe, dim=-1)
+    p_kl = torch.where(row_active, p, 0.0)
+    q_log = torch.log_softmax(s_safe, dim=-1)
+    q_log_safe = torch.where(p_kl > 0, q_log, 0.0)
+    per_slot = (torch.xlogy(p_kl, p_kl) - p_kl * q_log_safe).sum(dim=-1)
+    loss = (per_slot * w_f).sum()
+
+    q = torch.softmax(s_safe, dim=-1)
+    w_active = torch.where(row_active, w_f[:, None], 0.0)
+    G = p.sub_(q).mul_(w_active)
+    return loss, G
 
 
 def two_sided_pseudolikelihood_loss(scores, committed_targets: Sequence[int] | torch.Tensor, weights=None):

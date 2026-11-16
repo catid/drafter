@@ -19,7 +19,7 @@ from typing import Any, Callable
 import torch
 from torch.nn import functional as F
 
-from .adapter import block_unary, full_kl
+from .adapter import _effective_slot_weights, analytic_full_kl_and_correction_grad, block_unary, full_kl
 from .sampler import (
     SamplingWarper,
     compact_probabilities as eager_compact_probabilities,
@@ -37,6 +37,7 @@ class FastPathConfig:
     bf16_gemm: bool = False
     compile_drafter: bool = False
     compile_online: bool = False
+    analytic_online_grad: bool = True
 
     @property
     def enabled(self) -> bool:
@@ -47,6 +48,7 @@ class FastPathConfig:
             or self.bf16_gemm
             or self.compile_drafter
             or self.compile_online
+            or (not self.analytic_online_grad)
         )
 
     def to_dict(self) -> dict:
@@ -61,6 +63,8 @@ class FastPathConfig:
             out["compile_drafter"] = True
         if self.compile_online:
             out["compile_online"] = True
+        if not self.analytic_online_grad:
+            out["analytic_online_grad"] = False
         return out
 
 
@@ -190,6 +194,39 @@ def _make_compiled_full_kl(mode: str) -> Callable:
         return (per_slot * weights).sum()
 
     return _fresh_compile(_full_kl_impl, mode)
+
+
+def _make_compiled_analytic_kl_grad(mode: str) -> Callable:
+    def _analytic_kl_grad_core(
+        scores: torch.Tensor, target_logits: torch.Tensor, w_f: torch.Tensor
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        t_f = target_logits.detach().float()
+        s_f = scores.detach().float()
+        row_active = torch.isfinite(t_f).any(dim=-1, keepdim=True)
+        t_safe = torch.where(row_active, t_f, 0.0)
+        s_safe = torch.where(row_active, s_f, 0.0)
+        p = torch.softmax(t_safe, dim=-1)
+        p_kl = torch.where(row_active, p, 0.0)
+        q_log = torch.log_softmax(s_safe, dim=-1)
+        q_log_safe = torch.where(p_kl > 0, q_log, 0.0)
+        per_slot = (torch.xlogy(p_kl, p_kl) - p_kl * q_log_safe).sum(dim=-1)
+        loss = (per_slot * w_f).sum()
+
+        q = torch.softmax(s_safe, dim=-1)
+        w_active = torch.where(row_active, w_f[:, None], 0.0)
+        G = (p - q) * w_active
+        return loss, G
+
+    compiled_core = _fresh_compile(_analytic_kl_grad_core, mode)
+
+    def _wrapped(scores: torch.Tensor, target_logits: torch.Tensor, weights=None):
+        K, V = scores.shape
+        if K == 0 or V == 0:
+            return analytic_full_kl_and_correction_grad(scores, target_logits, weights)
+        w_f = _effective_slot_weights(weights, K, scores.device)
+        return compiled_core(scores, target_logits, w_f)
+
+    return _wrapped
 
 
 def _make_compiled_online_dense_step(mode: str, *, bias_only: bool = False) -> Callable:
@@ -431,14 +468,20 @@ class FastPathRuntime:
         self.config = config
         self.static_block_length = static_block_length
         self.bf16_gemm = bool(config.bf16_gemm)
+        self.analytic_online_grad = bool(config.analytic_online_grad)
         if config.compile:
             self._unary_base = _make_compiled_unary(config.compile_mode, bf16_gemm=self.bf16_gemm)
         elif self.bf16_gemm:
             self._unary_base = lambda E_bf16, W, b, H: block_unary(E_bf16, W, b, H, bf16_gemm=True, E_bf16=E_bf16)
         else:
             self._unary_base = block_unary
-        self.full_kl_fn = _make_compiled_full_kl(config.compile_mode) if (config.compile or config.compile_online) else full_kl
         compile_online_active = bool(config.compile or config.compile_online)
+        self.full_kl_fn = _make_compiled_full_kl(config.compile_mode) if compile_online_active else full_kl
+        self.analytic_kl_grad_fn = (
+            _make_compiled_analytic_kl_grad(config.compile_mode)
+            if compile_online_active
+            else analytic_full_kl_and_correction_grad
+        )
         self._online_dense_step_fn = (
             _make_compiled_online_dense_step(config.compile_mode, bias_only=False) if compile_online_active else None
         )
@@ -682,6 +725,7 @@ class FastPathRuntime:
             "bf16_gemm": bool(self.config.bf16_gemm),
             "compile_drafter": bool(self.config.compile_drafter),
             "compile_online": bool(self.config.compile_online),
+            "analytic_online_grad": bool(self.config.analytic_online_grad),
             "unary_graph_captures": 0 if self._unary_graph is None else self._unary_graph.graph_captures,
             "unary_graph_replays": 0 if self._unary_graph is None else self._unary_graph.graph_replays,
             "unary_eager_fallbacks": 0 if self._unary_graph is None else self._unary_graph.eager_fallbacks,

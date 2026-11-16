@@ -241,6 +241,24 @@ def _sample_proposal(draft_logits, h_raw, prefix, *, temperature, warper, genera
         if L_ctx:
             ctx_buf[:L_ctx] = torch.tensor(prefix_tail, dtype=torch.long, device=device)
         offsets_all = torch.arange(1, D_hist + 1, dtype=torch.long, device=device) if adapter_active else None
+        offs_2d_by_avail = (
+            [offsets_all[:a, None] for a in range(D_hist + 1)]
+            if adapter_active
+            else None
+        )
+        rev_tok_buf: torch.Tensor | None = None
+        rev_E_buf: torch.Tensor | None = None
+        E_cast_pair: torch.Tensor | None = None
+        if adapter_active:
+            rev_tok_buf = torch.empty(L_ctx + K, dtype=torch.long, device=device)
+            if L_ctx:
+                rev_tok_buf[K:K + L_ctx] = torch.tensor(prefix_tail[::-1], dtype=torch.long, device=device)
+            if not snapshot.pair_is_zero():
+                with timer.phase("dense_pair_score"):
+                    E_cast_pair = snapshot._token_features_for_A()
+                    rev_E_buf = torch.empty((L_ctx + K, E_cast_pair.shape[1]), dtype=E_cast_pair.dtype, device=device)
+                    if L_ctx:
+                        rev_E_buf[K:K + L_ctx] = E_cast_pair.index_select(0, rev_tok_buf[K:K + L_ctx])
         compact_k = warper.top_k if (temperature > 0 and 0 < warper.top_k < V) else 0
         k_eff = 1 if (temperature == 0 and V > 0) else compact_k
         slot_probs: torch.Tensor | None = None
@@ -304,17 +322,22 @@ def _sample_proposal(draft_logits, h_raw, prefix, *, temperature, warper, genera
                         )
             elif use_sparse_compact:
                 avail = min(D_hist, L_ctx + i)
-                prev_ids = ctx_buf[L_ctx + i - offsets_all[:avail]]
+                prev_ids = rev_tok_buf[K - i:K - i + avail]
+                e_prev_flat = (
+                    rev_E_buf[K - i:K - i + avail].reshape(-1)
+                    if (rev_E_buf is not None and avail > 0)
+                    else None
+                )
                 pre_i = (
                     (precomp_sparse[0][i], precomp_sparse[1][i])
                     if (precomp_sparse is not None and avail > 0)
                     else None
                 )
                 sel_scores, sel_ids_or_full = snapshot.score_slot_compact_candidates(
-                    l_unit[i], U[i], offsets_all[:avail, None], prev_ids,
+                    l_unit[i], U[i], offs_2d_by_avail[avail], prev_ids,
                     temperature=temperature, k_eff=k_eff, beta=beta,
                     timer=timer, contiguous_offsets=True, bf16_gemm=bf16_gemm,
-                    precomputed_ids=pre_i,
+                    precomputed_ids=pre_i, precomputed_e_prev_flat=e_prev_flat,
                 )
                 with timer.phase("sequential_sampling"):
                     if sel_scores is None:
@@ -330,10 +353,17 @@ def _sample_proposal(draft_logits, h_raw, prefix, *, temperature, warper, genera
             else:
                 if adapter_active:
                     avail = min(D_hist, L_ctx + i)
-                    prev_ids = ctx_buf[L_ctx + i - offsets_all[:avail]]
+                    prev_ids = rev_tok_buf[K - i:K - i + avail]
+                    e_prev_flat = (
+                        rev_E_buf[K - i:K - i + avail].reshape(-1)
+                        if (rev_E_buf is not None and avail > 0)
+                        else None
+                    )
                     score = snapshot.score_slot_tensor(
-                        l_unit[i], U[i], offsets_all[:avail, None], prev_ids,
-                        beta=beta, timer=timer, contiguous_offsets=True, bf16_gemm=bf16_gemm)
+                        l_unit[i], U[i], offs_2d_by_avail[avail], prev_ids,
+                        beta=beta, timer=timer, contiguous_offsets=True, bf16_gemm=bf16_gemm,
+                        precomputed_e_prev_flat=e_prev_flat,
+                    )
                 else:
                     score = l_unit[i]
                 if not bigram_inactive:
@@ -346,6 +376,11 @@ def _sample_proposal(draft_logits, h_raw, prefix, *, temperature, warper, genera
                     )
 
             ctx_buf[L_ctx + i] = tok_t
+            if rev_tok_buf is not None and i + 1 < K:
+                rev_tok_buf[K - 1 - i] = tok_t
+                if rev_E_buf is not None:
+                    with timer.phase("dense_pair_score"):
+                        rev_E_buf[K - 1 - i] = E_cast_pair[tok_t]
             if p_sub is not None:
                 if compact_k:
                     if slot_probs is None:

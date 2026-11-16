@@ -8,12 +8,14 @@ import math
 from typing import Callable
 import torch
 
-from .adapter import (ProposalSnapshot, block_predecessor_pairs, block_unary,
+from .adapter import (ProposalSnapshot, analytic_full_kl_and_correction_grad,
+                      block_predecessor_pairs, block_unary,
                       slot_correction, two_sided_slot_correction,
                       top_candidates, prev_token, next_token, full_kl,
                       two_sided_pseudolikelihood_loss, loss_weights)
 from .optimizers import GramNewtonSchulz
 from .sparse import (LazySignedHash, LazyExactObservedPairs, SumSparse,
+                     _bucket_from_raw, _hash_raw_and_sign,
                      hash_keys, pack_exact_keys, proximal_l1)
 
 
@@ -606,7 +608,8 @@ class OnlineState:
                  accumulate_stride: bool = False,
                  buffer_reduction: str = 'mean',
                  loss_mode: str = 'live_full',
-                 kl_loss_fn: Callable | None = None):
+                 kl_loss_fn: Callable | None = None,
+                 analytic_online_grad: bool | None = None):
         if update_stride < 1 or min(lambda_l2, lambda_l1_b, lambda_l1_s) < 0:
             raise ValueError('invalid online stride or regularization')
         if not callable(lr) and lr < 0:
@@ -629,6 +632,13 @@ class OnlineState:
         self.weighting_mode, self.gamma = weighting_mode, gamma
         self.bias_sparse_only = bias_sparse_only
         self.fastpath = fastpath
+        if analytic_online_grad is not None:
+            self.analytic_online_grad = bool(analytic_online_grad)
+        elif fastpath is not None:
+            fp_cfg = getattr(fastpath, 'config', fastpath)
+            self.analytic_online_grad = bool(getattr(fp_cfg, 'analytic_online_grad', True))
+        else:
+            self.analytic_online_grad = True
         self.optimizer = optimizer
         self.betas = (float(betas[0]), float(betas[1]))
         self.eps = float(eps)
@@ -667,11 +677,66 @@ class OnlineState:
         self._buf_sparse_idx: list[torch.Tensor] = []
         self._buf_sparse_grad: list[torch.Tensor] = []
         self._buf_loss: torch.Tensor | float = 0.0
-        self.state_bytes_estimate = {'dense_activation_clone': 0, 'dense_optimizer': 0, 'dense_snapshot': 0,
-                                     'sparse_update': 0, 'sparse_snapshot': 0}
-        self.active_bucket_min = None
-        self.active_bucket_max = 0
+        self._buf_had_pairs = False
+        self._last_grad_had_pairs = False
+        self._offline_is_zero = bool(self.offline.is_zero)
+        self._offline_pair_zero = bool(self.offline.pair_is_zero())
+        self._any_nonzero_lr_step = False
+        self._dA_ever_updated = False
+        self._state_bytes_estimate = {'dense_activation_clone': 0, 'dense_optimizer': 0, 'dense_snapshot': 0,
+                                      'sparse_update': 0, 'sparse_snapshot': 0}
+        self._active_bucket_min: int | None = None
+        self._active_bucket_max: int = 0
+        self._gpu_sparse_update_bytes: torch.Tensor | None = None
+        self._gpu_sparse_snapshot_bytes: torch.Tensor | None = None
+        self._gpu_active_min: torch.Tensor | None = None
+        self._gpu_active_max: torch.Tensor | None = None
         self._snapshot = self._make_snapshot()
+
+    def _flush_sparse_stats(self) -> None:
+        if self._gpu_sparse_update_bytes is None:
+            return
+        self._state_bytes_estimate['sparse_update'] += int(self._gpu_sparse_update_bytes.item())
+        self._state_bytes_estimate['sparse_snapshot'] += int(self._gpu_sparse_snapshot_bytes.item())
+        g_min = int(self._gpu_active_min.item())
+        g_max = int(self._gpu_active_max.item())
+        self._active_bucket_min = g_min if self._active_bucket_min is None else min(self._active_bucket_min, g_min)
+        self._active_bucket_max = max(self._active_bucket_max, g_max)
+        self._gpu_sparse_update_bytes = None
+        self._gpu_sparse_snapshot_bytes = None
+        self._gpu_active_min = None
+        self._gpu_active_max = None
+
+    @property
+    def state_bytes_estimate(self) -> dict:
+        self._flush_sparse_stats()
+        return self._state_bytes_estimate
+
+    @state_bytes_estimate.setter
+    def state_bytes_estimate(self, value: dict) -> None:
+        self._gpu_sparse_update_bytes = None
+        self._gpu_sparse_snapshot_bytes = None
+        self._state_bytes_estimate = value
+
+    @property
+    def active_bucket_min(self) -> int | None:
+        self._flush_sparse_stats()
+        return self._active_bucket_min
+
+    @active_bucket_min.setter
+    def active_bucket_min(self, value: int | None) -> None:
+        self._flush_sparse_stats()
+        self._active_bucket_min = value
+
+    @property
+    def active_bucket_max(self) -> int:
+        self._flush_sparse_stats()
+        return self._active_bucket_max
+
+    @active_bucket_max.setter
+    def active_bucket_max(self, value: int) -> None:
+        self._flush_sparse_stats()
+        self._active_bucket_max = int(value)
 
     @property
     def last_loss(self) -> float | None:
@@ -696,19 +761,22 @@ class OnlineState:
             W = (self.offline.W + self.dW).detach()
             A = (self.offline.A + self.dA).detach()
             b = (self.offline.b + self.db).detach()
-        if not self.offline.is_zero:
+        ever_dS = self.dS is not None and (
+            bool(self.dS._ever_nonzero_step)
+            if isinstance(self.dS, LazySignedHash)
+            else len(self.dS.active) > 0
+        )
+        ever_mutated = self._any_nonzero_lr_step or ever_dS
+        if not self._offline_is_zero:
             is_zero = False
-        elif self.u == 0:
-            is_zero = self.dS is None or len(self.dS.active) == 0
-        elif self.dS is not None and len(self.dS.active) > 0:
-            is_zero = False
-        elif self.bias_sparse_only:
-            is_zero = not bool(self.db.any())
         else:
-            is_zero = not bool(
-                torch.cat((self.db.reshape(-1), self.dW.reshape(-1), self.dA.reshape(-1))).any()
-            )
-        pair_zero = self.offline.pair_is_zero() if self.bias_sparse_only else None
+            is_zero = not ever_mutated
+        if not self._offline_pair_zero:
+            pair_zero = False
+        elif self.bias_sparse_only:
+            pair_zero = True
+        else:
+            pair_zero = not self._dA_ever_updated
         return ProposalSnapshot(
             self.offline.E, W, A, b, self.version, sparse, self.offline.M_sparse,
             None, is_zero, getattr(self.offline, 'unary_fn', None),
@@ -788,13 +856,210 @@ class OnlineState:
         if not self.accumulate_stride and (round_idx % self.update_stride):
             return False
         # Permit a caller whose model loop uses no_grad or inference_mode.
+        use_analytic = self.analytic_online_grad and self.loss_mode == 'live_full'
+        if use_analytic and self.kl_loss_fn is None:
+            with torch.inference_mode(False), torch.no_grad():
+                return self._update(round_idx, l_unit, target_logits, H, prefix, tokens,
+                                    weights=weights, first_rejection=first_rejection,
+                                    committed_tokens=committed_tokens)
         with torch.inference_mode(False), torch.enable_grad():
             return self._update(round_idx, l_unit, target_logits, H, prefix, tokens,
                                 weights=weights, first_rejection=first_rejection,
                                 committed_tokens=committed_tokens)
 
+    def _compute_round_gradients_analytic(
+        self, l_unit, target_logits, H, prefix, tokens,
+        weights=None, first_rejection=None, *, _dedup_dirty: bool = True,
+    ):
+        if target_logits is None:
+            raise ValueError('live_full online update requires target_logits')
+
+        def _prep_in(x: torch.Tensor, *, as_float: bool = True) -> torch.Tensor:
+            t = x.detach()
+            if as_float and t.dtype != torch.float32:
+                t = t.float()
+            return t.clone() if t.is_inference() else t
+
+        with torch.no_grad():
+            l_unit = _prep_in(l_unit)
+            H = _prep_in(H)
+            target_logits = _prep_in(target_logits)
+            if weights is not None:
+                weights = _prep_in(weights, as_float=False)
+            W = self.offline.W + self.dW if not self.bias_sparse_only else self._snapshot.W
+            A = self.offline.A + self.dA if not self.bias_sparse_only else self._snapshot.A
+            b = self.offline.b + self.db
+            E = self.offline.E
+            V = E.shape[0]
+            K = len(H)
+            bf16_gemm = bool(self.fastpath is not None and self.fastpath.bf16_gemm)
+            E_bf16 = self.offline._token_features_bf16() if bf16_gemm else None
+
+            U = block_unary(E, W, b, H, bf16_gemm=bf16_gemm, E_bf16=E_bf16)
+            valid_slots, valid_d0, valid_prev = block_predecessor_pairs(prefix, tokens, K, len(A), E.device)
+            has_valid_pairs = valid_slots.numel() > 0
+            self._last_grad_had_pairs = has_valid_pairs
+            pair_known_zero = self._offline_pair_zero and (self.bias_sparse_only or not self._dA_ever_updated)
+
+            E_prev = None
+            E_prev_bf16 = None
+            if has_valid_pairs:
+                if bf16_gemm:
+                    assert E_bf16 is not None
+                    if not pair_known_zero or not self.bias_sparse_only:
+                        E_prev_bf16 = E_bf16.index_select(0, valid_prev)
+                    if not pair_known_zero:
+                        msgs = torch.bmm(
+                            A.to(torch.bfloat16).index_select(0, valid_d0),
+                            E_prev_bf16.unsqueeze(-1),
+                        ).squeeze(-1).to(A.dtype)
+                        slot_msgs = torch.zeros(K, E.shape[1], dtype=A.dtype, device=A.device).index_add_(
+                            0, valid_slots, msgs
+                        )
+                        dense = U.add_((slot_msgs.to(torch.bfloat16) @ E_bf16.T).to(U.dtype))
+                    else:
+                        dense = U
+                else:
+                    E_cast = self.offline._token_features_for_A()
+                    if not pair_known_zero or not self.bias_sparse_only:
+                        E_prev = E_cast.index_select(0, valid_prev)
+                    if not pair_known_zero:
+                        msgs = torch.bmm(A.index_select(0, valid_d0), E_prev.unsqueeze(-1)).squeeze(-1)
+                        slot_msgs = torch.zeros(K, E.shape[1], dtype=A.dtype, device=A.device).index_add_(
+                            0, valid_slots, msgs
+                        )
+                        dense = U.add_(slot_msgs @ E_cast.T)
+                    else:
+                        dense = U
+            else:
+                dense = U
+
+            candidates = None
+            buckets = signs = dirty = inverse = None
+            if self.dS is not None:
+                if has_valid_pairs:
+                    candidates = top_candidates(l_unit - dense, self.offline.M_sparse)
+                    cands_pair = candidates.index_select(0, valid_slots)
+                    d_pair = (valid_d0 + 1)[:, None]
+                    prev_pair = valid_prev[:, None]
+                    if self.sparse_backend == 'signed_feature_hash':
+                        off_sp = self.offline.sparse
+                        if off_sp is not None and hasattr(off_sp, '_can_share_hash') and off_sp._can_share_hash():
+                            raw_bucket, signs = _hash_raw_and_sign(d_pair, prev_pair, cands_pair, E.device)
+                            buckets = _bucket_from_raw(raw_bucket, self.dS.capacity)
+                            pair_vals = self.dS.read(buckets) * signs + off_sp._lookup_from_raw(raw_bucket, signs)
+                        else:
+                            buckets, signs = hash_keys(d_pair, prev_pair, cands_pair, self.dS.capacity, E.device)
+                            pair_vals = self.dS.read(buckets) * signs
+                            if off_sp is not None:
+                                pair_vals = pair_vals + off_sp.lookup(d_pair, prev_pair, cands_pair)
+                    else:
+                        packed = pack_exact_keys(d_pair, prev_pair, cands_pair, V, device=E.device)
+                        dirty, inverse = torch.unique(packed.reshape(-1), sorted=True, return_inverse=True)
+                        pair_vals = self.dS.read(dirty)[inverse].reshape(packed.shape)
+                        if self.offline.sparse is not None:
+                            pair_vals = pair_vals + self.offline.sparse.lookup(d_pair, prev_pair, cands_pair)
+                    slot_vals = torch.zeros(
+                        K, candidates.shape[1], dtype=dense.dtype, device=dense.device
+                    ).index_add_(0, valid_slots, pair_vals.to(dense.dtype))
+                    dense.scatter_add_(1, candidates, slot_vals)
+                    scores = l_unit - dense
+                else:
+                    scores = l_unit - dense
+            elif self.offline.sparse is not None and has_valid_pairs:
+                candidates = top_candidates(l_unit - dense, self.offline.M_sparse)
+                cands_pair = candidates.index_select(0, valid_slots)
+                pair_vals = self.offline.sparse.lookup(
+                    (valid_d0 + 1)[:, None], valid_prev[:, None], cands_pair
+                ).to(dense.dtype)
+                slot_vals = torch.zeros(
+                    K, candidates.shape[1], dtype=dense.dtype, device=dense.device
+                ).index_add_(0, valid_slots, pair_vals)
+                dense.scatter_add_(1, candidates, slot_vals)
+                scores = l_unit - dense
+            else:
+                scores = l_unit - dense
+
+            if weights is None:
+                weights_t = loss_weights(K, l_unit.device, self.weighting_mode, self.gamma, first_rejection)
+            else:
+                weights_t = weights
+
+            if self.kl_loss_fn is not None:
+                scores_leaf = scores.detach().requires_grad_(True)
+                with torch.enable_grad():
+                    loss_t = self.kl_loss_fn(scores_leaf, target_logits, weights_t)
+                    (grad_scores,) = torch.autograd.grad(loss_t, scores_leaf)
+                loss = loss_t.detach()
+                G = grad_scores.detach().float().neg_()
+            elif self.fastpath is not None and (
+                self.fastpath.static_block_length is None or K == self.fastpath.static_block_length
+            ):
+                loss, G = self.fastpath.analytic_kl_grad_fn(scores, target_logits, weights_t)
+            else:
+                loss, G = analytic_full_kl_and_correction_grad(scores, target_logits, weights_t)
+
+            g_db = G.sum(dim=0)
+            if self.bias_sparse_only:
+                g_dW = None
+                g_dA = None
+            elif bf16_gemm:
+                assert E_bf16 is not None
+                G_E_bf16 = G.to(torch.bfloat16) @ E_bf16
+                g_dW = (G_E_bf16.T @ H.to(torch.bfloat16)).to(self.dW.dtype)
+                if has_valid_pairs:
+                    G_pair_bf16 = G_E_bf16.index_select(0, valid_slots)
+                    outer_pair_bf16 = torch.bmm(G_pair_bf16.unsqueeze(2), E_prev_bf16.unsqueeze(1))
+                    g_dA = torch.zeros(
+                        self.dA.shape, dtype=torch.bfloat16, device=self.dA.device
+                    ).index_add_(0, valid_d0, outer_pair_bf16).to(self.dA.dtype)
+                else:
+                    g_dA = torch.zeros_like(self.dA)
+            else:
+                E_cast = self.offline._token_features_for_A()
+                G_E = G @ E_cast
+                g_dW = (G_E.T @ H).to(self.dW.dtype)
+                if has_valid_pairs:
+                    G_pair = G_E.index_select(0, valid_slots)
+                    outer_pair = torch.bmm(G_pair.unsqueeze(2), E_prev.unsqueeze(1)).to(self.dA.dtype)
+                    g_dA = torch.zeros_like(self.dA).index_add_(0, valid_d0, outer_pair)
+                else:
+                    g_dA = torch.zeros_like(self.dA)
+
+            if self.dS is None:
+                g_sparse = None
+            elif not has_valid_pairs:
+                dirty = torch.empty(0, device=E.device, dtype=torch.long)
+                g_sparse = torch.empty(0, device=E.device, dtype=torch.float32)
+            else:
+                g_slot_vals = G.gather(1, candidates)
+                g_pair_vals = g_slot_vals.index_select(0, valid_slots)
+                if self.sparse_backend == 'signed_feature_hash':
+                    pair_grads = (g_pair_vals * signs).reshape(-1)
+                    if _dedup_dirty:
+                        dirty, inv = torch.unique(buckets.reshape(-1), sorted=True, return_inverse=True)
+                        g_sparse = torch.zeros(len(dirty), device=E.device, dtype=torch.float32).scatter_add_(
+                            0, inv, pair_grads
+                        )
+                    else:
+                        dirty = buckets.reshape(-1)
+                        g_sparse = pair_grads
+                else:
+                    g_sparse = torch.zeros(len(dirty), device=E.device, dtype=torch.float32).scatter_add_(
+                        0, inverse, g_pair_vals.reshape(-1)
+                    )
+
+            return loss.detach(), g_dW, g_dA, g_db, dirty, g_sparse
+
     def _compute_round_gradients(self, l_unit, target_logits, H, prefix, tokens,
-                                 weights=None, first_rejection=None, committed_tokens=None):
+                                 weights=None, first_rejection=None, committed_tokens=None,
+                                 *, _dedup_dirty: bool = True):
+        if self.analytic_online_grad and self.loss_mode == 'live_full':
+            return self._compute_round_gradients_analytic(
+                l_unit, target_logits, H, prefix, tokens,
+                weights=weights, first_rejection=first_rejection, _dedup_dirty=_dedup_dirty,
+            )
+
         def _prep_in(x: torch.Tensor, *, as_float: bool = True) -> torch.Tensor:
             t = x.detach()
             if as_float and t.dtype != torch.float32:
@@ -823,6 +1088,7 @@ class OnlineState:
         dirty = sparse_values = None
 
         if self.loss_mode == 'two_sided_pseudolikelihood':
+            self._last_grad_had_pairs = True
             if committed_tokens is None:
                 if first_rejection is None or first_rejection == len(tokens):
                     committed = [int(t) for t in tokens]
@@ -835,9 +1101,11 @@ class OnlineState:
             else:
                 committed = [int(t) for t in committed_tokens]
                 if not committed or len(H) == 0:
+                    self._last_grad_had_pairs = False
                     return None, None, None, None, None, None
             n_eval = min(len(H), len(committed))
             if n_eval <= 0:
+                self._last_grad_had_pairs = False
                 return None, None, None, None, None, None
             U = block_unary(E, W, b, H[:n_eval], bf16_gemm=bf16_gemm, E_bf16=E_bf16)
             sparse = self.offline.sparse
@@ -881,6 +1149,7 @@ class OnlineState:
             K = len(H)
             U = block_unary(E, W, b, H, bf16_gemm=bf16_gemm, E_bf16=E_bf16)
             valid_slots, valid_d0, valid_prev = block_predecessor_pairs(prefix, tokens, K, len(A), E.device)
+            self._last_grad_had_pairs = valid_slots.numel() > 0
             if valid_slots.numel():
                 if bf16_gemm:
                     assert E_bf16 is not None
@@ -954,7 +1223,7 @@ class OnlineState:
         return loss.detach(), g_dW, g_dA, g_db, dirty, g_sparse
 
     def _apply_step(self, lr: float, loss_value: torch.Tensor | float, g_dW, g_dA, g_db, dirty, g_sparse,
-                    *, cloned_rounds: int = 1, dirty_is_unique: bool = False):
+                    *, cloned_rounds: int = 1, dirty_is_unique: bool = False, had_pairs: bool = True):
         with torch.no_grad():
             precomputed_dense = None
             extra_opt_bytes = 0
@@ -982,6 +1251,10 @@ class OnlineState:
                     self.dS.step_unique(dirty, g_sparse, lr, self.lambda_l1_s)
                 else:
                     self.dS.step(dirty, g_sparse, lr, self.lambda_l1_s)
+            if lr > 0.0:
+                self._any_nonzero_lr_step = True
+                if not self.bias_sparse_only and had_pairs:
+                    self._dA_ever_updated = True
             self.u += 1
             self.version += 1
             self._last_loss_tensor = loss_value
@@ -989,37 +1262,61 @@ class OnlineState:
             dense_bytes = sum(x.numel() * x.element_size() for x in (self.dW, self.dA, self.db))
             db_bytes = self.db.numel() * self.db.element_size()
             optimized_bytes = db_bytes if self.bias_sparse_only else dense_bytes
-            self.state_bytes_estimate['dense_activation_clone'] += 2 * dense_bytes * cloned_rounds
+            self._state_bytes_estimate['dense_activation_clone'] += 2 * dense_bytes * cloned_rounds
             # Conceptual reads/writes, not a profiler-derived hardware traffic count.
-            self.state_bytes_estimate['dense_optimizer'] += 5 * optimized_bytes + 2 * db_bytes + extra_opt_bytes
-            self.state_bytes_estimate['dense_snapshot'] += 3 * dense_bytes
+            self._state_bytes_estimate['dense_optimizer'] += 5 * optimized_bytes + 2 * db_bytes + extra_opt_bytes
+            self._state_bytes_estimate['dense_snapshot'] += 3 * dense_bytes
             if self.dS is not None:
-                active = len(self.dS.active)
-                snapshot_bytes = active * 16 + (self.dS.u + 1) * 4
-                self.state_bytes_estimate['sparse_update'] += self.dS.last_update_bytes
-                self.state_bytes_estimate['sparse_snapshot'] += 2 * snapshot_bytes
-                self.active_bucket_min = active if self.active_bucket_min is None else min(self.active_bucket_min, active)
-                self.active_bucket_max = max(self.active_bucket_max, active)
+                if isinstance(self.dS, LazySignedHash):
+                    act_t = self.dS._active_count
+                    upd_t = self.dS._last_update_bytes_t
+                    snap2_t = 32 * act_t + 8 * (self.dS.u + 1)
+                    if self._gpu_sparse_update_bytes is None:
+                        self._gpu_sparse_update_bytes = upd_t.clone()
+                        self._gpu_sparse_snapshot_bytes = snap2_t.clone()
+                        self._gpu_active_min = act_t.clone()
+                        self._gpu_active_max = act_t.clone()
+                    else:
+                        self._gpu_sparse_update_bytes.add_(upd_t)
+                        self._gpu_sparse_snapshot_bytes.add_(snap2_t)
+                        torch.minimum(self._gpu_active_min, act_t, out=self._gpu_active_min)
+                        torch.maximum(self._gpu_active_max, act_t, out=self._gpu_active_max)
+                else:
+                    active = len(self.dS.active)
+                    snapshot_bytes = active * 16 + (self.dS.u + 1) * 4
+                    self._state_bytes_estimate['sparse_update'] += self.dS.last_update_bytes
+                    self._state_bytes_estimate['sparse_snapshot'] += 2 * snapshot_bytes
+                    self._active_bucket_min = active if self._active_bucket_min is None else min(self._active_bucket_min, active)
+                    self._active_bucket_max = max(self._active_bucket_max, active)
 
     def _update(self, round_idx, l_unit, target_logits, H, prefix, tokens,
                 weights=None, first_rejection=None, committed_tokens=None):
         lr_check = float(self.lr(self.u + 1) if callable(self.lr) else self.lr)
         if lr_check < 0:
             raise ValueError('scheduled learning rate must be nonnegative')
+        skip_dedup = (
+            self.analytic_online_grad
+            and self.loss_mode == 'live_full'
+            and self.sparse_backend == 'signed_feature_hash'
+        )
         loss_val, g_dW, g_dA, g_db, dirty, g_sparse = self._compute_round_gradients(
             l_unit, target_logits, H, prefix, tokens,
             weights=weights, first_rejection=first_rejection, committed_tokens=committed_tokens,
+            _dedup_dirty=not skip_dedup,
         )
         if not self.accumulate_stride:
             if loss_val is None:
                 return False
             self._apply_step(lr_check, loss_val, g_dW, g_dA, g_db, dirty, g_sparse,
-                             cloned_rounds=1, dirty_is_unique=True)
+                             cloned_rounds=1, dirty_is_unique=not skip_dedup,
+                             had_pairs=self._last_grad_had_pairs)
             return True
         with torch.no_grad():
             if loss_val is not None:
                 self._buffered_rounds += 1
                 self._buf_loss = self._buf_loss + loss_val
+                if self._last_grad_had_pairs:
+                    self._buf_had_pairs = True
                 if not self.bias_sparse_only:
                     self._buf_dW = g_dW.clone() if self._buf_dW is None else (self._buf_dW + g_dW)
                     self._buf_dA = g_dA.clone() if self._buf_dA is None else (self._buf_dA + g_dA)
@@ -1045,20 +1342,26 @@ class OnlineState:
             rounds_in_window = self._buffered_rounds
             self.buffered_rounds_total += rounds_in_window
             avg_loss = self._buf_loss / denom
+            had_pairs_win = self._buf_had_pairs
             self._buffered_rounds = 0
             self._buf_loss = 0.0
+            self._buf_had_pairs = False
             self._buf_dW = None
             self._buf_dA = None
             self._buf_db = None
             self._buf_sparse_idx = []
             self._buf_sparse_grad = []
             self._apply_step(lr_check, avg_loss, agg_dW, agg_dA, agg_db, agg_dirty, agg_sparse,
-                             cloned_rounds=rounds_in_window, dirty_is_unique=False)
+                             cloned_rounds=rounds_in_window, dirty_is_unique=False,
+                             had_pairs=had_pairs_win)
             return True
 
     def metrics(self):
         # Evaluate current lazy shrinkage without materializing it into storage.
-        effective_dS = self.dS.read(self.dS.active) if self.dS is not None else None
+        active_idx = self.dS.active if self.dS is not None else None
+        active_len = len(active_idx) if active_idx is not None else 0
+        effective_dS = self.dS.read(active_idx) if active_idx is not None else None
+        s_bytes = dict(self.state_bytes_estimate)
         result = {'adapter_version': self.version, 'u': self.u, 'last_round': self.last_round,
                   'loss_mode': self.loss_mode, 'T_train': 1., 'beta_train': 1.,
                   'dW_norm': float(self.dW.norm()), 'dA_norm': float(self.dA.norm()),
@@ -1066,15 +1369,15 @@ class OnlineState:
                   'dS_norm': float(effective_dS.norm()) if effective_dS is not None else 0.,
                   'dS_norm_definition': 'L2 norm of effective lazy-shrunk request delta at current optimizer u; zero unrepresented buckets; pure read',
                   'db_exact_zero_fraction': float((self.db == 0).float().mean()),
-                  'active_buckets': len(self.dS.active) if self.dS is not None else 0,
+                  'active_buckets': active_len,
                   'active_buckets_min_over_updates': self.active_bucket_min,
                   'active_buckets_max_over_updates': self.active_bucket_max,
-                  'state_bytes_estimate_by_operation': dict(self.state_bytes_estimate),
-                  'state_bytes_estimate_total': sum(self.state_bytes_estimate.values()),
+                  'state_bytes_estimate_by_operation': s_bytes,
+                  'state_bytes_estimate_total': sum(s_bytes.values()),
                   'state_bytes_definition': 'conceptual FP32 parameter/timestamp/index reads+writes for state clones, SGD/prox steps and snapshots; excludes E/logit/autograd activation traffic and is not hardware HBM traffic',
                   'sparse_capacity': self.dS.capacity if self.dS is not None else 0,
                   'sparse_update_bytes_estimate': self.dS.last_update_bytes if self.dS is not None else 0,
-                  'sparse_snapshot_bytes': (len(self.dS.active) * 16 + (self.dS.u + 1) * 4) if self.dS is not None else 0,
+                  'sparse_snapshot_bytes': (active_len * 16 + (self.dS.u + 1) * 4) if self.dS is not None else 0,
                   'dense_snapshot_bytes': sum(x.numel() * x.element_size() for x in (self._snapshot.W, self._snapshot.A, self._snapshot.b)),
                   'sparse_snapshot_strategy': 'compact_active_bucket_copy' if self.sparse_backend == 'signed_feature_hash' else 'compact_active_exact_pair_copy',
                   'sparse_update_strategy': 'dirty_lazy_catchup_and_active_list_compaction',
