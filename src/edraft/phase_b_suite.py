@@ -435,8 +435,8 @@ def _resolve_lookahead_checkpoints(args, reference_artifacts: Path, sub_ws: Path
             'checkpoint_scale': None,
         }
     if getattr(args, 'lookahead_dense_checkpoint', None) and getattr(args, 'lookahead_sparse_checkpoint', None):
-        d_p = Path(args.lookahead_dense_checkpoint)
-        s_p = Path(args.lookahead_sparse_checkpoint)
+        d_p = Path(args.lookahead_dense_checkpoint).resolve()
+        s_p = Path(args.lookahead_sparse_checkpoint).resolve()
         return {
             'source': 'explicit_cli_override',
             'dense_checkpoint': d_p,
@@ -555,8 +555,8 @@ def _can_resume_report(report_path: Path, args, expected_fp: str) -> dict | None
         existing = json.loads(report_path.read_text())
     except (OSError, ValueError):
         return None
-    expected_status = 'pilot_complete' if int(args.timing_prompts) > 0 else 'complete'
-    if existing.get('config_fingerprint') == expected_fp and existing.get('status') == expected_status:
+    allowed_statuses = ('complete', 'pilot_complete') if int(args.timing_prompts) > 0 else ('complete',)
+    if existing.get('config_fingerprint') == expected_fp and existing.get('status') in allowed_statuses:
         return existing
     return None
 
@@ -568,11 +568,10 @@ def _select_test_prompts(prompt_manifest: dict, scale: str, timing_prompts: int)
         for p in prompts if p['condition'] == cond
     ]
     if timing_prompts and timing_prompts > 0:
-        chosen = []
+        selected = []
         for cond in sorted({row['condition'] for row in ordered}):
             cond_rows = [p for p in ordered if p['condition'] == cond]
-            chosen.extend(cond_rows[:max(1, timing_prompts // 2)])
-        selected = chosen[:timing_prompts]
+            selected.extend(cond_rows[:timing_prompts])
         is_pilot = len(selected) < len(ordered)
         return ordered, selected, is_pilot
     return ordered, ordered, False
@@ -1260,11 +1259,11 @@ def _worker_dual_offline_kl(args, spec_path: Path, out_path: Path) -> None:
     rank_gpu = int(spec['physical_gpu'])
     use_cuda = (eff_scale != 'smoke' and str(args.device).startswith('cuda'))
     device = torch.device('cuda:0' if use_cuda else 'cpu')
-    if device.type == 'cuda':
-        torch.cuda.set_device(device)
     apply_gpu_cpu_affinity(device, rank_gpu)
     if eff_scale != 'smoke':
         assert_idle(device)
+    if device.type == 'cuda':
+        torch.cuda.set_device(device)
 
     primary_ctx = _prepare_offline_eval_context(ws, eff_scale, int(args.seed), device, regime='primary')
     pure_t1_ctx = _prepare_offline_eval_context(ws, eff_scale, int(args.seed), device, regime='pure_t1')
@@ -2170,13 +2169,19 @@ def main(argv=None):
     parser.add_argument('--_worker_spec', type=Path, default=None, help=argparse.SUPPRESS)
     parser.add_argument('--_worker_out', type=Path, default=None, help=argparse.SUPPRESS)
     args = parse_config(parser, argv)
+    args.output = Path(args.output).resolve()
+    args.reference_artifacts = Path(args.reference_artifacts).resolve()
+    if args.lookahead_dense_checkpoint is not None:
+        args.lookahead_dense_checkpoint = Path(args.lookahead_dense_checkpoint).resolve()
+    if args.lookahead_sparse_checkpoint is not None:
+        args.lookahead_sparse_checkpoint = Path(args.lookahead_sparse_checkpoint).resolve()
 
     if args._worker_mode is not None:
         torch.set_num_threads(1)
         if args._worker_spec is None or args._worker_out is None:
             parser.error('internal worker mode requires --_worker_spec and --_worker_out')
-        spec_p = Path(args._worker_spec)
-        out_p = Path(args._worker_out)
+        spec_p = Path(args._worker_spec).resolve()
+        out_p = Path(args._worker_out).resolve()
         if args._worker_mode == 'dual_offline_kl':
             _worker_dual_offline_kl(args, spec_p, out_p)
         elif args._worker_mode == 'variant_eval_shard':

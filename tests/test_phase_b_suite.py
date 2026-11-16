@@ -499,3 +499,61 @@ def test_eval_bug_3_fastpath_calibration_reconcile_and_suite_forwarding(tmp_path
     assert res['status'] == 'complete'
     t_json = json.loads(Path(res['suites']['bigram_eviction']['artifacts']['timing_json']).read_text())
     assert t_json['fastpath']['analytic_online_grad'] is False
+
+
+def test_phase_b_relpath_and_pilot_timing_prompts_semantics(tmp_path, monkeypatch):
+    # 1. PHASE-B-PILOT-PROMPTS-BUG-2: _select_test_prompts(timing_prompts=K) selects K per condition
+    manifest = _make_full_scale_synthetic_manifest()
+    all_test, sel_1, is_pilot_1 = phase_b_suite._select_test_prompts(manifest, 'full', 1)
+    assert len(all_test) == 192  # 128 std + 64 long
+    assert len(sel_1) == 2
+    assert {p['condition'] for p in sel_1} == {'long_thinking', 'standard_nonthinking'}
+    assert is_pilot_1 is True
+
+    _, sel_128, is_pilot_128 = phase_b_suite._select_test_prompts(manifest, 'full', 128)
+    assert len(sel_128) == 192
+    assert is_pilot_128 is False
+
+    # 2. PHASE-B-RELPATH-BUG-1 + pilot_prompts=1 (covers both conditions in pure_t1_fit!) + pilot_prompts=2 resume
+    cwd_sub = tmp_path / 'caller_cwd'
+    cwd_sub.mkdir(parents=True)
+    (cwd_sub / 'rel_ref').mkdir(parents=True)
+    monkeypatch.chdir(cwd_sub)
+
+    assert not (ROOT / 'rel_out').exists()
+    res_p1 = phase_b_suite.main([
+        '--scale', 'smoke', '--suite', 'pure_t1_fit',
+        '--output', 'rel_out', '--reference_artifacts', 'rel_ref',
+        '--smoke_tokens', '8', '--timing_repeats', '2', '--timing_warmups', '1',
+        '--timing_prompts', '1', '--block_shuffle_window', '2',
+    ])
+    assert not (ROOT / 'rel_out').exists()
+    assert (cwd_sub / 'rel_out' / 'phase_b_summary.json').is_file()
+    assert res_p1['status'] == 'pilot_complete'
+    cl_var = res_p1['suites']['pure_t1_fit']['variants'][0]['closed_loop']
+    regimes = set(cl_var['plain_dflash']['by_regime'].keys())
+    assert 'long_thinking::thinking_recommended' in regimes
+    assert 'standard_nonthinking::recommended' in regimes or 'standard_nonthinking::nonthinking_recommended' in regimes
+
+    # timing_prompts=2 on smoke covers all 2+2=4 test prompts -> status='complete', and --resume must hit cache!
+    res_p2 = phase_b_suite.main([
+        '--scale', 'smoke', '--suite', 'bigram_eviction',
+        '--output', 'rel_out_2', '--reference_artifacts', 'rel_ref',
+        '--smoke_tokens', '8', '--timing_repeats', '2', '--timing_warmups', '1',
+        '--timing_prompts', '2',
+        '--bigram_eviction_arms', 'plain_dflash', 'online_bigram',
+    ])
+    assert res_p2['status'] == 'complete'
+
+    def _forbid(*_a, **_kw):
+        raise AssertionError('Expected _can_resume_report cache hit when timing_prompts>=max_cond_count!')
+
+    monkeypatch.setattr(phase_b_suite, '_execute_closed_loop_stage', _forbid)
+    res_p2_cached = phase_b_suite.main([
+        '--scale', 'smoke', '--suite', 'bigram_eviction',
+        '--output', 'rel_out_2', '--reference_artifacts', 'rel_ref',
+        '--smoke_tokens', '8', '--timing_repeats', '2', '--timing_warmups', '1',
+        '--timing_prompts', '2',
+        '--bigram_eviction_arms', 'plain_dflash', 'online_bigram',
+    ])
+    assert res_p2_cached['status'] == 'complete'
