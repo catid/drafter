@@ -38,6 +38,7 @@ class FastPathConfig:
     compile_drafter: bool = False
     compile_online: bool = False
     analytic_online_grad: bool = True
+    fast_decode: bool = False
 
     @property
     def enabled(self) -> bool:
@@ -48,6 +49,7 @@ class FastPathConfig:
             or self.bf16_gemm
             or self.compile_drafter
             or self.compile_online
+            or self.fast_decode
             or (not self.analytic_online_grad)
         )
 
@@ -63,6 +65,8 @@ class FastPathConfig:
             out["compile_drafter"] = True
         if self.compile_online:
             out["compile_online"] = True
+        if self.fast_decode:
+            out["fast_decode"] = True
         if not self.analytic_online_grad:
             out["analytic_online_grad"] = False
         return out
@@ -727,6 +731,7 @@ class FastPathRuntime:
             "bf16_gemm": bool(self.config.bf16_gemm),
             "compile_drafter": bool(self.config.compile_drafter),
             "compile_online": bool(self.config.compile_online),
+            "fast_decode": bool(self.config.fast_decode),
             "analytic_online_grad": bool(self.config.analytic_online_grad),
             "unary_graph_captures": 0 if self._unary_graph is None else self._unary_graph.graph_captures,
             "unary_graph_replays": 0 if self._unary_graph is None else self._unary_graph.graph_replays,

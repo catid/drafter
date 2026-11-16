@@ -66,6 +66,7 @@ def verify_block(
     verification_rule: str = "ratio",
     *,
     probs_fn=None,
+    _tokens_out: list[int] | None = None,
 ) -> VerificationResult:
     """Verify K proposals against K+1 target conditionals on their realized canvas.
 
@@ -77,22 +78,51 @@ def verify_block(
         raise ValueError("M0–M4 stochastic verification requires verification_rule='ratio'")
     if not math.isfinite(temperature) or temperature < 0:
         raise ValueError("temperature must be finite and nonnegative")
-    draft_tensor = draft_tokens if isinstance(draft_tokens, torch.Tensor) else None
-    tokens = draft_tensor.tolist() if draft_tensor is not None else [int(x) for x in draft_tokens]
-    K = len(tokens)
+    draft_tensor = (
+        draft_tokens
+        if isinstance(draft_tokens, torch.Tensor) and draft_tokens.ndim == 1 and draft_tokens.dtype == torch.long
+        else None
+    )
+    if draft_tensor is not None:
+        K = int(draft_tensor.shape[0])
+    else:
+        tokens = draft_tokens.tolist() if isinstance(draft_tokens, torch.Tensor) else [int(x) for x in draft_tokens]
+        K = len(tokens)
     if target_logits.ndim != 2 or target_logits.shape[0] != K + 1:
         raise ValueError("target_logits must have shape [K+1, V], including bonus")
     V = target_logits.shape[1]
-    if any(token < 0 or token >= V for token in tokens):
-        raise ValueError("draft token outside vocabulary")
     if temperature == 0:
-        target_ids = target_logits.argmax(-1).tolist()
+        if draft_tensor is not None and draft_tensor.device == target_logits.device:
+            combined = torch.cat((draft_tensor, target_logits.argmax(-1))).tolist()
+            tokens = combined[:K]
+            target_ids = combined[K:]
+        else:
+            if draft_tensor is not None:
+                tokens = draft_tensor.tolist()
+            target_ids = target_logits.argmax(-1).tolist()
+        if any(token < 0 or token >= V for token in tokens):
+            raise ValueError("draft token outside vocabulary")
+        if _tokens_out is not None:
+            _tokens_out.clear()
+            _tokens_out.extend(tokens)
         for i, token in enumerate(tokens):
             if token != target_ids[i]:
                 return VerificationResult(tokens[:i] + [target_ids[i]], i, i, target_ids[i],
                                           None, [True] * i + [False], None, None, "greedy")
         return VerificationResult(tokens + [target_ids[K]], K, K, None, target_ids[K],
                                   [True] * K, None, None, "greedy")
+
+    if draft_tensor is not None and (K == 0 or draft_tensor.device.type != "cuda"):
+        tokens = draft_tensor.tolist()
+        draft_tensor_deferred = False
+        if any(token < 0 or token >= V for token in tokens):
+            raise ValueError("draft token outside vocabulary")
+    elif draft_tensor is not None:
+        draft_tensor_deferred = True
+    else:
+        draft_tensor_deferred = False
+        if any(token < 0 or token >= V for token in tokens):
+            raise ValueError("draft token outside vocabulary")
 
     if proposal_probs is None:
         raise ValueError("stochastic ratio verification requires full proposal distributions")
@@ -129,8 +159,16 @@ def verify_block(
             p_sub, p_idx = probs_fn(target_logits, temperature, warper), None
 
     if draft_tensor is not None and draft_tensor.device == q_device and draft_tensor.dtype == torch.long:
-        token_indices = draft_tensor[:, None]
+        token_indices = (
+            draft_tensor.clamp(0, max(V - 1, 0))[:, None] if draft_tensor_deferred else draft_tensor[:, None]
+        )
     else:
+        if draft_tensor_deferred:
+            assert draft_tensor is not None
+            tokens = draft_tensor.tolist()
+            draft_tensor_deferred = False
+            if any(token < 0 or token >= V for token in tokens):
+                raise ValueError("draft token outside vocabulary")
         token_indices = torch.tensor(tokens, device=q_device, dtype=torch.long)[:, None]
     if not is_compact_q:
         q_selected = q.gather(-1, token_indices)[:, 0]
@@ -155,8 +193,17 @@ def verify_block(
             return p_sub[row_idx]
         return torch.zeros(V, dtype=p_sub.dtype, device=p_sub.device).scatter_(0, p_idx[row_idx], p_sub[row_idx])
 
-    # Transfer both [K] vectors in one host sync and validate before touching RNG.
-    qp_cpu = torch.stack((q_selected, p_selected)).tolist()
+    # Transfer [K] vectors to host after all GPU probability kernels are enqueued.
+    qp_stack = torch.stack((q_selected, p_selected))
+    if draft_tensor_deferred:
+        assert draft_tensor is not None
+        tokens = draft_tensor.tolist()
+        if any(token < 0 or token >= V for token in tokens):
+            raise ValueError("draft token outside vocabulary")
+    if _tokens_out is not None:
+        _tokens_out.clear()
+        _tokens_out.extend(tokens)
+    qp_cpu = qp_stack.tolist()
     proposal_token_probs, target_token_probs = qp_cpu[0], qp_cpu[1]
     if not all(x > 0 and math.isfinite(x) for x in proposal_token_probs):
         raise ValueError("a realized draft token must have positive finite proposal mass")

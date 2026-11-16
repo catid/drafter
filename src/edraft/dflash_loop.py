@@ -618,116 +618,169 @@ def generate_reference(
                             dtype=torch.long, device=device)
     output_ids[:, :n] = input_ids
     positions = torch.arange(max_length + 1, device=device)[None]
-    target_cache, draft_cache = make_cache(backend.target.config), make_cache(backend.drafter.config)
-    with torch.no_grad(), timer.phase("target_feature_extraction"):
-        output = backend.target(input_ids, position_ids=positions[:, :n], past_key_values=target_cache,
-                                use_cache=True, logits_to_keep=1, output_hidden_states=True)
-        target_hidden = extract_context_feature(output.hidden_states, backend.drafter.target_layer_ids)
-    token, _ = sample_token(output.logits[0, -1], temperature, warper, generator, probs_fn=probs_fn)
-    output_ids[0, n] = token
-    crop_cache(target_cache, n)
-    prompt_tokens = input_ids[0].tolist()
-    if bigram is not None:
-        # The prefill's first target token is already committed, and its
-        # transition from the last prompt token belongs to the request table.
-        bigram.update(prompt_tokens, [token])
-    committed_history = prompt_tokens + [token]
-    stops = set(backend.stop_token_ids if stop_token_ids is None else stop_token_ids)
-    stopped = token in stops
-    start, round_idx, blocks = n, 0, []
-    head_metadata = backend.head_metadata()
-    static_snapshot = adapter.snapshot() if adapter is not None else None
-    controller_updates = proposal_controller is not None and hasattr(proposal_controller, "update")
-    need_training_tensors = on_block is not None or retain_tensors or online_state is not None or controller_updates
-    full_prefix_needed = on_block is not None or retain_tensors
-    while start + 1 < max_length and not stopped:
-        round_t0 = time.perf_counter() if record_round_timing else 0.0
-        round_idx += 1
-        max_verify_size = min(block_size, max_length - start)
-        max_k = max_verify_size - 1
-        k_draft = adaptive_controller.predict_block_length(max_k) if adaptive_controller is not None else max_k
-        verify_size = k_draft + 1
-        canvas = output_ids[:, start:start + verify_size].clone()
-        snapshot = online_state.snapshot() if online_state is not None else static_snapshot
-        history_depth = max(4, len(snapshot.A) if snapshot is not None else 1)
-        prefix = list(committed_history) if full_prefix_needed else committed_history[-history_depth:]
-        with torch.no_grad(), timer.phase("dflash_draft"):
-            pos_slice = positions[:, start - target_hidden.shape[1]:start + verify_size]
-            if fastpath is not None and fastpath.config.compile_drafter:
-                h_raw, draft_logits = fastpath.draft_block(
-                    backend, canvas, target_hidden, pos_slice, draft_cache, start
-                )
-            else:
-                noise = F.embedding(canvas, backend.target.get_input_embeddings().weight) * backend.input_embedding_scale
-                h_raw = backend.drafter(
-                    target_hidden=target_hidden, noise_embedding=noise,
-                    position_ids=pos_slice,
-                    past_key_values=draft_cache, use_cache=True,
-                )[0, 1:, :]
-                crop_cache(draft_cache, start)
-                draft_logits = backend.drafter.compute_logits(h_raw[None], backend.draft_lm_head)[0]
-        if adaptive_controller is not None:
-            k_eff = adaptive_controller.truncate_from_logits(draft_logits)
-            if k_eff < len(draft_logits):
-                draft_logits = draft_logits[:k_eff]
-                h_raw = h_raw[:k_eff]
-                verify_size = k_eff + 1
-                canvas = canvas[:, :verify_size]
-        with torch.no_grad():
-            token_tensor, q, l_unit, H, candidate_ids, mode_label = _sample_proposal(
-                draft_logits, h_raw, prefix, temperature=temperature, warper=warper,
-                generator=generator, snapshot=snapshot, projection=projection, beta=beta,
-                bigram=bigram, timer=timer, need_training_tensors=need_training_tensors,
-                fastpath=fastpath, _return_token_tensor=True,
-                _allow_compact_q=enable_round3_compact,
-                proposal_mode=proposal_mode, lookahead=lookahead,
-                proposal_controller=proposal_controller, return_proposal_meta=True,
-                beta_relax=beta_relax, enable_round3_compact=enable_round3_compact,
-            )
-        canvas[0, 1:] = token_tensor
-        with torch.no_grad(), timer.phase("target_verification"):
-            output = backend.target(canvas, position_ids=positions[:, start:start + verify_size],
-                                    past_key_values=target_cache, use_cache=True, output_hidden_states=True)
-            tokens = token_tensor.tolist()
-            verification = verify_block(token_tensor, q, output.logits[0], temperature, warper, generator,
-                                        probs_fn=probs_fn)
-        if adaptive_controller is not None:
-            adaptive_controller.observe(verification.accepted_length, len(tokens))
-        emitted = verification.emitted_tokens[:max_length - start - 1]
-        for i, item in enumerate(emitted):
-            if item in stops:
-                emitted = emitted[:i + 1]
-                stopped = True
-                break
-        output_ids[0, start + 1:start + 1 + len(emitted)] = input_ids.new_tensor(emitted)
-        committed_history.extend(emitted)
-        record = _record(
-            round_idx=round_idx, offset=start + 1 - n, input_context_length=start + 1, prefix=prefix,
-            draft_tokens=tokens, q=q, target_logits=output.logits[0], draft_logits=draft_logits,
-            h_raw=h_raw, H=H, verification=verification, snapshot=snapshot, temperature=temperature,
-            warper=warper, head_metadata=head_metadata, l_unit=l_unit,
-            need_training_tensors=need_training_tensors, proposal_mode_label=mode_label,
-            candidate_ids=candidate_ids,
-        )
-        if adaptive_controller is not None:
-            record["requested_block_length"] = max_k
-            record["effective_block_length"] = len(tokens)
-        if proposal_controller is not None and hasattr(proposal_controller, "version"):
-            record["adapter_version"] = proposal_controller.version
-        start += len(emitted)
-        crop_cache(target_cache, start)
+    want_fast_decode = bool(
+        getattr(backend, "fast_decode", False)
+        or (fastpath is not None and getattr(fastpath.config, "fast_decode", False))
+    )
+    prev_backend_fast = bool(getattr(backend, "fast_decode", False))
+    toggled_fast = False
+    if want_fast_decode and not prev_backend_fast and hasattr(backend, "enable_fast_decode"):
+        backend.enable_fast_decode(True)
+        toggled_fast = True
+    pooled_caches = False
+    if want_fast_decode and hasattr(backend, "acquire_decode_caches"):
+        target_cache, draft_cache, pooled_caches = backend.acquire_decode_caches(max_length + block_size + 2)
+    else:
+        target_cache, draft_cache = make_cache(backend.target.config), make_cache(backend.drafter.config)
+    use_tap = bool(want_fast_decode and hasattr(backend, "can_tap_target_features") and backend.can_tap_target_features())
+    try:
         with torch.no_grad(), timer.phase("target_feature_extraction"):
-            target_hidden = extract_context_feature(output.hidden_states, backend.drafter.target_layer_ids)[:, :len(emitted)]
-        record["target_cache_length_after_rollback"] = int(target_cache.get_seq_length())
-        finished = _finish_round(record, snapshot=snapshot, online_state=online_state, bigram=bigram,
-                                 committed=emitted, on_block=on_block, retain_tensors=retain_tensors,
-                                 timer=timer, proposal_controller=proposal_controller)
-        if record_round_timing:
-            finished["round_elapsed_seconds"] = max(time.perf_counter() - round_t0, 1e-12)
-        blocks.append(finished)
-    phases = timer.finish()
-    return GenerationResult(output_ids[:, :min(start + 1, max_length)].clone(), n, blocks,
-                            time.perf_counter() - begun, phases)
+            if use_tap:
+                with backend.capture_target_features() as tap:
+                    output = backend.target(
+                        input_ids,
+                        position_ids=positions[:, :n],
+                        past_key_values=target_cache,
+                        use_cache=True,
+                        logits_to_keep=1,
+                        output_hidden_states=False,
+                    )
+                    target_hidden = tap.collect()
+            else:
+                output = backend.target(input_ids, position_ids=positions[:, :n], past_key_values=target_cache,
+                                        use_cache=True, logits_to_keep=1, output_hidden_states=True)
+                target_hidden = extract_context_feature(output.hidden_states, backend.drafter.target_layer_ids)
+        token, _ = sample_token(output.logits[0, -1], temperature, warper, generator, probs_fn=probs_fn)
+        output_ids[0, n] = token
+        crop_cache(target_cache, n)
+        prompt_tokens = input_ids[0].tolist()
+        if bigram is not None:
+            # The prefill's first target token is already committed, and its
+            # transition from the last prompt token belongs to the request table.
+            bigram.update(prompt_tokens, [token])
+        committed_history = prompt_tokens + [token]
+        stops = set(backend.stop_token_ids if stop_token_ids is None else stop_token_ids)
+        stopped = token in stops
+        start, round_idx, blocks = n, 0, []
+        head_metadata = backend.head_metadata()
+        static_snapshot = adapter.snapshot() if adapter is not None else None
+        controller_updates = proposal_controller is not None and hasattr(proposal_controller, "update")
+        need_training_tensors = on_block is not None or retain_tensors or online_state is not None or controller_updates
+        full_prefix_needed = on_block is not None or retain_tensors
+        tokens_buf: list[int] = []
+        while start + 1 < max_length and not stopped:
+            round_t0 = time.perf_counter() if record_round_timing else 0.0
+            round_idx += 1
+            max_verify_size = min(block_size, max_length - start)
+            max_k = max_verify_size - 1
+            k_draft = adaptive_controller.predict_block_length(max_k) if adaptive_controller is not None else max_k
+            verify_size = k_draft + 1
+            canvas = output_ids[:, start:start + verify_size].clone()
+            snapshot = online_state.snapshot() if online_state is not None else static_snapshot
+            history_depth = max(4, len(snapshot.A) if snapshot is not None else 1)
+            prefix = list(committed_history) if full_prefix_needed else committed_history[-history_depth:]
+            with torch.no_grad(), timer.phase("dflash_draft"):
+                pos_slice = positions[:, start - target_hidden.shape[1]:start + verify_size]
+                if fastpath is not None and fastpath.config.compile_drafter:
+                    h_raw, draft_logits = fastpath.draft_block(
+                        backend, canvas, target_hidden, pos_slice, draft_cache, start
+                    )
+                else:
+                    noise = F.embedding(canvas, backend.target.get_input_embeddings().weight) * backend.input_embedding_scale
+                    h_raw = backend.drafter(
+                        target_hidden=target_hidden, noise_embedding=noise,
+                        position_ids=pos_slice,
+                        past_key_values=draft_cache, use_cache=True,
+                    )[0, 1:, :]
+                    crop_cache(draft_cache, start)
+                    draft_logits = backend.drafter.compute_logits(h_raw[None], backend.draft_lm_head)[0]
+            if adaptive_controller is not None:
+                k_eff = adaptive_controller.truncate_from_logits(draft_logits)
+                if k_eff < len(draft_logits):
+                    draft_logits = draft_logits[:k_eff]
+                    h_raw = h_raw[:k_eff]
+                    verify_size = k_eff + 1
+                    canvas = canvas[:, :verify_size]
+            with torch.no_grad():
+                token_tensor, q, l_unit, H, candidate_ids, mode_label = _sample_proposal(
+                    draft_logits, h_raw, prefix, temperature=temperature, warper=warper,
+                    generator=generator, snapshot=snapshot, projection=projection, beta=beta,
+                    bigram=bigram, timer=timer, need_training_tensors=need_training_tensors,
+                    fastpath=fastpath, _return_token_tensor=True,
+                    _allow_compact_q=enable_round3_compact,
+                    proposal_mode=proposal_mode, lookahead=lookahead,
+                    proposal_controller=proposal_controller, return_proposal_meta=True,
+                    beta_relax=beta_relax, enable_round3_compact=enable_round3_compact,
+                )
+            canvas[0, 1:] = token_tensor
+            tapped_ref = None
+            with torch.no_grad(), timer.phase("target_verification"):
+                if use_tap:
+                    with backend.capture_target_features() as tap:
+                        output = backend.target(
+                            canvas,
+                            position_ids=positions[:, start:start + verify_size],
+                            past_key_values=target_cache,
+                            use_cache=True,
+                            output_hidden_states=False,
+                        )
+                        tapped_ref = tap
+                else:
+                    output = backend.target(canvas, position_ids=positions[:, start:start + verify_size],
+                                            past_key_values=target_cache, use_cache=True, output_hidden_states=True)
+                verification = verify_block(
+                    token_tensor, q, output.logits[0], temperature, warper, generator,
+                    probs_fn=probs_fn, _tokens_out=tokens_buf,
+                )
+                tokens = list(tokens_buf)
+            if adaptive_controller is not None:
+                adaptive_controller.observe(verification.accepted_length, len(tokens))
+            emitted = verification.emitted_tokens[:max_length - start - 1]
+            for i, item in enumerate(emitted):
+                if item in stops:
+                    emitted = emitted[:i + 1]
+                    stopped = True
+                    break
+            if emitted:
+                output_ids[0, start + 1:start + 1 + len(emitted)] = _async_long_tensor(emitted, device)
+            committed_history.extend(emitted)
+            record = _record(
+                round_idx=round_idx, offset=start + 1 - n, input_context_length=start + 1, prefix=prefix,
+                draft_tokens=tokens, q=q, target_logits=output.logits[0], draft_logits=draft_logits,
+                h_raw=h_raw, H=H, verification=verification, snapshot=snapshot, temperature=temperature,
+                warper=warper, head_metadata=head_metadata, l_unit=l_unit,
+                need_training_tensors=need_training_tensors, proposal_mode_label=mode_label,
+                candidate_ids=candidate_ids,
+            )
+            if adaptive_controller is not None:
+                record["requested_block_length"] = max_k
+                record["effective_block_length"] = len(tokens)
+            if proposal_controller is not None and hasattr(proposal_controller, "version"):
+                record["adapter_version"] = proposal_controller.version
+            start += len(emitted)
+            crop_cache(target_cache, start)
+            with torch.no_grad(), timer.phase("target_feature_extraction"):
+                if tapped_ref is not None:
+                    target_hidden = tapped_ref.collect(max_tokens=len(emitted))
+                else:
+                    target_hidden = extract_context_feature(
+                        output.hidden_states, backend.drafter.target_layer_ids, max_tokens=len(emitted)
+                    )
+            record["target_cache_length_after_rollback"] = int(target_cache.get_seq_length())
+            finished = _finish_round(record, snapshot=snapshot, online_state=online_state, bigram=bigram,
+                                     committed=emitted, on_block=on_block, retain_tensors=retain_tensors,
+                                     timer=timer, proposal_controller=proposal_controller)
+            if record_round_timing:
+                finished["round_elapsed_seconds"] = max(time.perf_counter() - round_t0, 1e-12)
+            blocks.append(finished)
+        phases = timer.finish()
+        return GenerationResult(output_ids[:, :min(start + 1, max_length)].clone(), n, blocks,
+                                time.perf_counter() - begun, phases)
+    finally:
+        if pooled_caches and hasattr(backend, "release_decode_caches"):
+            backend.release_decode_caches(True)
+        if toggled_fast and hasattr(backend, "enable_fast_decode"):
+            backend.enable_fast_decode(prev_backend_fast)
 
 
 def generate_toy(
