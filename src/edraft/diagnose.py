@@ -23,11 +23,32 @@ OUTPUT_LABELS = ('0-1K', '1K-4K', '4K-8K', '8K-16K', '16K+')
 DEFAULT_CONTEXT_EDGES = (1024, 4096, 8192, 16384, 32768)
 
 
-def token_rank(scores, token_ids):
+def token_rank(scores, token_ids, *, _vocab_ids=None):
     """One-based full-vocabulary rank with deterministic lowest-ID tie break."""
-    ids = torch.arange(scores.shape[-1], device=scores.device)
     selected = scores.gather(-1, token_ids[:, None])
+    if not scores.is_cuda:
+        gt = (scores > selected).sum(-1)
+        eq = (scores == selected).sum(-1)
+        if not bool((eq > 1).any()):
+            return 1 + gt
+        ids = torch.arange(scores.shape[-1], device=scores.device) if _vocab_ids is None else _vocab_ids
+        return 1 + gt + ((scores == selected) & (ids[None, :] < token_ids[:, None])).sum(-1)
+    ids = torch.arange(scores.shape[-1], device=scores.device) if _vocab_ids is None else _vocab_ids
     return 1 + ((scores > selected) | ((scores == selected) & (ids[None, :] < token_ids[:, None]))).sum(-1)
+
+
+def multi_token_rank(scores: torch.Tensor, token_ids_2d: torch.Tensor, *, _vocab_ids=None) -> torch.Tensor:
+    """One-based full-vocabulary ranks for multiple query columns [K, Q] in one sweep."""
+    if not scores.is_cuda:
+        return torch.stack(
+            [token_rank(scores, token_ids_2d[:, c], _vocab_ids=_vocab_ids) for c in range(token_ids_2d.shape[1])],
+            dim=-1,
+        )
+    ids = torch.arange(scores.shape[-1], device=scores.device) if _vocab_ids is None else _vocab_ids
+    selected = scores.gather(-1, token_ids_2d)
+    s_exp = scores[:, None, :]
+    sel_exp = selected[:, :, None]
+    return 1 + ((s_exp > sel_exp) | ((s_exp == sel_exp) & (ids[None, None, :] < token_ids_2d[:, :, None]))).sum(-1)
 
 
 @torch.no_grad()
@@ -55,41 +76,87 @@ def live_block_diagnostics(record: dict, seed: int) -> dict:
     target_ids = target.argmax(-1)
     sampled_ids = torch.multinomial(P, 1, generator=generator)[:, 0]
     sampled_train_ids = torch.multinomial(p_train, 1, generator=generator)[:, 0]
-    ranks = token_rank(l_unit, target_ids)
-    sampled_ranks = token_rank(l_unit, sampled_ids)
+    vocab_ids = torch.arange(V, device=l_unit.device) if l_unit.is_cuda else None
+    ranks_3 = multi_token_rank(
+        l_unit, torch.stack((target_ids, sampled_ids, sampled_train_ids), dim=-1), _vocab_ids=vocab_ids
+    )
     zero_mass = (P * (q == 0)).sum(-1)
     ce = -(P * q.clamp_min(torch.finfo(q.dtype).tiny).log()).sum(-1)
-    infinite = zero_mass > 0
+    overlap_sampling = torch.minimum(P, q).sum(-1)
+    overlap_unwarped = torch.minimum(p_train, q_train).sum(-1)
+    ce_unwarped = -(p_train * l_unit).sum(-1)
     max_ids = torch.topk(l_unit, min(max(TOP_M), V), dim=-1).indices
     mass = P.gather(-1, max_ids).cumsum(-1)
     mass_train = p_train.gather(-1, max_ids).cumsum(-1)
-    m_metrics = {}
-    for m in TOP_M:
-        m_metrics[str(m)] = {'target_top1_recall': (ranks <= m).float().cpu().tolist(),
-                             'sampled_target_recall': (sampled_ranks <= m).float().cpu().tolist(),
-                             'target_mass_sampling': mass[:, min(m, V) - 1].cpu().tolist(),
-                             'target_mass_unwarped': mass_train[:, min(m, V) - 1].cpu().tolist()}
+    m_idx = torch.tensor([min(m, V) - 1 for m in TOP_M], device=l_unit.device, dtype=torch.long)
+    mass_m = mass.index_select(-1, m_idx)
+    mass_train_m = mass_train.index_select(-1, m_idx)
+
     first = int(record['first_rejection_index'])
-    rejection = None
+    replacement_rank_dev = None
     if first < K:
         replacement = record.get('replacement_token')
-        replacement_rank = None
         if replacement is not None:
-            replacement_rank = int(token_rank(l_unit[first:first + 1], torch.tensor([replacement], device=l_unit.device))[0])
-        target_rank = int(ranks[first])
+            replacement_rank_dev = token_rank(
+                l_unit[first:first + 1], torch.tensor([replacement], device=l_unit.device), _vocab_ids=vocab_ids
+            )
+
+    # Consolidate all device-to-host transfers into at most 2 CPU copies.
+    float_bundle_cpu = torch.cat(
+        (
+            overlap_sampling[:, None],
+            overlap_unwarped[:, None],
+            ce_unwarped[:, None],
+            ce[:, None],
+            zero_mass[:, None],
+            mass_m,
+            mass_train_m,
+        ),
+        dim=-1,
+    ).cpu()
+    if replacement_rank_dev is not None:
+        int_bundle_cpu = torch.cat((ranks_3.reshape(-1), replacement_rank_dev)).cpu()
+        ranks_cpu = int_bundle_cpu[:-1].view(K, 3)
+        replacement_rank = int(int_bundle_cpu[-1])
+    else:
+        ranks_cpu = ranks_3.cpu()
+        replacement_rank = None
+
+    ranks_col0 = ranks_cpu[:, 0]
+    ranks_col1 = ranks_cpu[:, 1]
+    ranks_col2 = ranks_cpu[:, 2]
+    m_thresh = torch.tensor(TOP_M, dtype=ranks_cpu.dtype)
+    rec_top1_cpu = (ranks_col0[:, None] <= m_thresh).float()
+    rec_samp_cpu = (ranks_col1[:, None] <= m_thresh).float()
+
+    m_metrics = {}
+    for idx_m, m in enumerate(TOP_M):
+        m_metrics[str(m)] = {
+            'target_top1_recall': rec_top1_cpu[:, idx_m].tolist(),
+            'sampled_target_recall': rec_samp_cpu[:, idx_m].tolist(),
+            'target_mass_sampling': float_bundle_cpu[:, 5 + idx_m].tolist(),
+            'target_mass_unwarped': float_bundle_cpu[:, 5 + len(TOP_M) + idx_m].tolist(),
+        }
+
+    rejection = None
+    if first < K:
+        target_rank = int(ranks_col0[first])
         rejection = {'slot': first, 'target_top1_rank': target_rank, 'replacement_token_rank': replacement_rank,
                      'recoverability_target_top1': {str(m): target_rank <= m for m in TOP_M},
                      'recoverability_replacement': {str(m): replacement_rank <= m if replacement_rank is not None else None for m in TOP_M}}
+    zero_mass_list = float_bundle_cpu[:, 4].tolist()
+    infinite_list = [z > 0.0 for z in zero_mass_list]
+    ce_list = float_bundle_cpu[:, 3].tolist()
     return {'definition': 'plain_DFlash_full_vocabulary_live_diagnostics', 'diagnostic_rng_seed': seed,
             'sampled_target_distribution': 'condition_sampling_distribution',
-            'target_rank': ranks.cpu().tolist(), 'sampled_target_rank': sampled_ranks.cpu().tolist(),
-            'sampled_target_rank_unwarped': token_rank(l_unit, sampled_train_ids).cpu().tolist(),
-            'overlap_sampling': torch.minimum(P, q).sum(-1).cpu().tolist(),
-            'overlap_unwarped': torch.minimum(p_train, q_train).sum(-1).cpu().tolist(),
-            'cross_entropy_unwarped': (-(p_train * l_unit).sum(-1)).cpu().tolist(),
-            'sampling_cross_entropy': [None if bad else value for bad, value in zip(infinite.cpu().tolist(), ce.cpu().tolist())],
-            'sampling_cross_entropy_infinite': infinite.cpu().tolist(),
-            'target_mass_on_zero_proposal': zero_mass.cpu().tolist(),
+            'target_rank': ranks_col0.tolist(), 'sampled_target_rank': ranks_col1.tolist(),
+            'sampled_target_rank_unwarped': ranks_col2.tolist(),
+            'overlap_sampling': float_bundle_cpu[:, 0].tolist(),
+            'overlap_unwarped': float_bundle_cpu[:, 1].tolist(),
+            'cross_entropy_unwarped': float_bundle_cpu[:, 2].tolist(),
+            'sampling_cross_entropy': [None if bad else value for bad, value in zip(infinite_list, ce_list)],
+            'sampling_cross_entropy_infinite': infinite_list,
+            'target_mass_on_zero_proposal': zero_mass_list,
             'top_m': m_metrics, 'first_rejection': rejection,
             'off_policy_teacher_positions': list(range(first + 1, K))}
 
@@ -121,6 +188,8 @@ def _longest_periodic_run(tokens):
         best_length = span
         best = {'start': start, 'end': start + span, 'period': period,
                 'complete_cycles': span // period}
+        if best_length == len(values):
+            break
     return best_length, best
 
 
@@ -225,6 +294,14 @@ class DiagnosticAccumulator:
         self.context_edges = tuple(context_edges)
         if tuple(sorted(set(self.context_edges))) != self.context_edges:
             raise ValueError('context edges must be unique and increasing')
+        self._context_labels = tuple(
+            (f'{0 if j == 0 else self.context_edges[j - 1]}-{self.context_edges[j]}'
+             if j < len(self.context_edges)
+             else f'{0 if j == 0 else self.context_edges[j - 1]}+')
+            for j in range(len(self.context_edges) + 1)
+        )
+        self._output_edges_np = np.asarray(OUTPUT_EDGES, dtype=np.int64)
+        self._context_edges_np = np.asarray(self.context_edges, dtype=np.int64)
         self.outlier_threshold = outlier_threshold
         self.seed = seed
         self.groups = {}
@@ -233,30 +310,22 @@ class DiagnosticAccumulator:
     def add_generation(self, generation):
         self.generations.append(dict(generation))
 
-    def add_block(self, block, repetition_dominated=False):
-        if 'diagnostics' not in block:
-            raise ValueError('exact live diagnostics are missing; compact union alone cannot recover full ranks or overlap')
-        diag, h = block['diagnostics'], block['h'].double().cpu()
+    def _accumulate_prepared_block(self, block, repetition_dominated: bool, h: torch.Tensor,
+                                   h_squared: torch.Tensor, norms: list[float], outlier_counts: list[int],
+                                   out_bins: list[str], ctx_bins: list[str], warp_json: str) -> None:
+        diag = block['diagnostics']
         K = len(block['draft_tokens'])
         first = int(block['first_rejection_index'])
         condition = block['condition']
         include_primary = not (condition.startswith('long_') and repetition_dominated)
-        arm = (condition, float(block['collection_temperature']), json.dumps(block['sampling_warp_config'], sort_keys=True), block['split'])
-        # Every bin/policy intersection is a contiguous range of logical slots.
-        # Build those ranges once instead of dispatching tiny tensor operations
-        # for every slot on each of the three reporting axes.
+        inclusion = 'primary' if include_primary else 'repetition_excluded'
+        arm = (condition, float(block['collection_temperature']), warp_json, block['split'])
         members = defaultdict(list)
         for i in range(K):
-            offset = block['absolute_output_offset'] + i
-            context = block['input_context_length'] + i
             policy = 'off_policy_teacher' if i > first else 'on_policy'
-            for axis, bin_name in [('all', 'all'), ('output_offset', OUTPUT_LABELS[bisect.bisect_right(OUTPUT_EDGES, offset)]),
-                                   ('input_context_length', _context_label(context, self.context_edges))]:
-                key = (*arm, axis, bin_name, policy, 'primary' if include_primary else 'repetition_excluded')
-                members[key].append(i)
-        norms = h.norm(dim=-1).tolist()
-        outlier_counts = (h.abs() > self.outlier_threshold).sum(-1).tolist()
-        h_squared = h.square()
+            members[(*arm, 'all', 'all', policy, inclusion)].append(i)
+            members[(*arm, 'output_offset', out_bins[i], policy, inclusion)].append(i)
+            members[(*arm, 'input_context_length', ctx_bins[i], policy, inclusion)].append(i)
         metric_values = [(metric, [None if value is None else float(value) for value in diag[metric]])
                          for metric in ('target_rank', 'sampled_target_rank', 'sampled_target_rank_unwarped',
                                         'overlap_sampling', 'overlap_unwarped', 'cross_entropy_unwarped',
@@ -270,9 +339,12 @@ class DiagnosticAccumulator:
             start, stop = indices[0], indices[-1] + 1
             group = self.groups.get(key)
             if group is None:
-                group = {'rows': defaultdict(lambda: defaultdict(lambda: [0., 0])), 'n': 0, 'h_sum': torch.zeros(h.shape[-1], dtype=torch.float64),
-                    'h_sq_sum': torch.zeros(h.shape[-1], dtype=torch.float64), 'h_norms': [], 'outlier_slots': 0, 'outlier_coordinates': 0,
-                    'accepted_length': [], 'first_rejection': [], 'acceptance_by_block_position': defaultdict(list)}
+                group = {'rows': defaultdict(lambda: defaultdict(lambda: [0., 0])), 'n': 0,
+                         'h_sum': torch.zeros(h.shape[-1], dtype=torch.float64),
+                         'h_sq_sum': torch.zeros(h.shape[-1], dtype=torch.float64), 'h_norms': [],
+                         'outlier_slots': 0, 'outlier_coordinates': 0,
+                         'accepted_length': [], 'first_rejection': [],
+                         'acceptance_by_block_position': defaultdict(list)}
                 self.groups[key] = group
             if (start, stop) not in moments:
                 moments[start, stop] = (h[start:stop].sum(0), h_squared[start:stop].sum(0))
@@ -304,6 +376,57 @@ class DiagnosticAccumulator:
                 group['accepted_length'].append(float(block['accepted_length']))
             if start <= first < stop and diag['first_rejection'] is not None:
                 group['first_rejection'].append(diag['first_rejection'])
+
+    def add_block(self, block, repetition_dominated=False):
+        if 'diagnostics' not in block:
+            raise ValueError('exact live diagnostics are missing; compact union alone cannot recover full ranks or overlap')
+        h = block['h'].double().cpu()
+        K = len(block['draft_tokens'])
+        out_bins = [OUTPUT_LABELS[bisect.bisect_right(OUTPUT_EDGES, block['absolute_output_offset'] + i)] for i in range(K)]
+        ctx_bins = [self._context_labels[bisect.bisect_right(self.context_edges, block['input_context_length'] + i)] for i in range(K)]
+        warp_json = json.dumps(block['sampling_warp_config'], sort_keys=True)
+        self._accumulate_prepared_block(
+            block, repetition_dominated, h, h.square(), h.norm(dim=-1).tolist(),
+            (h.abs() > self.outlier_threshold).sum(-1).tolist(), out_bins, ctx_bins, warp_json,
+        )
+
+    def add_blocks(self, blocks, repetition_dominated=False):
+        """Shard-batched diagnostic accumulation across multiple blocks."""
+        if not blocks:
+            return
+        for block in blocks:
+            if 'diagnostics' not in block:
+                raise ValueError('exact live diagnostics are missing; compact union alone cannot recover full ranks or overlap')
+        H_all = torch.cat([b['h'].double().cpu() for b in blocks], dim=0)
+        H_sq_all = H_all.square()
+        all_norms = H_all.norm(dim=-1).tolist()
+        all_outliers = (H_all.abs() > self.outlier_threshold).sum(-1).tolist()
+        offsets_list = []
+        contexts_list = []
+        lengths = []
+        for b in blocks:
+            K = len(b['draft_tokens'])
+            lengths.append(K)
+            off0 = int(b['absolute_output_offset'])
+            ctx0 = int(b['input_context_length'])
+            offsets_list.extend(range(off0, off0 + K))
+            contexts_list.extend(range(ctx0, ctx0 + K))
+        offsets_np = np.asarray(offsets_list, dtype=np.int64)
+        contexts_np = np.asarray(contexts_list, dtype=np.int64)
+        out_idx_all = np.searchsorted(self._output_edges_np, offsets_np, side='right').tolist()
+        ctx_idx_all = np.searchsorted(self._context_edges_np, contexts_np, side='right').tolist()
+        ctx_labels = self._context_labels
+        cursor = 0
+        for block, K in zip(blocks, lengths):
+            end = cursor + K
+            warp_json = json.dumps(block['sampling_warp_config'], sort_keys=True)
+            out_bins = [OUTPUT_LABELS[j] for j in out_idx_all[cursor:end]]
+            ctx_bins = [ctx_labels[j] for j in ctx_idx_all[cursor:end]]
+            self._accumulate_prepared_block(
+                block, repetition_dominated, H_all[cursor:end], H_sq_all[cursor:end],
+                all_norms[cursor:end], all_outliers[cursor:end], out_bins, ctx_bins, warp_json,
+            )
+            cursor = end
 
     def report(self):
         results = []
@@ -457,7 +580,7 @@ def _accumulate_source(accumulator, source, scale):
     for block in shard['blocks']:
         if block['scale'] != scale:
             raise RuntimeError(f'{path}: trace scale does not match requested scale')
-        accumulator.add_block(block, repetition_dominated=generation['repetition_dominated'])
+    accumulator.add_blocks(shard['blocks'], repetition_dominated=generation['repetition_dominated'])
 
 
 def _diagnostic_worker_init():

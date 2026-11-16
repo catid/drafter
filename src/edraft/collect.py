@@ -15,13 +15,14 @@ from types import SimpleNamespace
 import torch
 
 from .features import HiddenProjection, fit_hidden_projection, fit_token_features
-from .runtime import (ROOT, Manifest, atomic_json, common_parser, fingerprint, git_commit,
-                      parse_config, preflight, record_run, resolved_config)
+from .runtime import (ROOT, Manifest, WorkQueue, atomic_json, call_with_output_dir, common_parser, fingerprint,
+                      git_commit, parse_config, preflight, record_run, resolve_artifact_path, resolved_config)
 from .sampler import SamplingWarper
 from .traces import TraceShardWriter, compact_block, read_shard, reconstruction_diagnostic
 
 
 PARTITIONS = ("train_primary", "standard_eval", "diagnostic", "long")
+ALL_PARTITIONS = (*PARTITIONS, "long_oracle_train")
 STANDARD_ARMS = (("greedy", 0., SamplingWarper()),
                  ("recommended", .7, SamplingWarper(top_k=20, top_p=.8)),
                  ("pure_temperature_diagnostic", 1., SamplingWarper()))
@@ -32,9 +33,10 @@ def parser():
     p.add_argument("--stage", choices=["calibrate", "collect", "audit"], default="collect")
     p.add_argument("--rank", type=int, default=0)
     p.add_argument("--world_size", type=int, default=1)
-    p.add_argument("--partitions", nargs="+", choices=PARTITIONS, default=list(PARTITIONS))
+    p.add_argument("--partitions", nargs="+", choices=ALL_PARTITIONS, default=list(PARTITIONS))
     p.add_argument("--prompt_manifest", type=Path)
     p.add_argument("--train_tokens_per_temperature", type=int)
+    p.add_argument("--max_primary_train_tokens", type=int)
     p.add_argument("--standard_max_new_tokens", type=int, default=1024)
     p.add_argument("--long_max_new_tokens", type=int, default=24576)
     p.add_argument("--calibration_max_new_tokens", type=int, default=128)
@@ -44,6 +46,7 @@ def parser():
     p.add_argument("--embedding_source", choices=["target_input", "target_output"], default="target_input")
     p.add_argument("--diagnostic_train_prompts", type=int, default=64)
     p.add_argument("--live_full_blocks", type=int, default=2)
+    p.add_argument("--schedule", choices=["modulo", "dynamic"], default="modulo")
     return p
 
 
@@ -60,6 +63,8 @@ def prepare_args(args):
         args.train_tokens_per_temperature = {"smoke": 32, "reference": 250000, "full": 1000000}[args.scale]
     if args.train_tokens_per_temperature < 1:
         raise ValueError("train_tokens_per_temperature must be positive")
+    if args.max_primary_train_tokens is not None and args.max_primary_train_tokens < 2 * args.train_tokens_per_temperature:
+        raise ValueError("max_primary_train_tokens must be at least 2 * train_tokens_per_temperature")
     if args.scale != "smoke" and args.calibration_prompts < 64:
         raise ValueError("reference calibration requires at least 64 train prompts")
     if args.scale == "smoke":
@@ -109,7 +114,8 @@ def check_reference_gates(args):
         numerics = json.loads((args.output / "m0_numerics.json").read_text())
     except FileNotFoundError as error:
         raise RuntimeError("blocked: M0 reproduction and numerical investigation must finish before M1") from error
-    if (m0.get("scale") != "reference" or m0.get("status") != "passed"
+    allowed_m0_scales = {"reference", "full"} if args.scale == "full" else {"reference"}
+    if (m0.get("scale") not in allowed_m0_scales or m0.get("status") != "passed"
             or m0.get("num_distinct_prompts", 0) < 20
             or m0["comparisons"]["upstream_local"]["mismatched_tokens"] != 0):
         raise RuntimeError("blocked: complete real M0 token reproduction gate has not passed")
@@ -122,7 +128,7 @@ def check_reference_gates(args):
     if (numerics.get("status") != "passed" or not numerics.get("head_reconstruction", {}).get("passed")
             or not mismatch_ids <= examined):
         raise RuntimeError("blocked: M0 numerics must cover every target-only mismatch and the real hidden/head hook")
-    env = json.loads((ROOT / "artifacts/environment.json").read_text())
+    env = json.loads(resolve_artifact_path("environment.json", args.output, root=ROOT).read_text())
     for model in [args.target, args.drafter]:
         revision = env.get("model_artifacts", {}).get(model, {}).get("revision")
         if revision is None or numerics.get("model_revisions", {}).get(model) != revision:
@@ -177,9 +183,9 @@ class CollectionBackend:
         else:
             from .backend import ReferenceBackend
             from .download import fetch_model
-            target_path = fetch_model(args.target, args.allow_download)
-            draft_path = fetch_model(args.drafter, args.allow_download)
-            env = json.loads((ROOT / "artifacts/environment.json").read_text())
+            target_path = call_with_output_dir(fetch_model, args.target, args.allow_download, output_dir=args.output)
+            draft_path = call_with_output_dir(fetch_model, args.drafter, args.allow_download, output_dir=args.output)
+            env = json.loads(resolve_artifact_path("environment.json", args.output, root=ROOT).read_text())
             self.model_pair = [args.target, args.drafter]
             self.revisions = [env["model_artifacts"][model]["revision"] for model in self.model_pair]
             self.real = ReferenceBackend.from_pretrained(target_path, draft_path, device=args.device,
@@ -326,11 +332,18 @@ def planned_jobs(args, prompts):
                        STANDARD_ARMS[2:], args.standard_max_new_tokens))
     if "long" in args.partitions:
         long_rows = [row for row in rows if row["condition"] in {"long_thinking", "long_nonthinking"}
-                     and row.get("reference_selected", True)]
+                     and row["split"] in {"dev", "test"} and row.get("reference_selected", True)]
         for condition in ["long_thinking", "long_nonthinking"]:
             selected = [row for row in long_rows if row["condition"] == condition]
             arm = ("recommended", .6, SamplingWarper(top_k=20, top_p=.95)) if condition == "long_thinking" else STANDARD_ARMS[1]
             groups.append(("long", selected, [arm], args.long_max_new_tokens))
+    if "long_oracle_train" in args.partitions:
+        oracle_rows = [row for row in rows if row["condition"] in {"long_thinking", "long_nonthinking"}
+                       and row["split"] == "train" and row.get("m5_long_oracle_train", False)]
+        for condition in ["long_thinking", "long_nonthinking"]:
+            selected = [row for row in oracle_rows if row["condition"] == condition]
+            arm = ("recommended", .6, SamplingWarper(top_k=20, top_p=.95)) if condition == "long_thinking" else STANDARD_ARMS[1]
+            groups.append(("long_oracle_train", selected, [arm], args.long_max_new_tokens))
     for partition, selected, arms, max_new_tokens in groups:
         for index, row in enumerate(selected):
             if index % args.world_size != args.rank:
@@ -355,6 +368,33 @@ def job_identity(args, job, backend, calibration_record):
             "split": job["row"]["split"], "prompt_text_sha256": hashlib.sha256(job["row"]["text"].encode()).hexdigest()}
 
 
+def _globally_completed_trace_map(traces_dir: Path) -> dict[str, Path]:
+    done: dict[str, Path] = {}
+    for manifest_path in sorted(Path(traces_dir).glob("manifest-rank*.json")):
+        try:
+            manifest = json.loads(manifest_path.read_text())
+        except (OSError, ValueError):
+            continue
+        for item in manifest.get("jobs", {}).values():
+            if item.get("status") != "complete":
+                continue
+            path = Path(item.get("result_path", ""))
+            sidecar_path = path.with_suffix(path.suffix + ".json")
+            if not path.is_file() or not sidecar_path.is_file():
+                continue
+            try:
+                sidecar = json.loads(sidecar_path.read_text())
+                if path.stat().st_size == sidecar["disk_bytes"] and sha256(path) == sidecar["sha256"]:
+                    done[fingerprint(item["identity"])] = path
+            except (OSError, ValueError, KeyError):
+                continue
+    return done
+
+
+def _globally_completed_trace_keys(traces_dir: Path) -> set[str]:
+    return set(_globally_completed_trace_map(traces_dir).keys())
+
+
 def collect(args, prompts=None, backend=None):
     check_reference_gates(args)
     prompts = load_prompt_manifest(args) if prompts is None else prompts
@@ -369,45 +409,71 @@ def collect(args, prompts=None, backend=None):
     rows, live_blocks_written = [], Counter()
     diagnostics_path = args.output / f"head_reconstruction-rank{args.rank}.json"
     diagnostics = json.loads(diagnostics_path.read_text()) if diagnostics_path.exists() else []
-    jobs = list(planned_jobs(args, prompts))
+    dynamic = getattr(args, "schedule", "modulo") == "dynamic" and args.world_size > 1
+    if dynamic:
+        primary_args = copy.copy(args)
+        primary_args.partitions = [p for p in args.partitions if p == "train_primary"]
+        primary_jobs = list(planned_jobs(primary_args, prompts)) if primary_args.partitions else []
+        other_partitions = [p for p in args.partitions if p != "train_primary"]
+        if other_partitions:
+            all_other_args = copy.copy(args)
+            all_other_args.rank, all_other_args.world_size, all_other_args.partitions = 0, 1, other_partitions
+            dynamic_jobs = list(planned_jobs(all_other_args, prompts))
+            dynamic_jobs.sort(key=lambda j: 0 if j["partition"] in {"long", "long_oracle_train"} else 1)
+        else:
+            dynamic_jobs = []
+        scan_jobs = primary_jobs + dynamic_jobs
+    else:
+        jobs = list(planned_jobs(args, prompts))
+        scan_jobs = jobs
     # Read completed jobs first so an interrupted rank stops at its real emitted
     # budget instead of recollecting or crediting expected/max-length tokens.
+    passed_head_checks: set[tuple[str, int]] = set()
+    for hpath in sorted(args.output.glob("head_reconstruction-rank*.json")):
+        try:
+            for item in json.loads(hpath.read_text()):
+                if item.get("status") == "passed" and "shard" in item and "round_idx" in item:
+                    passed_head_checks.add((str(Path(item["shard"]).resolve()), int(item["round_idx"])))
+        except (OSError, ValueError, TypeError):
+            continue
+    global_done_map = _globally_completed_trace_map(args.output / "traces") if dynamic else {}
     completed = {}
-    for job in jobs:
+    for job in scan_jobs:
         identity = job_identity(args, job, backend, calibration_record)
-        if writer.completed(identity):
-            sidecar = json.loads(writer.path(identity).with_suffix(".pt.json").read_text())
+        key = writer.manifest.key(identity)
+        local_done = writer.completed(identity)
+        shard_path = writer.path(identity) if local_done else (global_done_map.get(key) if job["partition"] != "train_primary" else None)
+        if shard_path is not None:
+            sidecar = json.loads(shard_path.with_suffix(".pt.json").read_text())
             generation = sidecar["generation"]
-            completed[writer.manifest.key(identity)] = generation
-            if job["partition"] == "train_primary":
-                primary_tokens[job["temperature"]] += generation["realized_length"]
+            if local_done:
+                completed[key] = generation
+                if job["partition"] == "train_primary":
+                    primary_tokens[job["temperature"]] += generation["realized_length"]
             live_blocks_written[generation["split"]] += generation.get("live_full_blocks", 0)
-            # A crash after atomic shard publication but before the diagnostic
-            # record must resume the check, not silently credit an unchecked shard.
+            # A crash after atomic shard publication (on this rank or a crashed peer rank
+            # under --schedule dynamic) but before the diagnostic record must resume the
+            # check, not silently credit or skip an unchecked shard.
             if generation.get("live_full_blocks", 0):
-                restored = read_shard(writer.path(identity))
+                resolved_shard = str(shard_path.resolve())
+                restored = read_shard(shard_path)
                 for block in restored["blocks"]:
                     if "live_full" not in block:
                         continue
-                    path_text = str(writer.path(identity))
-                    previous = [check for check in diagnostics if check["shard"] == path_text
-                                and check["round_idx"] == block["round_idx"] and check["status"] == "passed"]
-                    if previous:
+                    round_key = (resolved_shard, int(block["round_idx"]))
+                    if round_key in passed_head_checks:
                         continue
                     check = reconstruction_diagnostic(block, backend.head)
-                    diagnostics.append({"shard": path_text, "prompt_id": block["prompt_id"],
+                    diagnostics.append({"shard": str(shard_path), "prompt_id": block["prompt_id"],
                                         "round_idx": block["round_idx"], **check})
                     atomic_json(diagnostics_path, diagnostics)
                     if check["status"] != "passed":
                         raise RuntimeError("blocked: resumed heldout shard failed head reconstruction")
-    for job in jobs:
-        identity = job_identity(args, job, backend, calibration_record)
-        key = writer.manifest.key(identity)
-        if key in completed:
-            rows.append(completed[key])
-            continue
+                    passed_head_checks.add(round_key)
+
+    def execute_job(job, identity):
         if job["partition"] == "train_primary" and primary_tokens[job["temperature"]] >= quota:
-            continue
+            return
         row = job["row"]
         metadata = {"prompt_id": row["prompt_id"], "split": row["split"], "condition": row["condition"],
                     "seed": job["seed"], "scale": args.scale, "model_pair": backend.model_pair,
@@ -462,6 +528,41 @@ def collect(args, prompts=None, backend=None):
             "scale": args.scale, "status": "running", "rank": args.rank, "world_size": args.world_size,
             "primary_tokens_by_temperature": dict(primary_tokens), "quota_per_temperature": quota,
             "completed_generations": len(rows), "partitions": args.partitions})
+
+    if dynamic:
+        if dynamic_jobs:
+            dynamic_by_key = {}
+            for job in dynamic_jobs:
+                identity = job_identity(args, job, backend, calibration_record)
+                dynamic_by_key[writer.manifest.key(identity)] = (job, identity)
+            for key in dynamic_by_key:
+                if key in completed:
+                    rows.append(completed[key])
+            globally_done = _globally_completed_trace_keys(args.output / "traces")
+            queue = WorkQueue(args.output / "traces" / "work_queue.json",
+                              list(dynamic_by_key.keys()), precompleted=globally_done)
+            while (claimed_key := queue.claim(rank=args.rank)) is not None:
+                if claimed_key in completed or claimed_key in _globally_completed_trace_keys(args.output / "traces"):
+                    queue.complete(claimed_key)
+                    continue
+                job, identity = dynamic_by_key[claimed_key]
+                execute_job(job, identity)
+                queue.complete(claimed_key)
+        for job in primary_jobs:
+            identity = job_identity(args, job, backend, calibration_record)
+            key = writer.manifest.key(identity)
+            if key in completed:
+                rows.append(completed[key])
+                continue
+            execute_job(job, identity)
+    else:
+        for job in jobs:
+            identity = job_identity(args, job, backend, calibration_record)
+            key = writer.manifest.key(identity)
+            if key in completed:
+                rows.append(completed[key])
+                continue
+            execute_job(job, identity)
     missing = [T for T in [0., .7] if primary_tokens[T] < quota] if "train_primary" in args.partitions else []
     summary = {"scale": args.scale, "status": "blocked" if missing else "passed", "rank": args.rank,
                "world_size": args.world_size, "partitions": args.partitions,
@@ -492,7 +593,9 @@ def audit(args):
     # expected set once to exclude superseded configurations and duplicate jobs
     # left by a run resumed with a different process count.
     all_args = copy.copy(args)
-    all_args.rank, all_args.world_size, all_args.partitions = 0, 1, list(PARTITIONS)
+    all_args.rank, all_args.world_size = 0, 1
+    has_oracle_prompts = any(r.get("m5_long_oracle_train", False) for r in prompt_manifest["prompts"])
+    all_args.partitions = [*PARTITIONS, "long_oracle_train"] if has_oracle_prompts else list(PARTITIONS)
     expected = {fingerprint(job_identity(args, job, backend_identity, calibration_record)):
                 job_identity(args, job, backend_identity, calibration_record)
                 for job in planned_jobs(all_args, prompt_manifest)}
@@ -544,10 +647,20 @@ def audit(args):
             shards.append(str(path))
             source_shards.append({"path": str(path.resolve()), "sha256": sidecar["sha256"],
                                   "identity_sha256": canonical_key})
-    for path in args.output.glob("head_reconstruction-rank*.json"):
-        head_checks.extend(row for row in json.loads(path.read_text()) if row["shard"] in shards)
+    resolved_shards = {str(Path(s).resolve()) for s in shards}
+    for path in sorted(args.output.glob("head_reconstruction-rank*.json")):
+        head_checks.extend(
+            row for row in json.loads(path.read_text())
+            if str(Path(row["shard"]).resolve()) in resolved_shards
+        )
+    expected_live_blocks = sum(int(g.get("live_full_blocks", 0)) for g in generations)
+    passed_live_keys = {
+        (str(Path(r["shard"]).resolve()), int(r["round_idx"]))
+        for r in head_checks
+        if r.get("status") == "passed"
+    }
     floors = {"train_tokens": 64 if args.scale == "smoke" else 500000 if args.scale == "reference" else 2000000,
-              "standard_test_prompts": 2 if args.scale == "smoke" else 64,
+              "standard_test_prompts": 2 if args.scale == "smoke" else 64 if args.scale == "reference" else 128,
               "long_dev_prompts": 1 if args.scale == "smoke" else 12 if args.scale == "reference" else 32,
               "long_test_prompts": 1 if args.scale == "smoke" else 32 if args.scale == "reference" else 96}
     requirements = {"primary_train_floor": totals["primary_train_total"] >= floors["train_tokens"],
@@ -555,7 +668,15 @@ def audit(args):
                     "standard_test_each_temperature": all(len(prompts[f"standard_nonthinking/test/T={T}"]) >= floors["standard_test_prompts"] for T in [0., .7, 1.]),
                     "standard_dev_present": all(len(prompts[f"standard_nonthinking/dev/T={T}"]) >= (2 if args.scale == "smoke" else 64) for T in [0., .7]),
                     "diagnostic_train_separate": bool(prompts["standard_nonthinking/train/T=1.0"]),
-                    "serialized_head_reconstruction": bool(head_checks) and all(row["status"] == "passed" for row in head_checks)}
+                    "serialized_head_reconstruction": (
+                        bool(head_checks)
+                        and all(row["status"] == "passed" for row in head_checks)
+                        and len(passed_live_keys) >= expected_live_blocks
+                    )}
+    if args.scale == "full" or getattr(args, "max_primary_train_tokens", None) is not None:
+        ceiling = getattr(args, "max_primary_train_tokens", None) or 4_000_000
+        floors["max_train_tokens"] = ceiling
+        requirements["primary_train_ceiling"] = totals["primary_train_total"] <= ceiling
     long_condition = "long_thinking" if any(g["condition"] == "long_thinking" for g in generations) else "long_nonthinking"
     long_T = .6 if long_condition == "long_thinking" else .7
     requirements["long_dev_generations"] = len(prompts[f"{long_condition}/dev/T={long_T}"]) >= floors["long_dev_prompts"]

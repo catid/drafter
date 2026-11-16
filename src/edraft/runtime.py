@@ -8,6 +8,7 @@ from datetime import datetime, timezone
 import fcntl
 import hashlib
 import importlib.metadata
+import inspect
 import json
 import os
 from pathlib import Path
@@ -112,7 +113,28 @@ def record_run(args, name):
     return record
 
 
-def environment(config=None):
+def resolve_artifact_path(name: str, output_dir: Path | str | None = None, *, root: Path | None = None) -> Path:
+    """Resolve an artifact file (`environment.json`, `smoke.json`) from `output_dir` before `ROOT/artifacts`."""
+    if output_dir is not None:
+        candidate = Path(output_dir) / name
+        if candidate.exists():
+            return candidate
+    env_root = os.environ.get('EDRAFT_ARTIFACTS_ROOT')
+    if env_root:
+        candidate = Path(env_root) / name
+        if candidate.exists():
+            return candidate
+    eff_root = ROOT if root is None else Path(root)
+    return eff_root / 'artifacts' / name
+
+
+def call_with_output_dir(fn, *args, output_dir=None, **kwargs):
+    if output_dir is not None and 'output_dir' in inspect.signature(fn).parameters:
+        kwargs['output_dir'] = output_dir
+    return fn(*args, **kwargs)
+
+
+def environment(config=None, *, output_dir: Path | str | None = None):
     import torch
     packages = {}
     for name in ['torch', 'transformers', 'accelerate', 'triton', 'datasets', 'dflash',
@@ -132,7 +154,24 @@ def environment(config=None):
             gpus.append({'physical_index': int(index), 'name': name,
                          'compute_capability': [int(x) for x in capability.split('.')],
                          'free_bytes': int(free) * 2**20, 'total_bytes': int(total) * 2**20})
-    with locked_json(ROOT / 'artifacts/environment.json') as env:
+    eff_out = (
+        Path(output_dir)
+        if output_dir is not None
+        else Path(config['output'])
+        if isinstance(config, dict) and config.get('output')
+        else ROOT / 'artifacts'
+    )
+    default_artifacts = (ROOT / 'artifacts').resolve()
+    env_target = (
+        ROOT / 'artifacts/environment.json'
+        if eff_out.resolve() == default_artifacts
+        else eff_out / 'environment.json'
+    )
+    seed_source = resolve_artifact_path('environment.json', eff_out)
+    eff_out.mkdir(parents=True, exist_ok=True)
+    with locked_json(env_target) as env:
+        if not env and seed_source.exists() and seed_source.resolve() != env_target.resolve():
+            env.update(json.loads(seed_source.read_text()))
         env.update({'os': platform.platform(), 'python': platform.python_version(), 'packages': packages,
                     'cuda': torch.version.cuda, 'gpus': gpus,
                     'status': 'recorded', 'scale': (config or {}).get('scale', 'not_run'),
@@ -143,7 +182,7 @@ def environment(config=None):
                     'visible_devices': os.environ.get('CUDA_VISIBLE_DEVICES', 'unset (all visible)'),
                     'project_git_commit': git_commit(), 'resolved_config': config,
                     'dflash': {'url': 'https://github.com/z-lab/dflash', 'commit': git_commit(ROOT / 'vendor/dflash')},
-                    'free_disk_bytes': shutil.disk_usage(ROOT).free})
+                    'free_disk_bytes': shutil.disk_usage(eff_out).free})
         identifiers = env.get('models', {})
         identifiers['revisions'] = {role: env.get('model_artifacts', {}).get(identifiers.get(role), {}).get('revision')
                                     for role in ['target', 'drafter']}
@@ -177,21 +216,93 @@ class Manifest:
         atomic_json(self.path, self.data)
 
 
+def _pid_alive(pid: int) -> bool:
+    if pid <= 0:
+        return False
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    stat_path = Path(f'/proc/{pid}/stat')
+    if stat_path.exists():
+        try:
+            state = stat_path.read_text().rsplit(')', 1)[1].split()[0]
+            if state in ('Z', 'X', 'x'):
+                return False
+        except (OSError, IndexError):
+            pass
+    return True
+
+
+class WorkQueue:
+    """File-locked dynamic work queue for load-balanced multi-worker execution.
+
+    Items are claimed in `ordered_keys` priority order (e.g. long generations
+    first so tail latency never leaves other GPUs idle). Claims held by a dead
+    process are automatically reclaimed on subsequent claims or resumed runs.
+    """
+    def __init__(self, path, ordered_keys: list[str], precompleted: set[str] | None = None):
+        self.path = Path(path)
+        self.ordered_keys = list(dict.fromkeys(ordered_keys))
+        with locked_json(self.path) as state:
+            existing = state.get('ordered_keys')
+            if existing is None or set(existing) != set(self.ordered_keys):
+                prior_done = set(state.get('completed', []))
+                state.clear()
+                state['ordered_keys'] = self.ordered_keys
+                state['completed'] = sorted((prior_done | set(precompleted or ())) & set(self.ordered_keys))
+                state['claimed'] = {}
+            elif precompleted:
+                done = set(state.get('completed', [])) | (set(precompleted) & set(self.ordered_keys))
+                state['completed'] = sorted(done)
+                for key in precompleted:
+                    state.get('claimed', {}).pop(key, None)
+
+    def claim(self, rank: int = 0, pid: int | None = None) -> str | None:
+        owner_pid = os.getpid() if pid is None else int(pid)
+        with locked_json(self.path) as state:
+            completed = set(state.setdefault('completed', []))
+            claimed = state.setdefault('claimed', {})
+            for key, info in list(claimed.items()):
+                if key in completed or not _pid_alive(int(info.get('pid', -1))):
+                    claimed.pop(key, None)
+            for key in state.get('ordered_keys', self.ordered_keys):
+                if key not in completed and key not in claimed:
+                    claimed[key] = {'rank': int(rank), 'pid': owner_pid, 'claimed_at_unix': time.time()}
+                    return key
+            return None
+
+    def complete(self, key: str):
+        with locked_json(self.path) as state:
+            completed = set(state.setdefault('completed', []))
+            completed.add(key)
+            state['completed'] = sorted(completed)
+            state.setdefault('claimed', {}).pop(key, None)
+
+
 def preflight(args, expected_tokens):
     """Require current smoke evidence and record explicitly rough CPU-based estimate."""
-    path = ROOT / 'artifacts/smoke.json'
+    out_dir = Path(getattr(args, 'output', ROOT / 'artifacts'))
+    path = resolve_artifact_path('smoke.json', out_dir)
     if not path.exists():
         raise RuntimeError('Run python -m edraft.smoke --scale smoke before a reference/full run')
     smoke = json.loads(path.read_text())
     if smoke.get('status') != 'passed':
         raise RuntimeError('Smoke gate has not passed')
-    free = shutil.disk_usage(ROOT).free
+    out_dir.mkdir(parents=True, exist_ok=True)
+    free = shutil.disk_usage(out_dir).free
     estimate = expected_tokens / smoke['tokens_per_second']
     record = {'scale': args.scale, 'expected_tokens': expected_tokens, 'smoke_tokens_per_second': smoke['tokens_per_second'],
               'cpu_smoke_extrapolation_seconds': estimate, 'free_disk_bytes': free,
               'caveat': 'CPU synthetic extrapolation is not a real-model throughput prediction; refine after pilot.'}
-    with (ROOT / 'NOTES.md').open('a') as out:
-        out.write('\nPre-run estimate: ' + json.dumps(record) + '\n')
+    if out_dir.resolve() in {ROOT.resolve(), (ROOT / 'artifacts').resolve()}:
+        with (ROOT / 'NOTES.md').open('a') as out:
+            out.write('\nPre-run estimate: ' + json.dumps(record) + '\n')
+    else:
+        with (out_dir / 'preflight_estimates.jsonl').open('a') as out:
+            out.write(json.dumps(record) + '\n')
     if free < 50 * 2**30:
         raise RuntimeError(f'Insufficient free space for reference artifacts: {free} bytes')
     return record

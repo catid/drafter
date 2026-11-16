@@ -33,6 +33,26 @@ _OPTIONAL_FIELDS = {"round_idx", "bonus_token", "decisions", "proposal_token_pro
                     "proposal_mode", "off_policy_teacher_positions", "candidate_ids", "committed_tokens",
                     "next_adapter_version", "target_cache_length_after_rollback", "diagnostics"}
 
+_CACHED_ROOT_GIT_COMMIT: str | None = None
+_ORIG_GIT_COMMIT = git_commit
+
+
+def _default_git_commit() -> str:
+    global _CACHED_ROOT_GIT_COMMIT
+    if git_commit is not _ORIG_GIT_COMMIT:
+        return git_commit()
+    if _CACHED_ROOT_GIT_COMMIT is None:
+        _CACHED_ROOT_GIT_COMMIT = git_commit()
+    return _CACHED_ROOT_GIT_COMMIT
+
+
+def _all_finite(x: torch.Tensor) -> bool:
+    if x.numel() == 0:
+        return True
+    if bool(torch.isfinite(x.sum(dtype=torch.float32))):
+        return True
+    return bool(torch.isfinite(x).all())
+
 
 def _cpu_tree(value):
     if isinstance(value, torch.Tensor):
@@ -76,7 +96,7 @@ def compact_block(record: Mapping, metadata: Mapping, M_draft: int = 256, M_targ
     target_logits = record["target_logits"].detach().float()
     if draft_logits.ndim != 2 or draft_logits.shape != target_logits.shape:
         raise ValueError("draft and target logits must share shape [K,V]")
-    if not bool(torch.isfinite(draft_logits).all() and torch.isfinite(target_logits).all()):
+    if not (_all_finite(draft_logits) and _all_finite(target_logits)):
         raise ValueError("training logits must be finite and unwarped; truncation masks are forbidden")
     K, V = draft_logits.shape
     if K < 1 or len(record["draft_tokens"]) != K:
@@ -84,31 +104,50 @@ def compact_block(record: Mapping, metadata: Mapping, M_draft: int = 256, M_targ
     specials = sorted(set(int(token) for token in special_tokens))
     if any(token < 0 or token >= V for token in specials):
         raise ValueError("special token outside vocabulary")
-    draft_log_normalizer = torch.logsumexp(draft_logits, dim=-1)
-    target_log_normalizer = torch.logsumexp(target_logits, dim=-1)
     # Match the live full training distribution; never use inference warpers.
     l_unit = draft_logits.log_softmax(-1)
     P_train = target_logits.softmax(-1)
-    top_draft = draft_logits.topk(min(M_draft, V), dim=-1).indices
-    top_target = target_logits.topk(min(M_target, V), dim=-1).indices
-    special_tensor = torch.tensor(specials, dtype=torch.long, device=draft_logits.device)
+    top_draft_vals, top_draft = draft_logits.topk(min(M_draft, V), dim=-1)
+    top_target_vals, top_target = target_logits.topk(min(M_target, V), dim=-1)
+    draft_log_normalizer = top_draft_vals[:, 0] - l_unit.gather(-1, top_draft[:, :1]).squeeze(-1)
+    target_log_normalizer = top_target_vals[:, 0] - P_train.gather(-1, top_target[:, :1]).squeeze(-1).log()
+    tokens_int = [int(token) for token in record["draft_tokens"]]
+    if any(token < 0 or token >= V for token in tokens_int):
+        raise ValueError("draft token outside vocabulary")
+    cand_parts = [
+        top_draft,
+        top_target,
+        torch.tensor(tokens_int, dtype=torch.long, device=draft_logits.device)[:, None],
+    ]
+    if specials:
+        cand_parts.append(
+            torch.tensor(specials, dtype=torch.long, device=draft_logits.device)[None, :].expand(K, -1)
+        )
+    cands_sorted = torch.cat(cand_parts, dim=-1).sort(dim=-1).values
+    l_gath_cpu = l_unit.gather(-1, cands_sorted).cpu()
+    p_gath_cpu = P_train.gather(-1, cands_sorted).cpu()
+    cands_cpu = cands_sorted.cpu()
+    draft_lse_cpu = draft_log_normalizer.cpu()
+    target_lse_cpu = target_log_normalizer.cpu()
+    uniq_mask = torch.ones_like(cands_cpu, dtype=torch.bool)
+    if cands_cpu.shape[1] > 1:
+        uniq_mask[:, 1:] = cands_cpu[:, 1:] != cands_cpu[:, :-1]
     union_ids, draft_union, target_union, rest = [], [], [], []
-    for i, token in enumerate(record["draft_tokens"]):
-        token = int(token)
-        if not 0 <= token < V:
-            raise ValueError("draft token outside vocabulary")
-        ids = torch.cat([top_draft[i], top_target[i], special_tensor,
-                         torch.tensor([token], dtype=torch.long, device=draft_logits.device)]).unique(sorted=True)
-        p = P_train[i, ids]
-        union_ids.append(ids.cpu())
-        draft_union.append(l_unit[i, ids].cpu())
-        target_union.append(p.cpu())
+    for i in range(K):
+        row_mask = uniq_mask[i]
+        ids = cands_cpu[i][row_mask]
+        lp = l_gath_cpu[i][row_mask]
+        p = p_gath_cpu[i][row_mask]
+        union_ids.append(ids)
+        draft_union.append(lp)
+        target_union.append(p)
         # FP64 sum avoids losing a small tail while accumulating compact FP32
         # entries. Tiny negative rounding errors are clipped and validated.
         # A full-vocabulary union has no tail category. FP32 normalization
         # roundoff must not invent positive target mass on an empty q support.
         rest.append(torch.tensor(0., dtype=torch.float32) if len(ids) == V
-                    else (1 - p.double().sum()).clamp_min(0).float().cpu())
+                    else (1 - p.double().sum()).clamp_min(0).float())
+    proj_commit = metadata["project_git_commit"] if "project_git_commit" in metadata else _default_git_commit()
     result = _cpu_tree(dict(metadata))
     result.update({key: _cpu_tree(record[key]) for key in _COPY_FIELDS})
     result.update({key: _cpu_tree(record[key]) for key in _OPTIONAL_FIELDS if key in record})
@@ -116,11 +155,11 @@ def compact_block(record: Mapping, metadata: Mapping, M_draft: int = 256, M_targ
                    "M_draft": M_draft, "M_target": M_target, "special_tokens": specials,
                    "union_ids": union_ids, "draft_l_unit_union": draft_union,
                    "target_probs_union": target_union, "target_rest_mass": torch.stack(rest),
-                   "draft_log_normalizer": draft_log_normalizer.cpu(),
-                   "target_log_normalizer": target_log_normalizer.cpu(),
+                   "draft_log_normalizer": draft_lse_cpu,
+                   "target_log_normalizer": target_lse_cpu,
                    "target_distribution": "unwarped_full_softmax_unit_temperature",
                    "loss_mode": "union_rest_grouped", "beta_train": 1.,
-                   "project_git_commit": metadata.get("project_git_commit", git_commit())})
+                   "project_git_commit": proj_commit})
     result["h_raw_bf16"] = result["h_raw_bf16"].to(torch.bfloat16)
     result["h"] = result["h"].float()
     if retain_live_full:
@@ -171,7 +210,7 @@ def validate_block(block: Mapping, mass_atol: float = 2e-6) -> None:
         raise ValueError("logical slot zero must map to physical slot one after the clean anchor")
     for name in ("h", "h_raw_bf16"):
         value = block[name]
-        if value.ndim != 2 or value.shape[0] != K or not bool(torch.isfinite(value).all()):
+        if value.ndim != 2 or value.shape[0] != K or not _all_finite(value):
             raise ValueError(f"invalid {name} tensor")
     if block["h_raw_bf16"].dtype != torch.bfloat16:
         raise ValueError("h_raw must be stored in bf16")
@@ -182,31 +221,67 @@ def validate_block(block: Mapping, mass_atol: float = 2e-6) -> None:
                  "draft_log_normalizer", "target_log_normalizer"):
         if len(block[name]) != K:
             raise ValueError(f"{name} must have K rows")
-    for i, ids in enumerate(block["union_ids"]):
-        lp, P, rest = block["draft_l_unit_union"][i], block["target_probs_union"][i], block["target_rest_mass"][i]
+    union_ids_list = block["union_ids"]
+    draft_lp_list = block["draft_l_unit_union"]
+    target_p_list = block["target_probs_union"]
+    lengths_list = []
+    for ids in union_ids_list:
         if ids.ndim != 1 or ids.dtype != torch.int64 or not len(ids):
             raise ValueError("union IDs must be nonempty int64 vectors")
-        if ids.min() < 0 or ids.max() >= V or not torch.equal(ids, ids.unique(sorted=True)):
-            raise ValueError("union IDs must be unique, sorted, and in vocabulary")
-        if lp.shape != ids.shape or P.shape != ids.shape:
+        lengths_list.append(len(ids))
+    all_ids = torch.cat(union_ids_list)
+    dev = all_ids.device
+    lengths_t = torch.tensor(lengths_list, dtype=torch.long, device=dev)
+    ends = lengths_t.cumsum(0)
+    starts = ends - lengths_t
+    if all_ids.numel() > K:
+        same_row = torch.ones(all_ids.numel() - 1, dtype=torch.bool, device=dev)
+        if K > 1:
+            same_row[ends[:-1] - 1] = False
+        mono_ok = bool((all_ids[1:][same_row] > all_ids[:-1][same_row]).all())
+    else:
+        mono_ok = True
+    if not mono_ok or int(all_ids[starts].min()) < 0 or int(all_ids[ends - 1].max()) >= V:
+        raise ValueError("union IDs must be unique, sorted, and in vocabulary")
+    for i, ids in enumerate(union_ids_list):
+        if draft_lp_list[i].shape != ids.shape or target_p_list[i].shape != ids.shape:
             raise ValueError("union probability shapes do not match IDs")
-        if not bool(torch.isfinite(lp).all() and torch.isfinite(P).all() and torch.isfinite(rest)):
-            raise ValueError("nonfinite compact trace probabilities")
-        if bool((lp > mass_atol).any() or (P < 0).any() or (P > 1).any() or rest < 0 or rest > 1):
-            raise ValueError("invalid probability or log-probability range")
-        if abs(float(P.double().sum() + rest.double()) - 1) > mass_atol:
-            raise ValueError("target union probabilities and unrenormalized rest must sum to one")
-        if not bool((ids == int(block["draft_tokens"][i])).any()):
-            raise ValueError("union omits the realized draft token")
-        if any(not bool((ids == int(token)).any()) for token in block.get("special_tokens", [])):
+    all_lp = torch.cat(draft_lp_list)
+    all_P = torch.cat(target_p_list)
+    rest_raw = block["target_rest_mass"]
+    rest_t = rest_raw if isinstance(rest_raw, torch.Tensor) else torch.stack([torch.as_tensor(x, device=dev) for x in rest_raw])
+    if not (_all_finite(all_lp) and _all_finite(all_P) and _all_finite(rest_t)):
+        raise ValueError("nonfinite compact trace probabilities")
+    if bool((all_lp > mass_atol).any() or (all_P < 0).any() or (all_P > 1).any()
+            or (rest_t < 0).any() or (rest_t > 1).any()):
+        raise ValueError("invalid probability or log-probability range")
+    p_sums = torch.segment_reduce(all_P.double(), "sum", lengths=lengths_t)
+    if bool(((p_sums + rest_t.double() - 1.0).abs() > mass_atol).any()):
+        raise ValueError("target union probabilities and unrenormalized rest must sum to one")
+    row_ids = torch.repeat_interleave(torch.arange(K, dtype=torch.long, device=dev), lengths_t)
+    global_keys = row_ids * V + all_ids
+    draft_toks = [int(t) for t in block["draft_tokens"]]
+    if any(t < 0 or t >= V for t in draft_toks):
+        raise ValueError("union omits the realized draft token")
+    draft_queries = torch.arange(K, dtype=torch.long, device=dev) * V + torch.tensor(draft_toks, dtype=torch.long, device=dev)
+    draft_pos = torch.searchsorted(global_keys, draft_queries).clamp_max(global_keys.numel() - 1)
+    if not bool((global_keys[draft_pos] == draft_queries).all()):
+        raise ValueError("union omits the realized draft token")
+    specials = [int(token) for token in block.get("special_tokens", [])]
+    if specials:
+        if any(t < 0 or t >= V for t in specials):
+            raise ValueError("union omits a requested special token")
+        spec_t = torch.tensor(specials, dtype=torch.long, device=dev)
+        spec_queries = (torch.arange(K, dtype=torch.long, device=dev)[:, None] * V + spec_t[None, :]).reshape(-1)
+        spec_pos = torch.searchsorted(global_keys, spec_queries).clamp_max(global_keys.numel() - 1)
+        if not bool((global_keys[spec_pos] == spec_queries).all()):
             raise ValueError("union omits a requested special token")
     if "live_full" in block:
         live = block["live_full"]
         if live["target_probs"].shape != (K, V) or live["draft_l_unit"].shape != (K, V):
             raise ValueError("live_full diagnostic tensors must cover the full vocabulary")
-        for i, ids in enumerate(block["union_ids"]):
-            torch.testing.assert_close(live["target_probs"][i, ids], block["target_probs_union"][i], rtol=0, atol=0)
-            torch.testing.assert_close(live["draft_l_unit"][i, ids], block["draft_l_unit_union"][i], rtol=0, atol=0)
+        torch.testing.assert_close(live["target_probs"][row_ids, all_ids], all_P, rtol=0, atol=0)
+        torch.testing.assert_close(live["draft_l_unit"][row_ids, all_ids], all_lp, rtol=0, atol=0)
 
 
 def _sha256(path: Path) -> str:

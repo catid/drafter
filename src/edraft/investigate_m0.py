@@ -11,7 +11,7 @@ from torch.nn import functional as F
 from .backend import ReferenceBackend, crop_cache, make_cache
 from .dflash_loop import generate_reference
 from .features import reconstruct_l_unit
-from .runtime import ROOT, Manifest, atomic_json, common_parser, parse_config, preflight, record_run
+from .runtime import ROOT, Manifest, atomic_json, common_parser, parse_config, preflight, record_run, resolve_artifact_path
 
 
 def distribution_summary(logits, tokenizer, selected=()):
@@ -205,7 +205,7 @@ def main():
         return run_smoke(args)
     preflight(args, 5000)
     record_run(args, 'investigate_m0')
-    env = json.loads((ROOT / 'artifacts/environment.json').read_text())
+    env = json.loads(resolve_artifact_path('environment.json', args.output, root=ROOT).read_text())
     models = env['model_artifacts']
     backend = ReferenceBackend.from_pretrained(models[args.target]['path'], models[args.drafter]['path'],
         target_revision=models[args.target]['revision'], drafter_revision=models[args.drafter]['revision'], device=args.device)

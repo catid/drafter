@@ -8,8 +8,8 @@ import time
 
 import torch
 
-from .runtime import (ROOT, Manifest, atomic_json, common_parser, environment, parse_config,
-                      preflight, record_run, resolved_config)
+from .runtime import (ROOT, Manifest, atomic_json, call_with_output_dir, common_parser, environment, parse_config,
+                      preflight, record_run, resolve_artifact_path, resolved_config)
 from .sampler import SamplingWarper
 
 PROMPTS = [
@@ -51,11 +51,11 @@ def run_reference(args):
         raise ValueError('M0 reference gate requires at least 20 prompts')
     preflight(args, args.num_prompts * args.max_new_tokens * 7)
     run_provenance = record_run(args, 'm0')
-    env = environment(resolved_config(args))
-    target_path = fetch_model(args.target, args.allow_download)
-    draft_path = fetch_model(args.drafter, args.allow_download)
+    env = environment(resolved_config(args), output_dir=args.output)
+    target_path = call_with_output_dir(fetch_model, args.target, args.allow_download, output_dir=args.output)
+    draft_path = call_with_output_dir(fetch_model, args.drafter, args.allow_download, output_dir=args.output)
     # Re-read after authorized downloads pin the revisions.
-    env = json.loads((ROOT / 'artifacts/environment.json').read_text())
+    env = json.loads(resolve_artifact_path('environment.json', args.output, root=ROOT).read_text())
     target_revision = env['model_artifacts'][args.target]['revision']
     draft_revision = env['model_artifacts'][args.drafter]['revision']
     print(f'Loading reference pair on {args.device}', flush=True)

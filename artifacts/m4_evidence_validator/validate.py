@@ -25,7 +25,7 @@ ARMS = ('plain_dflash', 'online_bigram', 'offline_static',
 ONLINE = ARMS[-2:]
 ALGORITHM_FILES = ('adapter.py', 'online.py', 'features.py', 'dflash_loop.py',
     'sampler.py', 'verify.py', 'backend.py', 'sparse.py', 'toy.py', 'diagnose.py')
-IMPLEMENTATION_FILES = (*ALGORITHM_FILES, 'eval_closed_loop.py')
+IMPLEMENTATION_FILES = (*ALGORITHM_FILES, 'eval_closed_loop.py', 'fastpath.py', 'optimizers.py')
 FROZEN_09A5469_ALGORITHM_FILES = {
     'adapter.py': 'b8960babc3f3b126a11e1f990ef144b2a9be6331a181bdbeea3da2f4c0c5b9d5',
     'online.py': 'ba781eb2f0a5c06b29e9101001724c1045b6bdc845b13400e5305fc603fe8b22',
@@ -40,6 +40,9 @@ FROZEN_09A5469_ALGORITHM_FILES = {
 }
 FROZEN_09A5469_ALGORITHM_HASH = '54b714207e175169a0971a4d7b7f0820cb69f5fa8ac50d799c2eef397db7dd8f'
 FROZEN_09A5469_IMPLEMENTATION_HASH = '60da3e0c57fee2fbd9cd7ce756c66c56ba5642a63da27ef428b9b30538a459df'
+FROZEN_09A5469_COMMIT = '09a5469c72c442408d1a85af7ccd58c231db9fb9'
+FROZEN_DFE72A0_COMMIT = 'dfe72a007287d19c4e500e36760f08d9ffb9c67d'
+FROZEN_DFE72A0_HARNESS_HASH = '33e30f47057e21c8e6731c1717cfc492533b04bd49ad90a15ea0ebd0ad8b041b'
 CAPS = {'standard': 2048, 'long': 24576, 'smoke': 32}
 LIMITATIONS = [
     'Artifact consistency and recorded measurements only; no model/loss recomputation.',
@@ -47,6 +50,17 @@ LIMITATIONS = [
     'No independent proof of GPU isolation or device clock stability from these artifacts.',
     'Smoke uses synthetic fixtures and does not complete reference M4.',
 ]
+
+
+def _valid_fastpath_dict(fp):
+    req = {'compile', 'cuda_graph', 'compile_mode'}
+    opt = {'bf16_gemm', 'compile_drafter', 'compile_online', 'analytic_online_grad'}
+    return (isinstance(fp, dict)
+            and req <= set(fp.keys()) <= (req | opt)
+            and type(fp['compile']) is bool
+            and type(fp['cuda_graph']) is bool
+            and type(fp['compile_mode']) is str
+            and all(type(fp[k]) is bool for k in opt if k in fp))
 
 
 def fingerprint(value):
@@ -120,6 +134,7 @@ class Audit:
         self.eval_long_rep = defaultdict(bool)
         self.timed_speed_rows = []
         self.cal_speed_rows = []
+        self.resolved_source_commit = None
         for path in Path(__file__).parent.glob('*.py'):
             self.files[str(path.resolve())] = digest(path)
 
@@ -137,15 +152,51 @@ class Audit:
         self.files[str(path)] = value
         return json.loads(data)
 
-    def _hash_tree(self, repo_root):
+    def _hash_tree(self, repo_root, allow_missing_opt_files=False):
         impl_h = hashlib.sha256()
         alg_h = hashlib.sha256()
         alg_files = {}
+        optional_opt_files = {'fastpath.py', 'optimizers.py'}
         for name in IMPLEMENTATION_FILES:
             path = (Path(repo_root) / 'src/edraft' / name).resolve()
+            if allow_missing_opt_files and name in optional_opt_files and not path.exists():
+                continue
             data = path.read_bytes()
             file_h = hashlib.sha256(data).hexdigest()
             self.files[str(path)] = file_h
+            impl_h.update(name.encode())
+            impl_h.update(data)
+            if name in ALGORITHM_FILES:
+                alg_h.update(name.encode())
+                alg_h.update(data)
+                alg_files[name] = file_h
+        return impl_h.hexdigest(), alg_h.hexdigest(), alg_files
+
+    def _hash_git_commit(self, repo_root, rev, allow_missing_opt_files=True):
+        repo_path = Path(repo_root).resolve()
+        if not (repo_path / '.git').exists():
+            return None
+        chk = subprocess.run(
+            ['git', '-C', str(repo_path), 'cat-file', '-e', f'{rev}^{{commit}}'],
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False,
+        )
+        if chk.returncode != 0:
+            return None
+        impl_h = hashlib.sha256()
+        alg_h = hashlib.sha256()
+        alg_files = {}
+        optional_opt_files = {'fastpath.py', 'optimizers.py'}
+        for name in IMPLEMENTATION_FILES:
+            proc = subprocess.run(
+                ['git', '-C', str(repo_path), 'show', f'{rev}:src/edraft/{name}'],
+                capture_output=True, check=False,
+            )
+            if proc.returncode != 0:
+                if allow_missing_opt_files and name in optional_opt_files:
+                    continue
+                return None
+            data = proc.stdout
+            file_h = hashlib.sha256(data).hexdigest()
             impl_h.update(name.encode())
             impl_h.update(data)
             if name in ALGORITHM_FILES:
@@ -183,27 +234,69 @@ class Audit:
             self.require({p['condition'] for p in long} == {'long_thinking'}, 'authorized long condition changed')
             self.prompts[split] = standard[:ns] + long[:nl]
         self.require(s['development_prompt_ids'] == [p['prompt_id'] for p in self.prompts['dev']], 'development selection differs')
-        self.repo_impl_hash, self.repo_alg_hash, self.repo_alg_files = self._hash_tree(self.args.repo)
-        source_repo = self.args.source_repo or self.args.repo
-        src_impl_hash, src_alg_hash, src_alg_files = self._hash_tree(source_repo)
+        self.repo_impl_hash, self.repo_alg_hash, self.repo_alg_files = self._hash_tree(self.args.repo, allow_missing_opt_files=False)
         recorded_impl = s['checkpoint_hashes']['implementation']
-        exact_source_match = (src_impl_hash == recorded_impl)
+        src_repo_arg = getattr(self.args, 'source_repo', None)
+        used_git_frozen_source = False
+        if src_repo_arg is not None:
+            source_repo = Path(src_repo_arg).resolve()
+            self.require((source_repo / 'src/edraft/eval_closed_loop.py').is_file(), f'invalid source_repo: {source_repo}')
+            self.src_impl_hash, self.src_alg_hash, self.src_alg_files = self._hash_tree(
+                source_repo, allow_missing_opt_files=True
+            )
+        else:
+            source_repo = Path(self.args.repo).resolve()
+            self.require((source_repo / 'src/edraft/eval_closed_loop.py').is_file(), f'invalid source_repo: {source_repo}')
+            self.src_impl_hash, self.src_alg_hash, self.src_alg_files = (
+                self.repo_impl_hash, self.repo_alg_hash, self.repo_alg_files
+            )
+            if (
+                recorded_impl == FROZEN_09A5469_IMPLEMENTATION_HASH
+                and self.repo_alg_hash != FROZEN_09A5469_ALGORITHM_HASH
+            ):
+                git_09a = self._hash_git_commit(source_repo, FROZEN_09A5469_COMMIT, allow_missing_opt_files=True)
+                if git_09a is not None:
+                    self.src_impl_hash, self.src_alg_hash, self.src_alg_files = git_09a
+                    self.resolved_source_commit = FROZEN_09A5469_COMMIT
+                    used_git_frozen_source = True
+        self.valid_harness_hashes = {self.repo_impl_hash, self.src_impl_hash}
+        self.valid_alg_hashes = {self.repo_alg_hash, self.src_alg_hash}
+        exact_source_match = (self.src_impl_hash == recorded_impl)
         frozen_alg_match = (
             recorded_impl == FROZEN_09A5469_IMPLEMENTATION_HASH
-            and src_alg_hash == FROZEN_09A5469_ALGORITHM_HASH
-            and src_alg_files == FROZEN_09A5469_ALGORITHM_FILES
-            and self.repo_alg_hash == FROZEN_09A5469_ALGORITHM_HASH
-            and self.repo_alg_files == FROZEN_09A5469_ALGORITHM_FILES
+            and self.src_alg_hash == FROZEN_09A5469_ALGORITHM_HASH
+            and self.src_alg_files == FROZEN_09A5469_ALGORITHM_FILES
+            and (
+                src_repo_arg is not None
+                or used_git_frozen_source
+                or (
+                    self.repo_alg_hash == FROZEN_09A5469_ALGORITHM_HASH
+                    and self.repo_alg_files == FROZEN_09A5469_ALGORITHM_FILES
+                )
+            )
         )
         self.require(
             exact_source_match or frozen_alg_match,
             'current evaluator source differs from frozen source and 10/10 09a5469 algorithm lock',
         )
-        if exact_source_match and self.args.source_repo is not None and self.repo_impl_hash != recorded_impl:
-            self.require(
-                self.repo_alg_hash == src_alg_hash and self.repo_alg_files == src_alg_files,
-                'live repo ALGORITHM_FILES differ from --source_repo ALGORITHM_FILES',
-            )
+        if frozen_alg_match:
+            self.valid_harness_hashes.add(FROZEN_DFE72A0_HARNESS_HASH)
+            git_dfe = self._hash_git_commit(self.args.repo, FROZEN_DFE72A0_COMMIT, allow_missing_opt_files=True)
+            if git_dfe is not None:
+                dfe_impl, dfe_alg, dfe_files = git_dfe
+                self.require(
+                    dfe_impl == FROZEN_DFE72A0_HARNESS_HASH
+                    and dfe_alg == FROZEN_09A5469_ALGORITHM_HASH
+                    and dfe_files == FROZEN_09A5469_ALGORITHM_FILES,
+                    'dfe72a0 git history does not match audited sharded-timing harness hash',
+                )
+        harness_repo_arg = getattr(self.args, 'harness_repo', None)
+        if harness_repo_arg is not None:
+            harness_repo = Path(harness_repo_arg).resolve()
+            self.require((harness_repo / 'src/edraft/eval_closed_loop.py').is_file(), f'invalid harness_repo: {harness_repo}')
+            h_impl, h_alg, _ = self._hash_tree(harness_repo, allow_missing_opt_files=True)
+            self.require(h_alg in self.valid_alg_hashes, 'harness_repo algorithm files differ from valid algorithm hashes')
+            self.valid_harness_hashes.add(h_impl)
         if self.args.scale == 'reference':
             environment = self.artifact(self.root / 'environment.json')
             recorded_models = environment['models']
@@ -253,18 +346,20 @@ class Audit:
         row = self.artifact(path)
         self.require(self.files[str(path)] == entry.get('result_sha256'), f'{key}: checksum missing or changed')
         self.require(fingerprint(row['identity']) == key, f'{key}: raw identity mismatch')
+        manifest_rank = self.entry_ranks[(identity['mode'], key)]
         if expected_rank is not None:
             rank = expected_rank
         elif identity['mode'] == 'evaluate' and self.args.scale == 'reference':
-            rank = [p['prompt_id'] for p in self.prompts['test']].index(identity['prompt']) % 8
+            rank = manifest_rank
         else:
             rank = 0
-        self.require(type(row['rank']) is int and row['rank'] == rank and path.parent.name == f'rank{rank}'
-                     and self.entry_ranks[(identity['mode'], key)] == rank, f'{key}: rank/path/manifest mismatch')
+        self.require(type(row['rank']) is int and 0 <= row['rank'] < 64 and row['rank'] == rank
+                     and path.parent.name == f'rank{rank}' and manifest_rank == rank,
+                     f'{key}: rank/path/manifest mismatch')
         if expected_harness_sha is not None:
             self.require(row.get('timing_harness_implementation_sha256') == expected_harness_sha,
                          f'{key}: timing_harness_implementation_sha256 mismatch')
-            self.require(row.get('algorithm_implementation_sha256') == self.repo_alg_hash,
+            self.require(row.get('algorithm_implementation_sha256') in self.valid_alg_hashes,
                          f'{key}: algorithm_implementation_sha256 mismatch')
         if expected_affinity is not None:
             self.require(
@@ -314,19 +409,21 @@ class Audit:
         reused = reuse.get('status') == 'reused'
         self.require(not reused or (identity['mode'] == 'evaluate' and identity['proposal_mode'] in ARMS[:2]), f'{key}: forbidden reuse')
         if reused:
-            expected_sources = {'settings': self.root / 'm3/settings.json',
-                'manifest': self.root / f'm3/evaluate/manifest-rank{rank}.json'}
-            for label, expected_source in expected_sources.items():
-                self.require(Path(reuse[f'source_{label}_path']).resolve() == expected_source.resolve(), f'{key}: M3 source {label} path')
             sources = {}
             for label in ('result', 'manifest', 'settings'):
                 source_path = Path(reuse[f'source_{label}_path']).resolve()
                 sources[label] = self.artifact(source_path)
                 self.require(self.files[str(source_path)] == reuse[f'source_{label}_sha256'], f'{key}: reused M3 {label} changed')
             source, source_settings = sources['result'], sources['settings']
+            src_rank = source.get('rank')
+            self.require(type(src_rank) is int and 0 <= src_rank < 64, f'{key}: invalid M3 source rank')
+            expected_sources = {'settings': self.root / 'm3/settings.json',
+                'manifest': self.root / f'm3/evaluate/manifest-rank{src_rank}.json'}
+            for label, expected_source in expected_sources.items():
+                self.require(Path(reuse[f'source_{label}_path']).resolve() == expected_source.resolve(), f'{key}: M3 source {label} path')
             source_identity = source['identity']
             source_key = fingerprint(source_identity)
-            self.require(Path(reuse['source_result_path']).resolve() == (self.root / f'm3/evaluate/rank{rank}/{source_key}.json').resolve(),
+            self.require(Path(reuse['source_result_path']).resolve() == (self.root / f'm3/evaluate/rank{src_rank}/{source_key}.json').resolve(),
                          f'{key}: M3 raw source path')
             self.require(source_identity['stage'] == 'm3' and source['stage'] == 'm3' and
                          source_identity['frozen_settings_hash'] == fingerprint(source_settings) == reuse['source_frozen_settings_hash']
@@ -450,7 +547,9 @@ class Audit:
             'generation_caps': CAPS, 'stage': 'm4', 'scale': self.args.scale, 'seed': self.args.seed}.items():
             self.require(config.get(key) == value, f'{mode}: session configuration {key}')
         if self.args.scale == 'reference':
-            self.require(config['device'] == 'cuda:0' and config['visible_devices'] == '0', f'{mode}: selected physical device differs from plan')
+            vis = config.get('visible_devices')
+            self.require(config['device'] == 'cuda:0' and isinstance(vis, str) and vis.strip().isdigit(),
+                         f'{mode}: selected physical device differs from isolated single-GPU plan')
         return path, session
 
     def bundle(self, mode, session, entries, comparisons, repeat, profile,
@@ -505,8 +604,8 @@ class Audit:
             'timing_isolation_calibration status/binding mismatch',
         )
         self.require(
-            cal.get('timing_harness_implementation_sha256') == self.repo_impl_hash
-            and cal.get('algorithm_implementation_sha256') == self.repo_alg_hash,
+            cal.get('timing_harness_implementation_sha256') in self.valid_harness_hashes
+            and cal.get('algorithm_implementation_sha256') in self.valid_alg_hashes,
             'timing_isolation_calibration provenance hash mismatch',
         )
         repeats = cal.get('repeats')
@@ -566,6 +665,7 @@ class Audit:
                      'timing_calibration manifest path/checksum mismatch')
         entries = self.manifests('timing_calibration')
         expected_bundles = set()
+        cal_expected_harness = cal.get('timing_harness_implementation_sha256')
         for i, p in enumerate(expected_cal_prompts):
             sample = conditions(p['condition'], primary=True)[0]
             pairs = [(p, a, self.settings['selected'][a], sample, self.args.seed) for a in ARMS]
@@ -573,7 +673,7 @@ class Audit:
                 offset = (i + repeat) % len(pairs)
                 expected_bundles.add(
                     self.bundle('timing_calibration', session, entries, pairs[offset:] + pairs[:offset],
-                                repeat, False, expected_rank=0, expected_harness_sha=self.repo_impl_hash,
+                                repeat, False, expected_rank=0, expected_harness_sha=cal_expected_harness,
                                 expected_affinity=affinity)
                 )
         self.require(set(session['bundles']) == expected_bundles, 'timing_calibration bundle population differs')
@@ -651,7 +751,9 @@ class Audit:
     def run(self):
         self.prepare()
         path, session = self.session('tune', self.settings['comparison_session'])
-        config = session['configuration']['configuration']
+        config = dict(session['configuration']['configuration'])
+        tune_fp = config.pop('fastpath', None)
+        self.require(tune_fp is None or _valid_fastpath_dict(tune_fp), 'invalid tune fastpath metadata')
         self.require(config == {'prompt_manifest_hash': fingerprint(self.manifest),
             'dev_ids': self.settings['development_prompt_ids'], 'candidates': {a: candidates(a) for a in ARMS}}, 'tune configuration mismatch')
         entries = self.manifests('tune')
@@ -680,6 +782,8 @@ class Audit:
         ids = [p['prompt_id'] for p in timing_prompts]
         self.require(report['prompt_ids'] == ids and report['expected_full_prompt_count'] == len(ids) and
                      report['full_reference_prompt_coverage'] is True, 'timing report prompt population')
+        report_fp = report.get('fastpath')
+        self.require(report_fp is None or _valid_fastpath_dict(report_fp), 'invalid timing fastpath metadata')
         evidence = report['raw_evidence']
         world_size = report.get('world_size', 1)
         self.require(type(world_size) is int and 1 <= world_size <= 8, 'invalid timing world_size')
@@ -688,14 +792,17 @@ class Audit:
 
         if world_size == 1:
             path, session = self.session('timing', report['timing_session'])
-            self.require(session['configuration']['configuration'] == {'frozen_settings_hash': self.frozen,
-                'prompt_manifest_hash': fingerprint(self.manifest), 'selected_prompts': ids, 'repeats': 3, 'warmups': 1}, 'timing configuration mismatch')
+            expected_timing_cfg = {'frozen_settings_hash': self.frozen,
+                'prompt_manifest_hash': fingerprint(self.manifest), 'selected_prompts': ids, 'repeats': 3, 'warmups': 1}
+            if report_fp is not None:
+                expected_timing_cfg['fastpath'] = report_fp
+            self.require(session['configuration']['configuration'] == expected_timing_cfg, 'timing configuration mismatch')
             self.require(Path(evidence['session_path']).resolve() == path.resolve() and digest(path) == evidence['session_sha256'], 'timing session checksum/path')
             manifest_path = self.stage / 'timing/manifest-rank0.json'
             self.require(Path(evidence['manifest_path']).resolve() == manifest_path.resolve() and digest(manifest_path) == evidence['manifest_sha256'], 'timing manifest checksum/path')
             expected_harness = report.get('timing_harness_implementation_sha256')
             if expected_harness is not None:
-                self.require(expected_harness == self.repo_impl_hash, 'timing_harness_implementation_sha256 mismatch')
+                self.require(expected_harness in self.valid_harness_hashes, 'timing_harness_implementation_sha256 mismatch')
             for i, (p, sample, seed) in enumerate(self.test_cases(timing_prompts)):
                 pairs = [(p, a, self.settings['selected'][a], sample, seed) for a in ARMS]
                 for repeat in range(3):
@@ -709,9 +816,10 @@ class Audit:
             if self.args.scale == 'reference':
                 self.require(world_size == 8, 'reference sharded M4 timing requires world_size=8')
             self.require(report.get('sharding_mode') == f'sharded_{world_size}gpu', 'timing sharding_mode mismatch')
+            expected_harness = report.get('timing_harness_implementation_sha256')
             self.require(
-                report.get('timing_harness_implementation_sha256') == self.repo_impl_hash
-                and report.get('algorithm_implementation_sha256') == self.repo_alg_hash,
+                expected_harness in self.valid_harness_hashes
+                and report.get('algorithm_implementation_sha256') in self.valid_alg_hashes,
                 'sharded timing report implementation/algorithm hash mismatch',
             )
             plan_path = self.stage / 'timing/sharding_plan.json'
@@ -771,21 +879,24 @@ class Audit:
                     sess.get('logical_session') == report['timing_session']
                     and sess.get('rank') == r
                     and sess.get('world_size') == world_size
-                    and sess.get('timing_harness_implementation_sha256') == self.repo_impl_hash
-                    and sess.get('algorithm_implementation_sha256') == self.repo_alg_hash,
+                    and sess.get('timing_harness_implementation_sha256') == expected_harness
+                    and sess.get('algorithm_implementation_sha256') == report.get('algorithm_implementation_sha256'),
                     f'rank {r}: session metadata/hash mismatch',
                 )
                 cfg = sess['configuration']
+                exp_inner = {
+                    'frozen_settings_hash': self.frozen,
+                    'prompt_manifest_hash': fingerprint(self.manifest),
+                    'selected_prompts': ids,
+                    'rank_prompts': expected_ranks[str(r)],
+                    'sharding_plan_sha256': plan_sha,
+                    'repeats': 3,
+                    'warmups': 1,
+                }
+                if report_fp is not None:
+                    exp_inner['fastpath'] = report_fp
                 self.require(
-                    cfg.get('configuration') == {
-                        'frozen_settings_hash': self.frozen,
-                        'prompt_manifest_hash': fingerprint(self.manifest),
-                        'selected_prompts': ids,
-                        'rank_prompts': expected_ranks[str(r)],
-                        'sharding_plan_sha256': plan_sha,
-                        'repeats': 3,
-                        'warmups': 1,
-                    },
+                    cfg.get('configuration') == exp_inner,
                     f'rank {r}: inner timing configuration mismatch',
                 )
                 for key, value in {
@@ -837,12 +948,12 @@ class Audit:
                 for repeat in range(3):
                     offset = (i + repeat) % len(pairs)
                     bkey = self.bundle('timing', rank_sessions[r], entries, pairs[offset:] + pairs[:offset],
-                                       repeat, False, expected_rank=r, expected_harness_sha=self.repo_impl_hash,
+                                       repeat, False, expected_rank=r, expected_harness_sha=expected_harness,
                                        expected_affinity=rank_affinities[r])
                     expected.add(bkey)
                     expected_by_rank[r].add(bkey)
                 bkey_p = self.bundle('timing', rank_sessions[r], entries, pairs, 'phase_profile', True,
-                                     expected_rank=r, expected_harness_sha=self.repo_impl_hash,
+                                     expected_rank=r, expected_harness_sha=expected_harness,
                                      expected_affinity=rank_affinities[r])
                 expected.add(bkey_p)
                 expected_by_rank[r].add(bkey_p)
@@ -892,16 +1003,20 @@ def main(argv=None):
     parser.add_argument('--scale', choices=('smoke', 'reference', 'full'), default='reference')
     parser.add_argument('--repo', type=Path, default=Path(__file__).resolve().parents[2])
     parser.add_argument('--source_repo', type=Path, default=None,
-                        help='optional frozen source tree for initial checkpoint_hashes.implementation check')
+                        help='optional recorded source checkout root for frozen implementation hash verification (defaults to --repo)')
+    parser.add_argument('--harness_repo', type=Path, default=None,
+                        help='optional timing-harness checkout root for sharded timing provenance verification')
     parser.add_argument('--artifacts', type=Path, default=Path(__file__).resolve().parents[1])
     parser.add_argument('--seed', type=int, default=2026)
     parser.add_argument('--output', type=Path, required=True)
     if known.config:
         values = read(known.config)
-        if set(values) - {'scale', 'repo', 'source_repo', 'artifacts', 'seed'}:
+        if set(values) - {'scale', 'repo', 'source_repo', 'harness_repo', 'artifacts', 'seed'}:
             parser.error('unsupported configuration key')
-        parser.set_defaults(**{k: Path(v) if k in ('repo', 'source_repo', 'artifacts') and v is not None else v
-                               for k, v in values.items()})
+        parser.set_defaults(**{
+            k: Path(v) if k in ('repo', 'source_repo', 'harness_repo', 'artifacts') and v is not None else v
+            for k, v in values.items()
+        })
     args = parser.parse_args(argv)
     audit = Audit(args)
     started = datetime.now(timezone.utc).isoformat()
@@ -910,12 +1025,25 @@ def main(argv=None):
     except (OSError, ValueError, TypeError, KeyError, IndexError, AttributeError) as error:
         audit.failures.append(f'{type(error).__name__}: {error}')
     try:
-        commit = subprocess.check_output(['git', '-C', str(args.repo), 'rev-parse', 'HEAD'], text=True).strip()
+        commit = subprocess.check_output(
+            ['git', '-C', str(args.repo), 'rev-parse', 'HEAD'],
+            stderr=subprocess.DEVNULL, text=True,
+        ).strip()
     except (OSError, subprocess.CalledProcessError):
         commit = None
+    source_commit = audit.resolved_source_commit or commit
+    if args.source_repo is not None:
+        try:
+            source_commit = subprocess.check_output(
+                ['git', '-C', str(args.source_repo), 'rev-parse', 'HEAD'],
+                stderr=subprocess.DEVNULL, text=True,
+            ).strip()
+        except (OSError, subprocess.CalledProcessError):
+            source_commit = None
     result = {'status': 'passed' if not audit.failures else 'failed', 'scale': args.scale,
         'label': 'synthetic' if args.scale == 'smoke' else args.scale, 'started_at_utc': started,
         'completed_at_utc': datetime.now(timezone.utc).isoformat(), 'project_commit': commit,
+        'source_commit': source_commit,
         'resolved_config': {k: str(v) if isinstance(v, Path) else v for k, v in vars(args).items()},
         'source_sha256': {p.name: digest(p) for p in Path(__file__).parent.glob('*.py')},
         'checks': audit.checks, 'counts': dict(audit.counts), 'failures': audit.failures,

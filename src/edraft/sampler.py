@@ -67,14 +67,22 @@ def apply_warper(scores: torch.Tensor, warper: SamplingWarper = SamplingWarper()
     return scores
 
 
-def probabilities(
+def compact_probabilities(
     scores: torch.Tensor,
     temperature: float,
     warper: SamplingWarper = SamplingWarper(),
-) -> torch.Tensor:
+) -> tuple[torch.Tensor, torch.Tensor | None]:
+    """Return `(probs_sub, indices)` on retained support without `[..., V]` scatter.
+
+    Preserves exact 0-ULP tie-breaking parity with `09a5469` and pinned upstream
+    DFlash (`probs.sort(descending=True)` + scatter on the compact `[..., top_k]`
+    support). When `top_k` is inactive (`0` or `>= V`), returns `(probs_full, None)`.
+    """
     if not math.isfinite(temperature) or temperature <= 0:
         raise ValueError("sampling probabilities require finite temperature > 0")
-    scores = probability_dtype(scores) / temperature
+    raw_scores = scores
+    scores = probability_dtype(raw_scores)
+    scores = scores / temperature if scores is raw_scores else scores.div_(temperature)
     V = scores.shape[-1]
     indices = None
     if 0 < warper.top_k < V:
@@ -89,7 +97,57 @@ def probabilities(
         keep = probs >= warper.min_p * probs.amax(dim=-1, keepdim=True)
         probs = probs * keep
         probs = probs / probs.sum(dim=-1, keepdim=True)
+    return probs, indices
+
+
+def warp_top_scaled_scores(
+    scaled_top_scores: torch.Tensor,
+    warper: SamplingWarper,
+) -> torch.Tensor:
+    """Apply `softmax` + `top_p` + `min_p` to pre-selected `[..., top_k]` scaled scores."""
+    probs = torch.softmax(scaled_top_scores, dim=-1)
+    if warper.top_p < 1:
+        sorted_probs, order = probs.sort(dim=-1, descending=True)
+        keep = sorted_probs.cumsum(dim=-1) - sorted_probs < warper.top_p
+        probs = torch.zeros_like(probs).scatter(-1, order, sorted_probs * keep)
+        probs = probs / probs.sum(dim=-1, keepdim=True)
+    if warper.min_p > 0:
+        keep = probs >= warper.min_p * probs.amax(dim=-1, keepdim=True)
+        probs = probs * keep
+        probs = probs / probs.sum(dim=-1, keepdim=True)
+    return probs
+
+
+def sample_from_top_scaled(
+    scaled_top_scores: torch.Tensor,
+    top_indices: torch.Tensor,
+    warper: SamplingWarper,
+    generator: torch.Generator | None = None,
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+    """Zero-sync categorical draw from pre-selected `[top_k]` scaled scores and indices.
+
+    Returns `(tok_t, probs_sorted, idx_sorted, q_selected)` with ascending-ID CDF order.
+    """
+    probs_sub = warp_top_scaled_scores(scaled_top_scores, warper)
+    idx_sorted, perm = top_indices.sort(dim=-1)
+    probs_sorted = probs_sub.gather(-1, perm)
+    choice_1d = torch.multinomial(probs_sorted, 1, generator=generator)
+    return (
+        idx_sorted.gather(0, choice_1d)[0],
+        probs_sorted,
+        idx_sorted,
+        probs_sorted.gather(0, choice_1d)[0],
+    )
+
+
+def probabilities(
+    scores: torch.Tensor,
+    temperature: float,
+    warper: SamplingWarper = SamplingWarper(),
+) -> torch.Tensor:
+    probs, indices = compact_probabilities(scores, temperature, warper)
     if indices is not None:
+        V = scores.shape[-1]
         full_shape = (*probs.shape[:-1], V)
         probs = torch.zeros(full_shape, dtype=probs.dtype, device=probs.device).scatter(-1, indices, probs)
     return probs
@@ -102,11 +160,76 @@ def draw(probs: torch.Tensor, generator: torch.Generator | None = None) -> int:
     return int(torch.multinomial(probs, 1, generator=generator).item())
 
 
+def draw_tensor(probs: torch.Tensor, generator: torch.Generator | None = None) -> torch.Tensor:
+    """Draw one full-vocabulary categorical token without host synchronization."""
+    if probs.ndim != 1:
+        raise ValueError("draw_tensor requires a single probability vector")
+    return torch.multinomial(probs, 1, generator=generator)[0]
+
+
+def sample_token_compact_with_prob(
+    scores: torch.Tensor,
+    temperature: float,
+    warper: SamplingWarper = SamplingWarper(),
+    generator: torch.Generator | None = None,
+    *,
+    compact_probs_fn=None,
+) -> tuple[torch.Tensor, torch.Tensor | None, torch.Tensor | None, torch.Tensor | None]:
+    """Sync-free categorical draw returning `(tok_t, probs_compact, indices_compact, q_selected)`."""
+    if scores.ndim != 1 or scores.numel() == 0:
+        raise ValueError("sample_token_compact requires a nonempty vocabulary vector")
+    if not math.isfinite(temperature) or temperature < 0:
+        raise ValueError("temperature must be finite and nonnegative")
+    if temperature == 0:
+        return torch.argmax(scores), None, None, None
+    probs_sub, indices = (compact_probabilities if compact_probs_fn is None else compact_probs_fn)(
+        scores, temperature, warper
+    )
+    if indices is None:
+        choice_1d = torch.multinomial(probs_sub, 1, generator=generator)
+        return choice_1d[0], probs_sub, None, probs_sub.gather(0, choice_1d)[0]
+    idx_sorted, perm = indices.sort(dim=-1)
+    probs_sorted = probs_sub.gather(-1, perm)
+    choice_1d = torch.multinomial(probs_sorted, 1, generator=generator)
+    return (
+        idx_sorted.gather(0, choice_1d)[0],
+        probs_sorted,
+        idx_sorted,
+        probs_sorted.gather(0, choice_1d)[0],
+    )
+
+
+def sample_token_compact(
+    scores: torch.Tensor,
+    temperature: float,
+    warper: SamplingWarper = SamplingWarper(),
+    generator: torch.Generator | None = None,
+    *,
+    compact_probs_fn=None,
+) -> tuple[torch.Tensor, torch.Tensor | None, torch.Tensor | None]:
+    """Sync-free categorical draw on compact warped support with ascending-ID CDF order.
+
+    Returns `(tok_tensor, probs_compact, indices_compact)`:
+    - `temperature == 0`: `(torch.argmax(scores), None, None)` with no division,
+      warper, softmax, or RNG consumption.
+    - `0 < warper.top_k < V`: sorts retained `indices` ascending before `multinomial`
+      so CDF bucket order matches ascending vocabulary IDs `0..V-1`, returning
+      `(tok_t, probs_sorted, idx_sorted)` of length `warper.top_k`.
+    - Full-vocabulary warper (`indices is None`): returns `(draw_tensor(probs), probs, None)`.
+    """
+    tok_t, probs_c, idx_c, _ = sample_token_compact_with_prob(
+        scores, temperature, warper, generator, compact_probs_fn=compact_probs_fn
+    )
+    return tok_t, probs_c, idx_c
+
+
 def sample_token(
     scores: torch.Tensor,
     temperature: float,
     warper: SamplingWarper = SamplingWarper(),
     generator: torch.Generator | None = None,
+    *,
+    probs_fn=None,
 ) -> tuple[int, torch.Tensor | None]:
     if scores.ndim != 1 or scores.numel() == 0:
         raise ValueError("sample_token requires a nonempty vocabulary vector")
@@ -116,8 +239,28 @@ def sample_token(
         # torch.argmax returns the first maximum: lowest full-vocabulary ID.
         # Deliberately no division, warper, sampling softmax, or random draw.
         return int(torch.argmax(scores).item()), None
-    probs = probabilities(scores, temperature, warper)
+    probs = (probabilities if probs_fn is None else probs_fn)(scores, temperature, warper)
     return draw(probs, generator), probs
+
+
+def sample_token_tensor(
+    scores: torch.Tensor,
+    temperature: float,
+    warper: SamplingWarper = SamplingWarper(),
+    generator: torch.Generator | None = None,
+    *,
+    probs_fn=None,
+) -> tuple[torch.Tensor, torch.Tensor | None]:
+    if scores.ndim != 1 or scores.numel() == 0:
+        raise ValueError("sample_token_tensor requires a nonempty vocabulary vector")
+    if not math.isfinite(temperature) or temperature < 0:
+        raise ValueError("temperature must be finite and nonnegative")
+    if temperature == 0:
+        # torch.argmax returns the first maximum: lowest full-vocabulary ID.
+        # Deliberately no division, warper, sampling softmax, or random draw.
+        return torch.argmax(scores), None
+    probs = (probabilities if probs_fn is None else probs_fn)(scores, temperature, warper)
+    return draw_tensor(probs, generator), probs
 
 
 sample_score = sample_token
