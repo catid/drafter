@@ -1029,10 +1029,10 @@ def _worker_round3_micro(args, spec_path: Path, out_path: Path) -> None:
     spec = json.loads(spec_path.read_text())
     rank_gpu = int(spec['physical_gpu'])
     device = torch.device('cuda:0' if _is_cuda_run(args) else 'cpu')
-    if device.type == 'cuda':
-        torch.cuda.set_device(device)
     affinity = apply_gpu_cpu_affinity(device, rank_gpu)
     inventory = assert_idle(device)
+    if device.type == 'cuda':
+        torch.cuda.set_device(device)
     with torch.no_grad():
         micro = _measure_round3_compact_microbench(args, device)
     atomic_json(out_path, {
@@ -2156,17 +2156,89 @@ def _ensure_smoke_baseline_m2(args, ws: Path) -> None:
         train.main(_cli_base_flags(args, ws))
 
 
+def _can_reuse_completed_fit(
+    args,
+    ws: Path,
+    fit_subdir: str,
+    extra_list: list[str],
+) -> dict | None:
+    if not getattr(args, 'resume', True):
+        return None
+    report_path = ws / f'{fit_subdir}.json'
+    fit_dir = ws / fit_subdir
+    if not (
+        report_path.is_file()
+        and (fit_dir / 'dense.pt').is_file()
+        and (fit_dir / 'dense_sparse.pt').is_file()
+    ):
+        return None
+    if ('--calibrate_beta' in extra_list or '--apply_calibrated_beta' in extra_list) and not (
+        (fit_dir / 'dense_calibrated.pt').is_file()
+        and (fit_dir / 'dense_sparse_calibrated.pt').is_file()
+    ):
+        return None
+    try:
+        rep = json.loads(report_path.read_text())
+    except (OSError, ValueError):
+        return None
+    if not isinstance(rep, dict) or rep.get('status') != 'passed' or rep.get('scale') != args.scale:
+        return None
+    impl_hashes = rep.get('implementation_sha256')
+    if not isinstance(impl_hashes, dict) or not impl_hashes:
+        return None
+    for fname, expected_sha in impl_hashes.items():
+        src_p = Path(__file__).with_name(str(fname))
+        if not src_p.is_file() or file_digest(src_p) != expected_sha:
+            return None
+
+    exp_shuf = 0
+    exp_wd: float | None = None
+    exp_obj = 'union_rest_grouped'
+    exp_sb = 'signed_feature_hash'
+    idx = 0
+    while idx < len(extra_list):
+        tok = extra_list[idx]
+        if tok == '--block_shuffle_window' and idx + 1 < len(extra_list):
+            exp_shuf = int(extra_list[idx + 1])
+            idx += 2
+        elif tok == '--weight_decay' and idx + 1 < len(extra_list):
+            exp_wd = float(extra_list[idx + 1])
+            idx += 2
+        elif tok == '--objective' and idx + 1 < len(extra_list):
+            exp_obj = str(extra_list[idx + 1])
+            idx += 2
+        elif tok == '--sparse_backend' and idx + 1 < len(extra_list):
+            exp_sb = str(extra_list[idx + 1])
+            idx += 2
+        else:
+            idx += 1
+    if int(rep.get('block_shuffle_window', 0)) != exp_shuf:
+        return None
+    if exp_wd is not None:
+        got_wd = rep.get('optimizer', {}).get('weight_decay_W_A')
+        if got_wd is None or not math.isclose(float(got_wd), exp_wd, rel_tol=0.0, abs_tol=1e-12):
+            return None
+    if str(rep.get('objective', 'union_rest_grouped')) != exp_obj:
+        return None
+    if str(rep.get('sparse_backend', 'signed_feature_hash')) != exp_sb:
+        return None
+    return rep
+
+
 def _run_training_fit(args, ws: Path, gpus: list[int], fit_tag: str, extra_train_flags: list[str]) -> dict:
     """Run offline training fit; always subprocess-isolated via `launch.main` on CUDA (`1..8` GPUs)."""
     from . import launch, train
 
     fit_subdir = f'{fit_tag}_smoke' if args.scale == 'smoke' else fit_tag
+    extra_list = list(extra_train_flags)
+    reused = _can_reuse_completed_fit(args, ws, fit_subdir, extra_list)
+    if reused is not None:
+        return reused
     stats_mem = _default_stats_memory_limit(args)
     use_cuda = _is_cuda_run(args)
     raw_nw = getattr(args, 'train_num_workers', None)
     eff_num_workers = (2 if use_cuda else 0) if raw_nw is None else int(raw_nw)
     eff_mb = getattr(args, 'microbatch_blocks', None)
-    extra_list = list(extra_train_flags)
     if use_cuda:
         ddp_cli = [
             '--scale', args.scale,
@@ -2559,6 +2631,7 @@ def _prepare_offline_eval_context(args, ws: Path, device: torch.device, *, objec
         batch_blocks=8,
         vocab_chunk=8192,
         bf16_gemm=False,
+        num_workers=4 if device.type == 'cuda' else 0,
         objective=objective,
         allow_long_oracle_fit=False,
         allow_pure_t1_ablation=False,
@@ -2620,11 +2693,11 @@ def _worker_offline_kl_batch(args, spec_path: Path, out_path: Path) -> None:
     ws = Path(spec['workspace'])
     rank_gpu = int(spec['physical_gpu'])
     device = torch.device('cuda:0' if _is_cuda_run(args) else 'cpu')
-    if device.type == 'cuda':
-        torch.cuda.set_device(device)
     apply_gpu_cpu_affinity(device, rank_gpu)
     if args.scale != 'smoke':
         assert_idle(device)
+    if device.type == 'cuda':
+        torch.cuda.set_device(device)
     eval_ctx = _prepare_offline_eval_context(args, ws, device)
     results = {
         key: _offline_kl_summary(eval_ctx, Path(ckpt_str), device)
@@ -2676,18 +2749,39 @@ def _evaluate_offline_kl_batch(
 def run_m2_refit_calibration(args, artifacts_root: Path, suite_root: Path, *, cpu_threads: int | None = None) -> dict:
     cfg_fp = _suite_config_fingerprint('m2_refit_calibration', args, artifacts_root)
     ws = suite_root / f'm2_refit_ws_{cfg_fp[:12]}'
+    fit_tag = args.refit_tag
+    fit_subdir = f'{fit_tag}_smoke' if args.scale == 'smoke' else fit_tag
+    refit_flags = [
+        '--block_shuffle_window', str(args.block_shuffle_window),
+        '--weight_decay', str(args.weight_decay),
+        '--calibrate_beta',
+    ]
+    ws_link = suite_root / 'm2_refit_workspace'
+    if getattr(args, 'resume', True) and not ws.exists() and ws_link.is_symlink():
+        cand_ws = ws_link.resolve()
+        if cand_ws.is_dir() and _can_reuse_completed_fit(args, cand_ws, fit_subdir, refit_flags) is not None:
+            ws = cand_ws
     report_path = suite_root / 'm2_refit_calibration.json'
     cached = _can_resume_report(report_path, args, cfg_fp)
     if cached is not None:
-        if ws.is_dir():
-            _update_latest_ws_symlink(suite_root / 'm2_refit_workspace', ws)
+        cached_ws = (
+            ws
+            if ws.is_dir()
+            else (
+                Path(cached['refit_report_path']).parent
+                if isinstance(cached.get('refit_report_path'), str)
+                else None
+            )
+        )
+        if cached_ws is not None and cached_ws.is_dir():
+            _update_latest_ws_symlink(ws_link, cached_ws)
         return cached
 
     gpus = _resolve_gpus(args)
     if cpu_threads is not None and args.scale != 'smoke':
         torch.set_num_threads(cpu_threads)
 
-    _update_latest_ws_symlink(suite_root / 'm2_refit_workspace', ws)
+    _update_latest_ws_symlink(ws_link, ws)
     if args.scale == 'smoke':
         _ensure_smoke_baseline_m2(args, ws)
     else:
@@ -2702,17 +2796,8 @@ def run_m2_refit_calibration(args, artifacts_root: Path, suite_root: Path, *, cp
             ),
         )
 
-    fit_tag = args.refit_tag
-    fit_subdir = f'{fit_tag}_smoke' if args.scale == 'smoke' else fit_tag
     base_subdir = 'm2_smoke' if args.scale == 'smoke' else 'm2'
-    refit_report = _run_training_fit(
-        args, ws, gpus, fit_tag,
-        [
-            '--block_shuffle_window', str(args.block_shuffle_window),
-            '--weight_decay', str(args.weight_decay),
-            '--calibrate_beta',
-        ],
-    )
+    refit_report = _run_training_fit(args, ws, gpus, fit_tag, refit_flags)
 
     if cpu_threads is not None and args.scale != 'smoke':
         torch.set_num_threads(cpu_threads)
