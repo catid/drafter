@@ -4,7 +4,10 @@ from __future__ import annotations
 from dataclasses import FrozenInstanceError
 import gc
 import importlib.util
+import json
 import math
+from pathlib import Path
+import sys
 from types import SimpleNamespace
 
 import pytest
@@ -762,3 +765,234 @@ def test_post_m4_suite_fastpath_bench_includes_round4_online_microbenchmark(tmp_
     fp_rep = summary["suites"]["fastpath_bench"]
     assert "round4_online_microbenchmark" in fp_rep
     assert fp_rep["round4_online_microbenchmark"]["trajectory_round4"]["steps"] == 64
+
+    # Stale pre-Round-4 fastpath_bench.json missing `round4_online_microbenchmark` must NOT be reused on --resume!
+    fp_json_path = out_dir / "post_m4_suite" / "fastpath_bench.json"
+    stale_payload = dict(fp_rep)
+    stale_payload.pop("round4_online_microbenchmark", None)
+    fp_json_path.write_text(json.dumps(stale_payload, indent=2) + "\n")
+    summary_recomputed = post_m4_suite.main([
+        "--scale", "smoke",
+        "--suite", "fastpath_bench",
+        "--artifacts_root", str(tmp_path / "art"),
+        "--output", str(out_dir),
+        "--bench_warmups", "1",
+        "--bench_repeats", "2",
+        "--timing_warmups", "1",
+        "--timing_repeats", "2",
+    ])
+    assert "round4_online_microbenchmark" in summary_recomputed["suites"]["fastpath_bench"]
+    assert summary_recomputed["suites"]["fastpath_bench"]["round4_online_microbenchmark"]["trajectory_round4"]["steps"] == 64
+
+
+# ---------------------------------------------------------------------------
+# 8. Regression tests for R4-BUG-1, R4-BUG-1b, and R4-BUG-2
+# ---------------------------------------------------------------------------
+
+
+def test_r4_bug_2_state_bytes_estimate_setter_preserves_active_bucket_extrema():
+    gen = torch.Generator().manual_seed(1234)
+    E = torch.randn(32, 4, generator=gen)
+    adap = DenseAdapter(E, p=6, D=2, sparse=SignedHash(64), M_sparse=4)
+    st = OnlineState(adap, lr=0.05, sparse_capacity=64, enable_sparse=True)
+    st.update(
+        1,
+        torch.randn(3, 32, generator=gen).log_softmax(-1),
+        torch.randn(3, 32, generator=gen),
+        torch.randn(3, 6, generator=gen),
+        [1, 2],
+        [3, 4, 5],
+    )
+    expected_active = int(st.dS._active_count.item())
+    assert expected_active > 0
+
+    # Assign state_bytes_estimate BEFORE reading active_bucket_min / active_bucket_max / metrics():
+    saved_bytes = {
+        "dense_activation_clone": 10,
+        "dense_optimizer": 20,
+        "dense_snapshot": 30,
+        "sparse_update": 40,
+        "sparse_snapshot": 50,
+    }
+    st.state_bytes_estimate = saved_bytes
+    assert st.active_bucket_min == expected_active
+    assert st.active_bucket_max == expected_active
+    m = st.metrics()
+    assert m["active_buckets_min_over_updates"] == expected_active
+    assert m["active_buckets_max_over_updates"] == expected_active
+    assert m["state_bytes_estimate_by_operation"] == saved_bytes
+
+
+def test_r4_bug_1_and_1b_validator_accepts_dfe72a0_harness_and_git_09a5469_fallback(tmp_path):
+    import shutil
+    import subprocess
+    from edraft.eval_closed_loop import (
+        FROZEN_09A5469_ALGORITHM_HASH,
+        FROZEN_09A5469_IMPLEMENTATION_HASH,
+        main as eval_main,
+    )
+
+    val_dir = ROOT / "artifacts/m4_evidence_validator"
+    if str(val_dir) not in sys.path:
+        sys.path.insert(0, str(val_dir))
+    spec = importlib.util.spec_from_file_location("m4_validate_r4_mod", val_dir / "validate.py")
+    assert spec is not None and spec.loader is not None
+    val_mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(val_mod)
+    assert val_mod.FROZEN_DFE72A0_HARNESS_HASH == "33e30f47057e21c8e6731c1717cfc492533b04bd49ad90a15ea0ebd0ad8b041b"
+
+    # 1. If live /home/catid/drafter/artifacts/m4/timing_isolation_calibration.json is present,
+    #    verify Audit.prepare() on merged Round-4 repo accepts its provenance BOTH with and without --source_repo!
+    live_root = Path("/home/catid/drafter/artifacts")
+    live_cal_path = live_root / "m4/timing_isolation_calibration.json"
+    if live_cal_path.is_file() and (live_root / "m4/settings.json").is_file():
+        live_cal = json.loads(live_cal_path.read_text())
+        snap_09a = Path("/tmp/edraft_09a5469_source")
+        if (snap_09a / "src/edraft/eval_closed_loop.py").is_file():
+            aud_with_src = val_mod.Audit(SimpleNamespace(
+                scale="reference", repo=ROOT, source_repo=snap_09a, artifacts=live_root, seed=2026,
+            ))
+            aud_with_src.prepare()
+            assert live_cal["timing_harness_implementation_sha256"] in aud_with_src.valid_harness_hashes
+            assert live_cal["algorithm_implementation_sha256"] in aud_with_src.valid_alg_hashes
+
+        # R4-BUG-1b: standalone invocation WITHOUT source_repo falls back to git 09a5469 history!
+        aud_no_src = val_mod.Audit(SimpleNamespace(
+            scale="reference", repo=ROOT, artifacts=live_root, seed=2026,
+        ))
+        aud_no_src.prepare()
+        assert aud_no_src.resolved_source_commit == val_mod.FROZEN_09A5469_COMMIT
+        assert live_cal["timing_harness_implementation_sha256"] in aud_no_src.valid_harness_hashes
+        assert live_cal["algorithm_implementation_sha256"] in aud_no_src.valid_alg_hashes
+
+    # 2. Self-contained end-to-end smoke artifact test restamped with FROZEN_09A5469_IMPLEMENTATION_HASH
+    #    and FROZEN_DFE72A0_HARNESS_HASH on timing rows/report:
+    has_09a_git = subprocess.run(
+        ["git", "-C", str(ROOT), "cat-file", "-e", f"{val_mod.FROZEN_09A5469_COMMIT}^{{commit}}"],
+        capture_output=True, check=False,
+    ).returncode == 0
+    if not has_09a_git:
+        pytest.skip("09a5469 git object not present in standalone export")
+
+    art_dir = tmp_path / "frozen_m4_sim"
+    eval_main(["--scale", "smoke", "--device", "cpu", "--stage", "m3", "--mode", "all", "--output", str(art_dir)])
+    eval_main(["--scale", "smoke", "--device", "cpu", "--stage", "m4", "--mode", "all", "--output", str(art_dir)])
+
+    def _restamp_stage(stage_name: str):
+        s_path = art_dir / stage_name / "settings.json"
+        s_data = json.loads(s_path.read_text())
+        s_data["checkpoint_hashes"]["implementation"] = FROZEN_09A5469_IMPLEMENTATION_HASH
+        s_path.write_text(json.dumps(s_data, indent=2) + "\n")
+        new_frozen = val_mod.fingerprint(s_data)
+        for mode in ("tune", "evaluate", "timing"):
+            m_path = art_dir / stage_name / mode / "manifest-rank0.json"
+            m_data = json.loads(m_path.read_text())
+            new_jobs = {}
+            old_to_new = {}
+            for _, entry in m_data["jobs"].items():
+                ident = entry["identity"]
+                ident["checkpoint"] = s_data["checkpoint_hashes"]
+                if mode != "tune":
+                    ident["frozen_settings_hash"] = new_frozen
+                new_key = val_mod.fingerprint(ident)
+                old_p = Path(entry["result_path"])
+                row = json.loads(old_p.read_text())
+                row["identity"] = ident
+                row["checkpoint_hashes"] = s_data["checkpoint_hashes"]
+                if mode == "timing":
+                    row["timing_harness_implementation_sha256"] = val_mod.FROZEN_DFE72A0_HARNESS_HASH
+                    row["algorithm_implementation_sha256"] = FROZEN_09A5469_ALGORITHM_HASH
+                if stage_name == "m4" and mode == "evaluate" and row.get("baseline_reuse", {}).get("status") == "reused":
+                    src_m3_s = art_dir / "m3/settings.json"
+                    src_m3_m = art_dir / "m3/evaluate/manifest-rank0.json"
+                    m3_m = json.loads(src_m3_m.read_text())
+                    m3_s = json.loads(src_m3_s.read_text())
+                    src_ident = dict(ident, stage="m3", frozen_settings_hash=val_mod.fingerprint(m3_s))
+                    src_key = val_mod.fingerprint(src_ident)
+                    src_rp = Path(m3_m["jobs"][src_key]["result_path"])
+                    row["baseline_reuse"].update({
+                        "source_result_path": str(src_rp.resolve()),
+                        "source_result_sha256": val_mod.digest(src_rp),
+                        "source_manifest_path": str(src_m3_m.resolve()),
+                        "source_manifest_sha256": val_mod.digest(src_m3_m),
+                        "source_settings_path": str(src_m3_s.resolve()),
+                        "source_settings_sha256": val_mod.digest(src_m3_s),
+                        "source_identity_hash": src_key,
+                        "source_frozen_settings_hash": val_mod.fingerprint(m3_s),
+                    })
+                old_p.unlink()
+                new_p = old_p.with_name(f"{new_key}.json")
+                new_p.write_text(json.dumps(row, indent=2) + "\n")
+                old_to_new[str(old_p)] = str(new_p)
+                old_to_new[str(old_p.resolve())] = str(new_p)
+                new_jobs[new_key] = {
+                    "identity": ident,
+                    "status": "complete",
+                    "result_path": str(new_p),
+                    "result_sha256": val_mod.digest(new_p),
+                }
+            m_data["jobs"] = new_jobs
+            m_path.write_text(json.dumps(m_data, indent=2) + "\n")
+            sess_dir = art_dir / stage_name / mode / "sessions"
+            if sess_dir.is_dir():
+                for sp in list(sess_dir.glob("*.json")):
+                    sess = json.loads(sp.read_text())
+                    sess["configuration"]["checkpoint_hashes"] = s_data["checkpoint_hashes"]
+                    if mode == "timing":
+                        sess["configuration"]["configuration"]["frozen_settings_hash"] = new_frozen
+                    for b in sess["bundles"].values():
+                        b["result_paths"] = [old_to_new.get(p, p) for p in b["result_paths"]]
+                    sp.unlink()
+                    new_sp = sess_dir / f"{val_mod.fingerprint(sess['configuration'])}.json"
+                    new_sp.write_text(json.dumps(sess, indent=2) + "\n")
+                    if mode == "timing":
+                        t_path = art_dir / stage_name / "timing.json"
+                        t_data = json.loads(t_path.read_text())
+                        t_data["frozen_settings_hash"] = new_frozen
+                        t_data["timing_harness_implementation_sha256"] = val_mod.FROZEN_DFE72A0_HARNESS_HASH
+                        t_data["algorithm_implementation_sha256"] = FROZEN_09A5469_ALGORITHM_HASH
+                        t_data["raw_evidence"]["session_path"] = str(new_sp.resolve())
+                        t_data["raw_evidence"]["session_sha256"] = val_mod.digest(new_sp)
+                        t_data["raw_evidence"]["manifest_path"] = str(m_path.resolve())
+                        t_data["raw_evidence"]["manifest_sha256"] = val_mod.digest(m_path)
+                        t_path.write_text(json.dumps(t_data, indent=2) + "\n")
+
+    _restamp_stage("m3")
+    _restamp_stage("m4")
+
+    # Passes WITHOUT --source_repo (R4-BUG-1 + R4-BUG-1b)!
+    out_pass = tmp_path / "val_no_src_pass.json"
+    rc_pass = val_mod.main([
+        "--scale", "smoke",
+        "--repo", str(ROOT),
+        "--artifacts", str(art_dir),
+        "--output", str(out_pass),
+    ])
+    assert rc_pass == 0
+    rep_pass = json.loads(out_pass.read_text())
+    assert rep_pass["status"] == "passed"
+    assert rep_pass["source_commit"] == val_mod.FROZEN_09A5469_COMMIT
+
+    # Rejects .git-less tampered copy when --source_repo is omitted!
+    gitless_repo = tmp_path / "gitless_post_m4_repo"
+    shutil.copytree(ROOT / "src", gitless_repo / "src")
+    rc_gitless = val_mod.main([
+        "--scale", "smoke",
+        "--repo", str(gitless_repo),
+        "--artifacts", str(art_dir),
+        "--output", str(tmp_path / "val_gitless_fail.json"),
+    ])
+    assert rc_gitless == 1
+
+    # Rejects forged/unknown timing_harness_implementation_sha256!
+    t_path = art_dir / "m4/timing.json"
+    t_forged = json.loads(t_path.read_text())
+    t_forged["timing_harness_implementation_sha256"] = "deadbeef" * 8
+    t_path.write_text(json.dumps(t_forged, indent=2) + "\n")
+    rc_forged = val_mod.main([
+        "--scale", "smoke",
+        "--repo", str(ROOT),
+        "--artifacts", str(art_dir),
+        "--output", str(tmp_path / "val_forged_fail.json"),
+    ])
+    assert rc_forged == 1

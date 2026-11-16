@@ -418,6 +418,8 @@ def _suite_config_fingerprint(suite_name: str, args, artifacts_root: Path) -> st
         'seed': int(args.seed),
         'gpus': gpus,
         'prereqs': _prereq_identity(artifacts_root, args.scale),
+        'implementation_sha256': implementation_hash('m5'),
+        'suite_runner_sha256': file_digest(Path(__file__).resolve()),
     }
     if args.scale != 'smoke':
         payload['device'] = str(args.device)
@@ -425,6 +427,7 @@ def _suite_config_fingerprint(suite_name: str, args, artifacts_root: Path) -> st
         payload['drafter'] = str(args.drafter)
     if suite_name == 'fastpath_bench':
         payload.update({
+            'fastpath_bench_schema': 2,
             'bench_warmups': int(args.bench_warmups),
             'bench_repeats': int(args.bench_repeats),
             'bigram_count_gate_kappa': float(args.bigram_count_gate_kappa),
@@ -485,6 +488,8 @@ def _can_resume_report(report_path: Path, args, expected_fingerprint: str) -> di
         and existing.get('scale') == args.scale
         and existing.get('config_fingerprint') == expected_fingerprint
     ):
+        if report_path.name == 'fastpath_bench.json' and not existing.get('round4_online_microbenchmark'):
+            return None
         return existing
     return None
 

@@ -40,6 +40,9 @@ FROZEN_09A5469_ALGORITHM_FILES = {
 }
 FROZEN_09A5469_ALGORITHM_HASH = '54b714207e175169a0971a4d7b7f0820cb69f5fa8ac50d799c2eef397db7dd8f'
 FROZEN_09A5469_IMPLEMENTATION_HASH = '60da3e0c57fee2fbd9cd7ce756c66c56ba5642a63da27ef428b9b30538a459df'
+FROZEN_09A5469_COMMIT = '09a5469c72c442408d1a85af7ccd58c231db9fb9'
+FROZEN_DFE72A0_COMMIT = 'dfe72a007287d19c4e500e36760f08d9ffb9c67d'
+FROZEN_DFE72A0_HARNESS_HASH = '33e30f47057e21c8e6731c1717cfc492533b04bd49ad90a15ea0ebd0ad8b041b'
 CAPS = {'standard': 2048, 'long': 24576, 'smoke': 32}
 LIMITATIONS = [
     'Artifact consistency and recorded measurements only; no model/loss recomputation.',
@@ -131,6 +134,7 @@ class Audit:
         self.eval_long_rep = defaultdict(bool)
         self.timed_speed_rows = []
         self.cal_speed_rows = []
+        self.resolved_source_commit = None
         for path in Path(__file__).parent.glob('*.py'):
             self.files[str(path.resolve())] = digest(path)
 
@@ -160,6 +164,39 @@ class Audit:
             data = path.read_bytes()
             file_h = hashlib.sha256(data).hexdigest()
             self.files[str(path)] = file_h
+            impl_h.update(name.encode())
+            impl_h.update(data)
+            if name in ALGORITHM_FILES:
+                alg_h.update(name.encode())
+                alg_h.update(data)
+                alg_files[name] = file_h
+        return impl_h.hexdigest(), alg_h.hexdigest(), alg_files
+
+    def _hash_git_commit(self, repo_root, rev, allow_missing_opt_files=True):
+        repo_path = Path(repo_root).resolve()
+        if not (repo_path / '.git').exists():
+            return None
+        chk = subprocess.run(
+            ['git', '-C', str(repo_path), 'cat-file', '-e', f'{rev}^{{commit}}'],
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False,
+        )
+        if chk.returncode != 0:
+            return None
+        impl_h = hashlib.sha256()
+        alg_h = hashlib.sha256()
+        alg_files = {}
+        optional_opt_files = {'fastpath.py', 'optimizers.py'}
+        for name in IMPLEMENTATION_FILES:
+            proc = subprocess.run(
+                ['git', '-C', str(repo_path), 'show', f'{rev}:src/edraft/{name}'],
+                capture_output=True, check=False,
+            )
+            if proc.returncode != 0:
+                if allow_missing_opt_files and name in optional_opt_files:
+                    continue
+                return None
+            data = proc.stdout
+            file_h = hashlib.sha256(data).hexdigest()
             impl_h.update(name.encode())
             impl_h.update(data)
             if name in ALGORITHM_FILES:
@@ -198,15 +235,32 @@ class Audit:
             self.prompts[split] = standard[:ns] + long[:nl]
         self.require(s['development_prompt_ids'] == [p['prompt_id'] for p in self.prompts['dev']], 'development selection differs')
         self.repo_impl_hash, self.repo_alg_hash, self.repo_alg_files = self._hash_tree(self.args.repo, allow_missing_opt_files=False)
+        recorded_impl = s['checkpoint_hashes']['implementation']
         src_repo_arg = getattr(self.args, 'source_repo', None)
-        source_repo = (src_repo_arg or self.args.repo).resolve()
-        self.require((source_repo / 'src/edraft/eval_closed_loop.py').is_file(), f'invalid source_repo: {source_repo}')
-        self.src_impl_hash, self.src_alg_hash, self.src_alg_files = self._hash_tree(
-            source_repo, allow_missing_opt_files=(src_repo_arg is not None)
-        )
+        used_git_frozen_source = False
+        if src_repo_arg is not None:
+            source_repo = Path(src_repo_arg).resolve()
+            self.require((source_repo / 'src/edraft/eval_closed_loop.py').is_file(), f'invalid source_repo: {source_repo}')
+            self.src_impl_hash, self.src_alg_hash, self.src_alg_files = self._hash_tree(
+                source_repo, allow_missing_opt_files=True
+            )
+        else:
+            source_repo = Path(self.args.repo).resolve()
+            self.require((source_repo / 'src/edraft/eval_closed_loop.py').is_file(), f'invalid source_repo: {source_repo}')
+            self.src_impl_hash, self.src_alg_hash, self.src_alg_files = (
+                self.repo_impl_hash, self.repo_alg_hash, self.repo_alg_files
+            )
+            if (
+                recorded_impl == FROZEN_09A5469_IMPLEMENTATION_HASH
+                and self.repo_alg_hash != FROZEN_09A5469_ALGORITHM_HASH
+            ):
+                git_09a = self._hash_git_commit(source_repo, FROZEN_09A5469_COMMIT, allow_missing_opt_files=True)
+                if git_09a is not None:
+                    self.src_impl_hash, self.src_alg_hash, self.src_alg_files = git_09a
+                    self.resolved_source_commit = FROZEN_09A5469_COMMIT
+                    used_git_frozen_source = True
         self.valid_harness_hashes = {self.repo_impl_hash, self.src_impl_hash}
         self.valid_alg_hashes = {self.repo_alg_hash, self.src_alg_hash}
-        recorded_impl = s['checkpoint_hashes']['implementation']
         exact_source_match = (self.src_impl_hash == recorded_impl)
         frozen_alg_match = (
             recorded_impl == FROZEN_09A5469_IMPLEMENTATION_HASH
@@ -214,6 +268,7 @@ class Audit:
             and self.src_alg_files == FROZEN_09A5469_ALGORITHM_FILES
             and (
                 src_repo_arg is not None
+                or used_git_frozen_source
                 or (
                     self.repo_alg_hash == FROZEN_09A5469_ALGORITHM_HASH
                     and self.repo_alg_files == FROZEN_09A5469_ALGORITHM_FILES
@@ -224,6 +279,24 @@ class Audit:
             exact_source_match or frozen_alg_match,
             'current evaluator source differs from frozen source and 10/10 09a5469 algorithm lock',
         )
+        if frozen_alg_match:
+            self.valid_harness_hashes.add(FROZEN_DFE72A0_HARNESS_HASH)
+            git_dfe = self._hash_git_commit(self.args.repo, FROZEN_DFE72A0_COMMIT, allow_missing_opt_files=True)
+            if git_dfe is not None:
+                dfe_impl, dfe_alg, dfe_files = git_dfe
+                self.require(
+                    dfe_impl == FROZEN_DFE72A0_HARNESS_HASH
+                    and dfe_alg == FROZEN_09A5469_ALGORITHM_HASH
+                    and dfe_files == FROZEN_09A5469_ALGORITHM_FILES,
+                    'dfe72a0 git history does not match audited sharded-timing harness hash',
+                )
+        harness_repo_arg = getattr(self.args, 'harness_repo', None)
+        if harness_repo_arg is not None:
+            harness_repo = Path(harness_repo_arg).resolve()
+            self.require((harness_repo / 'src/edraft/eval_closed_loop.py').is_file(), f'invalid harness_repo: {harness_repo}')
+            h_impl, h_alg, _ = self._hash_tree(harness_repo, allow_missing_opt_files=True)
+            self.require(h_alg in self.valid_alg_hashes, 'harness_repo algorithm files differ from valid algorithm hashes')
+            self.valid_harness_hashes.add(h_impl)
         if self.args.scale == 'reference':
             environment = self.artifact(self.root / 'environment.json')
             recorded_models = environment['models']
@@ -931,15 +1004,17 @@ def main(argv=None):
     parser.add_argument('--repo', type=Path, default=Path(__file__).resolve().parents[2])
     parser.add_argument('--source_repo', type=Path, default=None,
                         help='optional recorded source checkout root for frozen implementation hash verification (defaults to --repo)')
+    parser.add_argument('--harness_repo', type=Path, default=None,
+                        help='optional timing-harness checkout root for sharded timing provenance verification')
     parser.add_argument('--artifacts', type=Path, default=Path(__file__).resolve().parents[1])
     parser.add_argument('--seed', type=int, default=2026)
     parser.add_argument('--output', type=Path, required=True)
     if known.config:
         values = read(known.config)
-        if set(values) - {'scale', 'repo', 'source_repo', 'artifacts', 'seed'}:
+        if set(values) - {'scale', 'repo', 'source_repo', 'harness_repo', 'artifacts', 'seed'}:
             parser.error('unsupported configuration key')
         parser.set_defaults(**{
-            k: Path(v) if k in ('repo', 'source_repo', 'artifacts') and v is not None else v
+            k: Path(v) if k in ('repo', 'source_repo', 'harness_repo', 'artifacts') and v is not None else v
             for k, v in values.items()
         })
     args = parser.parse_args(argv)
@@ -956,7 +1031,7 @@ def main(argv=None):
         ).strip()
     except (OSError, subprocess.CalledProcessError):
         commit = None
-    source_commit = commit
+    source_commit = audit.resolved_source_commit or commit
     if args.source_repo is not None:
         try:
             source_commit = subprocess.check_output(

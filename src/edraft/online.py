@@ -714,8 +714,7 @@ class OnlineState:
 
     @state_bytes_estimate.setter
     def state_bytes_estimate(self, value: dict) -> None:
-        self._gpu_sparse_update_bytes = None
-        self._gpu_sparse_snapshot_bytes = None
+        self._flush_sparse_stats()
         self._state_bytes_estimate = value
 
     @property
