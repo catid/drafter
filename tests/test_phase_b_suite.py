@@ -356,3 +356,69 @@ def test_phase_b_suite_smoke_all_cache_hit_and_upstream_immutability(tmp_path, m
     atomic_json(ref_dir / 'milestones.json', {'m4': 'tampered'})
     with pytest.raises(RuntimeError, match='mutated'):
         phase_b_suite._verify_upstream_immutability(ref_dir, before)
+
+
+def test_launch_bigram_k_ret_forwarding_and_worktree_env_bootstrap(tmp_path, monkeypatch):
+    from edraft import launch
+
+    with pytest.raises(SystemExit):
+        launch.main(['--task', 'm4', '--scale', 'smoke', '--bigram_k_ret', '256'])
+    with pytest.raises(SystemExit):
+        launch.main(['--task', 'm5_timing', '--scale', 'smoke', '--bigram_k_ret', '0'])
+
+    ws_timing = tmp_path / 'launch_kret_ws'
+    eval_closed_loop.main([
+        '--stage', 'm5', '--scale', 'smoke', '--mode', 'tune',
+        '--device', 'cpu', '--output', str(ws_timing),
+        '--m5_arms', 'plain_dflash', 'online_bigram', 'online_bigram_kret256',
+        '--bigram_k_ret', '3',
+    ])
+    eval_closed_loop.main([
+        '--stage', 'm5', '--scale', 'smoke', '--mode', 'evaluate',
+        '--device', 'cpu', '--output', str(ws_timing),
+        '--m5_arms', 'plain_dflash', 'online_bigram', 'online_bigram_kret256',
+        '--bigram_k_ret', '3',
+    ])
+    launch.main([
+        '--task', 'm5_timing', '--scale', 'smoke', '--gpus', '0',
+        '--output', str(ws_timing), '--timing_repeats', '2', '--timing_warmups', '1',
+        '--m5_arms', 'plain_dflash', 'online_bigram', 'online_bigram_kret256',
+        '--bigram_k_ret', '3',
+    ])
+    timed = json.loads((ws_timing / 'm5' / 'timing.json').read_text())
+    assert timed['status'] == 'complete'
+
+    # Verify _bootstrap_full_scale_workspace seeds model_artifacts/dataset_artifacts from reference_artifacts
+    # even when ROOT/artifacts/environment.json is absent!
+    fake_ref = tmp_path / 'fake_ref_artifacts'
+    fake_ref.mkdir(parents=True)
+    atomic_json(fake_ref / 'environment.json', {
+        'models': {'target': 'Qwen/Qwen3-8B', 'drafter': 'z-lab/Qwen3-8B-DFlash-b16'},
+        'model_artifacts': {
+            'Qwen/Qwen3-8B': {'revision': 'rev-target'},
+            'z-lab/Qwen3-8B-DFlash-b16': {'revision': 'rev-drafter'},
+        },
+        'dataset_artifacts': {
+            'openai/gsm8k': {'revision': 'rev-gsm'},
+            'openai/openai_humaneval': {'revision': 'rev-he'},
+            'HuggingFaceH4/MATH-500': {'revision': 'rev-math'},
+        },
+    })
+    atomic_json(fake_ref / 'smoke.json', {'status': 'passed'})
+    atomic_json(fake_ref / 'm0.json', {'status': 'passed', 'scale': 'reference', 'num_distinct_prompts': 20, 'comparisons': {'upstream_local': {'mismatched_tokens': 0}}})
+    atomic_json(fake_ref / 'm0_numerics.json', {'status': 'passed', 'head_reconstruction': {'passed': True}, 'findings': [], 'model_revisions': {'Qwen/Qwen3-8B': 'rev-target', 'z-lab/Qwen3-8B-DFlash-b16': 'rev-drafter'}})
+    full_ws = tmp_path / 'bootstrapped_full'
+    atomic_json(full_ws / 'prompts.json', _make_full_scale_synthetic_manifest())
+    fake_root = tmp_path / 'empty_repo_root'
+    fake_root.mkdir(parents=True)
+    monkeypatch.setattr('edraft.runtime.ROOT', fake_root)
+    ns = SimpleNamespace(
+        scale='full', seed=2026, device='cpu', target='Qwen/Qwen3-8B',
+        drafter='z-lab/Qwen3-8B-DFlash-b16', allow_large_run=True,
+        allow_download=False, resume=True, output=full_ws,
+    )
+    cap = phase_b_suite._bootstrap_full_scale_workspace(ns, fake_ref, full_ws, 'full', [0])
+    assert cap['status'] == 'passed'
+    boot_env = json.loads((full_ws / 'environment.json').read_text())
+    assert boot_env['model_artifacts']['Qwen/Qwen3-8B']['revision'] == 'rev-target'
+    assert boot_env['dataset_artifacts']['openai/gsm8k']['revision'] == 'rev-gsm'

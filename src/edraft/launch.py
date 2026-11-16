@@ -57,6 +57,8 @@ def _append_m5_eval_flags(command: list[str], args) -> None:
         command.extend(['--m5_server_timeout', str(args.m5_server_timeout)])
     if args.bigram_count_gate_kappa is not None:
         command.extend(['--bigram_count_gate_kappa', str(args.bigram_count_gate_kappa)])
+    if args.bigram_k_ret is not None:
+        command.extend(['--bigram_k_ret', str(args.bigram_k_ret)])
     if args.checkpoint_scale is not None:
         command.extend(['--checkpoint_scale', str(args.checkpoint_scale)])
     if args.m5_beta_candidates is not None:
@@ -136,6 +138,7 @@ def main(argv=None):
     parser.add_argument('--m5_server_api_key', default=None)
     parser.add_argument('--m5_server_timeout', type=float, default=None)
     parser.add_argument('--bigram_count_gate_kappa', type=float, default=None)
+    parser.add_argument('--bigram_k_ret', type=int, default=None)
     parser.add_argument('--dense_checkpoint', type=Path, default=None)
     parser.add_argument('--sparse_checkpoint', type=Path, default=None)
     parser.add_argument('--checkpoint_scale', type=float, default=None)
@@ -156,6 +159,8 @@ def main(argv=None):
     if args.bigram_count_gate_kappa is not None:
         if not math.isfinite(args.bigram_count_gate_kappa) or args.bigram_count_gate_kappa <= 0:
             parser.error('--bigram_count_gate_kappa must be finite and > 0')
+    if args.bigram_k_ret is not None and args.bigram_k_ret < 1:
+        parser.error('--bigram_k_ret must be >= 1')
     if args.sparse_capacity is not None and args.sparse_capacity < 1:
         parser.error('--sparse_capacity must be >= 1')
     if args.m5_server_timeout is not None:
@@ -194,6 +199,7 @@ def main(argv=None):
         or args.m5_server_api_key is not None
         or args.m5_server_timeout is not None
         or args.bigram_count_gate_kappa is not None
+        or args.bigram_k_ret is not None
         or args.dense_checkpoint is not None
         or args.sparse_checkpoint is not None
         or args.checkpoint_scale is not None
