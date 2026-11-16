@@ -75,6 +75,11 @@ def test_can_reuse_completed_fit_and_inplace_symlink_workspace(tmp_path: Path, m
     # 2. Read-only check against live /home/catid/drafter completed Stage-1+2 refit workspace if present
     live_ws = Path("/home/catid/drafter/artifacts/post_m4_suite/m2_refit_ws_2c7b2ed9dfa2")
     if (live_ws / "post_m4_shuf32_wd1e2.json").is_file():
+        live_rep_raw = json.loads((live_ws / "post_m4_shuf32_wd1e2.json").read_text())
+        impl_matches_current_tree = all(
+            (src_dir / fname).is_file() and post_m4_suite.file_digest(src_dir / fname) == sha
+            for fname, sha in live_rep_raw.get("implementation_sha256", {}).items()
+        )
         ref_args = SimpleNamespace(
             scale="reference",
             resume=True,
@@ -83,8 +88,21 @@ def test_can_reuse_completed_fit_and_inplace_symlink_workspace(tmp_path: Path, m
             weight_decay=0.01,
         )
         live_reused = post_m4_suite._can_reuse_completed_fit(ref_args, live_ws, "post_m4_shuf32_wd1e2", flags)
-        assert live_reused is not None
-        assert live_reused["status"] == "passed"
+        if impl_matches_current_tree:
+            assert live_reused is not None
+            assert live_reused["status"] == "passed"
+        else:
+            assert live_reused is None
+            monkeypatch.setattr(
+                post_m4_suite,
+                "file_digest",
+                lambda p: live_rep_raw["implementation_sha256"][Path(p).name],
+            )
+            live_reused_matched = post_m4_suite._can_reuse_completed_fit(
+                ref_args, live_ws, "post_m4_shuf32_wd1e2", flags
+            )
+            assert live_reused_matched is not None
+            assert live_reused_matched["status"] == "passed"
 
 
 def test_worker_idle_check_precedes_cuda_set_device_ordering(tmp_path: Path, monkeypatch):
