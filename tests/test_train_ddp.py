@@ -266,6 +266,10 @@ def test_setup_distributed_torchrun_local_rank_and_nccl_device_id(monkeypatch):
     set_device_calls: list[torch.device] = []
     init_pg_calls: list[dict] = []
 
+    monkeypatch.setenv("RANK", "0")
+    monkeypatch.delenv("RANK")
+    monkeypatch.setenv("NCCL_NVLS_ENABLE", "0")
+    monkeypatch.delenv("NCCL_NVLS_ENABLE")
     monkeypatch.setattr(torch.cuda, "is_available", lambda: True)
     monkeypatch.setattr(torch.cuda, "set_device", lambda dev: set_device_calls.append(dev))
     monkeypatch.setattr(dist, "is_initialized", lambda: False)

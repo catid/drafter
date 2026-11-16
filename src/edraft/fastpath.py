@@ -134,8 +134,10 @@ class StaticGraphCallable:
                         _ = self.fn(*static_inputs, *extra_args)
                 torch.cuda.current_stream(device).wait_stream(stream)
                 graph = torch.cuda.CUDAGraph()
-                with torch.cuda.device(device), torch.cuda.graph(graph), torch.no_grad():
+                with torch.cuda.device(device), torch.cuda.graph(graph, stream=stream), torch.no_grad():
                     static_output = self.fn(*static_inputs, *extra_args)
+                torch.cuda.current_stream(device).wait_stream(stream)
+                graph.replay()
                 entry = {"kind": "cuda", "graph": graph, "inputs": static_inputs, "output": static_output}
             else:
                 with torch.no_grad():

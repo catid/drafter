@@ -53,6 +53,10 @@ def proximal_l1(values: torch.Tensor, threshold) -> torch.Tensor:
     return values.sign() * (values.abs() - threshold).clamp_min(0)
 
 
+def _gather_1d(table: torch.Tensor, idx: torch.Tensor) -> torch.Tensor:
+    return table.gather(0, idx.reshape(-1)).reshape(idx.shape)
+
+
 @dataclass(frozen=True)
 class FrozenHash:
     values: torch.Tensor
@@ -63,13 +67,13 @@ class FrozenHash:
         return self.lookup_fn is None or (torch.is_grad_enabled() and self.values.requires_grad)
 
     def _lookup_from_raw(self, raw_bucket: torch.Tensor, signs: torch.Tensor) -> torch.Tensor:
-        return self.values[_bucket_from_raw(raw_bucket, self.capacity)] * signs
+        return _gather_1d(self.values, _bucket_from_raw(raw_bucket, self.capacity)) * signs
 
     def lookup(self, d, previous, current):
         if self.lookup_fn is not None and not (torch.is_grad_enabled() and self.values.requires_grad):
             return self.lookup_fn(d, previous, current, self.values, self.capacity)
         buckets, signs = hash_keys(d, previous, current, self.capacity, self.values.device)
-        return self.values[buckets] * signs
+        return _gather_1d(self.values, buckets) * signs
 
 
 class SignedHash(nn.Module):
@@ -85,13 +89,13 @@ class SignedHash(nn.Module):
         return self.lookup_fn is None or (torch.is_grad_enabled() and self.values.requires_grad)
 
     def _lookup_from_raw(self, raw_bucket: torch.Tensor, signs: torch.Tensor) -> torch.Tensor:
-        return self.values[_bucket_from_raw(raw_bucket, self.capacity)] * signs
+        return _gather_1d(self.values, _bucket_from_raw(raw_bucket, self.capacity)) * signs
 
     def lookup(self, d, previous, current):
         if self.lookup_fn is not None and not (torch.is_grad_enabled() and self.values.requires_grad):
             return self.lookup_fn(d, previous, current, self.values, self.capacity)
         buckets, signs = hash_keys(d, previous, current, self.capacity, self.values.device)
-        return self.values[buckets] * signs
+        return _gather_1d(self.values, buckets) * signs
 
     def snapshot(self):
         # Offline fit stops before decoding; capture once when a request is created.
@@ -247,15 +251,19 @@ class LazyHashSnapshot:
                 return torch.zeros(idx.shape, dtype=torch.float32, device=comp_val.device)
             pos = torch.searchsorted(comp_idx, flat)
             safe = pos.clamp_max(len(comp_idx) - 1)
-            present = (pos < len(comp_idx)) & (comp_idx[safe] == flat)
-            effective = proximal_l1(comp_val[safe], self._thresh_buf[self.u] - self._thresh_buf[comp_u[safe].long()])
+            present = (pos < len(comp_idx)) & (comp_idx.gather(0, safe) == flat)
+            effective = proximal_l1(
+                comp_val.gather(0, safe),
+                self._thresh_buf[self.u] - self._thresh_buf.gather(0, comp_u.gather(0, safe).long()),
+            )
             return torch.where(present, effective, 0.0).reshape(idx.shape)
 
         node = self._undo_node
         if node is None or node.next_node is None:
-            raw_val = self._table_values[idx]
-            raw_u = self._table_last_u[idx].long()
-            return proximal_l1(raw_val, self._thresh_buf[self.u] - self._thresh_buf[raw_u])
+            flat = idx.reshape(-1)
+            raw_val = self._table_values.gather(0, flat)
+            raw_u = self._table_last_u.gather(0, flat).long()
+            return proximal_l1(raw_val, self._thresh_buf[self.u] - self._thresh_buf.gather(0, raw_u)).reshape(idx.shape)
 
         flat = idx.reshape(-1)
         if flat.numel() == 0:
@@ -265,17 +273,17 @@ class LazyHashSnapshot:
         while curr is not None and curr.next_node is not None:
             nodes.append(curr)
             curr = curr.next_node
-        raw_val = self._table_values[flat].clone()
-        raw_u = self._table_last_u[flat].clone()
+        raw_val = self._table_values.gather(0, flat).clone()
+        raw_u = self._table_last_u.gather(0, flat).clone()
         for nd in reversed(nodes):
             n_idx = nd.indices
             if n_idx is not None and n_idx.numel() > 0:
                 pos = torch.searchsorted(n_idx, flat)
                 safe = pos.clamp_max(n_idx.numel() - 1)
-                hit = (pos < n_idx.numel()) & (n_idx[safe] == flat)
-                raw_val = torch.where(hit, nd.old_values[safe], raw_val)
-                raw_u = torch.where(hit, nd.old_last_u[safe], raw_u)
-        effective = proximal_l1(raw_val, self._thresh_buf[self.u] - self._thresh_buf[raw_u.long()])
+                hit = (pos < n_idx.numel()) & (n_idx.gather(0, safe) == flat)
+                raw_val = torch.where(hit, nd.old_values.gather(0, safe), raw_val)
+                raw_u = torch.where(hit, nd.old_last_u.gather(0, safe), raw_u)
+        effective = proximal_l1(raw_val, self._thresh_buf[self.u] - self._thresh_buf.gather(0, raw_u.long()))
         return effective.reshape(idx.shape)
 
     def lookup(self, d, previous, current):
@@ -362,7 +370,7 @@ class LazySignedHash:
                 new_buf = torch.empty(self._cum_thresh_buf.numel() * 2, dtype=torch.float32, device=self.values.device)
                 new_buf[:self.u].copy_(self._cum_thresh_buf[:self.u])
                 self._cum_thresh_buf = new_buf
-            self._cum_thresh_buf[self.u] = new_thresh
+            self._cum_thresh_buf[self.u : self.u + 1].fill_(new_thresh)
             self._cum_thresh_len = self.u + 1
             return self._cum_thresh_buf[:self.u + 1]
         return self._thresholds()
@@ -376,15 +384,20 @@ class LazySignedHash:
             return
         new_head = _LazyUndoNode()
         head.indices = sorted_indices
-        head.old_values = self.values[sorted_indices]
-        head.old_last_u = self.last_u[sorted_indices]
+        head.old_values = self.values.gather(0, sorted_indices)
+        head.old_last_u = self.last_u.gather(0, sorted_indices)
         head.next_node = new_head
         self._head_ref = weakref.ref(new_head)
 
     def read(self, indices: torch.Tensor):
         idx = indices if indices.dtype == torch.int64 else indices.long()
         thresholds = self._thresholds()
-        return proximal_l1(self.values[idx], thresholds[self.u] - thresholds[self.last_u[idx].long()])
+        flat = idx.reshape(-1)
+        raw_u = self.last_u.gather(0, flat).long()
+        return proximal_l1(
+            self.values.gather(0, flat),
+            thresholds[self.u] - thresholds.gather(0, raw_u),
+        ).reshape(idx.shape)
 
     def lookup(self, d, previous, current) -> torch.Tensor:
         indices, signs = hash_keys(d, previous, current, self.capacity, self.values.device)
@@ -430,7 +443,7 @@ class LazySignedHash:
                     rem_birth = thresh_buf[u_slice[alive_slice]]
                     self._cpu_blk_min_exp[blk] = ((rem_vals + rem_birth) * 0.999999 - 1e-38).min()
             return
-        delta_t = thresh_buf[self.u] - thresh_buf[self.last_u.long()]
+        delta_t = thresh_buf[self.u] - thresh_buf.gather(0, self.last_u.long())
         still_alive = self.active_mask & ~((self.values.abs() - delta_t) <= 0.0)
         self.active_mask.copy_(still_alive)
         self._active_count = still_alive.long().sum()
@@ -489,7 +502,7 @@ class LazySignedHash:
             if step_thresh > 0.0:
                 self._sweep_untouched_l1_decay(thresh_buf)
         elif step_thresh == 0.0:
-            was_active = self.active_mask[unique]
+            was_active = self.active_mask.gather(0, unique)
             now_active = new_val != 0
             self.active_mask.scatter_(0, unique, now_active)
             self._active_count = self._active_count + (now_active.long().sum() - was_active.long().sum())
@@ -497,7 +510,7 @@ class LazySignedHash:
             self.active_mask.scatter_(0, unique, new_val != 0)
             self._sweep_untouched_l1_decay(thresh_buf)
 
-        self._last_dirty_count = torch.tensor(unique.numel(), dtype=torch.int64, device=dev)
+        self._last_dirty_count = torch.empty((), dtype=torch.int64, device=dev).fill_(unique.numel())
         self._last_update_bytes_t = 16 * self._last_dirty_count + 12 * self._active_count
 
     @torch.no_grad()
@@ -527,7 +540,7 @@ class LazySignedHash:
 
         self._grad_accum.scatter_add_(0, indices, gradients)
         old = self.read(sorted_b)
-        tot_grad = self._grad_accum[sorted_b]
+        tot_grad = self._grad_accum.gather(0, sorted_b)
         self._grad_accum.index_fill_(0, sorted_b, 0.0)
 
         self._record_undo_sorted(sorted_b)
@@ -542,9 +555,9 @@ class LazySignedHash:
             self._update_cpu_blocks_dirty(unique_b, new_val_u, float(thresh_buf[self.u]))
             if step_thresh > 0.0:
                 self._sweep_untouched_l1_decay(thresh_buf)
-            self._last_dirty_count = torch.tensor(unique_b.numel(), dtype=torch.int64, device=dev)
+            self._last_dirty_count = torch.empty((), dtype=torch.int64, device=dev).fill_(unique_b.numel())
         elif step_thresh == 0.0:
-            was_active = (self.active_mask[sorted_b] & is_first).long().sum()
+            was_active = (self.active_mask.gather(0, sorted_b) & is_first).long().sum()
             now_active_each = new_val != 0
             self.active_mask.scatter_(0, sorted_b, now_active_each)
             now_active = (now_active_each & is_first).long().sum()

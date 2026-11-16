@@ -394,6 +394,7 @@ def main(argv=None):
                 HF_DATASETS_OFFLINE='1',
                 TOKENIZERS_PARALLELISM='false',
                 OMP_NUM_THREADS='1' if is_timing_task else '4',
+                NCCL_NVLS_ENABLE=os.environ.get('NCCL_NVLS_ENABLE', '0'),
             )
             if master_port is not None:
                 env['MASTER_ADDR'] = '127.0.0.1'

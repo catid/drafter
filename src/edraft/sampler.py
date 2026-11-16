@@ -80,7 +80,9 @@ def compact_probabilities(
     """
     if not math.isfinite(temperature) or temperature <= 0:
         raise ValueError("sampling probabilities require finite temperature > 0")
-    scores = probability_dtype(scores) / temperature
+    raw_scores = scores
+    scores = probability_dtype(raw_scores)
+    scores = scores / temperature if scores is raw_scores else scores.div_(temperature)
     V = scores.shape[-1]
     indices = None
     if 0 < warper.top_k < V:
@@ -129,8 +131,13 @@ def sample_from_top_scaled(
     probs_sub = warp_top_scaled_scores(scaled_top_scores, warper)
     idx_sorted, perm = top_indices.sort(dim=-1)
     probs_sorted = probs_sub.gather(-1, perm)
-    choice = torch.multinomial(probs_sorted, 1, generator=generator)[0]
-    return idx_sorted[choice], probs_sorted, idx_sorted, probs_sorted[choice]
+    choice_1d = torch.multinomial(probs_sorted, 1, generator=generator)
+    return (
+        idx_sorted.gather(0, choice_1d)[0],
+        probs_sorted,
+        idx_sorted,
+        probs_sorted.gather(0, choice_1d)[0],
+    )
 
 
 def probabilities(
@@ -179,12 +186,17 @@ def sample_token_compact_with_prob(
         scores, temperature, warper
     )
     if indices is None:
-        tok_t = draw_tensor(probs_sub, generator)
-        return tok_t, probs_sub, None, probs_sub[tok_t]
+        choice_1d = torch.multinomial(probs_sub, 1, generator=generator)
+        return choice_1d[0], probs_sub, None, probs_sub.gather(0, choice_1d)[0]
     idx_sorted, perm = indices.sort(dim=-1)
     probs_sorted = probs_sub.gather(-1, perm)
-    choice = torch.multinomial(probs_sorted, 1, generator=generator)[0]
-    return idx_sorted[choice], probs_sorted, idx_sorted, probs_sorted[choice]
+    choice_1d = torch.multinomial(probs_sorted, 1, generator=generator)
+    return (
+        idx_sorted.gather(0, choice_1d)[0],
+        probs_sorted,
+        idx_sorted,
+        probs_sorted.gather(0, choice_1d)[0],
+    )
 
 
 def sample_token_compact(

@@ -306,6 +306,7 @@ def _spawn_parallel_workers(
                 HF_DATASETS_OFFLINE='1',
                 TOKENIZERS_PARALLELISM='false',
                 OMP_NUM_THREADS=str(omp_threads),
+                NCCL_NVLS_ENABLE=os.environ.get('NCCL_NVLS_ENABLE', '0'),
             )
             log_path = logdir / f'{label}-rank{rank}.log'
             stream = log_path.open('a', buffering=1)

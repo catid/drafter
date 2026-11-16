@@ -2089,6 +2089,8 @@ def _setup_distributed(args) -> bool:
         apply_gpu_cpu_affinity(cuda_dev, args.rank)
     if args.world_size > 1 and not dist.is_initialized():
         backend = args.dist_backend or ('nccl' if str(args.device).startswith('cuda') else 'gloo')
+        if backend == 'nccl':
+            os.environ.setdefault('NCCL_NVLS_ENABLE', '0')
         init_kwargs = {'backend': backend, 'rank': args.rank, 'world_size': args.world_size}
         if backend == 'nccl' and cuda_dev is not None:
             init_kwargs['device_id'] = cuda_dev

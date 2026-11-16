@@ -92,6 +92,15 @@ def slot_correction(E, A, U_i, l_unit_i, prefix, realized, i, sparse=None, M_spa
     return correction
 
 
+def _async_long_tensor(data, device) -> torch.Tensor:
+    """Create an int64 tensor on `device` via pinned async H2D DMA on CUDA (zero stream sync)."""
+    dev = torch.device(device)
+    t = torch.tensor(data, dtype=torch.long)
+    if dev.type == 'cuda':
+        return t.pin_memory().to(device=dev, non_blocking=True)
+    return t.to(device=dev)
+
+
 def block_predecessor_pairs(prefix: Sequence[int], tokens: Sequence[int], K: int, D: int, device):
     """Build valid (slot_idx, d_zero_based, prev_token_id) 1D int64 tensors in one host-to-device copy."""
     pairs = []
@@ -103,7 +112,7 @@ def block_predecessor_pairs(prefix: Sequence[int], tokens: Sequence[int], K: int
     if not pairs:
         empty = torch.empty(0, device=device, dtype=torch.long)
         return empty, empty, empty
-    packed = torch.tensor(pairs, device=device, dtype=torch.long)
+    packed = _async_long_tensor(pairs, device)
     return packed[:, 0], packed[:, 1], packed[:, 2]
 
 
@@ -379,6 +388,9 @@ class ProposalSnapshot:
         r_need = 1 if temperature == 0 else k_eff
         r_k = min(r_need, V - m_eff)
         u_all = l_unit - beta * U
+        if l_unit.is_cuda and temperature > 0 and r_k > 0 and m_eff + r_k < V:
+            both_ids = torch.topk(u_all, m_eff + r_k, dim=-1, sorted=True).indices
+            return both_ids[..., :m_eff], both_ids[..., m_eff:]
         c_ids_all = torch.topk(u_all, m_eff, dim=-1).indices
         if r_k == 0:
             return c_ids_all, c_ids_all.new_empty((*c_ids_all.shape[:-1], 0))
@@ -468,6 +480,21 @@ class ProposalSnapshot:
                 r_need = 1 if temperature == 0 else k_eff
                 r_k = min(r_need, V - m_eff)
                 u = l_unit_i - beta * dense
+                if l_unit_i.is_cuda and temperature > 0 and r_k > 0 and m_eff + r_k < V:
+                    top_ids = torch.topk(u, m_eff + r_k, dim=-1, sorted=True).indices
+                    c_ids = top_ids[:m_eff]
+                    offs_2d = offsets if is_col_offs else offs_1d[:, None]
+                    s_vals = self.sparse.lookup(offs_2d, prev_ids[:, None], c_ids[None, :]).to(dense.dtype).sum(0)
+                    l_both = l_unit_i.gather(0, top_ids)
+                    d_both = dense.gather(0, top_ids)
+                    d_both[:m_eff].add_(s_vals)
+                    cand_vals = l_both - beta * d_both
+                    cand_ids, perm = top_ids.sort(dim=0)
+                    prob_dtype = cand_vals.dtype if cand_vals.dtype == torch.float64 else torch.float32
+                    scaled = cand_vals.gather(0, perm).to(prob_dtype) / temperature
+                    _, order = torch.sort(scaled, dim=0, descending=True, stable=True)
+                    top_order = order[:min(k_eff, cand_ids.shape[0])]
+                    return scaled.gather(0, top_order), cand_ids.gather(0, top_order)
                 c_ids = torch.topk(u, m_eff, dim=-1).indices
                 if r_k == 0:
                     r_ids = c_ids.new_empty((0,))
@@ -1070,7 +1097,7 @@ def _get_intra_block_pairs(K: int, D: int, device: torch.device) -> tuple[torch.
         empty = torch.empty(0, dtype=torch.long, device=device)
         res = (empty, empty, empty)
     else:
-        t = torch.tensor(triples, dtype=torch.long, device=device)
+        t = _async_long_tensor(triples, device)
         res = (t[:, 0], t[:, 1], t[:, 2])
     _INTRA_BLOCK_PAIR_CACHE[key] = res
     return res
@@ -1112,7 +1139,7 @@ class _CandidateLookaheadCache:
         self.ids_sorted, self.sort_perm = c0_mat.sort(dim=-1)
         self.E_cast = E_cast
         self.A_cast = A_cast
-        self.E_sup = E_cast[c0_mat]
+        self.E_sup = E_cast.index_select(0, c0_mat.reshape(-1)).view(self.K, self.M, self.r_dim)
         self.l_sup = l_w.gather(1, c0_mat)
         self.U_sup = U.gather(1, c0_mat)
 
@@ -1127,7 +1154,7 @@ class _CandidateLookaheadCache:
         self.msg_pref = torch.zeros((self.K, self.r_dim), dtype=self.dtype, device=self.device)
         self.sparse_pref: torch.Tensor | None = None
         if pref_rows:
-            p_t = torch.tensor(pref_rows, dtype=torch.long, device=self.device)
+            p_t = _async_long_tensor(pref_rows, self.device)
             p_slots, p_d0, p_d1, p_prev = p_t[:, 0], p_t[:, 1], p_t[:, 2], p_t[:, 3]
             e_prev = E_cast.index_select(0, p_prev)
             p_msgs = torch.bmm(A_cast.index_select(0, p_d0), e_prev.unsqueeze(-1)).squeeze(-1)
@@ -1399,8 +1426,8 @@ class LookaheadState:
         """Zero-sync GPU clamping when `tok_t == C0[i, orig_pos]`."""
         fast = self._fast
         assert fast is not None
-        fast.clamped_mask[i] = True
-        fast.clamped_tokens_gpu[i] = tok_t
+        fast.clamped_mask[i : i + 1].fill_(True)
+        fast.clamped_tokens_gpu[i : i + 1].copy_(tok_t.reshape(1))
         fast.support_dirty = True
         fast.r_dirty = True
         fast.mu_dirty = True

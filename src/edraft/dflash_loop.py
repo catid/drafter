@@ -14,7 +14,7 @@ from typing import Callable
 import torch
 from torch.nn import functional as F
 
-from .adapter import (LookaheadConfig, compute_frozen_candidates,
+from .adapter import (LookaheadConfig, _async_long_tensor, compute_frozen_candidates,
                       damped_lookahead_step, initialize_lookahead)
 from .backend import crop_cache, extract_context_feature, make_cache
 from .sampler import (
@@ -207,9 +207,9 @@ def _sample_proposal(draft_logits, h_raw, prefix, *, temperature, warper, genera
                     ids_sorted_i = fast.ids_sorted[i]
                     cand_sorted = cand_scores.gather(0, sort_perm_i)
                     if temperature == 0:
-                        choice_sorted = torch.argmax(cand_sorted)
-                        tok_t = ids_sorted_i[choice_sorted]
-                        orig_pos = sort_perm_i[choice_sorted]
+                        choice_sorted_1d = torch.argmax(cand_sorted, dim=-1, keepdim=True)
+                        tok_t = ids_sorted_i.gather(0, choice_sorted_1d)[0]
+                        orig_pos = sort_perm_i.gather(0, choice_sorted_1d)[0]
                     elif use_sub_topk:
                         scaled_sorted = probability_dtype(cand_sorted) / temperature
                         top_sc, local_sorted_idx = torch.topk(scaled_sorted, warper.top_k, dim=-1)
@@ -218,22 +218,22 @@ def _sample_proposal(draft_logits, h_raw, prefix, *, temperature, warper, genera
                         sorted_sub_pos = local_sorted_idx.gather(-1, order_in_top)
                         idx_sorted = ids_sorted_i.gather(-1, sorted_sub_pos)
                         probs_sorted = probs_sub.gather(-1, order_in_top)
-                        choice_k = torch.multinomial(probs_sorted, 1, generator=generator)[0]
-                        choice_sorted = sorted_sub_pos[choice_k]
-                        tok_t = idx_sorted[choice_k]
-                        orig_pos = sort_perm_i[choice_sorted]
+                        choice_k_1d = torch.multinomial(probs_sorted, 1, generator=generator)
+                        choice_sorted_1d = sorted_sub_pos.gather(0, choice_k_1d)
+                        tok_t = idx_sorted.gather(0, choice_k_1d)[0]
+                        orig_pos = sort_perm_i.gather(0, choice_sorted_1d)[0]
                         slot_probs[i] = probs_sorted
                         slot_indices[i] = idx_sorted
-                        q_sel_buf[i] = probs_sorted[choice_k]
+                        q_sel_buf[i] = probs_sorted.gather(0, choice_k_1d)[0]
                     else:
                         scaled_sorted = probability_dtype(cand_sorted) / temperature
                         probs_sorted = warp_top_scaled_scores(scaled_sorted, warper)
-                        choice_sorted = torch.multinomial(probs_sorted, 1, generator=generator)[0]
-                        tok_t = ids_sorted_i[choice_sorted]
-                        orig_pos = sort_perm_i[choice_sorted]
+                        choice_sorted_1d = torch.multinomial(probs_sorted, 1, generator=generator)
+                        tok_t = ids_sorted_i.gather(0, choice_sorted_1d)[0]
+                        orig_pos = sort_perm_i.gather(0, choice_sorted_1d)[0]
                         slot_probs[i] = probs_sorted
                         slot_indices[i] = ids_sorted_i
-                        q_sel_buf[i] = probs_sorted[choice_sorted]
+                        q_sel_buf[i] = probs_sorted.gather(0, choice_sorted_1d)[0]
                     tok_buf[i] = tok_t
                     state._clamp_orig_pos(i, tok_t, orig_pos)
                 if lookahead.mode == 'rerelax' and i + 1 < K:
@@ -314,8 +314,9 @@ def _sample_proposal(draft_logits, h_raw, prefix, *, temperature, warper, genera
         prefix_tail = prefix[-D_hist:] if D_hist > 0 else ()
         L_ctx = len(prefix_tail)
         ctx_buf = torch.empty(L_ctx + K, dtype=torch.long, device=device)
-        if L_ctx:
-            ctx_buf[:L_ctx] = torch.tensor(prefix_tail, dtype=torch.long, device=device)
+        prefix_tail_t = _async_long_tensor(prefix_tail, device) if L_ctx else None
+        if prefix_tail_t is not None:
+            ctx_buf[:L_ctx] = prefix_tail_t
         offsets_all = torch.arange(1, D_hist + 1, dtype=torch.long, device=device) if adapter_active else None
         offs_2d_by_avail = (
             [offsets_all[:a, None] for a in range(D_hist + 1)]
@@ -327,8 +328,8 @@ def _sample_proposal(draft_logits, h_raw, prefix, *, temperature, warper, genera
         E_cast_pair: torch.Tensor | None = None
         if adapter_active:
             rev_tok_buf = torch.empty(L_ctx + K, dtype=torch.long, device=device)
-            if L_ctx:
-                rev_tok_buf[K:K + L_ctx] = torch.tensor(prefix_tail[::-1], dtype=torch.long, device=device)
+            if prefix_tail_t is not None:
+                rev_tok_buf[K:K + L_ctx] = prefix_tail_t.flip(0)
             if not snapshot.pair_is_zero():
                 with timer.phase("dense_pair_score"):
                     E_cast_pair = snapshot._token_features_for_A()
@@ -456,7 +457,7 @@ def _sample_proposal(draft_logits, h_raw, prefix, *, temperature, warper, genera
                 rev_tok_buf[K - 1 - i] = tok_t
                 if rev_E_buf is not None:
                     with timer.phase("dense_pair_score"):
-                        rev_E_buf[K - 1 - i] = E_cast_pair[tok_t]
+                        rev_E_buf[K - 1 - i] = E_cast_pair.index_select(0, tok_t.reshape(1))[0]
             if p_sub is not None:
                 if compact_k:
                     if slot_probs is None:

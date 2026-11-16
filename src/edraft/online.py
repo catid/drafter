@@ -116,7 +116,10 @@ class _DeviceBigramState:
         self.row_slot = torch.zeros(vocab_size, device=device, dtype=torch.long)
         # Row 0 is the inactive sentinel; IEEE-754 `-0.0` is the exact additive identity
         # (`x + (-0.0) == x` bit-for-bit, preserving even `-0.0` and `+/-inf`).
-        self.base_shift = torch.full((self.row_cap,), -0.0, device=device, dtype=dtype)
+        # On CUDA, PyTorch `bf16/fp16 + python_float` promotes to `opmath_t = float32`
+        # before rounding back to `dtype`, whereas CPU casts the scalar to `dtype` first.
+        base_dt = (torch.float64 if dtype == torch.float64 else torch.float32) if device.type == 'cuda' else dtype
+        self.base_shift = torch.full((self.row_cap,), -0.0, device=device, dtype=base_dt)
         self.ret_ids = torch.zeros((self.row_cap, self.col_cap), device=device, dtype=torch.long)
         self.ret_shift = torch.full((self.row_cap, self.col_cap), -0.0, device=device, dtype=dtype)
         self.ret_valid = torch.zeros((self.row_cap, self.col_cap), device=device, dtype=torch.bool)
@@ -133,7 +136,7 @@ class _DeviceBigramState:
         new_row_cap = max(needed_rows, self.row_cap * 2 if needed_rows > self.row_cap else self.row_cap)
         new_col_cap = max(needed_cols, self.col_cap * 2 if needed_cols > self.col_cap else self.col_cap)
         if new_row_cap != self.row_cap:
-            new_base = torch.full((new_row_cap,), -0.0, device=self.device, dtype=self.dtype)
+            new_base = torch.full((new_row_cap,), -0.0, device=self.device, dtype=self.base_shift.dtype)
             new_base[:self.active_rows + 1].copy_(self.base_shift[:self.active_rows + 1])
             self.base_shift = new_base
         new_ids = torch.zeros((new_row_cap, new_col_cap), device=self.device, dtype=torch.long)
@@ -408,9 +411,9 @@ class OnlineBigram:
         width = state.col_cap
         n_dirty = len(prepared)
         slots_cpu = torch.empty(n_dirty, dtype=torch.long)
-        base_cpu = torch.empty(n_dirty, dtype=dtype)
+        base_cpu = torch.empty(n_dirty, dtype=state.base_shift.dtype)
         ids_cpu = torch.empty((n_dirty, width), dtype=torch.long)
-        shift_cpu = torch.empty((n_dirty, width), dtype=dtype)
+        shift_dev_rows = torch.empty((n_dirty, width), device=device, dtype=dtype)
         valid_cpu = torch.zeros((n_dirty, width), dtype=torch.bool)
         lam = float(self.lambda_tr)
         alpha_f = float(self.alpha)
@@ -424,13 +427,14 @@ class OnlineBigram:
             if rlen > 1:
                 ids_t, id_order = ids_t.sort()
                 cnt_t = cnt_t.index_select(0, id_order)
-            ret_val = lam_row * torch.log((cnt_t + alpha_f) / denom)
+            cnt_dev = cnt_t.to(device=device)
+            ret_val = lam_row * torch.log((cnt_dev + alpha_f) / denom)
             ids_cpu[idx, :rlen] = ids_t
-            shift_cpu[idx, :rlen] = ret_val
+            shift_dev_rows[idx, :rlen] = ret_val
             valid_cpu[idx, :rlen] = True
             if rlen < width:
                 ids_cpu[idx, rlen:] = ids_t[0]
-                shift_cpu[idx, rlen:] = ret_val[0]
+                shift_dev_rows[idx, rlen:] = ret_val[0]
 
         if new_prev_ids:
             prev_t = torch.tensor(new_prev_ids, dtype=torch.long, device=device)
@@ -439,7 +443,7 @@ class OnlineBigram:
         slots_dev = slots_cpu.to(device=device)
         state.base_shift.index_copy_(0, slots_dev, base_cpu.to(device=device))
         state.ret_ids.index_copy_(0, slots_dev, ids_cpu.to(device=device))
-        state.ret_shift.index_copy_(0, slots_dev, shift_cpu.to(device=device))
+        state.ret_shift.index_copy_(0, slots_dev, shift_dev_rows)
         state.ret_valid.index_copy_(0, slots_dev, valid_cpu.to(device=device))
         state.known_dict_len = len(self.counts)
         return state
@@ -453,10 +457,19 @@ class OnlineBigram:
         state = self._sync_device_table(l_unit.device, l_unit.dtype)
         if state.active_rows == 0 or state.max_ret == 0:
             return l_unit
-        r = state.row_slot[prev_token]
-        shifted = l_unit + state.base_shift[r]
-        ids_row = state.ret_ids[r, :state.max_ret]
-        vals = l_unit.gather(0, ids_row) + state.ret_shift[r, :state.max_ret]
+        prev_1d = (
+            prev_token.reshape(1)
+            if isinstance(prev_token, torch.Tensor)
+            else torch.empty(1, dtype=torch.long, device=l_unit.device).fill_(int(prev_token))
+        )
+        r_1d = state.row_slot.gather(0, prev_1d)
+        base_s = state.base_shift.gather(0, r_1d)[0]
+        if l_unit.device.type == 'cuda' and l_unit.dtype in (torch.bfloat16, torch.float16):
+            shifted = (l_unit.float() + base_s).to(l_unit.dtype)
+        else:
+            shifted = (l_unit + base_s).to(l_unit.dtype)
+        ids_row = state.ret_ids.index_select(0, r_1d)[0, :state.max_ret]
+        vals = l_unit.gather(0, ids_row) + state.ret_shift.index_select(0, r_1d)[0, :state.max_ret]
         shifted.scatter_(0, ids_row, vals)
         return shifted
 
@@ -508,13 +521,21 @@ class OnlineBigram:
                 return base_vals_i, base_ids_i
             return base_vals_i.to(prob_dtype) / temperature, base_ids_i
 
-        r = state.row_slot[prev_token]
-        base_s = state.base_shift[r]
+        prev_1d = (
+            prev_token.reshape(1)
+            if isinstance(prev_token, torch.Tensor)
+            else torch.empty(1, dtype=torch.long, device=l_unit_i.device).fill_(int(prev_token))
+        )
+        r_1d = state.row_slot.gather(0, prev_1d)
+        base_s = state.base_shift.gather(0, r_1d)[0]
         m_ret = state.max_ret
-        r_ids = state.ret_ids[r, :m_ret]
-        r_val = state.ret_valid[r, :m_ret]
-        r_scores = l_unit_i.gather(0, r_ids) + state.ret_shift[r, :m_ret]
-        b_shifted = base_vals_i + base_s
+        r_ids = state.ret_ids.index_select(0, r_1d)[0, :m_ret]
+        r_val = state.ret_valid.index_select(0, r_1d)[0, :m_ret]
+        r_scores = l_unit_i.gather(0, r_ids) + state.ret_shift.index_select(0, r_1d)[0, :m_ret]
+        if base_vals_i.device.type == 'cuda' and base_vals_i.dtype in (torch.bfloat16, torch.float16):
+            b_shifted = (base_vals_i.float() + base_s).to(base_vals_i.dtype)
+        else:
+            b_shifted = (base_vals_i + base_s).to(base_vals_i.dtype)
 
         overlap = (base_ids_i[:, None] == r_ids[None, :]) & r_val[None, :]
         has_ov = overlap.any(dim=1)
@@ -909,7 +930,7 @@ class OnlineState:
                         E_prev_bf16 = E_bf16.index_select(0, valid_prev)
                     if not pair_known_zero:
                         msgs = torch.bmm(
-                            A.to(torch.bfloat16).index_select(0, valid_d0),
+                            A.index_select(0, valid_d0).to(torch.bfloat16),
                             E_prev_bf16.unsqueeze(-1),
                         ).squeeze(-1).to(A.dtype)
                         slot_msgs = torch.zeros(K, E.shape[1], dtype=A.dtype, device=A.device).index_add_(
@@ -1008,10 +1029,8 @@ class OnlineState:
                 g_dW = (G_E_bf16.T @ H.to(torch.bfloat16)).to(self.dW.dtype)
                 if has_valid_pairs:
                     G_pair_bf16 = G_E_bf16.index_select(0, valid_slots)
-                    outer_pair_bf16 = torch.bmm(G_pair_bf16.unsqueeze(2), E_prev_bf16.unsqueeze(1))
-                    g_dA = torch.zeros(
-                        self.dA.shape, dtype=torch.bfloat16, device=self.dA.device
-                    ).index_add_(0, valid_d0, outer_pair_bf16).to(self.dA.dtype)
+                    outer_pair = torch.bmm(G_pair_bf16.unsqueeze(2), E_prev_bf16.unsqueeze(1)).to(self.dA.dtype)
+                    g_dA = torch.zeros_like(self.dA).index_add_(0, valid_d0, outer_pair)
                 else:
                     g_dA = torch.zeros_like(self.dA)
             else:
@@ -1153,7 +1172,7 @@ class OnlineState:
                 if bf16_gemm:
                     assert E_bf16 is not None
                     E_prev = E_bf16.index_select(0, valid_prev)
-                    msgs = torch.bmm(A.to(torch.bfloat16).index_select(0, valid_d0), E_prev.unsqueeze(-1)).squeeze(-1).to(A.dtype)
+                    msgs = torch.bmm(A.index_select(0, valid_d0).to(torch.bfloat16), E_prev.unsqueeze(-1)).squeeze(-1).to(A.dtype)
                     slot_msgs = torch.zeros(K, E.shape[1], dtype=A.dtype, device=A.device).index_add(0, valid_slots, msgs)
                     dense = U + (slot_msgs.to(torch.bfloat16) @ E_bf16.T).to(U.dtype)
                 else:
@@ -1246,6 +1265,9 @@ class OnlineState:
                     self.dW, g_dW, self.dA, g_dA, self.db, g_db, lr, self.u + 1
                 )
             if self.dS is not None:
+                # Release OnlineState's internal cached snapshot before mutating dS so CoW undo
+                # nodes are recorded ONLY when an external caller holds a prior snapshot.
+                self._snapshot = None
                 if self.sparse_backend == 'signed_feature_hash' and dirty_is_unique:
                     self.dS.step_unique(dirty, g_sparse, lr, self.lambda_l1_s)
                 else:

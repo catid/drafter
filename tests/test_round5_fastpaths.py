@@ -4,7 +4,9 @@ from __future__ import annotations
 import copy
 import json
 import math
+import os
 from pathlib import Path
+import sys
 from types import SimpleNamespace
 from unittest import mock
 
@@ -713,3 +715,141 @@ def test_r5_bug_3_dataloader_spawn_early_break_clean_shutdown(tmp_path):
     b_idx, blk_list = next(gen2)
     assert b_idx == 0 and len(blk_list) > 0
     gen2.close()
+
+
+# ---------------------------------------------------------------------------
+# 5. Phase-2 Real-B300 CUDA Gate Regressions (CUDA-BUG-1 .. CUDA-BUG-5)
+# ---------------------------------------------------------------------------
+
+
+def test_cuda_bug_1_static_graph_callable_initial_capture_and_replay():
+    from edraft.fastpath import StaticGraphCallable
+
+    dev = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+    fn = lambda x, y: (x * 2.5 + y, x - y)
+    sg = StaticGraphCallable(fn, warmup_iters=2, simulate_cpu=(dev.type != "cuda"))
+
+    x1 = torch.randn(4, 16, device=dev)
+    y1 = torch.randn(4, 16, device=dev)
+    # First call (capture) must return exact computed output, never uninitialized 0s!
+    o1_a, o1_b = sg(x1, y1)
+    ref1_a, ref1_b = fn(x1, y1)
+    torch.testing.assert_close(o1_a, ref1_a, atol=1e-6, rtol=1e-6)
+    torch.testing.assert_close(o1_b, ref1_b, atol=1e-6, rtol=1e-6)
+    assert sg.graph_captures == 1 and sg.graph_replays == 0
+
+    x2 = torch.randn(4, 16, device=dev)
+    y2 = torch.randn(4, 16, device=dev)
+    o2_a, o2_b = sg(x2, y2)
+    ref2_a, ref2_b = fn(x2, y2)
+    torch.testing.assert_close(o2_a, ref2_a, atol=1e-6, rtol=1e-6)
+    torch.testing.assert_close(o2_b, ref2_b, atol=1e-6, rtol=1e-6)
+    assert sg.graph_captures == 1 and sg.graph_replays == 1
+    assert o1_a.data_ptr() != o2_a.data_ptr()
+
+
+def test_cuda_bug_2_3_4_sampler_bigram_gather_cow_and_bf16_analytic():
+    from edraft.fastpath import FastPathConfig, FastPathRuntime
+    from edraft.online import OnlineBigram
+    from edraft.sampler import compact_probabilities, sample_from_top_scaled, sample_token_compact_with_prob
+
+    dev = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+    gen = torch.Generator(device="cpu").manual_seed(8801)
+
+    # 1. compact_probabilities on BF16 must not mutate input and must match dense probabilities 0-ULP
+    raw_bf16 = (torch.randn(4, 128, generator=gen) * 2.0).to(device=dev, dtype=torch.bfloat16)
+    raw_copy = raw_bf16.clone()
+    w = SamplingWarper(top_k=12, top_p=0.85, min_p=0.02)
+    p_sub, p_idx = compact_probabilities(raw_bf16, 0.7, w)
+    assert torch.equal(raw_bf16, raw_copy)
+    p_dense_rebuilt = torch.zeros((4, 128), dtype=p_sub.dtype, device=dev).scatter_(-1, p_idx, p_sub)
+    assert torch.equal(p_dense_rebuilt, probabilities(raw_bf16, 0.7, w))
+
+    # 2. 0-D index safety in sample_from_top_scaled & sample_token_compact_with_prob
+    g_dev1 = torch.Generator(device=dev).manual_seed(91)
+    g_dev2 = torch.Generator(device=dev).manual_seed(91)
+    t1, ps1, is1, qs1 = sample_token_compact_with_prob(raw_bf16[0], 0.7, w, g_dev1)
+    scaled_top, top_i = torch.topk(raw_bf16[0].float() / 0.7, 12, dim=-1)
+    t2, ps2, is2, qs2 = sample_from_top_scaled(scaled_top, top_i, w, g_dev2)
+    assert torch.equal(t1, t2) and torch.equal(ps1, ps2) and torch.equal(is1, is2) and torch.equal(qs1, qs2)
+
+    # 3. OnlineBigram BF16/FP32 0-ULP parity (including -0.0 signbit)
+    bg = OnlineBigram(128, alpha=1.0, lambda_tr=0.15, k_ret=8)
+    for t in range(1, 18):
+        bg.update([5], [(t * 7) % 120])
+    for dt in (torch.float32, torch.bfloat16):
+        lu = (torch.randn(2, 128, generator=gen) * 2.0).to(device=dev, dtype=dt)
+        lu[0, 3] = -0.0
+        for pid in (5, 99):
+            s_t = bg.score_tensor(lu[0], torch.tensor(pid, device=dev, dtype=torch.long))
+            s_r = bg.score(lu[0], pid)
+            assert torch.equal(s_t, s_r)
+            assert torch.equal(torch.signbit(s_t), torch.signbit(s_r))
+
+    # 4. 0-D/3-D _gather_1d + SignedHash autograd + OnlineState CoW head release & bf16_gemm sgd parity
+    sh = SignedHash(64, device=dev)
+    with torch.no_grad():
+        sh.values.copy_(torch.randn(64, generator=gen).to(dev) * 0.1)
+    d0 = torch.tensor(1, device=dev)
+    p0 = torch.tensor(3, device=dev)
+    c0 = torch.tensor(7, device=dev)
+    val_0d = sh.lookup(d0, p0, c0)
+    assert val_0d.ndim == 0
+    val_0d.backward()
+    assert sh.values.grad is not None and float(sh.values.grad.abs().sum().item()) > 0.0
+
+    E = (torch.randn(96, 16, generator=gen) * 0.1).to(dev)
+    adap = DenseAdapter(E, p=16, D=4, sparse=sh, M_sparse=12).to(dev)
+    with torch.no_grad():
+        adap.W.copy_((torch.randn(16, 16, generator=gen) * 0.08).to(dev))
+        adap.A.copy_((torch.randn(4, 16, 16, generator=gen) * 0.08).to(dev))
+        adap.b.copy_((torch.randn(96, generator=gen) * 0.04).to(dev))
+
+    fp_f = FastPathRuntime(FastPathConfig(bf16_gemm=True, analytic_online_grad=True))
+    fp_r = FastPathRuntime(FastPathConfig(bf16_gemm=True, analytic_online_grad=False))
+    st_f = OnlineState(adap, lr=0.03, sparse_capacity=64, optimizer="sgd", fastpath=fp_f, analytic_online_grad=True)
+    st_r = OnlineState(adap, lr=0.03, sparse_capacity=64, optimizer="sgd", fastpath=fp_r, analytic_online_grad=False)
+    for r_i in range(1, 6):
+        lu_i = torch.randn(4, 96, generator=gen).to(dev)
+        tl_i = torch.randn(4, 96, generator=gen).to(dev)
+        h_i = torch.randn(4, 16, generator=gen).to(dev)
+        st_f.update(r_i, lu_i, tl_i, h_i, [1, 2, 3, 4], [5, 6, 7, 8], first_rejection=2)
+        st_r.update(r_i, lu_i, tl_i, h_i, [1, 2, 3, 4], [5, 6, 7, 8], first_rejection=2)
+    # Without an external held snapshot, OnlineState must release self._snapshot before step_unique
+    head_snap_dS = st_f.snapshot().sparse.terms[-1]
+    assert head_snap_dS._undo_node is not None and head_snap_dS._undo_node.next_node is None
+    torch.testing.assert_close(st_f.dW, st_r.dW, atol=2e-5, rtol=2e-5)
+    torch.testing.assert_close(st_f.dA, st_r.dA, atol=2e-5, rtol=2e-5)
+    torch.testing.assert_close(st_f.db, st_r.db, atol=2e-5, rtol=2e-5)
+
+
+def test_cuda_bug_5_nccl_nvls_disable_env_default(monkeypatch, tmp_path):
+    monkeypatch.setenv("NCCL_NVLS_ENABLE", "0")
+    monkeypatch.delenv("NCCL_NVLS_ENABLE")
+    monkeypatch.setenv("RANK", "0")
+    monkeypatch.delenv("RANK")
+    init_calls = []
+
+    def _fake_init(**kw):
+        init_calls.append((dict(kw), os.environ.get("NCCL_NVLS_ENABLE")))
+
+    monkeypatch.setattr(train.dist, "is_initialized", lambda: False)
+    monkeypatch.setattr(train.dist, "init_process_group", _fake_init)
+    fake_args = SimpleNamespace(rank=0, world_size=2, device="cpu", dist_backend="nccl")
+    assert train._setup_distributed(fake_args) is True
+    assert len(init_calls) == 1 and init_calls[0][1] == "0"
+    monkeypatch.delenv("RANK", raising=False)
+    monkeypatch.delenv("NCCL_NVLS_ENABLE", raising=False)
+
+    # Also verify _spawn_parallel_workers passes NCCL_NVLS_ENABLE=0 to child processes
+    out_file = tmp_path / "nvls_val.txt"
+    cmd = [
+        sys.executable,
+        "-c",
+        f"import os, pathlib; pathlib.Path({str(out_file)!r}).write_text(os.environ.get('NCCL_NVLS_ENABLE', 'MISSING'))",
+    ]
+    post_m4_suite._spawn_parallel_workers(
+        [(0, 0, cmd)], tmp_path / "logs", "nvls-check", scale="smoke", device_str="cpu"
+    )
+    assert out_file.read_text() == "0"
+
