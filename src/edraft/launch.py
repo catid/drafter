@@ -104,6 +104,7 @@ def main(argv=None):
     parser.add_argument('--lambda_l1', type=float)
     parser.add_argument('--epochs_dense', type=int)
     parser.add_argument('--epochs_sparse', type=int)
+    parser.add_argument('--checkpoint_every', type=int, default=None)
     parser.add_argument('--ema_eval', action='store_true', default=None)
     parser.add_argument('--no_ema_eval', action='store_false', dest='ema_eval')
     parser.add_argument('--pace_pullback', type=float)
@@ -150,6 +151,8 @@ def main(argv=None):
         parser.error('--num_workers must be >= 0')
     if args.microbatch_blocks is not None and args.microbatch_blocks < 1:
         parser.error('--microbatch_blocks must be >= 1')
+    if args.checkpoint_every is not None and args.checkpoint_every < 1:
+        parser.error('--checkpoint_every must be >= 1')
     if args.bigram_count_gate_kappa is not None:
         if not math.isfinite(args.bigram_count_gate_kappa) or args.bigram_count_gate_kappa <= 0:
             parser.error('--bigram_count_gate_kappa must be finite and > 0')
@@ -296,7 +299,7 @@ def main(argv=None):
                 for flag_name in (
                     'learning_rate', 'weight_decay', 'bias_weight_decay',
                     'sparse_learning_rate', 'lambda_l1', 'epochs_dense',
-                    'epochs_sparse', 'pace_pullback', 'anchor_soda',
+                    'epochs_sparse', 'checkpoint_every', 'pace_pullback', 'anchor_soda',
                     'sparse_backend', 'sparse_capacity', 'sparse_overflow_policy',
                     'stats_memory_limit', 'objective', 'm5_fit_tag',
                 ):
@@ -480,6 +483,16 @@ def main(argv=None):
         state['completed_at_unix'] = time.time()
         atomic_json(state_path, state)
     finally:
+        for p in processes:
+            if p.poll() is None and hasattr(p, 'terminate'):
+                p.terminate()
+        for p in processes:
+            if p.poll() is None and hasattr(p, 'wait'):
+                try:
+                    p.wait(timeout=5)
+                except Exception:
+                    if hasattr(p, 'kill'):
+                        p.kill()
         for stream in streams:
             stream.close()
 

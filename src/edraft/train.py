@@ -9,6 +9,7 @@ from __future__ import annotations
 from collections import OrderedDict, deque
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
+from datetime import timedelta
 import hashlib
 import json
 import math
@@ -18,6 +19,7 @@ import random
 import tempfile
 import threading
 import time
+import weakref
 
 import torch
 import torch.distributed as dist
@@ -39,6 +41,7 @@ from .traces import read_shard
 TRANSIENT_CONFIG_KEYS = {
     'resume', 'rank', 'world_size', 'dist_backend', 'microbatch_blocks',
     'num_workers', 'pin_memory', 'compile', 'stats_memory_limit', 'stats_benchmark_entries',
+    'checkpoint_every',
 }
 OPT_IMPL_DEFAULT = {
     'bf16_gemm': False,
@@ -68,9 +71,12 @@ DEFAULT_OPTIONAL_CONFIG = {
 }
 
 
-def _comm_device(device: torch.device) -> torch.device:
+def _comm_device(device: torch.device | str) -> torch.device:
+    dev = torch.device(device)
     if dist.is_available() and dist.is_initialized() and dist.get_backend() == 'nccl':
-        return device
+        if dev.type == 'cuda':
+            return dev if dev.index is not None else torch.device('cuda', torch.cuda.current_device())
+        return torch.device('cuda', torch.cuda.current_device())
     return torch.device('cpu')
 
 
@@ -478,6 +484,49 @@ def _prepare_microbatch(blocks: list[dict], history_depth: int, vocab_size: int)
     )
 
 
+class _SharedShardCache:
+    """Thread-safe bounded LRU shard cache with single-flight per-path loading."""
+
+    def __init__(self, max_cached_shards: int):
+        self.max_cached_shards = max(1, int(max_cached_shards))
+        self._lock = threading.Lock()
+        self._cache: OrderedDict[Path, dict] = OrderedDict()
+        self._inflight: dict[Path, threading.Event] = {}
+
+    def get_or_load(self, path: Path, loader_fn) -> dict:
+        while True:
+            with self._lock:
+                payload = self._cache.get(path)
+                if payload is not None:
+                    self._cache.move_to_end(path)
+                    return payload
+                ev = self._inflight.get(path)
+                if ev is None:
+                    ev = threading.Event()
+                    self._inflight[path] = ev
+                    is_loader = True
+                else:
+                    is_loader = False
+            if not is_loader:
+                ev.wait()
+                continue
+            try:
+                loaded = loader_fn()
+            except BaseException:
+                with self._lock:
+                    self._inflight.pop(path, None)
+                    ev.set()
+                raise
+            with self._lock:
+                self._cache[path] = loaded
+                self._cache.move_to_end(path)
+                while len(self._cache) > self.max_cached_shards:
+                    self._cache.popitem(last=False)
+                self._inflight.pop(path, None)
+                ev.set()
+            return loaded
+
+
 class _ShardBatchDataset(Dataset):
     """Worker-safe dataset reading at most `max_cached_shards` verified compact shards at a time."""
 
@@ -497,32 +546,21 @@ class _ShardBatchDataset(Dataset):
         self.vocab_size = int(vocab_size)
         self.max_cached_shards = max(1, int(max_cached_shards))
         self.eligibility_fn = eligibility_fn
-        self._tls = threading.local()
-
-    def _get_cache(self) -> OrderedDict[Path, dict]:
-        cache = getattr(self._tls, 'cache', None)
-        if cache is None:
-            cache = OrderedDict()
-            self._tls.cache = cache
-        return cache
+        self._shared_cache = _SharedShardCache(self.max_cached_shards)
 
     def __len__(self) -> int:
         return max(0, self.total_batches - self.start_batch)
 
     def _load_block(self, shard: ShardInfo, index: int) -> dict:
-        cache = self._get_cache()
-        payload = cache.get(shard.path)
-        if payload is not None:
-            cache.move_to_end(shard.path)
-        else:
+        def _read_verified() -> dict:
             if json.loads(shard.path.with_suffix('.pt.json').read_text())['sha256'] != shard.sha256:
                 raise ValueError('An indexed shard changed after the frozen training manifest was built')
-            payload = read_shard(shard.path)
-            if len(payload['blocks']) != shard.blocks:
+            loaded = read_shard(shard.path)
+            if len(loaded['blocks']) != shard.blocks:
                 raise ValueError('Shard block count differs from immutable sidecar')
-            cache[shard.path] = payload
-            while len(cache) > self.max_cached_shards:
-                cache.popitem(last=False)
+            return loaded
+
+        payload = self._shared_cache.get_or_load(shard.path, _read_verified)
         block = payload['blocks'][index]
         if block['split'] != shard.split or block['prompt_id'] != shard.prompt_id or not self.eligibility_fn(block):
             raise ValueError('Block metadata differs from eligible shard identity')
@@ -656,40 +694,29 @@ class _RawShardBatchDataset(Dataset):
         self.eligibility_fn = eligibility_fn
         self.history_depth = int(history_depth)
         self.max_cached_shards = max(1, int(max_cached_shards))
-        self._tls = threading.local()
-
-    def _get_cache(self) -> OrderedDict[Path, dict]:
-        cache = getattr(self._tls, 'cache', None)
-        if cache is None:
-            cache = OrderedDict()
-            self._tls.cache = cache
-        return cache
+        self._shared_cache = _SharedShardCache(self.max_cached_shards)
 
     def __len__(self) -> int:
         return max(0, self.total_batches - self.start_batch)
 
     def __getitem__(self, item: int) -> tuple[int, list[dict]]:
-        cache = self._get_cache()
         batch_index = self.start_batch + int(item)
         selected = self.references[batch_index * self.batch_blocks:(batch_index + 1) * self.batch_blocks]
         if self.world_size > 1:
             selected = selected[self.rank::self.world_size]
         result = []
         for shard, index in selected:
-            if shard.path in cache:
-                cache.move_to_end(shard.path)
-                payload = cache[shard.path]
-            else:
-                sidecar = json.loads(shard.path.with_suffix('.pt.json').read_text())
-                if sidecar['sha256'] != shard.sha256:
+            def _read_annotated(s: ShardInfo = shard) -> dict:
+                sidecar = json.loads(s.path.with_suffix('.pt.json').read_text())
+                if sidecar['sha256'] != s.sha256:
                     raise ValueError('An indexed shard changed after the frozen training manifest was built')
-                payload = read_shard(shard.path)
-                if len(payload['blocks']) != shard.blocks:
+                loaded = read_shard(s.path)
+                if len(loaded['blocks']) != s.blocks:
                     raise ValueError('Shard block count differs from immutable sidecar')
-                _annotate_verified_stream(payload['blocks'], self.history_depth, sidecar_generation=sidecar.get('generation'))
-                cache[shard.path] = payload
-                while len(cache) > self.max_cached_shards:
-                    cache.popitem(last=False)
+                _annotate_verified_stream(loaded['blocks'], self.history_depth, sidecar_generation=sidecar.get('generation'))
+                return loaded
+
+            payload = self._shared_cache.get_or_load(shard.path, _read_annotated)
             block = payload['blocks'][index]
             if block['split'] != shard.split or block['prompt_id'] != shard.prompt_id or not self.eligibility_fn(block):
                 raise ValueError('Block metadata differs from eligible shard identity')
@@ -713,6 +740,69 @@ def batches(references, batch_blocks, *, start_batch=0, head_metadata=None,
     yield from _threaded_prefetch_iter(dataset, int(num_workers))
 
 
+_HEAD_CAST_LOCK = threading.RLock()
+_HEAD_CAST_CACHE: OrderedDict[tuple, tuple] = OrderedDict()
+_HEAD_CAST_MIN_FREE_BYTES = 8 * (1024 ** 3)
+
+
+def _cached_head_tensors(
+    weight: torch.Tensor,
+    bias: torch.Tensor | None,
+    *,
+    bf16_gemm: bool,
+) -> tuple[torch.Tensor, torch.Tensor | None] | None:
+    device = weight.device
+    if device.type != 'cuda':
+        return None
+    target_w_dt = torch.bfloat16 if bf16_gemm else torch.float32
+    need_w_cast = weight.dtype != target_w_dt
+    need_b_cast = bias is not None and bias.dtype != torch.float32
+    if not need_w_cast and not need_b_cast:
+        return weight, bias
+    b_key = None if bias is None else (
+        id(bias), int(bias.data_ptr()), tuple(bias.shape), tuple(bias.stride()), bias.dtype, int(bias._version)
+    )
+    key = (
+        id(weight), int(weight.data_ptr()), tuple(weight.shape), tuple(weight.stride()),
+        weight.dtype, device, int(weight._version), target_w_dt, b_key,
+    )
+    with _HEAD_CAST_LOCK:
+        entry = _HEAD_CAST_CACHE.get(key)
+        if entry is not None:
+            w_ref, b_ref, w_cast, b_fp32 = entry
+            if w_ref() is weight and (b_ref is None if bias is None else b_ref() is bias):
+                _HEAD_CAST_CACHE.move_to_end(key)
+                return w_cast, b_fp32
+            _HEAD_CAST_CACHE.pop(key, None)
+    try:
+        free_bytes, _ = torch.cuda.mem_get_info(device)
+    except Exception:
+        return None
+    needed_bytes = (weight.numel() * (2 if bf16_gemm else 4) if need_w_cast else 0) + (
+        bias.numel() * 4 if need_b_cast and bias is not None else 0
+    )
+    if free_bytes <= _HEAD_CAST_MIN_FREE_BYTES + needed_bytes:
+        return None
+    w_cast = weight.contiguous().to(dtype=target_w_dt) if need_w_cast else weight
+    b_fp32 = (bias.contiguous().float() if need_b_cast else bias) if bias is not None else None
+
+    def _evict(_ref, k=key):
+        with _HEAD_CAST_LOCK:
+            _HEAD_CAST_CACHE.pop(k, None)
+
+    w_ref = weakref.ref(weight, _evict)
+    b_ref = weakref.ref(bias, _evict) if bias is not None else None
+    evicted = []
+    with _HEAD_CAST_LOCK:
+        for old_k in [k for k in _HEAD_CAST_CACHE if k[5] == device]:
+            evicted.append(_HEAD_CAST_CACHE.pop(old_k, None))
+        _HEAD_CAST_CACHE[key] = (w_ref, b_ref, w_cast, b_fp32)
+        while len(_HEAD_CAST_CACHE) > 8:
+            evicted.append(_HEAD_CAST_CACHE.popitem(last=False))
+    del evicted
+    return w_cast, b_fp32
+
+
 @torch.no_grad()
 def _reconstruct_h_raw(h_raw_bf16: torch.Tensor, weight: torch.Tensor, bias: torch.Tensor | None = None,
                        *, vocab_chunk: int = 8192, output_multiplier: float = 1., bf16_gemm: bool = False,
@@ -724,8 +814,20 @@ def _reconstruct_h_raw(h_raw_bf16: torch.Tensor, weight: torch.Tensor, bias: tor
         return torch.empty((0, vocab_size), device=device, dtype=torch.float32)
     logits = torch.empty((num_rows, vocab_size), device=device, dtype=torch.float32)
     mult = float(output_multiplier)
+    cached = _cached_head_tensors(weight, bias, bf16_gemm=bf16_gemm)
     if bf16_gemm:
         h_bf16 = h_raw_bf16.to(device=device, dtype=torch.bfloat16, non_blocking=non_blocking)
+        if cached is not None:
+            w_bf16_all, b_fp32_all = cached
+            for start in range(0, vocab_size, vocab_chunk):
+                end = min(start + vocab_chunk, vocab_size)
+                out = F.linear(h_bf16, w_bf16_all[start:end]).float()
+                if b_fp32_all is not None:
+                    out = out + b_fp32_all[start:end]
+                if mult != 1.0:
+                    out = out * mult
+                logits[:, start:end] = out
+            return logits.log_softmax(-1)
         for start in range(0, vocab_size, vocab_chunk):
             end = min(start + vocab_chunk, vocab_size)
             w_chunk = weight[start:end]
@@ -738,6 +840,13 @@ def _reconstruct_h_raw(h_raw_bf16: torch.Tensor, weight: torch.Tensor, bias: tor
             logits[:, start:end] = out
     else:
         h_fp32 = h_raw_bf16.to(device=device, dtype=torch.float32, non_blocking=non_blocking)
+        if cached is not None:
+            w_fp32_all, b_fp32_all = cached
+            for start in range(0, vocab_size, vocab_chunk):
+                end = min(start + vocab_chunk, vocab_size)
+                b_chunk = None if b_fp32_all is None else b_fp32_all[start:end]
+                logits[:, start:end] = F.linear(h_fp32, w_fp32_all[start:end], b_chunk) * mult
+            return logits.log_softmax(-1)
         for start in range(0, vocab_size, vocab_chunk):
             end = min(start + vocab_chunk, vocab_size)
             b_chunk = None if bias is None else bias[start:end].float()
@@ -969,9 +1078,12 @@ def evaluate(adapter, references, head, bias, args, head_metadata, *, rank=0, wo
         sums = dict(loss=0., weight=0., slots=0, union_overlap_lower=0., grouped_overlap_upper=0.,
                     full_overlap=0., full_top1=0., full_slots=0, full_loss=0., full_grouped_loss=0.,
                     full_weight=0., pl_loss=0., pl_weight=0., pl_slots=0, pl_top1=0)
+        eval_workers = max(0, int(getattr(args, 'num_workers', 0))) if adapter.E.is_cuda else 0
+        eval_cache = max(64, 2 * int(getattr(args, 'block_shuffle_window', 0) or 0) + 8) if adapter.E.is_cuda else 1
         for _, blocks in batches(references, args.batch_blocks, head_metadata=head_metadata,
                                  rank=rank, world_size=world_size, eligibility_fn=eligibility_fn,
-                                 history_depth=args.history_depth):
+                                 history_depth=args.history_depth, shard_cache_size=eval_cache,
+                                 num_workers=eval_workers):
             if not blocks:
                 continue
             l_unit = reconstruct_batch(blocks, head, bias, vocab_chunk=args.vocab_chunk,
@@ -1164,9 +1276,12 @@ def calibrate_beta_on_dev_live_full(adapter, references_dev, head, bias, args, h
         full_slots = 0
         total_slots = 0
 
+        cal_workers = max(0, int(getattr(args, 'num_workers', 0))) if adapter.E.is_cuda else 0
+        cal_cache = max(64, 2 * int(getattr(args, 'block_shuffle_window', 0) or 0) + 8) if adapter.E.is_cuda else 1
         for _, blocks in batches(references_dev, args.batch_blocks, head_metadata=head_metadata,
                                  rank=rank, world_size=world_size,
-                                 eligibility_fn=eligibility_fn, history_depth=args.history_depth):
+                                 eligibility_fn=eligibility_fn, history_depth=args.history_depth,
+                                 shard_cache_size=cal_cache, num_workers=cal_workers):
             if not blocks:
                 continue
             l_unit = reconstruct_batch(blocks, head, bias, vocab_chunk=args.vocab_chunk,
@@ -1501,7 +1616,8 @@ def fit(entries, index_report, E, head, bias, head_metadata, args, *, stop_after
         impl_files.append('optimizers.py')
     implementation = {name: file_digest(Path(__file__).with_name(name)) for name in impl_files}
     identity_config = {
-        k: v for k, v in config.items()
+        k: ('cuda:0' if k == 'device' and str(v).startswith('cuda') else v)
+        for k, v in config.items()
         if k not in TRANSIENT_CONFIG_KEYS and (k not in DEFAULT_OPTIONAL_CONFIG or v != DEFAULT_OPTIONAL_CONFIG[k])
     }
     identity = fingerprint({'config': identity_config, 'sources': index_report['source_fingerprint'], 'head': head_metadata,
@@ -1522,7 +1638,7 @@ def fit(entries, index_report, E, head, bias, head_metadata, args, *, stop_after
     pin_memory = bool(getattr(args, 'pin_memory', False))
     use_compile = bool(getattr(args, 'compile', False))
     block_shuffle_window = max(0, block_shuffle)
-    max_cached_shards = max(1, block_shuffle_window)
+    max_cached_shards = max(64, 2 * block_shuffle_window + 8) if E.is_cuda else max(1, block_shuffle_window)
     dense_fn = _fresh_compile(_dense_correction_tensor, mode='default', dynamic=True) if use_compile else _dense_correction_tensor
     grouped_kl_fn = _fresh_compile(union_rest_grouped_precollated, mode='default', dynamic=True) if use_compile else union_rest_grouped_precollated
     dense_label = {'adamw': 'AdamW', 'adam_atan2': 'AdamATan2', 'muon': 'Muon',
@@ -1568,7 +1684,7 @@ def fit(entries, index_report, E, head, bias, head_metadata, args, *, stop_after
         adapter, _ = load_adapter_checkpoint(latest, E.device)
         torch.set_rng_state(resumed['torch_rng'])
         random.setstate(resumed['python_rng'])
-        if E.is_cuda:
+        if E.is_cuda and resumed.get('cuda_rng') is not None:
             torch.cuda.set_rng_state(resumed['cuda_rng'], E.device)
         if use_dist:
             dist.barrier()
@@ -1910,7 +2026,10 @@ def fit(entries, index_report, E, head, bias, head_metadata, args, *, stop_after
                 report['stages'][stage]['sparse_collision_statistics'] = collision_stats
             if use_dist:
                 obj_box = [report['stages'][stage].get('sparse_collision_statistics') if is_main else None]
-                dist.broadcast_object_list(obj_box, src=0)
+                if dist.get_backend() == 'nccl':
+                    dist.broadcast_object_list(obj_box, src=0, device=_comm_device(E.device))
+                else:
+                    dist.broadcast_object_list(obj_box, src=0)
                 report['stages'][stage]['sparse_collision_statistics'] = obj_box[0]
 
         do_cal_beta = bool(getattr(args, 'calibrate_beta', False) or getattr(args, 'apply_calibrated_beta', False))
@@ -2091,7 +2210,12 @@ def _setup_distributed(args) -> bool:
         backend = args.dist_backend or ('nccl' if str(args.device).startswith('cuda') else 'gloo')
         if backend == 'nccl':
             os.environ.setdefault('NCCL_NVLS_ENABLE', '0')
-        init_kwargs = {'backend': backend, 'rank': args.rank, 'world_size': args.world_size}
+        init_kwargs = {
+            'backend': backend,
+            'rank': args.rank,
+            'world_size': args.world_size,
+            'timeout': timedelta(minutes=60),
+        }
         if backend == 'nccl' and cuda_dev is not None:
             init_kwargs['device_id'] = cuda_dev
         dist.init_process_group(**init_kwargs)
