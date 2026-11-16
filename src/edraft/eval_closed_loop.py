@@ -4,12 +4,14 @@ from __future__ import annotations
 from collections import defaultdict
 import copy
 from dataclasses import asdict
+import fcntl
 import hashlib
 import json
 import math
 import os
 from pathlib import Path
 import statistics
+import subprocess
 import time
 import uuid
 import torch
@@ -26,6 +28,26 @@ from .sampler import SamplingWarper
 M3_ARMS = ('plain_dflash', 'online_bigram', 'dense', 'dense_sparse')
 M4_ARMS = ('plain_dflash', 'online_bigram', 'offline_static', 'offline_online_stride1', 'online_dbS')
 
+ALGORITHM_FILES = (
+    'adapter.py', 'online.py', 'features.py', 'dflash_loop.py',
+    'sampler.py', 'verify.py', 'backend.py', 'sparse.py', 'toy.py', 'diagnose.py',
+)
+IMPLEMENTATION_FILES = (*ALGORITHM_FILES, 'eval_closed_loop.py')
+FROZEN_09A5469_ALGORITHM_FILES = {
+    'adapter.py': 'b8960babc3f3b126a11e1f990ef144b2a9be6331a181bdbeea3da2f4c0c5b9d5',
+    'online.py': 'ba781eb2f0a5c06b29e9101001724c1045b6bdc845b13400e5305fc603fe8b22',
+    'features.py': 'adfbfa21ab6622f730df33513142c65a7d3c5adc6079ddb7f444d6471e5a6bff',
+    'dflash_loop.py': '06001ce2fd529475e1c31e3aa2bfae69d203e70d72ab2a09b41ad794d8fa60d2',
+    'sampler.py': '78f42af34ae1c1fe181273331c121d0fa7f17f8b62d5c9616c47de517892e38f',
+    'verify.py': '0f664b84a4dbe963432386b5d8732aff112271ef341422eda254da08f39f3fea',
+    'backend.py': '7f9b59880136f5de0ff63ce6b13e8351d81f3f2b15eaeac0a8a365f6a7a5ee78',
+    'sparse.py': '66beee3396ade7a6104729086a6a68c0180b5dd2e89909448cf3430344747864',
+    'toy.py': '5b7c325ede7455d219ba9fd93eb086daf656695608eece0129269fca1ee9494e',
+    'diagnose.py': 'bf10bb17b3a26872591407f634f1948a492badf3731e2ad4e92312bb828584ff',
+}
+FROZEN_09A5469_ALGORITHM_HASH = '54b714207e175169a0971a4d7b7f0820cb69f5fa8ac50d799c2eef397db7dd8f'
+FROZEN_09A5469_IMPLEMENTATION_HASH = '60da3e0c57fee2fbd9cd7ce756c66c56ba5642a63da27ef428b9b30538a459df'
+
 
 def file_sha256(path):
     digest = hashlib.sha256()
@@ -35,14 +57,149 @@ def file_sha256(path):
     return digest.hexdigest()
 
 
-def implementation_hash():
-    paths = [Path(__file__).parent / name for name in ('adapter.py', 'online.py', 'features.py', 'dflash_loop.py',
-             'sampler.py', 'verify.py', 'backend.py', 'sparse.py', 'toy.py', 'diagnose.py', 'eval_closed_loop.py')]
+def algorithm_file_hashes(source_dir=None):
+    base = Path(__file__).parent if source_dir is None else Path(source_dir)
+    return {name: file_sha256(base / name) for name in ALGORITHM_FILES}
+
+
+def algorithm_hash(source_dir=None):
+    base = Path(__file__).parent if source_dir is None else Path(source_dir)
     digest = hashlib.sha256()
-    for path in paths:
+    for name in ALGORITHM_FILES:
+        path = base / name
         digest.update(path.name.encode())
         digest.update(path.read_bytes())
     return digest.hexdigest()
+
+
+def implementation_hash(source_dir=None):
+    base = Path(__file__).parent if source_dir is None else Path(source_dir)
+    digest = hashlib.sha256()
+    for name in IMPLEMENTATION_FILES:
+        path = base / name
+        digest.update(path.name.encode())
+        digest.update(path.read_bytes())
+    return digest.hexdigest()
+
+
+def gpu_cpu_affinity(gpu: int, total_cpus: int | None = None) -> dict:
+    """Deterministic NUMA-local 16-physical-core pinning on 128-core 8-GPU hosts."""
+    if int(gpu) < 0:
+        raise ValueError('gpu index must be non-negative')
+    gpu = int(gpu)
+    n_cpus = (os.cpu_count() or 1) if total_cpus is None else int(total_cpus)
+    if n_cpus < 1:
+        raise ValueError('total_cpus must be positive')
+    if n_cpus >= 128 and gpu < 8:
+        cpu_affinity = list(range(16 * gpu, 16 * gpu + 16))
+        numa_node = gpu // 2
+    else:
+        width = max(1, min(16, n_cpus // 8)) if n_cpus >= 8 else 1
+        start = (gpu * width) % n_cpus
+        cpu_affinity = sorted({(start + i) % n_cpus for i in range(width)})
+        numa_node = (gpu // 2) if n_cpus >= 8 else 0
+    return {'physical_gpu': gpu, 'numa_node': numa_node, 'cpu_affinity': cpu_affinity}
+
+
+def resolve_physical_gpu(device: torch.device, fallback_rank: int = 0) -> int | None:
+    if device.type != 'cuda':
+        return None
+    logical_index = device.index or 0
+    visible = os.environ.get('CUDA_VISIBLE_DEVICES')
+    if visible is not None and visible.strip():
+        tokens = [token.strip() for token in visible.split(',') if token.strip()]
+        if logical_index >= len(tokens):
+            raise ValueError(f'device index {logical_index} out of range for CUDA_VISIBLE_DEVICES={visible!r}')
+        selector = tokens[logical_index]
+        if selector.isdigit():
+            return int(selector)
+        rows = subprocess.check_output(
+            ['nvidia-smi', '--query-gpu=index,uuid', '--format=csv,noheader'], text=True
+        ).splitlines()
+        for row in rows:
+            parts = [part.strip() for part in row.split(',')]
+            if len(parts) == 2 and parts[1] == selector:
+                return int(parts[0])
+        raise RuntimeError(f'Unable to resolve physical GPU index for selector {selector!r}')
+    return int(logical_index if device.index is not None else fallback_rank)
+
+
+def apply_gpu_cpu_affinity(device: torch.device, rank: int = 0) -> dict:
+    """Pin CUDA workers to NUMA-local physical cores; record metadata without mutating CPU test affinity."""
+    if device.type == 'cuda':
+        phys_gpu = resolve_physical_gpu(device, fallback_rank=rank)
+        info = gpu_cpu_affinity(phys_gpu)
+        applied = False
+        if hasattr(os, 'sched_setaffinity'):
+            os.sched_setaffinity(0, set(info['cpu_affinity']))
+            actual = sorted(os.sched_getaffinity(0))
+            if actual != info['cpu_affinity']:
+                raise RuntimeError(f'CPU affinity mismatch after sched_setaffinity: expected {info["cpu_affinity"]}, got {actual}')
+            applied = True
+        return {**info, 'cpu_affinity_applied': applied}
+    info = gpu_cpu_affinity(rank)
+    return {**info, 'cpu_affinity_applied': False}
+
+
+def assert_all_gpus_idle(device: torch.device) -> dict | None:
+    """Verify every GPU on the host is completely idle before isolated 1-GPU calibration model load."""
+    if device.type != 'cuda':
+        return None
+    phys_gpu = resolve_physical_gpu(device, fallback_rank=0)
+    if phys_gpu != 0:
+        raise RuntimeError(f'1-GPU isolated calibration must run on physical GPU 0, got GPU {phys_gpu}')
+    query = subprocess.check_output(
+        ['nvidia-smi', '--query-gpu=index,uuid,memory.used,utilization.gpu,name,compute_cap',
+         '--format=csv,noheader,nounits'],
+        text=True,
+    ).splitlines()
+    if not query:
+        raise RuntimeError('nvidia-smi returned no GPUs during cluster isolation check')
+    gpus = []
+    for line in query:
+        idx, uuid_str, mem, util, name, cap = [part.strip() for part in line.split(',')]
+        mem_i, util_i = int(mem), int(util)
+        if mem_i > 128 or util_i > 2:
+            raise RuntimeError(f'Cluster GPU {idx} is not idle before 1-GPU calibration: {line}')
+        gpus.append({'index': int(idx), 'uuid': uuid_str, 'initial_used_MiB': mem_i,
+                     'initial_utilization_percent': util_i, 'name': name, 'compute_capability': cap})
+    procs = subprocess.check_output(
+        ['nvidia-smi', '--query-compute-apps=gpu_uuid,pid', '--format=csv,noheader,nounits'], text=True
+    ).splitlines()
+    external = []
+    for line in procs:
+        fields = [field.strip() for field in line.split(',') if field.strip()]
+        if len(fields) == 2 and int(fields[1]) != os.getpid():
+            external.append(f'{fields[0]}:pid={fields[1]}')
+    if external:
+        raise RuntimeError('Cluster has external GPU compute processes before calibration: ' + ', '.join(external))
+    return {'gpu_count': len(gpus), 'all_gpus_idle_before_load': True, 'gpus': gpus}
+
+
+def assert_no_external_cluster_gpu_processes(device: torch.device) -> None:
+    """Verify GPUs 1..N-1 remain completely idle and GPU 0 has only this PID around each calibration bundle."""
+    if device.type != 'cuda':
+        return
+    phys_gpu = resolve_physical_gpu(device, fallback_rank=0)
+    query = subprocess.check_output(
+        ['nvidia-smi', '--query-gpu=index,uuid,memory.used,utilization.gpu', '--format=csv,noheader,nounits'],
+        text=True,
+    ).splitlines()
+    for line in query:
+        idx_s, _, mem_s, util_s = [part.strip() for part in line.split(',')]
+        idx, mem_i, util_i = int(idx_s), int(mem_s), int(util_s)
+        if idx != phys_gpu and (mem_i > 128 or util_i > 2):
+            raise RuntimeError(f'Sibling GPU {idx} became active during 1-GPU isolated calibration: {line}')
+    procs = subprocess.check_output(
+        ['nvidia-smi', '--query-compute-apps=gpu_uuid,pid', '--format=csv,noheader,nounits'], text=True
+    ).splitlines()
+    external = []
+    for line in procs:
+        fields = [field.strip() for field in line.split(',') if field.strip()]
+        if len(fields) == 2 and int(fields[1]) != os.getpid():
+            external.append(f'{fields[0]}:pid={fields[1]}')
+    if external:
+        raise RuntimeError('External GPU compute processes appeared on cluster during calibration: ' + ', '.join(external))
 
 
 def adapter_tensor_hash(adapter):
@@ -125,11 +282,26 @@ def candidate_settings(arm):
             for lr, l2 in ((1e-4, .01), (1e-3, .1))]
 
 
+def validate_checkpoint_hashes(expected_hashes, current_hashes):
+    expected_non_impl = {k: v for k, v in expected_hashes.items() if k != 'implementation'}
+    current_non_impl = {k: v for k, v in current_hashes.items() if k != 'implementation'}
+    if expected_non_impl != current_non_impl:
+        raise ValueError('checkpoint/projection changed since dev tuning; freeze new settings')
+    expected_impl = expected_hashes.get('implementation')
+    current_impl = current_hashes.get('implementation')
+    if expected_impl == current_impl:
+        return
+    if (expected_impl == FROZEN_09A5469_IMPLEMENTATION_HASH
+            and algorithm_hash() == FROZEN_09A5469_ALGORITHM_HASH
+            and algorithm_file_hashes() == FROZEN_09A5469_ALGORITHM_FILES):
+        return
+    raise ValueError('checkpoint/projection changed since dev tuning; freeze new settings')
+
+
 def validate_frozen_settings(settings, stage, scale, checkpoint_hashes, prompt_manifest, generation_caps=None, model_pair=None, model_revisions=None, generation_environment=None):
     if not settings.get('frozen') or settings.get('stage') != stage or settings.get('scale') != scale:
         raise ValueError('test evaluation requires frozen settings for this stage and scale')
-    if settings['checkpoint_hashes'] != checkpoint_hashes:
-        raise ValueError('checkpoint/projection changed since dev tuning; freeze new settings')
+    validate_checkpoint_hashes(settings['checkpoint_hashes'], checkpoint_hashes)
     if settings.get('prompt_manifest_hash') != fingerprint(prompt_manifest):
         raise ValueError('prompt manifest changed since development selection')
     if generation_caps is not None and settings.get('generation_caps') != generation_caps:
@@ -156,6 +328,7 @@ class EvaluationRunner:
     def __init__(self, args):
         self.args = args
         self.device = torch.device(args.device)
+        self.affinity_info = apply_gpu_cpu_affinity(self.device, getattr(args, 'rank', 0))
         self.tiny = args.scale == 'smoke'
         if self.tiny:
             from .toy import ToyTarget, ToyParallelDrafter
@@ -514,7 +687,25 @@ def execute_job(runner, job, setting, mode, frozen_hash='', session=None, repeat
     if reuse is not None:
         row['baseline_reuse'] = reuse
     row.update({'identity': identity, 'timing_session': session, 'repeat': repeat,
-                'timing_isolated': mode == 'timing', 'rank': args.rank})
+                'timing_isolated': mode in ('timing', 'timing_calibration'), 'rank': args.rank})
+    if mode in ('timing', 'timing_calibration'):
+        ws = getattr(args, 'world_size', 1)
+        rk = getattr(args, 'rank', 0)
+        affinity = getattr(runner, 'affinity_info', None) or apply_gpu_cpu_affinity(torch.device('cpu'), rk)
+        sharding_mode = (
+            'single_gpu_calibration' if mode == 'timing_calibration'
+            else (f'sharded_{ws}gpu' if ws > 1 else 'single_gpu')
+        )
+        row.update({
+            'world_size': ws,
+            'sharding_mode': sharding_mode,
+            'physical_gpu': affinity['physical_gpu'],
+            'numa_node': affinity['numa_node'],
+            'cpu_affinity': affinity['cpu_affinity'],
+            'cpu_affinity_applied': affinity['cpu_affinity_applied'],
+            'timing_harness_implementation_sha256': implementation_hash(),
+            'algorithm_implementation_sha256': algorithm_hash(),
+        })
     atomic_json(path, row)
     manifest.data['jobs'][manifest.key(identity)] = {'identity': identity, 'status': 'complete',
                                                    'result_path': str(path), 'result_sha256': file_sha256(path)}
@@ -537,9 +728,87 @@ def comparison_session(runner, mode, configuration):
     if path.exists() and not getattr(args, 'fresh_session', False):
         state = json.loads(path.read_text())
     else:
-        state = {'logical_session': uuid.uuid4().hex, 'configuration': config, 'created_at_unix': time.time(), 'epochs': [], 'bundles': {}}
+        logical = getattr(args, 'logical_session', None) or uuid.uuid4().hex
+        state = {'logical_session': logical, 'configuration': config, 'created_at_unix': time.time(), 'epochs': [], 'bundles': {}}
+    rk = getattr(args, 'rank', 0)
+    ws = getattr(args, 'world_size', 1)
+    affinity = getattr(runner, 'affinity_info', None) or apply_gpu_cpu_affinity(torch.device('cpu'), rk)
+    if mode in ('timing', 'timing_calibration'):
+        state.update({
+            'rank': rk,
+            'world_size': ws,
+            'sharding_mode': 'single_gpu_calibration' if mode == 'timing_calibration' else 'single_gpu',
+            'physical_gpu': affinity['physical_gpu'],
+            'numa_node': affinity['numa_node'],
+            'cpu_affinity': affinity['cpu_affinity'],
+            'cpu_affinity_applied': affinity['cpu_affinity_applied'],
+            'timing_harness_implementation_sha256': implementation_hash(),
+            'algorithm_implementation_sha256': algorithm_hash(),
+        })
     epoch = uuid.uuid4().hex
-    state['epochs'].append({'epoch': epoch, 'started_at_unix': time.time(), 'device': str(runner.device)})
+    state['epochs'].append({'epoch': epoch, 'started_at_unix': time.time(), 'device': str(runner.device),
+                            'physical_gpu': affinity['physical_gpu'], 'numa_node': affinity['numa_node'],
+                            'cpu_affinity': affinity['cpu_affinity']})
+    atomic_json(path, state)
+    return path, state, epoch
+
+
+def sharded_timing_session(runner, logical_session, configuration, plan_path, plan_sha256):
+    args = runner.args
+    affinity = getattr(runner, 'affinity_info', None) or apply_gpu_cpu_affinity(torch.device('cpu'), args.rank)
+    config = {
+        'configuration': configuration,
+        'checkpoint_hashes': runner.checkpoint_hashes,
+        'model_pair': runner.model_pair,
+        'model_revisions': runner.model_revisions,
+        'generation_environment': getattr(runner, 'generation_environment', None),
+        'generation_caps': generation_caps(args),
+        'stage': args.stage,
+        'scale': args.scale,
+        'device': str(runner.device),
+        'visible_devices': os.environ.get('CUDA_VISIBLE_DEVICES'),
+        'rank': args.rank,
+        'world_size': args.world_size,
+        'physical_gpu': affinity['physical_gpu'],
+        'numa_node': affinity['numa_node'],
+        'cpu_affinity': affinity['cpu_affinity'],
+        'seed': args.seed,
+    }
+    path = args.output / args.stage / 'timing' / 'sessions' / f'{logical_session}-rank{args.rank}.json'
+    if path.exists() and not getattr(args, 'fresh_session', False):
+        state = json.loads(path.read_text())
+        if state.get('logical_session') != logical_session or state.get('rank') != args.rank or state.get('world_size') != args.world_size:
+            raise ValueError('existing sharded timing session identity/rank/world_size mismatch')
+        prior_cfg = state.get('configuration', {})
+        for key in ('configuration', 'checkpoint_hashes', 'model_pair', 'model_revisions',
+                    'generation_environment', 'generation_caps', 'stage', 'scale', 'rank', 'world_size', 'seed'):
+            if prior_cfg.get(key) != config.get(key):
+                raise ValueError(f'existing sharded timing session configuration mismatch on {key}')
+    else:
+        state = {
+            'logical_session': logical_session,
+            'rank': args.rank,
+            'world_size': args.world_size,
+            'sharding_mode': f'sharded_{args.world_size}gpu',
+            'sharding_plan_path': str(Path(plan_path).resolve()),
+            'sharding_plan_sha256': plan_sha256,
+            'configuration': config,
+            'created_at_unix': time.time(),
+            'epochs': [],
+            'bundles': {},
+        }
+    state.update({
+        'physical_gpu': affinity['physical_gpu'],
+        'numa_node': affinity['numa_node'],
+        'cpu_affinity': affinity['cpu_affinity'],
+        'cpu_affinity_applied': affinity['cpu_affinity_applied'],
+        'timing_harness_implementation_sha256': implementation_hash(),
+        'algorithm_implementation_sha256': algorithm_hash(),
+    })
+    epoch = uuid.uuid4().hex
+    state['epochs'].append({'epoch': epoch, 'started_at_unix': time.time(), 'device': str(runner.device),
+                            'physical_gpu': affinity['physical_gpu'], 'numa_node': affinity['numa_node'],
+                            'cpu_affinity': affinity['cpu_affinity']})
     atomic_json(path, state)
     return path, state, epoch
 
@@ -549,13 +818,14 @@ def comparison_bundle_key(jobs_and_settings, repeat, profile):
                                  for job, setting in jobs_and_settings], 'repeat': repeat, 'profile': profile})
 
 
-def read_comparison_bundle(runner, mode, jobs_and_settings, frozen_hash, session_state, repeat, profile=False, manifest=None):
+def read_comparison_bundle(runner, mode, jobs_and_settings, frozen_hash, session_state, repeat, profile=False, manifest=None, rank=None):
     """Return only a complete, checksummed, exactly matched all-arm bundle.
 
     Missing files are an interrupted bundle: callers may rerun every arm together.
     Contradictory identities or checksums fail explicitly rather than accepting or
     partially repairing measurements whose provenance is uncertain.
     """
+    effective_rank = runner.args.rank if rank is None else int(rank)
     bundle_key = comparison_bundle_key(jobs_and_settings, repeat, profile)
     prior = session_state['bundles'].get(bundle_key)
     if prior is None or prior.get('status') != 'complete':
@@ -570,12 +840,12 @@ def read_comparison_bundle(runner, mode, jobs_and_settings, frozen_hash, session
         return None
     directory = runner.args.output / runner.args.stage / mode
     if manifest is None:
-        manifest = Manifest(directory / 'manifest-rank0.json').data
+        manifest = Manifest(directory / f'manifest-rank{effective_rank}.json').data
     rows = []
     for (job, setting), path in zip(jobs_and_settings, paths):
         identity = run_identity(runner, job, setting, mode, frozen_hash,
             session=session_state['logical_session'], repeat=f'{repeat}:epoch={epoch}', profile=profile)
-        expected_path = directory / 'rank0' / f'{fingerprint(identity)}.json'
+        expected_path = directory / f'rank{effective_rank}' / f'{fingerprint(identity)}.json'
         if Path(path).resolve() != expected_path.resolve():
             raise ValueError('completed comparison bundle result path does not match expected identity')
         entry = manifest['jobs'].get(fingerprint(identity))
@@ -589,8 +859,11 @@ def read_comparison_bundle(runner, mode, jobs_and_settings, frozen_hash, session
         row = json.loads(payload)
         if row.get('identity') != identity:
             raise ValueError('completed comparison result identity mismatch')
+        if row.get('rank') != effective_rank:
+            raise ValueError('completed comparison result rank mismatch')
         if (row.get('generation', {}).get('complete') is not True
-                or row.get('phase_profile') is not profile or row.get('timing_isolated') is not (mode == 'timing')
+                or row.get('phase_profile') is not profile
+                or row.get('timing_isolated') is not (mode in ('timing', 'timing_calibration'))
                 or row.get('timing_session') != identity['timing_session'] or row.get('repeat') != identity['repeat']):
             raise ValueError('completed comparison result is incomplete or has mismatched timing/profile metadata')
         for key, expected in [('arm', job['arm']), ('prompt_id', job['prompt']['prompt_id']),
@@ -613,13 +886,14 @@ def comparison_bundle(runner, mode, jobs_and_settings, frozen_hash, session_path
     rows, paths = [], []
     repeat_identity = f'{repeat}:epoch={epoch}'
     from .bench_adapter import assert_no_external_gpu_processes
+    check_isolation = assert_no_external_cluster_gpu_processes if mode == 'timing_calibration' else assert_no_external_gpu_processes
     for job, setting in jobs_and_settings:
-        assert_no_external_gpu_processes(runner.device)
+        check_isolation(runner.device)
         row = execute_job(runner, job, setting, mode, frozen_hash, session=session_state['logical_session'],
                           repeat=repeat_identity, profile=profile)
         rows.append(row)
         paths.append(str(runner.args.output / runner.args.stage / mode / f'rank{runner.args.rank}' / f"{fingerprint(row['identity'])}.json"))
-    assert_no_external_gpu_processes(runner.device)
+    check_isolation(runner.device)
     session_state['bundles'][bundle_key] = {'status': 'complete', 'epoch': epoch, 'result_paths': paths}
     atomic_json(session_path, session_state)
     return rows
@@ -960,6 +1234,362 @@ def timing_schedule(jobs, settings, repeats):
         yield 'phase_profile', True, [(job, settings['selected'][job['arm']]) for job in same_prompt_jobs]
 
 
+def _snake_rank(index: int, world_size: int) -> int:
+    band, offset = divmod(int(index), int(world_size))
+    return offset if (band % 2 == 0) else (int(world_size) - 1 - offset)
+
+
+def compute_timing_sharding_plan(args, prompt_manifest, settings, selected):
+    """Deterministically shard timing prompts across ranks via condition-stratified token-balanced snake order."""
+    from types import SimpleNamespace
+    if not 1 <= args.world_size <= 8:
+        raise ValueError('timing sharding world_size must lie in 1..8')
+    if args.world_size > len(selected):
+        raise ValueError(f'timing world_size ({args.world_size}) cannot exceed selected prompt count ({len(selected)})')
+    frozen_hash = fingerprint(settings)
+    stub = SimpleNamespace(
+        args=args, tiny=args.scale == 'smoke', checkpoint_hashes=settings['checkpoint_hashes'],
+        model_pair=settings['model_pair'], model_revisions=settings['model_revisions'],
+        generation_environment=settings.get('generation_environment'),
+    )
+    eval_dir = args.output / args.stage / 'evaluate'
+    available = {}
+    if eval_dir.is_dir():
+        for manifest_path in sorted(eval_dir.glob('manifest-rank*.json')):
+            available.update(Manifest(manifest_path).data.get('jobs', {}))
+    eval_jobs = evaluation_jobs(selected, args.stage, args.scale, args.seed)
+    token_sums = defaultdict(int)
+    eval_complete = bool(eval_jobs)
+    for job in eval_jobs:
+        identity = run_identity(stub, job, settings['selected'][job['arm']], 'evaluate', frozen_hash)
+        entry = available.get(fingerprint(identity))
+        if entry is None or entry.get('status') != 'complete':
+            eval_complete = False
+            break
+        rpath = Path(entry.get('result_path', ''))
+        if not rpath.is_file():
+            eval_complete = False
+            break
+        payload = rpath.read_bytes()
+        if entry.get('result_sha256') and hashlib.sha256(payload).hexdigest() != entry['result_sha256']:
+            raise ValueError(f'evaluate result checksum changed while building timing sharding plan: {rpath}')
+        row = json.loads(payload)
+        if row.get('identity') != identity:
+            raise ValueError(f'evaluate result identity mismatch while building timing sharding plan: {rpath}')
+        token_sums[job['prompt']['prompt_id']] += int(row['generated_tokens'])
+
+    manifest_order = {p['prompt_id']: idx for idx, p in enumerate(prompt_manifest['prompts'])}
+    conditions_sorted = sorted({p['condition'] for p in selected})
+    ordered_by_condition = {}
+    if eval_complete:
+        weight_source = 'evaluate_realized_tokens'
+        prompt_token_sums = {p['prompt_id']: int(token_sums[p['prompt_id']]) for p in selected}
+        for cond in conditions_sorted:
+            cond_prompts = [p for p in selected if p['condition'] == cond]
+            ordered_by_condition[cond] = sorted(
+                cond_prompts,
+                key=lambda p: (-prompt_token_sums[p['prompt_id']], manifest_order[p['prompt_id']], p['prompt_id']),
+            )
+    else:
+        weight_source = 'prompt_manifest_order_fallback'
+        prompt_token_sums = {p['prompt_id']: None for p in selected}
+        for cond in conditions_sorted:
+            cond_prompts = [p for p in selected if p['condition'] == cond]
+            ordered_by_condition[cond] = sorted(cond_prompts, key=lambda p: (manifest_order[p['prompt_id']], p['prompt_id']))
+
+    prompt_to_rank = {}
+    if all(len(cond_prompts) >= args.world_size for cond_prompts in ordered_by_condition.values()):
+        for cond in conditions_sorted:
+            for k, p in enumerate(ordered_by_condition[cond]):
+                prompt_to_rank[p['prompt_id']] = _snake_rank(k, args.world_size)
+    else:
+        flat = [p for cond in conditions_sorted for p in ordered_by_condition[cond]]
+        for k, p in enumerate(flat):
+            prompt_to_rank[p['prompt_id']] = _snake_rank(k, args.world_size)
+
+    rank_prompts = {
+        r: [p['prompt_id'] for p in selected if prompt_to_rank[p['prompt_id']] == r]
+        for r in range(args.world_size)
+    }
+    if any(not pids for pids in rank_prompts.values()):
+        raise ValueError('timing sharding plan left at least one rank with zero prompts')
+    return {
+        'schema_version': 1,
+        'stage': args.stage,
+        'scale': args.scale,
+        'world_size': args.world_size,
+        'sharding_mode': f'sharded_{args.world_size}gpu',
+        'frozen_settings_hash': frozen_hash,
+        'prompt_manifest_hash': fingerprint(prompt_manifest),
+        'selected_prompt_ids': [p['prompt_id'] for p in selected],
+        'repeats': args.timing_repeats,
+        'warmups': args.timing_warmups,
+        'seed': args.seed,
+        'weight_source': weight_source,
+        'prompt_token_sums': prompt_token_sums,
+        'prompt_to_rank': prompt_to_rank,
+        'ranks': {str(r): rank_prompts[r] for r in range(args.world_size)},
+        'by_rank': {
+            str(r): {
+                'rank': r,
+                'prompt_ids': rank_prompts[r],
+                'prompt_count': len(rank_prompts[r]),
+                'realized_evaluate_tokens': (
+                    sum(prompt_token_sums[pid] for pid in rank_prompts[r]) if eval_complete else None
+                ),
+            }
+            for r in range(args.world_size)
+        },
+        'by_condition': {
+            cond: {
+                'ordered_prompt_ids': [p['prompt_id'] for p in ordered_by_condition[cond]],
+                'ranks': {
+                    str(r): [p['prompt_id'] for p in ordered_by_condition[cond] if prompt_to_rank[p['prompt_id']] == r]
+                    for r in range(args.world_size)
+                },
+            }
+            for cond in conditions_sorted
+        },
+    }
+
+
+def ensure_timing_sharding_plan(args, prompt_manifest, settings, selected):
+    """Atomically persist or validate `sharding_plan.json` across concurrent rank startups."""
+    timing_dir = args.output / args.stage / 'timing'
+    timing_dir.mkdir(parents=True, exist_ok=True)
+    plan_path = timing_dir / 'sharding_plan.json'
+    lock_path = timing_dir / '.sharding_plan.lock'
+    computed = compute_timing_sharding_plan(args, prompt_manifest, settings, selected)
+    compare_keys = (
+        'stage', 'scale', 'world_size', 'sharding_mode', 'frozen_settings_hash',
+        'prompt_manifest_hash', 'selected_prompt_ids', 'repeats', 'warmups', 'seed',
+        'weight_source', 'prompt_token_sums', 'prompt_to_rank', 'ranks',
+    )
+    with lock_path.open('a+') as lock_stream:
+        fcntl.flock(lock_stream.fileno(), fcntl.LOCK_EX)
+        if plan_path.is_file() and not getattr(args, 'fresh_session', False):
+            existing = json.loads(plan_path.read_text())
+            for key in compare_keys:
+                if existing.get(key) != computed.get(key):
+                    raise ValueError(f'existing sharding_plan.json mismatch on {key}; pass --fresh_session to rebuild')
+            requested_session = getattr(args, 'logical_session', None)
+            if requested_session is not None and existing.get('logical_session') != requested_session:
+                raise ValueError('existing sharding_plan.json has a different logical_session; pass --fresh_session or omit --logical_session to resume')
+            return plan_path, existing, file_sha256(plan_path)
+        logical_session = getattr(args, 'logical_session', None) or uuid.uuid4().hex
+        plan = {'logical_session': logical_session, **computed}
+        atomic_json(plan_path, plan)
+        return plan_path, plan, file_sha256(plan_path)
+
+
+def _finalize_timing_report(args, prompts, selected, frozen_hash, session, rows, profiles,
+                            raw_evidence, *, world_size, device_str, isolation_str,
+                            restart_epochs=None, restart_epochs_by_rank=None,
+                            resume_policy=None, rank_affinity=None,
+                            sharding_plan_path=None, sharding_plan_sha256=None,
+                            repeats=None, warmups=None, harness_sha=None, alg_sha=None):
+    full_coverage = len(selected) == len(prompts)
+    eff_repeats = args.timing_repeats if repeats is None else repeats
+    eff_warmups = args.timing_warmups if warmups is None else warmups
+    eff_harness_sha = implementation_hash() if harness_sha is None else harness_sha
+    eff_alg_sha = algorithm_hash() if alg_sha is None else alg_sha
+    sharding_mode = 'single_gpu' if world_size == 1 else f'sharded_{world_size}gpu'
+    report = {
+        'scale': args.scale,
+        'stage': args.stage,
+        'status': 'complete' if full_coverage else 'pilot_complete',
+        'full_reference_prompt_coverage': full_coverage,
+        'expected_full_prompt_count': len(prompts),
+        'timing_session': session,
+        'frozen_settings_hash': frozen_hash,
+        'world_size': world_size,
+        'sharding_mode': sharding_mode,
+        'timing_harness_implementation_sha256': eff_harness_sha,
+        'algorithm_implementation_sha256': eff_alg_sha,
+        'algorithm_files_sha256': algorithm_file_hashes(),
+        'restart_epochs': restart_epochs if world_size == 1 else restart_epochs_by_rank,
+        'resume_policy': resume_policy or 'reuse complete all-arm prompt/seed/repeat bundles only; rerun every arm of interrupted bundles in the new epoch',
+        'device': device_str,
+        'isolation': isolation_str,
+        'rank_affinity': rank_affinity,
+        'sharding_plan_path': str(Path(sharding_plan_path).resolve()) if sharding_plan_path else None,
+        'sharding_plan_sha256': sharding_plan_sha256,
+        'warmups_per_arm_condition': eff_warmups,
+        'repeats': eff_repeats,
+        'prompt_ids': [p['prompt_id'] for p in selected],
+        'timed_requests': len(rows),
+        'raw_evidence': raw_evidence,
+        'groups': summarize_rows(rows, isolated_timing=True),
+        'phase_profiles': summarize_rows(profiles, isolated_timing=True),
+        'instrumentation_policy': 'Uninstrumented synchronized request wall time for speed; separate same-arm/same-prompt CUDA-event profile runs for phases.',
+        'timing_scope': 'all required held-out test prompts and condition-specific seed counts' if full_coverage else 'pilot matched subset; cannot satisfy milestone throughput gate',
+        'baseline_policy': 'all baselines remeasured in this same session; no M3/M4 throughput reuse',
+    }
+    plain = {(g['condition'], g['temperature'], json.dumps(g['sampling_warp_config'], sort_keys=True)): g['metrics']['tokens_per_second']['mean']
+             for g in report['groups'] if g['arm'] == 'plain_dflash'}
+    paired_plain = {
+        (row['condition'], row['temperature'], json.dumps(row['sampling_warp_config'], sort_keys=True),
+         row['prompt_id'], row['seed'], str(row['repeat']).split(':epoch=')[0]): row
+        for row in rows if row['arm'] == 'plain_dflash'
+    }
+    for group in report['groups']:
+        key = (group['condition'], group['temperature'], json.dumps(group['sampling_warp_config'], sort_keys=True))
+        mean = group['metrics']['tokens_per_second']['mean']
+        baseline = plain.get(key)
+        group['throughput_relative_to_plain'] = mean / baseline if mean is not None and baseline else None
+        group['throughput_improved_after_all_proposal_and_online_costs'] = mean > baseline if mean is not None and baseline else None
+        paired, matched_arm, matched_plain = [], [], []
+        excluded_pairs = 0
+        for row in rows:
+            row_key = (row['condition'], row['temperature'], json.dumps(row['sampling_warp_config'], sort_keys=True))
+            if row['arm'] != group['arm'] or row_key != key:
+                continue
+            rep_base = str(row['repeat']).split(':epoch=')[0]
+            baseline_row = paired_plain[(*row_key, row['prompt_id'], row['seed'], rep_base)]
+            if row['condition'].startswith('long_') and (row['generation']['repetition_dominated'] or baseline_row['generation']['repetition_dominated']):
+                excluded_pairs += 1
+                continue
+            matched_arm.append(row)
+            matched_plain.append(baseline_row)
+            paired.append({'prompt_id': row['prompt_id'], 'seed': row['seed'], 'ratio': row['tokens_per_second'] / baseline_row['tokens_per_second']})
+        ratio = prompt_bootstrap(paired, 'ratio')
+        matched_arm_mean = prompt_bootstrap(matched_arm, 'tokens_per_second')['mean']
+        matched_plain_mean = prompt_bootstrap(matched_plain, 'tokens_per_second')['mean']
+        group['matched_timing_requests'] = len(matched_arm)
+        group['repetition_excluded_comparison_pairs'] = excluded_pairs
+        group['matched_arm_tokens_per_second'] = matched_arm_mean
+        group['matched_plain_tokens_per_second'] = matched_plain_mean
+        group['throughput_relative_to_plain'] = matched_arm_mean / matched_plain_mean if matched_plain_mean else None
+        group['throughput_improved_after_all_proposal_and_online_costs'] = matched_arm_mean > matched_plain_mean if matched_plain_mean else None
+        group['paired_throughput_ratio'] = ratio
+        group['throughput_gain_supported_by_95_ci'] = ratio['ci95'][0] > 1 if ratio['ci95'] else None
+    cal_path = args.output / args.stage / 'timing_isolation_calibration.json'
+    if cal_path.is_file():
+        cal_data = json.loads(cal_path.read_text())
+        report['isolation_calibration'] = {
+            'path': str(cal_path.resolve()),
+            'sha256': file_sha256(cal_path),
+            'status': cal_data.get('status'),
+            'calibrated_timed_runs': cal_data.get('calibrated_timed_runs'),
+        }
+    return report
+
+
+def summarize_sharded_timing(args, prompt_manifest, settings):
+    """Aggregate rank 0..W-1 matched timing bundles into `timing.json` once all ranks finish."""
+    from types import SimpleNamespace
+    plan_path = args.output / args.stage / 'timing' / 'sharding_plan.json'
+    if not plan_path.is_file():
+        return None
+    plan = json.loads(plan_path.read_text())
+    frozen_hash = fingerprint(settings)
+    if (plan.get('stage') != args.stage or plan.get('scale') != args.scale
+            or plan.get('frozen_settings_hash') != frozen_hash):
+        return None
+    world_size = int(plan['world_size'])
+    if world_size < 2:
+        return None
+    logical_session = plan['logical_session']
+    repeats = int(plan['repeats'])
+    warmups = int(plan['warmups'])
+    timing_dir = args.output / args.stage / 'timing'
+    session_paths = [timing_dir / 'sessions' / f'{logical_session}-rank{r}.json' for r in range(world_size)]
+    manifest_paths = [timing_dir / f'manifest-rank{r}.json' for r in range(world_size)]
+    if not all(p.is_file() for p in session_paths + manifest_paths):
+        return None
+    rank_sessions = [json.loads(p.read_text()) for p in session_paths]
+    rank_manifests = [json.loads(p.read_text()) for p in manifest_paths]
+
+    prompts = select_prompts(prompt_manifest, 'test', args.scale)
+    by_id = {p['prompt_id']: p for p in prompts}
+    selected = [by_id[pid] for pid in plan['selected_prompt_ids'] if pid in by_id]
+    if [p['prompt_id'] for p in selected] != plan['selected_prompt_ids']:
+        raise ValueError('sharding_plan.json selected_prompt_ids contain unknown test prompts')
+
+    stub_args = copy.copy(args)
+    stub_args.world_size = world_size
+    stub = SimpleNamespace(
+        args=stub_args, tiny=args.scale == 'smoke', checkpoint_hashes=settings['checkpoint_hashes'],
+        model_pair=settings['model_pair'], model_revisions=settings['model_revisions'],
+        generation_environment=settings.get('generation_environment'),
+    )
+    jobs = evaluation_jobs(selected, args.stage, args.scale, args.seed)
+    rows, profiles = [], []
+    bundle_count = 0
+    prompt_to_rank = {pid: int(rk) for pid, rk in plan['prompt_to_rank'].items()}
+    for repeat, profile, comparisons in timing_schedule(jobs, settings, repeats):
+        prompt_id = comparisons[0][0]['prompt']['prompt_id']
+        r = prompt_to_rank[prompt_id]
+        bundle_rows = read_comparison_bundle(
+            stub, 'timing', comparisons, frozen_hash, rank_sessions[r],
+            repeat, profile, manifest=rank_manifests[r], rank=r,
+        )
+        if bundle_rows is None:
+            return None
+        (profiles if profile else rows).extend(bundle_rows)
+        bundle_count += 1
+
+    rank_affinity = {}
+    seen_gpus, seen_cpus = set(), set()
+    harness_shas = set()
+    alg_shas = set()
+    for r, sess in enumerate(rank_sessions):
+        phys_gpu = sess.get('physical_gpu')
+        numa_node = sess.get('numa_node')
+        cpus = list(sess.get('cpu_affinity') or [])
+        if phys_gpu is None or numa_node is None or not cpus:
+            raise ValueError(f'sharded timing session rank {r} lacks GPU/NUMA/CPU affinity metadata')
+        if phys_gpu in seen_gpus:
+            raise ValueError(f'duplicate physical_gpu {phys_gpu} across sharded timing ranks')
+        if seen_cpus.intersection(cpus):
+            raise ValueError(f'overlapping cpu_affinity across sharded timing ranks on rank {r}')
+        seen_gpus.add(phys_gpu)
+        seen_cpus.update(cpus)
+        rank_affinity[str(r)] = {
+            'physical_gpu': phys_gpu,
+            'numa_node': numa_node,
+            'cpu_affinity': cpus,
+            'cpu_affinity_applied': bool(sess.get('cpu_affinity_applied', False)),
+        }
+        if sess.get('timing_harness_implementation_sha256'):
+            harness_shas.add(sess['timing_harness_implementation_sha256'])
+        if sess.get('algorithm_implementation_sha256'):
+            alg_shas.add(sess['algorithm_implementation_sha256'])
+    if len(harness_shas) > 1 or len(alg_shas) > 1:
+        raise ValueError('inconsistent harness/algorithm implementation SHA256 across sharded timing ranks')
+    plan_sha256 = file_sha256(plan_path)
+    raw_evidence = {
+        'world_size': world_size,
+        'sharding_plan_path': str(plan_path.resolve()),
+        'sharding_plan_sha256': plan_sha256,
+        'session_paths': [str(p.resolve()) for p in session_paths],
+        'session_sha256s': [file_sha256(p) for p in session_paths],
+        'manifest_paths': [str(p.resolve()) for p in manifest_paths],
+        'manifest_sha256s': [file_sha256(p) for p in manifest_paths],
+        'timing_requests': len(rows),
+        'profile_requests': len(profiles),
+        'bundles': bundle_count,
+    }
+    device_str = rank_sessions[0].get('configuration', {}).get('device', str(args.device))
+    isolation_str = (
+        f'{world_size} NUMA/core-pinned processes (16 physical cores/GPU); '
+        'per-GPU idle check before model load and external-process check around every matched all-arm bundle; '
+        'paired with 1-GPU cluster-isolated calibration'
+    )
+    report = _finalize_timing_report(
+        stub_args, prompts, selected, frozen_hash, logical_session, rows, profiles, raw_evidence,
+        world_size=world_size, device_str=device_str, isolation_str=isolation_str,
+        restart_epochs_by_rank={str(r): rank_sessions[r]['epochs'] for r in range(world_size)},
+        resume_policy='reuse complete all-arm prompt/seed/repeat bundles per rank session; rerun every arm of interrupted bundles in the new epoch',
+        rank_affinity=rank_affinity, sharding_plan_path=plan_path, sharding_plan_sha256=plan_sha256,
+        repeats=repeats, warmups=warmups,
+        harness_sha=next(iter(harness_shas), implementation_hash()),
+        alg_sha=next(iter(alg_shas), algorithm_hash()),
+    )
+    atomic_json(args.output / args.stage / 'timing.json', report)
+    return report
+
+
 def audit_timing_evidence(runner, prompt_manifest, settings, report):
     """CPU-only completion gate over every expected raw timing/profile result."""
     try:
@@ -981,66 +1611,639 @@ def audit_timing_evidence(runner, prompt_manifest, settings, report):
         if type(repeats) is not int or repeats < 2 or type(warmups) is not int or warmups < 1:
             raise ValueError('timing evidence lacks required repeats/warmups')
         evidence = report['raw_evidence']
-        session_path = Path(evidence['session_path'])
-        session_bytes = session_path.read_bytes()
-        if hashlib.sha256(session_bytes).hexdigest() != evidence['session_sha256']:
-            raise ValueError('timing comparison session checksum changed')
-        session = json.loads(session_bytes)
-        config = session['configuration']
-        expected_path = args.output / args.stage / 'timing' / 'sessions' / f'{fingerprint(config)}.json'
-        if session_path.resolve() != expected_path.resolve() or session['logical_session'] != report['timing_session']:
-            raise ValueError('timing session path/identity mismatch')
-        expected_config = {'configuration': {'frozen_settings_hash': frozen_hash,
-            'prompt_manifest_hash': fingerprint(prompt_manifest), 'selected_prompts': report['prompt_ids'],
-            'repeats': repeats, 'warmups': warmups}, 'checkpoint_hashes': runner.checkpoint_hashes,
-            'model_pair': runner.model_pair, 'model_revisions': runner.model_revisions,
-            'generation_environment': getattr(runner, 'generation_environment', None),
-            'generation_caps': generation_caps(args), 'stage': args.stage, 'scale': args.scale,
-            'device': report['device'], 'seed': args.seed}
-        if any(config.get(key) != value for key, value in expected_config.items()):
-            raise ValueError('timing session configuration mismatch')
-        manifest_path = args.output / args.stage / 'timing' / 'manifest-rank0.json'
-        if Path(evidence['manifest_path']).resolve() != manifest_path.resolve():
-            raise ValueError('timing manifest path mismatch')
-        manifest_bytes = manifest_path.read_bytes()
-        if hashlib.sha256(manifest_bytes).hexdigest() != evidence['manifest_sha256']:
-            raise ValueError('timing manifest checksum changed')
-        manifest = json.loads(manifest_bytes)
+        world_size = int(report.get('world_size', evidence.get('world_size', 1)))
         jobs = evaluation_jobs(selected, args.stage, args.scale, args.seed)
         counts = {'timing_requests': 0, 'profile_requests': 0, 'bundles': 0}
+
+        if world_size == 1:
+            session_path = Path(evidence['session_path'])
+            session_bytes = session_path.read_bytes()
+            if hashlib.sha256(session_bytes).hexdigest() != evidence['session_sha256']:
+                raise ValueError('timing comparison session checksum changed')
+            session = json.loads(session_bytes)
+            config = session['configuration']
+            expected_path = args.output / args.stage / 'timing' / 'sessions' / f'{fingerprint(config)}.json'
+            if session_path.resolve() != expected_path.resolve() or session['logical_session'] != report['timing_session']:
+                raise ValueError('timing session path/identity mismatch')
+            expected_config = {'configuration': {'frozen_settings_hash': frozen_hash,
+                'prompt_manifest_hash': fingerprint(prompt_manifest), 'selected_prompts': report['prompt_ids'],
+                'repeats': repeats, 'warmups': warmups}, 'checkpoint_hashes': runner.checkpoint_hashes,
+                'model_pair': runner.model_pair, 'model_revisions': runner.model_revisions,
+                'generation_environment': getattr(runner, 'generation_environment', None),
+                'generation_caps': generation_caps(args), 'stage': args.stage, 'scale': args.scale,
+                'device': report['device'], 'seed': args.seed}
+            if any(config.get(key) != value for key, value in expected_config.items()):
+                raise ValueError('timing session configuration mismatch')
+            manifest_path = args.output / args.stage / 'timing' / 'manifest-rank0.json'
+            if Path(evidence['manifest_path']).resolve() != manifest_path.resolve():
+                raise ValueError('timing manifest path mismatch')
+            manifest_bytes = manifest_path.read_bytes()
+            if hashlib.sha256(manifest_bytes).hexdigest() != evidence['manifest_sha256']:
+                raise ValueError('timing manifest checksum changed')
+            manifest = json.loads(manifest_bytes)
+            for repeat, profile, comparisons in timing_schedule(jobs, settings, repeats):
+                rows = read_comparison_bundle(runner, 'timing', comparisons, frozen_hash, session,
+                                              repeat, profile, manifest=manifest, rank=0)
+                if rows is None:
+                    raise ValueError('required all-arm timing/profile bundle is incomplete')
+                counts['profile_requests' if profile else 'timing_requests'] += len(rows)
+                counts['bundles'] += 1
+            if (counts['timing_requests'] != len(jobs) * repeats or counts['profile_requests'] != len(jobs)
+                    or report['timed_requests'] != counts['timing_requests']
+                    or any(evidence.get(key) != value for key, value in counts.items())):
+                raise ValueError('raw timing/profile evidence count mismatch')
+            return {'status': 'complete', **counts, 'world_size': 1,
+                    'session_sha256': evidence['session_sha256'], 'manifest_sha256': evidence['manifest_sha256']}
+
+        if not 2 <= world_size <= 8:
+            raise ValueError(f'unsupported sharded timing world_size={world_size}')
+        if report.get('sharding_mode') != f'sharded_{world_size}gpu':
+            raise ValueError('sharded timing report sharding_mode mismatch')
+        harness_sha = report.get('timing_harness_implementation_sha256')
+        if not isinstance(harness_sha, str) or len(harness_sha) != 64:
+            raise ValueError('sharded timing report lacks valid timing_harness_implementation_sha256')
+        timing_dir = args.output / args.stage / 'timing'
+        plan_path = timing_dir / 'sharding_plan.json'
+        if Path(evidence.get('sharding_plan_path', '')).resolve() != plan_path.resolve():
+            raise ValueError('sharding_plan_path mismatch')
+        plan_bytes = plan_path.read_bytes()
+        plan_sha = hashlib.sha256(plan_bytes).hexdigest()
+        if plan_sha != evidence.get('sharding_plan_sha256') or plan_sha != report.get('sharding_plan_sha256'):
+            raise ValueError('sharding_plan.json checksum changed')
+        plan = json.loads(plan_bytes)
+        plan_args = copy.copy(args)
+        plan_args.world_size = world_size
+        plan_args.timing_repeats = repeats
+        plan_args.timing_warmups = warmups
+        plan_args.timing_prompts = 0
+        expected_plan = compute_timing_sharding_plan(plan_args, prompt_manifest, settings, selected)
+        for key in ('stage', 'scale', 'world_size', 'sharding_mode', 'frozen_settings_hash',
+                    'prompt_manifest_hash', 'selected_prompt_ids', 'repeats', 'warmups', 'seed',
+                    'weight_source', 'prompt_token_sums', 'prompt_to_rank', 'ranks'):
+            if plan.get(key) != expected_plan.get(key):
+                raise ValueError(f'sharding_plan.json {key} does not match deterministic sharding rule')
+        if plan.get('logical_session') != report['timing_session']:
+            raise ValueError('sharding_plan.json logical_session mismatch')
+
+        session_paths = evidence.get('session_paths', [])
+        session_shas = evidence.get('session_sha256s', [])
+        manifest_paths = evidence.get('manifest_paths', [])
+        manifest_shas = evidence.get('manifest_sha256s', [])
+        if (len(session_paths) != world_size or len(session_shas) != world_size
+                or len(manifest_paths) != world_size or len(manifest_shas) != world_size):
+            raise ValueError('sharded timing evidence file list length mismatch')
+
+        rank_sessions, rank_manifests = [], []
+        seen_gpus, seen_cpus = set(), set()
+        for r in range(world_size):
+            sp = Path(session_paths[r])
+            exp_sp = timing_dir / 'sessions' / f"{report['timing_session']}-rank{r}.json"
+            if sp.resolve() != exp_sp.resolve():
+                raise ValueError(f'timing session path mismatch on rank {r}')
+            sb = sp.read_bytes()
+            if hashlib.sha256(sb).hexdigest() != session_shas[r]:
+                raise ValueError(f'timing session checksum changed on rank {r}')
+            sess = json.loads(sb)
+            if sess.get('logical_session') != report['timing_session'] or sess.get('rank') != r or sess.get('world_size') != world_size:
+                raise ValueError(f'timing session header mismatch on rank {r}')
+            cfg = sess.get('configuration', {})
+            exp_inner = {
+                'frozen_settings_hash': frozen_hash,
+                'prompt_manifest_hash': fingerprint(prompt_manifest),
+                'selected_prompts': report['prompt_ids'],
+                'rank_prompts': plan['ranks'][str(r)],
+                'sharding_plan_sha256': plan_sha,
+                'repeats': repeats,
+                'warmups': warmups,
+            }
+            expected_cfg = {
+                'configuration': exp_inner,
+                'checkpoint_hashes': runner.checkpoint_hashes,
+                'model_pair': runner.model_pair,
+                'model_revisions': runner.model_revisions,
+                'generation_environment': getattr(runner, 'generation_environment', None),
+                'generation_caps': generation_caps(args),
+                'stage': args.stage,
+                'scale': args.scale,
+                'rank': r,
+                'world_size': world_size,
+                'seed': args.seed,
+            }
+            if any(cfg.get(k) != v for k, v in expected_cfg.items()):
+                raise ValueError(f'timing session configuration mismatch on rank {r}')
+            phys_gpu = sess.get('physical_gpu')
+            numa_node = sess.get('numa_node')
+            cpus = list(sess.get('cpu_affinity') or [])
+            if phys_gpu is None or numa_node is None or not cpus:
+                raise ValueError(f'rank {r} missing physical_gpu/numa_node/cpu_affinity')
+            if phys_gpu in seen_gpus or seen_cpus.intersection(cpus):
+                raise ValueError(f'non-disjoint GPU/CPU affinity on rank {r}')
+            seen_gpus.add(phys_gpu)
+            seen_cpus.update(cpus)
+            mp = Path(manifest_paths[r])
+            exp_mp = timing_dir / f'manifest-rank{r}.json'
+            if mp.resolve() != exp_mp.resolve():
+                raise ValueError(f'timing manifest path mismatch on rank {r}')
+            mb = mp.read_bytes()
+            if hashlib.sha256(mb).hexdigest() != manifest_shas[r]:
+                raise ValueError(f'timing manifest checksum changed on rank {r}')
+            rank_sessions.append(sess)
+            rank_manifests.append(json.loads(mb))
+
+        prompt_to_rank = {pid: int(rk) for pid, rk in plan['prompt_to_rank'].items()}
         for repeat, profile, comparisons in timing_schedule(jobs, settings, repeats):
-            rows = read_comparison_bundle(runner, 'timing', comparisons, frozen_hash, session,
-                                          repeat, profile, manifest=manifest)
+            pid = comparisons[0][0]['prompt']['prompt_id']
+            r = prompt_to_rank[pid]
+            rows = read_comparison_bundle(runner, 'timing', comparisons, frozen_hash, rank_sessions[r],
+                                          repeat, profile, manifest=rank_manifests[r], rank=r)
             if rows is None:
-                raise ValueError('required all-arm timing/profile bundle is incomplete')
+                raise ValueError(f'required all-arm timing/profile bundle is incomplete on rank {r}')
+            for row in rows:
+                if row.get('timing_harness_implementation_sha256') != harness_sha:
+                    raise ValueError('row timing_harness_implementation_sha256 mismatch')
             counts['profile_requests' if profile else 'timing_requests'] += len(rows)
             counts['bundles'] += 1
         if (counts['timing_requests'] != len(jobs) * repeats or counts['profile_requests'] != len(jobs)
                 or report['timed_requests'] != counts['timing_requests']
                 or any(evidence.get(key) != value for key, value in counts.items())):
             raise ValueError('raw timing/profile evidence count mismatch')
-        return {'status': 'complete', **counts, 'session_sha256': evidence['session_sha256'],
-                'manifest_sha256': evidence['manifest_sha256']}
+        return {'status': 'complete', **counts, 'world_size': world_size,
+                'sharding_plan_sha256': plan_sha, 'session_sha256s': session_shas,
+                'manifest_sha256s': manifest_shas}
     except (OSError, ValueError, KeyError, TypeError) as error:
         return {'status': 'incomplete', 'reason': str(error)}
 
 
 def timing(runner, prompt_manifest, settings):
     args = runner.args
-    if args.world_size != 1 or args.rank != 0:
-        raise ValueError('latency/throughput timing requires one process on one idle GPU')
+    if not 1 <= args.world_size <= 8 or not 0 <= args.rank < args.world_size:
+        raise ValueError('timing requires rank in 0..world_size-1 with world_size in 1..8')
     prompts = select_prompts(prompt_manifest, 'test', args.scale)
     selected = []
     for condition in sorted({p['condition'] for p in prompts}):
         condition_prompts = [p for p in prompts if p['condition'] == condition]
         selected.extend(condition_prompts if args.timing_prompts == 0 else condition_prompts[:args.timing_prompts])
     jobs = evaluation_jobs(selected, args.stage, args.scale, args.seed)
-    session_path, session_state, epoch = comparison_session(runner, 'timing', {'frozen_settings_hash': fingerprint(settings),
-        'prompt_manifest_hash': fingerprint(prompt_manifest), 'selected_prompts': [p['prompt_id'] for p in selected],
-        'repeats': args.timing_repeats, 'warmups': args.timing_warmups})
-    session = session_state['logical_session']
     frozen_hash = fingerprint(settings)
-    # All arms are warmed up with fresh request state before any measured runs.
+
+    if args.world_size == 1:
+        session_path, session_state, epoch = comparison_session(runner, 'timing', {
+            'frozen_settings_hash': frozen_hash,
+            'prompt_manifest_hash': fingerprint(prompt_manifest),
+            'selected_prompts': [p['prompt_id'] for p in selected],
+            'repeats': args.timing_repeats,
+            'warmups': args.timing_warmups,
+        })
+        session = session_state['logical_session']
+        for condition in sorted({p['condition'] for p in selected}):
+            prompt = next(p for p in selected if p['condition'] == condition)
+            name, temperature, warp = sampling_conditions(condition, primary_only=True)[0]
+            for _ in range(args.timing_warmups):
+                for arm in arms_for(args.stage, args.scale):
+                    job = {'prompt': prompt, 'sampling_name': name, 'temperature': temperature,
+                           'warper': warp, 'seed': args.seed, 'arm': arm, 'max_new_tokens_override': 64}
+                    runner.run(job, settings['selected'][arm], profile=False)
+        session_state['warmup_completed'] = True
+        atomic_json(session_path, session_state)
+        rows, profiles = [], []
+        bundle_count = 0
+        for repeat, profile, comparisons in timing_schedule(jobs, settings, args.timing_repeats):
+            results = comparison_bundle(runner, 'timing', comparisons, frozen_hash,
+                                        session_path, session_state, epoch, repeat, profile=profile)
+            (profiles if profile else rows).extend(results)
+            bundle_count += 1
+        manifest_path = args.output / args.stage / 'timing' / 'manifest-rank0.json'
+        affinity = getattr(runner, 'affinity_info', None) or apply_gpu_cpu_affinity(torch.device('cpu'), 0)
+        raw_evidence = {
+            'session_path': str(session_path.resolve()),
+            'session_sha256': file_sha256(session_path),
+            'manifest_path': str(manifest_path.resolve()),
+            'manifest_sha256': file_sha256(manifest_path),
+            'timing_requests': len(rows),
+            'profile_requests': len(profiles),
+            'bundles': bundle_count,
+            'world_size': 1,
+        }
+        report = _finalize_timing_report(
+            args, prompts, selected, frozen_hash, session, rows, profiles, raw_evidence,
+            world_size=1, device_str=str(runner.device),
+            isolation_str='one process; idle-device check before model load',
+            restart_epochs=session_state['epochs'],
+            rank_affinity={'0': affinity},
+        )
+        atomic_json(args.output / args.stage / 'timing.json', report)
+        return report
+
+    plan_path, plan, plan_sha256 = ensure_timing_sharding_plan(args, prompt_manifest, settings, selected)
+    logical_session = plan['logical_session']
+    rank_prompt_ids = list(plan['ranks'][str(args.rank)])
+    rank_prompt_set = set(rank_prompt_ids)
+    rank_prompts = [p for p in selected if p['prompt_id'] in rank_prompt_set]
+    session_path, session_state, epoch = sharded_timing_session(
+        runner, logical_session,
+        {
+            'frozen_settings_hash': frozen_hash,
+            'prompt_manifest_hash': fingerprint(prompt_manifest),
+            'selected_prompts': [p['prompt_id'] for p in selected],
+            'rank_prompts': rank_prompt_ids,
+            'sharding_plan_sha256': plan_sha256,
+            'repeats': args.timing_repeats,
+            'warmups': args.timing_warmups,
+        },
+        plan_path, plan_sha256,
+    )
+    # Warm up all arms on every condition assigned to this rank before timed measurements.
+    for condition in sorted({p['condition'] for p in rank_prompts}):
+        prompt = next(p for p in rank_prompts if p['condition'] == condition)
+        name, temperature, warp = sampling_conditions(condition, primary_only=True)[0]
+        for _ in range(args.timing_warmups):
+            for arm in arms_for(args.stage, args.scale):
+                job = {'prompt': prompt, 'sampling_name': name, 'temperature': temperature,
+                       'warper': warp, 'seed': args.seed, 'arm': arm, 'max_new_tokens_override': 64}
+                runner.run(job, settings['selected'][arm], profile=False)
+    session_state['warmup_completed'] = True
+    atomic_json(session_path, session_state)
+    rows, profiles = [], []
+    bundle_count = 0
+    for repeat, profile, comparisons in timing_schedule(jobs, settings, args.timing_repeats):
+        if comparisons[0][0]['prompt']['prompt_id'] not in rank_prompt_set:
+            continue
+        results = comparison_bundle(runner, 'timing', comparisons, frozen_hash,
+                                    session_path, session_state, epoch, repeat, profile=profile)
+        (profiles if profile else rows).extend(results)
+        bundle_count += 1
+    manifest_path = args.output / args.stage / 'timing' / f'manifest-rank{args.rank}.json'
+    full_coverage = len(selected) == len(prompts)
+    rank_report = {
+        'scale': args.scale,
+        'stage': args.stage,
+        'status': 'rank_complete' if full_coverage else 'pilot_rank_complete',
+        'rank': args.rank,
+        'world_size': args.world_size,
+        'sharding_mode': f'sharded_{args.world_size}gpu',
+        'timing_session': logical_session,
+        'frozen_settings_hash': frozen_hash,
+        'timing_harness_implementation_sha256': implementation_hash(),
+        'algorithm_implementation_sha256': algorithm_hash(),
+        'physical_gpu': runner.affinity_info['physical_gpu'],
+        'numa_node': runner.affinity_info['numa_node'],
+        'cpu_affinity': runner.affinity_info['cpu_affinity'],
+        'cpu_affinity_applied': runner.affinity_info['cpu_affinity_applied'],
+        'rank_prompt_ids': rank_prompt_ids,
+        'timed_requests': len(rows),
+        'profile_requests': len(profiles),
+        'bundles': bundle_count,
+        'sharding_plan_path': str(plan_path.resolve()),
+        'sharding_plan_sha256': plan_sha256,
+        'session_path': str(session_path.resolve()),
+        'session_sha256': file_sha256(session_path),
+        'manifest_path': str(manifest_path.resolve()),
+        'manifest_sha256': file_sha256(manifest_path),
+    }
+    atomic_json(args.output / args.stage / 'timing' / f'timing-rank{args.rank}.json', rank_report)
+    return rank_report
+
+
+def select_calibration_prompts(args, prompt_manifest, settings):
+    """Select 4 deterministic standard test prompts + 2 shortest non-rep-dominated long test prompts from evaluate."""
+    from types import SimpleNamespace
+    prompts = select_prompts(prompt_manifest, 'test', args.scale)
+    standard = [p for p in prompts if p['condition'] == 'standard_nonthinking']
+    long_prompts = [p for p in prompts if p['condition'].startswith('long_')]
+    n_std = min(4, len(standard))
+    n_long = min(2, len(long_prompts))
+    selected_std = standard[:n_std]
+
+    frozen_hash = fingerprint(settings)
+    stub = SimpleNamespace(
+        args=args, tiny=args.scale == 'smoke', checkpoint_hashes=settings['checkpoint_hashes'],
+        model_pair=settings['model_pair'], model_revisions=settings['model_revisions'],
+        generation_environment=settings.get('generation_environment'),
+    )
+    eval_dir = args.output / args.stage / 'evaluate'
+    available = {}
+    if eval_dir.is_dir():
+        for manifest_path in sorted(eval_dir.glob('manifest-rank*.json')):
+            available.update(Manifest(manifest_path).data.get('jobs', {}))
+
+    non_rep_candidates = []
+    fallback_candidates = []
+    long_token_sums = {}
+    for idx, p in enumerate(long_prompts):
+        p_jobs = evaluation_jobs([p], args.stage, args.scale, args.seed)
+        p_rows = []
+        complete = True
+        for job in p_jobs:
+            identity = run_identity(stub, job, settings['selected'][job['arm']], 'evaluate', frozen_hash)
+            entry = available.get(fingerprint(identity))
+            if entry is None or entry.get('status') != 'complete' or not Path(entry.get('result_path', '')).is_file():
+                complete = False
+                break
+            p_rows.append(json.loads(Path(entry['result_path']).read_text()))
+        if complete and p_rows:
+            tok_sum = sum(int(r['generated_tokens']) for r in p_rows)
+            any_rep = any(bool(r['generation']['repetition_dominated']) for r in p_rows)
+            long_token_sums[p['prompt_id']] = tok_sum
+            if not any_rep:
+                non_rep_candidates.append((tok_sum, idx, p))
+            else:
+                fallback_candidates.append((1, tok_sum, idx, p))
+        else:
+            fallback_candidates.append((2, 0, idx, p))
+
+    non_rep_candidates.sort(key=lambda item: (item[0], item[1], item[2]['prompt_id']))
+    selected_long = [item[2] for item in non_rep_candidates[:n_long]]
+    long_source = 'evaluate_shortest_non_repetition_dominated'
+    if len(selected_long) < n_long:
+        if args.scale == 'reference' and available:
+            raise ValueError('insufficient non-repetition-dominated long_thinking prompts in evaluate for calibration')
+        long_source = 'manifest_order_fallback'
+        fallback_candidates.sort(key=lambda item: (item[0], item[1], item[2], item[3]['prompt_id']))
+        for _, _, _, p in fallback_candidates:
+            if len(selected_long) >= n_long:
+                break
+            if p['prompt_id'] not in {x['prompt_id'] for x in selected_long}:
+                selected_long.append(p)
+
+    selected = sorted(selected_std + selected_long, key=lambda p: p['condition'])
+    return selected, {
+        'standard_prompt_ids': [p['prompt_id'] for p in selected_std],
+        'long_prompt_ids': [p['prompt_id'] for p in selected_long],
+        'long_selection_source': long_source,
+        'long_evaluate_token_sums': {p['prompt_id']: long_token_sums.get(p['prompt_id']) for p in selected_long},
+    }
+
+
+def calibration_jobs(prompts, stage, scale, seed=2026):
+    jobs = []
+    for prompt in prompts:
+        name, temperature, warp = sampling_conditions(prompt['condition'], primary_only=True)[0]
+        for arm in arms_for(stage, scale):
+            jobs.append({'prompt': prompt, 'arm': arm, 'sampling_name': name,
+                         'temperature': temperature, 'warper': warp, 'seed': seed})
+    return jobs
+
+
+def _load_sharded_or_single_timed_rows(args, settings):
+    timing_dir = args.output / args.stage / 'timing'
+    timing_report_path = args.output / args.stage / 'timing.json'
+    if not timing_report_path.is_file():
+        return []
+    rec_timing = json.loads(timing_report_path.read_text())
+    if rec_timing.get('frozen_settings_hash') != fingerprint(settings):
+        return []
+    raw_ev = rec_timing.get('raw_evidence', {})
+    session_paths = (
+        [Path(p) for p in raw_ev['session_paths']]
+        if raw_ev.get('session_paths')
+        else ([Path(raw_ev['session_path'])] if raw_ev.get('session_path') else sorted((timing_dir / 'sessions').glob('*.json')))
+    )
+    rows = []
+    for sp in session_paths:
+        if not sp.is_file():
+            continue
+        sess = json.loads(sp.read_text())
+        for b_val in sess.get('bundles', {}).values():
+            if b_val.get('status') != 'complete':
+                continue
+            for p_str in b_val.get('result_paths', []):
+                rp = Path(p_str)
+                if rp.is_file():
+                    row = json.loads(rp.read_text())
+                    if not row.get('phase_profile'):
+                        rows.append(row)
+    return rows
+
+
+def reconcile_timing_isolation_calibration(
+    args, prompt_manifest, settings, *,
+    session_path=None, session_state=None, selected=None, selection_meta=None,
+    cal_rows=None, cluster_idle_inventory=None, require_sharded=False,
+):
+    """Compare 1-GPU cluster-isolated calibration runs against 8-GPU sharded timing on matched prompts."""
+    from types import SimpleNamespace
+    frozen_hash = fingerprint(settings)
+    cal_repeats = getattr(args, 'calibration_repeats', 2)
+    cal_out_existing = args.output / args.stage / 'timing_isolation_calibration.json'
+    if cal_rows is None and cal_out_existing.is_file():
+        cal_repeats = int(json.loads(cal_out_existing.read_text()).get('repeats', cal_repeats))
+    if selected is None or selection_meta is None:
+        selected, selection_meta = select_calibration_prompts(args, prompt_manifest, settings)
+    cal_dir = args.output / args.stage / 'timing_calibration'
+    manifest_path = cal_dir / 'manifest-rank0.json'
+    if cal_rows is None:
+        if not manifest_path.is_file() or not (cal_dir / 'sessions').is_dir():
+            if require_sharded:
+                raise ValueError('timing_calibration raw artifacts are missing')
+            return None
+        stub_args = copy.copy(args)
+        stub_args.rank = 0
+        stub_args.world_size = 1
+        stub = SimpleNamespace(
+            args=stub_args, tiny=args.scale == 'smoke', checkpoint_hashes=settings['checkpoint_hashes'],
+            model_pair=settings['model_pair'], model_revisions=settings['model_revisions'],
+            generation_environment=settings.get('generation_environment'),
+        )
+        manifest_data = json.loads(manifest_path.read_bytes())
+        expected_cfg = {
+            'frozen_settings_hash': frozen_hash,
+            'prompt_manifest_hash': fingerprint(prompt_manifest),
+            'selected_prompts': [p['prompt_id'] for p in selected],
+            'repeats': cal_repeats,
+            'warmups': args.timing_warmups,
+        }
+        matched_sessions = []
+        for sp in sorted((cal_dir / 'sessions').glob('*.json')):
+            sess = json.loads(sp.read_text())
+            if sess.get('configuration', {}).get('configuration') == expected_cfg:
+                matched_sessions.append((sp, sess))
+        if len(matched_sessions) != 1:
+            if require_sharded:
+                raise ValueError('expected exactly one matching timing_calibration session')
+            return None
+        session_path, session_state = matched_sessions[0]
+        cal_rows = []
+        jobs = calibration_jobs(selected, args.stage, args.scale, args.seed)
+        groups_by_prompt = defaultdict(list)
+        for job in jobs:
+            groups_by_prompt[(job['prompt']['prompt_id'], job['sampling_name'], job['seed'])].append(job)
+        for group_index, same_prompt_jobs in enumerate(groups_by_prompt.values()):
+            for repeat in range(cal_repeats):
+                offset = (group_index + repeat) % len(same_prompt_jobs)
+                comparisons = [(job, settings['selected'][job['arm']])
+                               for job in same_prompt_jobs[offset:] + same_prompt_jobs[:offset]]
+                b_rows = read_comparison_bundle(
+                    stub, 'timing_calibration', comparisons, frozen_hash, session_state,
+                    repeat, profile=False, manifest=manifest_data, rank=0,
+                )
+                if b_rows is None:
+                    if require_sharded:
+                        raise ValueError('timing_calibration session has incomplete bundles')
+                    return None
+                cal_rows.extend(b_rows)
+
+    sharded_rows = _load_sharded_or_single_timed_rows(args, settings)
+    if require_sharded and not sharded_rows:
+        raise ValueError('cannot reconcile timing_isolation_calibration: timing.json / raw sharded timing rows are missing')
+
+    cal_slots = {
+        (r['condition'], float(r['temperature']), json.dumps(r['sampling_warp_config'], sort_keys=True),
+         r['prompt_id'], r['seed'])
+        for r in cal_rows
+    }
+    sharded_sub = [
+        r for r in sharded_rows
+        if (r['condition'], float(r['temperature']), json.dumps(r['sampling_warp_config'], sort_keys=True),
+            r['prompt_id'], r['seed']) in cal_slots
+    ]
+
+    def _prompt_mean_tps(subset):
+        by_p = defaultdict(list)
+        for rw in subset:
+            by_p[rw['prompt_id']].append(float(rw['tokens_per_second']))
+        return statistics.mean(statistics.mean(vs) for vs in by_p.values()) if by_p else None
+
+    def _prompt_mean_paired_ratio(subset, target_arm):
+        plain_map = {
+            (rw['prompt_id'], rw['seed'], str(rw['repeat']).split(':epoch=')[0]): float(rw['tokens_per_second'])
+            for rw in subset if rw['arm'] == 'plain_dflash'
+        }
+        by_p = defaultdict(list)
+        for rw in subset:
+            if rw['arm'] != target_arm:
+                continue
+            pk = (rw['prompt_id'], rw['seed'], str(rw['repeat']).split(':epoch=')[0])
+            if pk in plain_map and plain_map[pk] > 0:
+                by_p[rw['prompt_id']].append(float(rw['tokens_per_second']) / plain_map[pk])
+        return statistics.mean(statistics.mean(vs) for vs in by_p.values()) if by_p else None
+
+    arms = arms_for(args.stage, args.scale)
+    cond_keys = sorted({
+        (r['condition'], float(r['temperature']), json.dumps(r['sampling_warp_config'], sort_keys=True))
+        for r in cal_rows
+    })
+    groups = []
+    by_prompt = []
+    reconciled = bool(sharded_sub)
+    for cond, temp, warp_json in cond_keys:
+        c_1gpu = [r for r in cal_rows if r['condition'] == cond and float(r['temperature']) == temp
+                  and json.dumps(r['sampling_warp_config'], sort_keys=True) == warp_json]
+        c_8gpu = [r for r in sharded_sub if r['condition'] == cond and float(r['temperature']) == temp
+                  and json.dumps(r['sampling_warp_config'], sort_keys=True) == warp_json]
+        if not c_8gpu:
+            reconciled = False
+        for arm in arms:
+            a_1 = [r for r in c_1gpu if r['arm'] == arm]
+            a_8 = [r for r in c_8gpu if r['arm'] == arm]
+            p_1 = sorted({r['prompt_id'] for r in a_1})
+            p_8 = sorted({r['prompt_id'] for r in a_8})
+            if c_8gpu and p_1 != p_8:
+                reconciled = False
+            tps_1 = _prompt_mean_tps(a_1)
+            tps_8 = _prompt_mean_tps(a_8) if a_8 else None
+            pr_1 = _prompt_mean_paired_ratio(c_1gpu, arm)
+            pr_8 = _prompt_mean_paired_ratio(c_8gpu, arm) if c_8gpu else None
+            scale_8_over_1 = (tps_8 / tps_1) if (tps_1 and tps_8 is not None) else None
+            pr_diff = (pr_8 - pr_1) if (pr_1 is not None and pr_8 is not None) else None
+            groups.append({
+                'condition': cond,
+                'temperature': temp,
+                'sampling_warp_config': json.loads(warp_json),
+                'arm': arm,
+                'n_prompts': len(p_1),
+                'runs_1gpu': len(a_1),
+                'runs_8gpu': len(a_8),
+                'tps_1gpu_mean': tps_1,
+                'tps_8gpu_mean': tps_8,
+                'tps_8gpu_over_1gpu_ratio': scale_8_over_1,
+                'tps_rel_diff_pct': (100.0 * (scale_8_over_1 - 1.0)) if scale_8_over_1 is not None else None,
+                'paired_ratio_vs_plain_1gpu': pr_1,
+                'paired_ratio_vs_plain_8gpu': pr_8,
+                'paired_ratio_diff_8gpu_minus_1gpu': pr_diff,
+            })
+            for pid in p_1:
+                p_a1 = [r for r in a_1 if r['prompt_id'] == pid]
+                p_a8 = [r for r in a_8 if r['prompt_id'] == pid]
+                p_tps1 = _prompt_mean_tps(p_a1)
+                p_tps8 = _prompt_mean_tps(p_a8) if p_a8 else None
+                by_prompt.append({
+                    'prompt_id': pid,
+                    'condition': cond,
+                    'arm': arm,
+                    'tps_1gpu_mean': p_tps1,
+                    'tps_8gpu_mean': p_tps8,
+                    'tps_8gpu_over_1gpu_ratio': (p_tps8 / p_tps1) if (p_tps1 and p_tps8 is not None) else None,
+                })
+
+    if require_sharded and not reconciled:
+        raise ValueError('sharded timing rows did not cover all calibration prompt/condition slots')
+
+    timing_report_path = args.output / args.stage / 'timing.json'
+    sharded_world_size = (
+        json.loads(timing_report_path.read_text()).get('world_size')
+        if timing_report_path.is_file() else None
+    )
+    affinity0 = session_state.get('cpu_affinity') if session_state else gpu_cpu_affinity(0)['cpu_affinity']
+    payload = {
+        'schema_version': 1,
+        'scale': args.scale,
+        'stage': args.stage,
+        'status': 'complete' if reconciled else 'calibration_only_unreconciled',
+        'reconciled_with_sharded_timing': reconciled,
+        'sharded_world_size': sharded_world_size,
+        'frozen_settings_hash': frozen_hash,
+        'timing_harness_implementation_sha256': implementation_hash(),
+        'algorithm_implementation_sha256': algorithm_hash(),
+        'calibration_session': session_state['logical_session'],
+        'physical_gpu': session_state.get('physical_gpu', 0),
+        'numa_node': session_state.get('numa_node', 0),
+        'cpu_affinity': affinity0,
+        'cpu_affinity_applied': bool(session_state.get('cpu_affinity_applied', False)),
+        'all_gpus_idle_verified': bool(cluster_idle_inventory is not None or session_state.get('all_gpus_idle_verified', False)),
+        'peer_gpus_idle_verified': bool(cluster_idle_inventory is not None or session_state.get('all_gpus_idle_verified', False)),
+        'warmup_completed': bool(session_state.get('warmup_completed', False)),
+        'cluster_idle_inventory': cluster_idle_inventory or session_state.get('cluster_idle_inventory'),
+        'repeats': cal_repeats,
+        'warmups_per_arm_condition': args.timing_warmups,
+        'selected_prompt_ids': [p['prompt_id'] for p in selected],
+        'prompt_selection': selection_meta,
+        'calibrated_timed_runs': len(cal_rows),
+        'bundles': len(cal_rows) // len(arms),
+        'raw_evidence': {
+            'session_path': str(Path(session_path).resolve()),
+            'session_sha256': file_sha256(session_path),
+            'manifest_path': str(manifest_path.resolve()),
+            'manifest_sha256': file_sha256(manifest_path),
+            'timing_requests': len(cal_rows),
+            'bundles': len(cal_rows) // len(arms),
+        },
+        'groups': groups,
+        'by_prompt': by_prompt,
+    }
+    cal_out = args.output / args.stage / 'timing_isolation_calibration.json'
+    atomic_json(cal_out, payload)
+    return payload
+
+
+def timing_calibration(runner, prompt_manifest, settings, cluster_idle_inventory=None):
+    args = runner.args
+    if args.world_size != 1 or args.rank != 0:
+        raise ValueError('1-GPU isolated calibration requires world_size=1 and rank=0 on physical GPU 0')
+    cal_repeats = getattr(args, 'calibration_repeats', 2)
+    selected, selection_meta = select_calibration_prompts(args, prompt_manifest, settings)
+    jobs = calibration_jobs(selected, args.stage, args.scale, args.seed)
+    frozen_hash = fingerprint(settings)
+    session_path, session_state, epoch = comparison_session(runner, 'timing_calibration', {
+        'frozen_settings_hash': frozen_hash,
+        'prompt_manifest_hash': fingerprint(prompt_manifest),
+        'selected_prompts': [p['prompt_id'] for p in selected],
+        'repeats': cal_repeats,
+        'warmups': args.timing_warmups,
+    })
+    if cluster_idle_inventory is not None:
+        session_state['all_gpus_idle_verified'] = True
+        session_state['cluster_idle_inventory'] = cluster_idle_inventory
+        atomic_json(session_path, session_state)
     for condition in sorted({p['condition'] for p in selected}):
         prompt = next(p for p in selected if p['condition'] == condition)
         name, temperature, warp = sampling_conditions(condition, primary_only=True)[0]
@@ -1049,67 +2252,29 @@ def timing(runner, prompt_manifest, settings):
                 job = {'prompt': prompt, 'sampling_name': name, 'temperature': temperature,
                        'warper': warp, 'seed': args.seed, 'arm': arm, 'max_new_tokens_override': 64}
                 runner.run(job, settings['selected'][arm], profile=False)
-    rows, profiles = [], []
-    bundle_count = 0
-    # Phase events add instrumentation overhead; their separate pass is required
-    # evidence but is never charged as proposal computation in the speed pass.
-    for repeat, profile, comparisons in timing_schedule(jobs, settings, args.timing_repeats):
-        results = comparison_bundle(runner, 'timing', comparisons, frozen_hash,
-                                    session_path, session_state, epoch, repeat, profile=profile)
-        (profiles if profile else rows).extend(results)
-        bundle_count += 1
-    manifest_path = args.output / args.stage / 'timing' / 'manifest-rank0.json'
-    full_coverage = len(selected) == len(prompts)
-    report = {'scale': args.scale, 'stage': args.stage, 'status': 'complete' if full_coverage else 'pilot_complete',
-              'full_reference_prompt_coverage': full_coverage, 'expected_full_prompt_count': len(prompts), 'timing_session': session,
-              'frozen_settings_hash': frozen_hash, 'restart_epochs': session_state['epochs'],
-              'resume_policy': 'reuse complete all-arm prompt/seed/repeat bundles only; rerun every arm of interrupted bundles in the new epoch',
-              'device': str(runner.device), 'isolation': 'one process; idle-device check before model load',
-              'warmups_per_arm_condition': args.timing_warmups, 'repeats': args.timing_repeats,
-              'prompt_ids': [p['prompt_id'] for p in selected], 'timed_requests': len(rows),
-              'raw_evidence': {'session_path': str(session_path.resolve()), 'session_sha256': file_sha256(session_path),
-                               'manifest_path': str(manifest_path.resolve()), 'manifest_sha256': file_sha256(manifest_path),
-                               'timing_requests': len(rows), 'profile_requests': len(profiles), 'bundles': bundle_count},
-              'groups': summarize_rows(rows, isolated_timing=True), 'phase_profiles': summarize_rows(profiles, isolated_timing=True),
-              'instrumentation_policy': 'Uninstrumented synchronized request wall time for speed; separate same-arm/same-prompt CUDA-event profile runs for phases.',
-              'timing_scope': 'all required held-out test prompts and condition-specific seed counts' if full_coverage else 'pilot matched subset; cannot satisfy milestone throughput gate',
-              'baseline_policy': 'all baselines remeasured in this same session; no M3/M4 throughput reuse'}
-    plain = {(g['condition'], g['temperature'], json.dumps(g['sampling_warp_config'], sort_keys=True)): g['metrics']['tokens_per_second']['mean']
-             for g in report['groups'] if g['arm'] == 'plain_dflash'}
-    paired_plain = {(row['condition'], row['temperature'], json.dumps(row['sampling_warp_config'], sort_keys=True), row['prompt_id'], row['seed'], row['repeat']): row
-                    for row in rows if row['arm'] == 'plain_dflash'}
-    for group in report['groups']:
-        key = (group['condition'], group['temperature'], json.dumps(group['sampling_warp_config'], sort_keys=True))
-        mean = group['metrics']['tokens_per_second']['mean']
-        baseline = plain.get(key)
-        group['throughput_relative_to_plain'] = mean / baseline if mean is not None and baseline else None
-        group['throughput_improved_after_all_proposal_and_online_costs'] = mean > baseline if mean is not None and baseline else None
-        paired, matched_arm, matched_plain = [], [], []
-        excluded_pairs = 0
-        for row in rows:
-            row_key = (row['condition'], row['temperature'], json.dumps(row['sampling_warp_config'], sort_keys=True))
-            if row['arm'] != group['arm'] or row_key != key:
-                continue
-            baseline_row = paired_plain[(*row_key, row['prompt_id'], row['seed'], row['repeat'])]
-            if row['condition'].startswith('long_') and (row['generation']['repetition_dominated'] or baseline_row['generation']['repetition_dominated']):
-                excluded_pairs += 1
-                continue
-            matched_arm.append(row)
-            matched_plain.append(baseline_row)
-            paired.append({'prompt_id': row['prompt_id'], 'seed': row['seed'], 'ratio': row['tokens_per_second'] / baseline_row['tokens_per_second']})
-        ratio = prompt_bootstrap(paired, 'ratio')
-        matched_arm_mean = prompt_bootstrap(matched_arm, 'tokens_per_second')['mean']
-        matched_plain_mean = prompt_bootstrap(matched_plain, 'tokens_per_second')['mean']
-        group['matched_timing_requests'] = len(matched_arm)
-        group['repetition_excluded_comparison_pairs'] = excluded_pairs
-        group['matched_arm_tokens_per_second'] = matched_arm_mean
-        group['matched_plain_tokens_per_second'] = matched_plain_mean
-        group['throughput_relative_to_plain'] = matched_arm_mean / matched_plain_mean if matched_plain_mean else None
-        group['throughput_improved_after_all_proposal_and_online_costs'] = matched_arm_mean > matched_plain_mean if matched_plain_mean else None
-        group['paired_throughput_ratio'] = ratio
-        group['throughput_gain_supported_by_95_ci'] = ratio['ci95'][0] > 1 if ratio['ci95'] else None
-    atomic_json(args.output / args.stage / 'timing.json', report)
-    return report
+    session_state['warmup_completed'] = True
+    atomic_json(session_path, session_state)
+    rows = []
+    groups_by_prompt = defaultdict(list)
+    for job in jobs:
+        groups_by_prompt[(job['prompt']['prompt_id'], job['sampling_name'], job['seed'])].append(job)
+    for group_index, same_prompt_jobs in enumerate(groups_by_prompt.values()):
+        for repeat in range(cal_repeats):
+            offset = (group_index + repeat) % len(same_prompt_jobs)
+            comparisons = [(job, settings['selected'][job['arm']])
+                           for job in same_prompt_jobs[offset:] + same_prompt_jobs[:offset]]
+            results = comparison_bundle(
+                runner, 'timing_calibration', comparisons, frozen_hash,
+                session_path, session_state, epoch, repeat, profile=False,
+            )
+            rows.extend(results)
+    return reconcile_timing_isolation_calibration(
+        args, prompt_manifest, settings,
+        session_path=session_path, session_state=session_state,
+        selected=selected, selection_meta=selection_meta, cal_rows=rows,
+        cluster_idle_inventory=cluster_idle_inventory,
+        require_sharded=getattr(args, 'reconcile_sharded_timing', False),
+    )
 
 
 FEATURE_FIELDS = {'coordinate_mean_norm', 'variance_ratio_to_standard_calibration',
@@ -1240,8 +2405,8 @@ def synthetic_m4_feature_context(args, prompt_manifest, settings, prompts):
     if torch.device(args.device).type != 'cpu':
         raise ValueError('synthetic feature context must remain CPU-only')
     runner = EvaluationRunner(args)
-    if runner.checkpoint_hashes != settings['checkpoint_hashes']:
-        raise ValueError('synthetic feature calibration does not match frozen evaluation state')
+    validate_checkpoint_hashes(settings['checkpoint_hashes'], runner.checkpoint_hashes)
+    runner.checkpoint_hashes = dict(settings['checkpoint_hashes'])
     accumulator = DiagnosticAccumulator(seed=args.seed)
     for prompt_index, prompt in enumerate(prompts):
         prefix = [1, 2, 3, int(hashlib.sha256(prompt['prompt_id'].encode()).hexdigest()[:4], 16) % 8]
@@ -1306,8 +2471,28 @@ def aggregate(args, prompt_manifest, settings):
         if row['identity'] != identity:
             raise ValueError('evaluation result identity mismatch')
         rows.append(row)
+    sharded_plan_path = args.output / args.stage / 'timing' / 'sharding_plan.json'
+    if sharded_plan_path.is_file():
+        summarize_sharded_timing(args, prompt_manifest, settings)
+    cal_path = args.output / args.stage / 'timing_isolation_calibration.json'
     timing_path = args.output / args.stage / 'timing.json'
+    if getattr(args, 'reconcile_sharded_timing', False) or (cal_path.is_file() and timing_path.is_file()):
+        reconcile_timing_isolation_calibration(
+            args, prompt_manifest, settings,
+            require_sharded=getattr(args, 'reconcile_sharded_timing', False),
+        )
+        if sharded_plan_path.is_file():
+            summarize_sharded_timing(args, prompt_manifest, settings)
     timed = json.loads(timing_path.read_text()) if timing_path.exists() else None
+    if timed is not None and cal_path.is_file() and timed.get('isolation_calibration', {}).get('sha256') != file_sha256(cal_path):
+        cal_data = json.loads(cal_path.read_text())
+        timed['isolation_calibration'] = {
+            'path': str(cal_path.resolve()),
+            'sha256': file_sha256(cal_path),
+            'status': cal_data.get('status'),
+            'calibrated_timed_runs': cal_data.get('calibrated_timed_runs'),
+        }
+        atomic_json(timing_path, timed)
     timing_evidence = audit_timing_evidence(runner, prompt_manifest, settings, timed)
     timing_valid = timing_evidence['status'] == 'complete'
     feature_context = m4_feature_context(args, prompt_manifest, settings, prompts) if args.stage == 'm4' else None
@@ -1317,6 +2502,15 @@ def aggregate(args, prompt_manifest, settings):
     atomic_json(greedy_path, greedy_report)
     greedy_complete = greedy_report['status'] == 'complete'
     status = 'complete' if not missing and timing_valid and feature_context_valid and greedy_complete else 'incomplete'
+    isolation_calibration = None
+    if cal_path.is_file():
+        cal_data = json.loads(cal_path.read_text())
+        isolation_calibration = {
+            'path': str(cal_path.resolve()),
+            'sha256': file_sha256(cal_path),
+            'status': cal_data.get('status'),
+            'calibrated_timed_runs': cal_data.get('calibrated_timed_runs'),
+        }
     report = {'scale': args.scale, 'label': 'synthetic' if args.scale == 'smoke' else args.scale,
               'stage': args.stage, 'status': status, 'expected_requests': len(jobs), 'completed_requests': len(rows),
               'missing_requests': missing, 'settings': settings, 'groups': summarize_rows(rows),
@@ -1327,6 +2521,7 @@ def aggregate(args, prompt_manifest, settings):
               'feature_context': feature_context,
               'isolated_timing_complete': timing_valid, 'timing_report': str(timing_path) if timing_valid else None,
               'timing_evidence': timing_evidence,
+              'timing_isolation_calibration': isolation_calibration,
               'external_baselines_not_run': ['full tree-based Token Recycling', 'Test-Time Speculation', 'SharpDraft'],
               'baseline_naming': 'online_bigram is the normalized committed-transition baseline, not full Token Recycling',
               'long_condition': sorted({p['condition'] for p in prompts if p['condition'].startswith('long_')}),
@@ -1344,8 +2539,11 @@ def smoke_manifest():
 def main(argv=None):
     parser = common_parser(__doc__)
     parser.add_argument('--stage', choices=['m3', 'm4'], default='m3')
-    parser.add_argument('--mode', choices=['tune', 'evaluate', 'timing', 'summarize', 'all'], default='all')
+    parser.add_argument('--mode', choices=['tune', 'evaluate', 'timing', 'timing_calibration', 'summarize', 'all'], default='all')
     parser.add_argument('--fresh_session', action='store_true', help='start new dev/timing measurements instead of resuming complete comparison bundles')
+    parser.add_argument('--logical_session', type=str, default=None, help='shared logical session identifier across sharded timing ranks')
+    parser.add_argument('--reconcile_sharded_timing', action='store_true', help='reconcile 1-GPU isolated calibration against sharded M4 timing')
+    parser.add_argument('--calibration_repeats', type=int, default=2)
     parser.add_argument('--rank', type=int, default=0)
     parser.add_argument('--world_size', type=int, default=1)
     parser.add_argument('--prompts_manifest', type=Path, default=ROOT / 'artifacts/prompts.json')
@@ -1366,19 +2564,24 @@ def main(argv=None):
         setattr(args, name, Path(getattr(args, name)))
     if args.world_size < 1 or not 0 <= args.rank < args.world_size:
         parser.error('rank must lie in 0..world_size-1')
-    if args.timing_repeats < 2 or args.timing_warmups < 1 or args.timing_prompts < 0:
-        parser.error('timing requires repeats>=2, warmups>=1 and prompts>=0 (0=all)')
+    if args.timing_repeats < 2 or args.timing_warmups < 1 or args.timing_prompts < 0 or args.calibration_repeats < 2:
+        parser.error('timing requires repeats>=2, calibration_repeats>=2, warmups>=1 and prompts>=0 (0=all)')
     if min(args.max_new_tokens, args.long_max_new_tokens, args.smoke_tokens) < 1:
         parser.error('generation caps must be positive')
-    if args.mode == 'all' and args.world_size != 1:
-        parser.error('shard only --mode evaluate; tune/timing run once on an idle GPU')
+    if args.mode in ('tune', 'timing_calibration', 'all') and (args.world_size != 1 or args.rank != 0):
+        parser.error('tune, timing_calibration, and all require world_size=1 and rank=0')
+    if args.mode == 'timing' and args.world_size > 8:
+        parser.error('timing world_size must lie in 1..8')
     record_run(args, f'{args.stage}-{args.mode}')
     torch.set_num_threads(1)
     prompt_manifest = smoke_manifest() if args.scale == 'smoke' else json.loads(args.prompts_manifest.read_text())
+    cluster_idle_inventory = None
     if args.scale != 'smoke':
         if args.mode != 'summarize':
             preflight(args, (args.standard_dev_prompts * args.max_new_tokens + args.long_dev_prompts * args.long_max_new_tokens) if args.mode == 'tune' else 64 * args.max_new_tokens + 32 * args.long_max_new_tokens)
-        if args.mode in ('tune', 'timing', 'all'):
+        if args.mode == 'timing_calibration':
+            cluster_idle_inventory = assert_all_gpus_idle(torch.device(args.device))
+        elif args.mode in ('tune', 'timing', 'all'):
             from .bench_adapter import assert_idle
             assert_idle(torch.device(args.device))
     settings_path = args.output / args.stage / 'settings.json'
@@ -1392,11 +2595,21 @@ def main(argv=None):
         generation_caps(args), runner.model_pair if runner is not None else [args.target, args.drafter] if args.scale != 'smoke' else settings['model_pair'],
         runner.model_revisions if runner is not None else None,
         runner.generation_environment if runner is not None else None)
+    if args.mode not in ('tune', 'all') and runner is not None:
+        runner.checkpoint_hashes = dict(settings['checkpoint_hashes'])
     if args.mode in ('evaluate', 'all'):
         evaluate(runner, prompt_manifest, settings)
+    timing_res = None
     if args.mode in ('timing', 'all'):
-        timing(runner, prompt_manifest, settings)
-    if args.mode in ('evaluate', 'timing', 'summarize', 'all'):
+        timing_res = timing(runner, prompt_manifest, settings)
+    if args.mode == 'timing_calibration':
+        cal_res = timing_calibration(runner, prompt_manifest, settings, cluster_idle_inventory=cluster_idle_inventory)
+        if (args.output / args.stage / 'timing.json').is_file():
+            aggregate(args, prompt_manifest, settings)
+        result = cal_res
+    elif args.mode == 'timing' and args.world_size > 1:
+        result = timing_res
+    elif args.mode in ('evaluate', 'timing', 'summarize', 'all'):
         result = aggregate(args, prompt_manifest, settings)
     else:
         result = {'stage': args.stage, 'scale': args.scale, 'status': 'settings_frozen'}
