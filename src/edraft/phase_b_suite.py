@@ -1156,10 +1156,39 @@ def _run_training_fit_isolated(
                         for fname, digest in impl_map.items()
                     )
                 )
+                exp_shuf = 0
+                exp_wd: float | None = None
+                exp_obj = 'union_rest_grouped'
+                exp_sb = 'signed_feature_hash'
+                idx_flag = 0
+                while idx_flag < len(extra_list):
+                    tok = extra_list[idx_flag]
+                    if tok == '--block_shuffle_window' and idx_flag + 1 < len(extra_list):
+                        exp_shuf = int(extra_list[idx_flag + 1])
+                        idx_flag += 2
+                    elif tok == '--weight_decay' and idx_flag + 1 < len(extra_list):
+                        exp_wd = float(extra_list[idx_flag + 1])
+                        idx_flag += 2
+                    elif tok == '--objective' and idx_flag + 1 < len(extra_list):
+                        exp_obj = str(extra_list[idx_flag + 1])
+                        idx_flag += 2
+                    elif tok == '--sparse_backend' and idx_flag + 1 < len(extra_list):
+                        exp_sb = str(extra_list[idx_flag + 1])
+                        idx_flag += 2
+                    else:
+                        idx_flag += 1
+                got_wd = rep_existing.get('optimizer', {}).get('weight_decay_W_A')
+                hyper_ok = (
+                    int(rep_existing.get('block_shuffle_window', 0)) == exp_shuf
+                    and (exp_wd is None or (got_wd is not None and math.isclose(float(got_wd), exp_wd, rel_tol=0.0, abs_tol=1e-12)))
+                    and str(rep_existing.get('objective', 'union_rest_grouped')) == exp_obj
+                    and str(rep_existing.get('sparse_backend', 'signed_feature_hash')) == exp_sb
+                )
                 if (
                     rep_existing.get('status') == 'passed'
                     and rep_existing.get('scale') == eff_scale
                     and impl_ok
+                    and hyper_ok
                 ):
                     return rep_existing
             except (OSError, ValueError):
@@ -1241,6 +1270,7 @@ def _prepare_offline_eval_context(
         batch_blocks=8,
         vocab_chunk=8192,
         bf16_gemm=False,
+        num_workers=4 if device.type == 'cuda' else 0,
         objective='union_rest_grouped',
         allow_long_oracle_fit=False,
         allow_pure_t1_ablation=allow_t1,
