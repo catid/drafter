@@ -2183,6 +2183,8 @@ def _run_training_fit(args, ws: Path, gpus: list[int], fit_tag: str, extra_train
         ]
         if '--num_workers' not in extra_list and eff_num_workers > 0:
             ddp_cli.extend(['--num_workers', str(eff_num_workers)])
+        if '--checkpoint_every' not in extra_list and args.scale in ('reference', 'full'):
+            ddp_cli.extend(['--checkpoint_every', '1000'])
         if '--microbatch_blocks' not in extra_list and eff_mb is not None:
             ddp_cli.extend(['--microbatch_blocks', str(eff_mb)])
         if getattr(args, 'allow_large_run', False):
@@ -2592,12 +2594,18 @@ def _offline_kl_summary(eval_ctx, ckpt_path: Path, device: torch.device) -> dict
     )
     collision_count = rep_collision_stats.get('collision_count')
     if collision_count is None and isinstance(adapter.sparse, ExactObservedPairs):
-        collision_count = int(adapter.sparse.stats({})['collision_count'])
+        collision_count = int(adapter.sparse.collision_report([])['collision_count'])
+    sparse_backend = (
+        meta.get('sparse_backend')
+        or meta.get('adapter_config', {}).get('sparse_backend')
+        or meta.get('report', {}).get('sparse_backend')
+        or 'signed_feature_hash'
+    )
     return {
         'checkpoint': str(ckpt_path),
         'stage': meta.get('stage'),
         'checkpoint_scale': meta.get('checkpoint_scale', 1.0),
-        'sparse_backend': meta.get('sparse_backend', 'signed_feature_hash'),
+        'sparse_backend': sparse_backend,
         'collision_count': collision_count,
         'overflow_events': rep_collision_stats.get('overflow_events'),
         'dropped_unique_keys': rep_collision_stats.get('dropped_unique_keys'),

@@ -263,11 +263,16 @@ def test_launch_cli_supports_ddp_train_and_dynamic_schedules(tmp_path: Path, mon
 
 
 def test_setup_distributed_torchrun_local_rank_and_nccl_device_id(monkeypatch):
+    from datetime import timedelta
+
     set_device_calls: list[torch.device] = []
     init_pg_calls: list[dict] = []
+    exp_timeout = timedelta(minutes=60)
 
     monkeypatch.setenv("RANK", "0")
     monkeypatch.delenv("RANK")
+    monkeypatch.setenv("CUDA_VISIBLE_DEVICES", "0")
+    monkeypatch.delenv("CUDA_VISIBLE_DEVICES")
     monkeypatch.setenv("NCCL_NVLS_ENABLE", "0")
     monkeypatch.delenv("NCCL_NVLS_ENABLE")
     monkeypatch.setattr(torch.cuda, "is_available", lambda: True)
@@ -286,7 +291,8 @@ def test_setup_distributed_torchrun_local_rank_and_nccl_device_id(monkeypatch):
         assert args.device == "cuda:3"
         assert set_device_calls == [torch.device("cuda", 3)]
         assert init_pg_calls == [{
-            "backend": "nccl", "rank": 3, "world_size": 8, "device_id": torch.device("cuda", 3),
+            "backend": "nccl", "rank": 3, "world_size": 8,
+            "timeout": exp_timeout, "device_id": torch.device("cuda", 3),
         }]
 
     # 2. launch.py single-visible-GPU per rank (CUDA_VISIBLE_DEVICES='5' -> device_count=1)
@@ -299,7 +305,8 @@ def test_setup_distributed_torchrun_local_rank_and_nccl_device_id(monkeypatch):
     assert args_launch.device == "cuda:0"
     assert set_device_calls == [torch.device("cuda", 0)]
     assert init_pg_calls == [{
-        "backend": "nccl", "rank": 3, "world_size": 8, "device_id": torch.device("cuda", 0),
+        "backend": "nccl", "rank": 3, "world_size": 8,
+        "timeout": exp_timeout, "device_id": torch.device("cuda", 0),
     }]
 
     # 3. Explicit non-zero --device cuda:5 is preserved even when LOCAL_RANK is set
@@ -312,7 +319,8 @@ def test_setup_distributed_torchrun_local_rank_and_nccl_device_id(monkeypatch):
     assert args_explicit.device == "cuda:5"
     assert set_device_calls == [torch.device("cuda", 5)]
     assert init_pg_calls == [{
-        "backend": "nccl", "rank": 2, "world_size": 8, "device_id": torch.device("cuda", 5),
+        "backend": "nccl", "rank": 2, "world_size": 8,
+        "timeout": exp_timeout, "device_id": torch.device("cuda", 5),
     }]
 
     # 4. Out-of-range LOCAL_RANK fails fast with ValueError
