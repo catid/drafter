@@ -2018,6 +2018,8 @@ def _setup_distributed(args) -> bool:
         if cuda_dev.index is None:
             cuda_dev = torch.device('cuda', 0)
         torch.cuda.set_device(cuda_dev)
+        from .eval_closed_loop import apply_gpu_cpu_affinity
+        apply_gpu_cpu_affinity(cuda_dev, args.rank)
     if args.world_size > 1 and not dist.is_initialized():
         backend = args.dist_backend or ('nccl' if str(args.device).startswith('cuda') else 'gloo')
         init_kwargs = {'backend': backend, 'rank': args.rank, 'world_size': args.world_size}

@@ -1,4 +1,4 @@
-"""Launch resumable collection or acceptance evaluation, one process per GPU."""
+"""Launch resumable collection, DDP training, acceptance evaluation, or sharded matched-bundle timing."""
 from __future__ import annotations
 
 import json
@@ -9,7 +9,9 @@ import socket
 import subprocess
 import sys
 import time
+import uuid
 
+from .eval_closed_loop import gpu_cpu_affinity
 from .runtime import ROOT, atomic_json, common_parser, parse_config, record_run
 
 
@@ -34,10 +36,43 @@ def selected_gpus_idle(indices):
         raise RuntimeError('Selected GPU has an existing compute process: ' + '; '.join(occupied))
 
 
+def _append_m5_eval_flags(command: list[str], args) -> None:
+    if args.m5_arms:
+        command.extend(['--m5_arms', *args.m5_arms])
+    if args.m5_oracle_checkpoint is not None:
+        command.extend(['--m5_oracle_checkpoint', str(args.m5_oracle_checkpoint)])
+    if args.sparse_overflow_policy is not None:
+        command.extend(['--sparse_overflow_policy', args.sparse_overflow_policy])
+    if args.m5_triton:
+        command.append('--m5_triton')
+    if args.m5_torch_compile:
+        command.append('--m5_torch_compile')
+    if args.m5_server_url is not None:
+        command.extend(['--m5_server_url', args.m5_server_url])
+    if args.m5_server_model is not None:
+        command.extend(['--m5_server_model', args.m5_server_model])
+    if args.m5_server_api_key is not None:
+        command.extend(['--m5_server_api_key', args.m5_server_api_key])
+    if args.m5_server_timeout is not None:
+        command.extend(['--m5_server_timeout', str(args.m5_server_timeout)])
+    if args.bigram_count_gate_kappa is not None:
+        command.extend(['--bigram_count_gate_kappa', str(args.bigram_count_gate_kappa)])
+    if args.checkpoint_scale is not None:
+        command.extend(['--checkpoint_scale', str(args.checkpoint_scale)])
+    if args.m5_beta_candidates is not None:
+        command.extend(['--m5_beta_candidates', *(str(b) for b in args.m5_beta_candidates)])
+    if args.m5_beta_relax is not None:
+        command.extend(['--m5_beta_relax', str(args.m5_beta_relax)])
+
+
 def main(argv=None):
     parser = common_parser(__doc__)
-    parser.add_argument('--task', choices=['collect', 'm3', 'm4', 'm5', 'train'], default='collect')
-    parser.add_argument('--gpus', default='0,1,2,3,4,5,6')
+    parser.add_argument(
+        '--task',
+        choices=['collect', 'm3', 'm4', 'm5', 'train', 'm3_timing', 'm4_timing', 'm5_timing'],
+        default='collect',
+    )
+    parser.add_argument('--gpus', default=None)
     parser.add_argument('--schedule', choices=['modulo', 'dynamic'], default='modulo')
     parser.add_argument('--partitions', nargs='+', default=['train_primary', 'standard_eval', 'diagnostic', 'long'],
                         choices=['train_primary', 'standard_eval', 'diagnostic', 'long', 'long_oracle_train'])
@@ -45,6 +80,11 @@ def main(argv=None):
     parser.add_argument('--standard_max_new_tokens', type=int, default=1024)
     parser.add_argument('--long_max_new_tokens', type=int, default=24576)
     parser.add_argument('--evaluation_max_new_tokens', type=int, default=2048)
+    parser.add_argument('--logical_session', type=str, default=None)
+    parser.add_argument('--fresh_session', action='store_true')
+    parser.add_argument('--timing_repeats', type=int, default=3)
+    parser.add_argument('--timing_warmups', type=int, default=1)
+    parser.add_argument('--timing_prompts', type=int, default=0)
     parser.add_argument('--batch_blocks', type=int, default=8)
     parser.add_argument('--microbatch_blocks', type=int)
     parser.add_argument('--num_workers', type=int, default=0)
@@ -98,6 +138,11 @@ def main(argv=None):
     parser.add_argument('--m5_beta_candidates', type=float, nargs=2, default=None)
     parser.add_argument('--m5_beta_relax', type=float, default=None)
     args = parse_config(parser, argv)
+
+    is_timing_task = args.task in ('m3_timing', 'm4_timing', 'm5_timing')
+    if args.gpus is None:
+        args.gpus = '0,1,2,3,4,5,6,7' if is_timing_task else '0,1,2,3,4,5,6'
+
     if args.bigram_count_gate_kappa is not None:
         if not math.isfinite(args.bigram_count_gate_kappa) or args.bigram_count_gate_kappa <= 0:
             parser.error('--bigram_count_gate_kappa must be finite and > 0')
@@ -120,7 +165,7 @@ def main(argv=None):
     if args.calibrate_beta_grid is not None:
         if not args.calibrate_beta_grid or any(not math.isfinite(b) or b < 0 for b in args.calibrate_beta_grid):
             parser.error('--calibrate_beta_grid values must be finite and >= 0')
-    if args.task in ('collect', 'train') and (
+    if (args.task in ('collect', 'train') or is_timing_task) and (
         args.eval_mode != 'evaluate' or args.beta_grid is not None
         or args.beta_sweep_split is not None or args.beta_sweep_arms is not None
     ):
@@ -143,40 +188,74 @@ def main(argv=None):
         or args.m5_beta_candidates is not None
         or args.m5_beta_relax is not None
     )
-    if args.task != 'm5' and m5_only_used:
-        parser.error('M5-specific options (--m5_*, --dense_checkpoint, --sparse_checkpoint, --checkpoint_scale, --sparse_overflow_policy, --bigram_count_gate_kappa, --eval_mode server_eval) require --task m5')
+    if args.task not in ('m5', 'm5_timing') and m5_only_used:
+        parser.error('M5-specific options (--m5_*, --dense_checkpoint, --sparse_checkpoint, --checkpoint_scale, --sparse_overflow_policy, --bigram_count_gate_kappa, --eval_mode server_eval) require --task m5 or m5_timing')
     if args.eval_mode == 'server_eval' and not args.m5_server_url:
         parser.error('--eval_mode server_eval requires --m5_server_url')
     if args.train_tokens_per_temperature is None:
         args.train_tokens_per_temperature = 1000000 if args.scale == 'full' else 250000
     record_run(args, 'launch')
-    if args.scale == 'smoke':
+    if args.scale == 'smoke' and not is_timing_task:
         from .smoke import run_smoke
         return run_smoke(args)
-    gpus = [int(g) for g in args.gpus.split(',')]
+    gpus = [int(g) for g in args.gpus.split(',') if g.strip()]
     if not gpus or len(gpus) != len(set(gpus)):
         raise ValueError('--gpus requires distinct physical indices')
-    selected_gpus_idle(gpus)
+    if is_timing_task and len(gpus) > 8:
+        raise ValueError('timing sharding supports 1..8 GPUs')
+    if args.scale != 'smoke':
+        selected_gpus_idle(gpus)
+
     logdir = args.output / 'logs'
     logdir.mkdir(parents=True, exist_ok=True)
     processes, streams = [], []
+    stage = args.task.removesuffix('_timing') if is_timing_task else args.task
     if args.task == 'collect':
         label, log_label = 'collection', 'collect'
     elif args.task == 'train':
         label, log_label = 'training', 'train'
+    elif is_timing_task:
+        label, log_label = f'{stage}-timing', f'{stage}-timing'
     else:
         label = f'{args.task}-evaluation'
         log_label = f'{args.task}-{args.eval_mode}'
+
     master_port = _free_localhost_port() if args.task == 'train' and len(gpus) > 1 else None
     state_path = args.output / f'{label}-processes.json'
-    state = {'scale': args.scale, 'task': args.task, 'schedule': args.schedule,
-             'launcher_pid': os.getpid(), 'started_at_unix': time.time(), 'workers': []}
+    logical_session = None
+    if is_timing_task:
+        plan_path = args.output / stage / 'timing' / 'sharding_plan.json'
+        if args.logical_session is not None:
+            logical_session = args.logical_session
+        elif not args.fresh_session and len(gpus) > 1 and plan_path.is_file():
+            existing_plan = json.loads(plan_path.read_text())
+            logical_session = (
+                existing_plan.get('logical_session')
+                if existing_plan.get('world_size') == len(gpus)
+                else uuid.uuid4().hex
+            )
+        elif len(gpus) > 1:
+            logical_session = uuid.uuid4().hex
+
+    state = {
+        'scale': args.scale,
+        'task': args.task,
+        'schedule': args.schedule,
+        'launcher_pid': os.getpid(),
+        'logical_session': logical_session,
+        'started_at_unix': time.time(),
+        'workers': [],
+    }
     src_path = str((ROOT / 'src').resolve())
     existing_pythonpath = os.environ.get('PYTHONPATH', '')
     worker_pythonpath = f'{src_path}{os.pathsep}{existing_pythonpath}' if existing_pythonpath else src_path
+    worker_device = 'cpu' if args.scale == 'smoke' else 'cuda:0'
+    dense_ckpt = Path(args.dense_checkpoint) if args.dense_checkpoint is not None else (args.output / 'm2/dense.pt')
+    sparse_ckpt = Path(args.sparse_checkpoint) if args.sparse_checkpoint is not None else (args.output / 'm2/dense_sparse.pt')
+
     try:
         for rank, gpu in enumerate(gpus):
-            base = ['--scale', args.scale, '--rank', str(rank), '--world_size', str(len(gpus)), '--device', 'cuda:0',
+            base = ['--scale', args.scale, '--rank', str(rank), '--world_size', str(len(gpus)), '--device', worker_device,
                     '--seed', str(args.seed), '--output', str(args.output), '--target', args.target,
                     '--drafter', args.drafter]
             if args.task == 'train':
@@ -236,9 +315,35 @@ def main(argv=None):
                            '--standard_max_new_tokens', str(args.standard_max_new_tokens), '--partitions', *args.partitions]
                 if args.schedule == 'dynamic':
                     command.extend(['--schedule', 'dynamic'])
+            elif is_timing_task:
+                command = [sys.executable, '-m', 'edraft.eval_closed_loop', '--stage', stage,
+                           '--mode', 'timing', *base,
+                           '--long_max_new_tokens', str(args.long_max_new_tokens),
+                           '--max_new_tokens', str(args.evaluation_max_new_tokens),
+                           '--dense_checkpoint', str(dense_ckpt),
+                           '--sparse_checkpoint', str(sparse_ckpt),
+                           '--projection', str(args.output / 'h_proj.pt'),
+                           '--prompts_manifest', str(args.output / 'prompts.json'),
+                           '--timing_repeats', str(args.timing_repeats),
+                           '--timing_warmups', str(args.timing_warmups),
+                           '--timing_prompts', str(args.timing_prompts)]
+                if logical_session is not None:
+                    command.extend(['--logical_session', logical_session])
+                if args.fresh_session:
+                    command.append('--fresh_session')
+                if args.compile:
+                    command.append('--compile')
+                if args.cuda_graph:
+                    command.append('--cuda_graph')
+                if args.bf16_gemm:
+                    command.append('--bf16_gemm')
+                if args.compile_drafter:
+                    command.append('--compile_drafter')
+                if args.compile_online:
+                    command.append('--compile_online')
+                if stage == 'm5':
+                    _append_m5_eval_flags(command, args)
             else:
-                dense_ckpt = Path(args.dense_checkpoint) if args.dense_checkpoint is not None else (args.output / 'm2/dense.pt')
-                sparse_ckpt = Path(args.sparse_checkpoint) if args.sparse_checkpoint is not None else (args.output / 'm2/dense_sparse.pt')
                 command = [sys.executable, '-m', 'edraft.eval_closed_loop', '--stage', args.task,
                            '--mode', args.eval_mode, *base, '--long_max_new_tokens', str(args.long_max_new_tokens),
                            '--max_new_tokens', str(args.evaluation_max_new_tokens),
@@ -265,39 +370,20 @@ def main(argv=None):
                 if args.beta_sweep_arms is not None:
                     command.extend(['--beta_sweep_arms', *args.beta_sweep_arms])
                 if args.task == 'm5':
-                    if args.m5_arms:
-                        command.extend(['--m5_arms', *args.m5_arms])
-                    if args.m5_oracle_checkpoint is not None:
-                        command.extend(['--m5_oracle_checkpoint', str(args.m5_oracle_checkpoint)])
-                    if args.sparse_overflow_policy is not None:
-                        command.extend(['--sparse_overflow_policy', args.sparse_overflow_policy])
-                    if args.m5_triton:
-                        command.append('--m5_triton')
-                    if args.m5_torch_compile:
-                        command.append('--m5_torch_compile')
-                    if args.m5_server_url is not None:
-                        command.extend(['--m5_server_url', args.m5_server_url])
-                    if args.m5_server_model is not None:
-                        command.extend(['--m5_server_model', args.m5_server_model])
-                    if args.m5_server_api_key is not None:
-                        command.extend(['--m5_server_api_key', args.m5_server_api_key])
-                    if args.m5_server_timeout is not None:
-                        command.extend(['--m5_server_timeout', str(args.m5_server_timeout)])
-                    if args.bigram_count_gate_kappa is not None:
-                        command.extend(['--bigram_count_gate_kappa', str(args.bigram_count_gate_kappa)])
-                    if args.checkpoint_scale is not None:
-                        command.extend(['--checkpoint_scale', str(args.checkpoint_scale)])
-                    if args.m5_beta_candidates is not None:
-                        command.extend(['--m5_beta_candidates', *(str(b) for b in args.m5_beta_candidates)])
-                    if args.m5_beta_relax is not None:
-                        command.extend(['--m5_beta_relax', str(args.m5_beta_relax)])
+                    _append_m5_eval_flags(command, args)
             if args.allow_large_run:
                 command.append('--allow_large_run')
-            # Downloads must already be resolved once by the parent preparation step.
-            env = dict(os.environ, CUDA_VISIBLE_DEVICES=str(gpu), RANK=str(rank), WORLD_SIZE=str(len(gpus)),
-                       PYTHONPATH=worker_pythonpath,
-                       HF_HUB_OFFLINE='1', HF_DATASETS_OFFLINE='1', TOKENIZERS_PARALLELISM='false',
-                       OMP_NUM_THREADS='4')
+            env = dict(
+                os.environ,
+                CUDA_VISIBLE_DEVICES='' if args.scale == 'smoke' else str(gpu),
+                RANK=str(rank),
+                WORLD_SIZE=str(len(gpus)),
+                PYTHONPATH=worker_pythonpath,
+                HF_HUB_OFFLINE='1',
+                HF_DATASETS_OFFLINE='1',
+                TOKENIZERS_PARALLELISM='false',
+                OMP_NUM_THREADS='1' if is_timing_task else '4',
+            )
             if master_port is not None:
                 env['MASTER_ADDR'] = '127.0.0.1'
                 env['MASTER_PORT'] = str(master_port)
@@ -306,9 +392,17 @@ def main(argv=None):
             streams.append(log)
             process = subprocess.Popen(command, cwd=ROOT, env=env, stdout=log, stderr=subprocess.STDOUT)
             processes.append(process)
-            state['workers'].append({'rank': rank, 'physical_gpu': gpu, 'pid': process.pid,
-                                     'command': command, 'log': str(log_path),
-                                     'status': 'running'})
+            affinity = gpu_cpu_affinity(gpu)
+            state['workers'].append({
+                'rank': rank,
+                'physical_gpu': gpu,
+                'numa_node': affinity['numa_node'],
+                'cpu_affinity': affinity['cpu_affinity'],
+                'pid': process.pid,
+                'command': command,
+                'log': str(log_path),
+                'status': 'running',
+            })
             atomic_json(state_path, state)
         print(json.dumps(state), flush=True)
         while any(p.poll() is None for p in processes):
@@ -323,14 +417,56 @@ def main(argv=None):
                     if process.poll() is None:
                         process.terminate()
                 raise RuntimeError('Worker failed; inspect rank-local logs. Completed jobs remain resumable.')
-            time.sleep(5)
+            time.sleep(0.2 if args.scale == 'smoke' else 5)
         for row, process in zip(state['workers'], processes):
             row.update({'status': 'complete' if process.returncode == 0 else 'failed',
                         'returncode': process.returncode})
+        if any(p.returncode for p in processes):
+            state['completed_at_unix'] = time.time()
+            atomic_json(state_path, state)
+            raise RuntimeError('Run failed; inspect worker logs')
+        if is_timing_task:
+            summarize_cmd = [
+                sys.executable, '-m', 'edraft.eval_closed_loop', '--stage', stage, '--mode', 'summarize',
+                '--scale', args.scale, '--device', 'cpu', '--seed', str(args.seed),
+                '--output', str(args.output), '--target', args.target, '--drafter', args.drafter,
+                '--long_max_new_tokens', str(args.long_max_new_tokens),
+                '--max_new_tokens', str(args.evaluation_max_new_tokens),
+                '--dense_checkpoint', str(dense_ckpt),
+                '--sparse_checkpoint', str(sparse_ckpt),
+                '--projection', str(args.output / 'h_proj.pt'),
+                '--prompts_manifest', str(args.output / 'prompts.json'),
+                '--timing_repeats', str(args.timing_repeats),
+                '--timing_warmups', str(args.timing_warmups),
+                '--timing_prompts', str(args.timing_prompts),
+            ]
+            if args.compile:
+                summarize_cmd.append('--compile')
+            if args.cuda_graph:
+                summarize_cmd.append('--cuda_graph')
+            if args.bf16_gemm:
+                summarize_cmd.append('--bf16_gemm')
+            if args.compile_drafter:
+                summarize_cmd.append('--compile_drafter')
+            if args.compile_online:
+                summarize_cmd.append('--compile_online')
+            if stage == 'm5':
+                _append_m5_eval_flags(summarize_cmd, args)
+            if args.allow_large_run:
+                summarize_cmd.append('--allow_large_run')
+            sum_env = dict(
+                os.environ,
+                CUDA_VISIBLE_DEVICES='',
+                PYTHONPATH=worker_pythonpath,
+                HF_HUB_OFFLINE='1',
+                HF_DATASETS_OFFLINE='1',
+                TOKENIZERS_PARALLELISM='false',
+                OMP_NUM_THREADS='1',
+            )
+            sum_proc = subprocess.run(summarize_cmd, cwd=ROOT, env=sum_env, capture_output=True, text=True, check=True)
+            state['summarize_stdout'] = sum_proc.stdout.strip()
         state['completed_at_unix'] = time.time()
         atomic_json(state_path, state)
-        if any(p.returncode for p in processes):
-            raise RuntimeError('Run failed; inspect worker logs')
     finally:
         for stream in streams:
             stream.close()

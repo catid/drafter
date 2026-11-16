@@ -729,6 +729,7 @@ def test_post_m4_suite_smoke_all_and_resume(tmp_path):
         'fastpath_bench',
         'online_head_to_head',
         'm2_refit_calibration',
+        'm5_eval',
     }
     assert summary['implementation_hashes']['m3'] == summary['implementation_hashes']['m4']
     assert summary['implementation_hashes']['m5'] != summary['implementation_hashes']['m3']
@@ -784,6 +785,15 @@ def test_post_m4_suite_smoke_all_and_resume(tmp_path):
         assert v['closed_loop']['dense']['effective_beta'] == 1.0
         assert v['closed_loop']['dense_sparse']['effective_beta'] == 1.0
 
+    # (d) m5_eval checks
+    m5e = summary['suites']['m5_eval']
+    assert m5e['status'] == 'complete'
+    assert m5e['offline_fits']['exact_observed_pairs']['collision_count'] == 0
+    assert math.isfinite(
+        m5e['offline_fits']['two_sided_pseudolikelihood']['held_out_union_rest_grouped_kl']['test']['weighted_mean_kl']
+    )
+    assert len(m5e['closed_loop']['matched_support_comparisons']) > 0
+
     # Resumed invocation with identical CLI config reuses completed sub-suite artifacts instantaneously
     summary_resumed = post_m4_suite.main([
         '--scale', 'smoke',
@@ -796,7 +806,7 @@ def test_post_m4_suite_smoke_all_and_resume(tmp_path):
         '--smoke_tokens', '16',
     ])
     assert summary_resumed['status'] == 'complete'
-    for s_name in ('fastpath_bench', 'online_head_to_head', 'm2_refit_calibration'):
+    for s_name in ('fastpath_bench', 'online_head_to_head', 'm2_refit_calibration', 'm5_eval'):
         assert (
             summary_resumed['suites'][s_name]['config_fingerprint']
             == summary['suites'][s_name]['config_fingerprint']
@@ -1242,4 +1252,65 @@ def test_int_bug_7_snapshot_vs_adapter_unary_bf16_and_m5_torch_compile():
             timer=PhaseTimer('cpu', False), fastpath=fp_bf16_only,
         )
         assert seen_tc['count'] == 1, 'FastPathRuntime(bf16_gemm=True, compile=False) must not shadow snapshot.unary_fn!'
+
+
+def test_post_m4_suite_sharded_multi_gpu_workers_and_m5_eval(tmp_path):
+    from types import SimpleNamespace
+
+    # Default GPU resolution rules: 8 GPUs on CUDA reference/full, [0] on smoke/cpu unless --gpus specified.
+    assert post_m4_suite._resolve_gpus(SimpleNamespace(gpus=None, scale='reference', device='cuda:0')) == list(range(8))
+    assert post_m4_suite._resolve_gpus(SimpleNamespace(gpus=None, scale='smoke', device='cpu')) == [0]
+    assert post_m4_suite._resolve_gpus(SimpleNamespace(gpus='0,2,4,6', scale='smoke', device='cpu')) == [0, 2, 4, 6]
+    with pytest.raises(ValueError, match='distinct'):
+        post_m4_suite._resolve_gpus(SimpleNamespace(gpus='0,1,1', scale='smoke', device='cpu'))
+
+    out_dir = tmp_path / 'sharded_suite'
+    res = post_m4_suite.main([
+        '--scale', 'smoke',
+        '--suite', 'all',
+        '--gpus', '0,1',
+        '--output', str(out_dir),
+        '--bench_warmups', '1',
+        '--bench_repeats', '2',
+        '--timing_warmups', '1',
+        '--timing_repeats', '2',
+        '--smoke_tokens', '12',
+    ])
+    assert res['status'] == 'complete'
+    assert res['gpus'] == [0, 1]
+
+    # 1) fastpath_bench sharded cluster scaling across ranks 0 and 1
+    fp = res['suites']['fastpath_bench']
+    cs = fp['cluster_sharded_throughput']
+    assert cs is not None
+    assert cs['status'] == 'complete'
+    assert cs['world_size'] == 2
+    assert cs['gpus'] == [0, 1]
+    assert cs['aggregate_cluster_tokens_per_second'] > 0
+    assert set(cs['rank_affinity']['0']['cpu_affinity']).isdisjoint(cs['rank_affinity']['1']['cpu_affinity'])
+
+    # 2) online_head_to_head 2-worker sharded evaluate + timing + summarize
+    h2h = res['suites']['online_head_to_head']
+    assert h2h['status'] == 'complete'
+    assert h2h['timing_world_size'] == 2
+    assert h2h['sharding_mode'] == 'sharded_2gpu'
+    assert len(h2h['head_to_head_online_offset_comparison']) > 0
+
+    # 3) m2_refit_calibration 2-worker snake-sharded 11-arm matched-bundle evaluation
+    cal = res['suites']['m2_refit_calibration']
+    assert cal['status'] == 'complete'
+    assert cal['gpus'] == [0, 1]
+    for v in cal['variants']:
+        assert v['closed_loop']['dense']['requests'] == 8  # 4 smoke test prompts * 2 repeats merged across 2 ranks
+
+    # 4) m5_eval 2-worker sharded closed-loop + ExactObservedPairs + two_sided_pseudolikelihood
+    m5e = res['suites']['m5_eval']
+    assert m5e['status'] == 'complete'
+    assert m5e['timing_world_size'] == 2
+    assert m5e['sharding_mode'] == 'sharded_2gpu'
+    assert m5e['offline_fits']['exact_observed_pairs']['collision_count'] == 0
+    msc = m5e['closed_loop']['matched_support_comparisons']
+    compared_arms = {entry['arm'] for entry in msc}
+    assert {'lookahead_static_candidate', 'lookahead_rerelax_candidate'} <= compared_arms
+
 
