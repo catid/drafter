@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from collections import Counter, defaultdict
+from concurrent.futures import ThreadPoolExecutor
 import copy
 from dataclasses import asdict
 import hashlib
@@ -105,13 +106,28 @@ def sha256(path):
     return digest.hexdigest()
 
 
+def _resolve_m0_artifact(name: str, args) -> Path:
+    local = Path(args.output) / name
+    if local.exists():
+        return local
+    default_artifacts = (ROOT / "artifacts").resolve()
+    allow_fallback = (
+        bool(os.environ.get("EDRAFT_ARTIFACTS_ROOT"))
+        or args.scale == "full"
+        or Path(args.output).resolve().is_relative_to(default_artifacts)
+    )
+    if allow_fallback:
+        return resolve_artifact_path(name, args.output, root=ROOT)
+    return local
+
+
 def check_reference_gates(args):
     """Require actual complete M0 evidence, not just the presence of status files."""
     if args.scale == "smoke":
         return
     try:
-        m0 = json.loads((args.output / "m0.json").read_text())
-        numerics = json.loads((args.output / "m0_numerics.json").read_text())
+        m0 = json.loads(_resolve_m0_artifact("m0.json", args).read_text())
+        numerics = json.loads(_resolve_m0_artifact("m0_numerics.json", args).read_text())
     except FileNotFoundError as error:
         raise RuntimeError("blocked: M0 reproduction and numerical investigation must finish before M1") from error
     allowed_m0_scales = {"reference", "full"} if args.scale == "full" else {"reference"}
@@ -120,7 +136,7 @@ def check_reference_gates(args):
             or m0["comparisons"]["upstream_local"]["mismatched_tokens"] != 0):
         raise RuntimeError("blocked: complete real M0 token reproduction gate has not passed")
     mismatch_ids = set()
-    for path in (args.output / "m0").glob("*.json"):
+    for path in _resolve_m0_artifact("m0", args).glob("*.json"):
         row = json.loads(path.read_text())
         if row.get("local_target", {}).get("sequence_equal") is False:
             mismatch_ids.add(row["identity"]["prompt"])
@@ -368,8 +384,8 @@ def job_identity(args, job, backend, calibration_record):
             "split": job["row"]["split"], "prompt_text_sha256": hashlib.sha256(job["row"]["text"].encode()).hexdigest()}
 
 
-def _globally_completed_trace_map(traces_dir: Path) -> dict[str, Path]:
-    done: dict[str, Path] = {}
+def _globally_completed_trace_map(traces_dir: Path, *, verify_sha256: bool = True) -> dict[str, Path]:
+    candidates: list[tuple[str, Path, str]] = []
     for manifest_path in sorted(Path(traces_dir).glob("manifest-rank*.json")):
         try:
             manifest = json.loads(manifest_path.read_text())
@@ -384,18 +400,86 @@ def _globally_completed_trace_map(traces_dir: Path) -> dict[str, Path]:
                 continue
             try:
                 sidecar = json.loads(sidecar_path.read_text())
-                if path.stat().st_size == sidecar["disk_bytes"] and sha256(path) == sidecar["sha256"]:
-                    done[fingerprint(item["identity"])] = path
-            except (OSError, ValueError, KeyError):
+                expected_sha = sidecar["sha256"]
+                if (
+                    isinstance(expected_sha, str)
+                    and len(expected_sha) == 64
+                    and path.stat().st_size == sidecar["disk_bytes"]
+                ):
+                    candidates.append((fingerprint(item["identity"]), path, expected_sha))
+            except (OSError, ValueError, KeyError, TypeError):
                 continue
+    if not candidates:
+        return {}
+    if not verify_sha256:
+        done_fast: dict[str, Path] = {}
+        for key, path, _ in candidates:
+            done_fast.setdefault(key, path)
+        return done_fast
+    if len(candidates) > 1:
+        hash_workers = min(16, len(candidates), max(1, os.cpu_count() or 1))
+        with ThreadPoolExecutor(max_workers=hash_workers) as pool:
+            actual_shas = list(pool.map(lambda c: _safe_sha256(c[1]), candidates))
+    else:
+        actual_shas = [_safe_sha256(candidates[0][1])]
+    done: dict[str, Path] = {}
+    for (key, path, expected_sha), actual_sha in zip(candidates, actual_shas):
+        if actual_sha == expected_sha:
+            done[key] = path
     return done
 
 
-def _globally_completed_trace_keys(traces_dir: Path) -> set[str]:
-    return set(_globally_completed_trace_map(traces_dir).keys())
+def _safe_sha256(path: Path) -> str | None:
+    try:
+        return sha256(path)
+    except OSError:
+        return None
+
+
+def _globally_completed_trace_keys(traces_dir: Path, *, verify_sha256: bool = True) -> set[str]:
+    return set(_globally_completed_trace_map(traces_dir, verify_sha256=verify_sha256).keys())
+
+
+def _find_peer_completed_shard(traces_dir: Path, key: str) -> Path | None:
+    """O(1) single-key lookup across rank manifests (hashes at most `key`'s own shard, never all shards)."""
+    for manifest_path in sorted(Path(traces_dir).glob("manifest-rank*.json")):
+        try:
+            manifest = json.loads(manifest_path.read_text())
+        except (OSError, ValueError):
+            continue
+        item = manifest.get("jobs", {}).get(key)
+        if not item or item.get("status") != "complete":
+            continue
+        path = Path(item.get("result_path", ""))
+        sidecar_path = path.with_suffix(path.suffix + ".json")
+        if not path.is_file() or not sidecar_path.is_file():
+            continue
+        try:
+            sidecar = json.loads(sidecar_path.read_text())
+            if path.stat().st_size == sidecar["disk_bytes"] and sha256(path) == sidecar["sha256"]:
+                return path
+        except (OSError, ValueError, KeyError, TypeError):
+            continue
+    return None
+
+
+def _maybe_apply_cuda_cpu_affinity(args) -> dict | None:
+    dev_str = str(getattr(args, "device", "cpu"))
+    if not dev_str.startswith("cuda"):
+        return None
+    from .eval_closed_loop import apply_gpu_cpu_affinity
+    try:
+        if torch.cuda.is_available():
+            return apply_gpu_cpu_affinity(torch.device(dev_str), rank=int(getattr(args, "rank", 0)))
+        from .eval_closed_loop import gpu_cpu_affinity
+        return {**gpu_cpu_affinity(int(getattr(args, "rank", 0))), "cpu_affinity_applied": False}
+    except OSError:
+        from .eval_closed_loop import gpu_cpu_affinity
+        return {**gpu_cpu_affinity(int(getattr(args, "rank", 0))), "cpu_affinity_applied": False}
 
 
 def collect(args, prompts=None, backend=None):
+    affinity = _maybe_apply_cuda_cpu_affinity(args)
     check_reference_gates(args)
     prompts = load_prompt_manifest(args) if prompts is None else prompts
     backend = CollectionBackend(args) if backend is None else backend
@@ -487,7 +571,8 @@ def collect(args, prompts=None, backend=None):
             block["diagnostics"] = live_block_diagnostics(block, seed=job["seed"] + 10_000_000 + block["round_idx"])
             retain = (row["condition"] == "standard_nonthinking" and row["split"] in {"dev", "test"}
                       and live_blocks_written[row["split"]] < args.live_full_blocks)
-            blocks.append(compact_block(block, metadata, special_tokens=backend.special_tokens, retain_live_full=retain))
+            blocks.append(compact_block(block, metadata, special_tokens=backend.special_tokens,
+                                        retain_live_full=retain, _trust_l_unit=True))
             live_blocks_written[row["split"]] += int(retain)
             live_count += int(retain)
         generated = backend.generate(row, job["max_new_tokens"], job["temperature"], job["warper"],
@@ -503,9 +588,14 @@ def collect(args, prompts=None, backend=None):
                       "capped": len(tokens) >= job["max_new_tokens"] and not eos, "complete": True,
                       "max_new_tokens": job["max_new_tokens"], "live_full_blocks": live_count,
                       "elapsed_seconds": generated.elapsed_seconds, "tokens_per_second": generated.tokens_per_second,
-                      "scale": args.scale, "data": "synthetic" if args.scale == "smoke" else "reference",
+                      "scale": args.scale, "data": "synthetic" if args.scale == "smoke" else args.scale,
                       "long_output_policy": "natural EOS or cap; no forced min_new_tokens or padding"}
-        path = writer.write(identity, blocks, {"generation": generation, "resolved_config": resolved_config(args)})
+        path = writer.write(
+            identity,
+            blocks,
+            {"generation": generation, "resolved_config": resolved_config(args)},
+            _prevalidated_cpu=True,
+        )
         if live_count:
             restored = read_shard(path)
             for block in restored["blocks"]:
@@ -538,15 +628,39 @@ def collect(args, prompts=None, backend=None):
             for key in dynamic_by_key:
                 if key in completed:
                     rows.append(completed[key])
-            globally_done = _globally_completed_trace_keys(args.output / "traces")
+            globally_done = set(global_done_map.keys()) | set(completed.keys())
             queue = WorkQueue(args.output / "traces" / "work_queue.json",
                               list(dynamic_by_key.keys()), precompleted=globally_done)
             while (claimed_key := queue.claim(rank=args.rank)) is not None:
-                if claimed_key in completed or claimed_key in _globally_completed_trace_keys(args.output / "traces"):
+                if claimed_key in completed or claimed_key in globally_done:
+                    queue.complete(claimed_key)
+                    continue
+                peer_shard = _find_peer_completed_shard(args.output / "traces", claimed_key)
+                if peer_shard is not None:
+                    peer_gen = json.loads(peer_shard.with_suffix(".pt.json").read_text())["generation"]
+                    live_blocks_written[peer_gen["split"]] += peer_gen.get("live_full_blocks", 0)
+                    if peer_gen.get("live_full_blocks", 0):
+                        resolved_shard = str(peer_shard.resolve())
+                        restored = read_shard(peer_shard)
+                        for block in restored["blocks"]:
+                            if "live_full" not in block:
+                                continue
+                            round_key = (resolved_shard, int(block["round_idx"]))
+                            if round_key in passed_head_checks:
+                                continue
+                            check = reconstruction_diagnostic(block, backend.head)
+                            diagnostics.append({"shard": str(peer_shard), "prompt_id": block["prompt_id"],
+                                                "round_idx": block["round_idx"], **check})
+                            atomic_json(diagnostics_path, diagnostics)
+                            if check["status"] != "passed":
+                                raise RuntimeError("blocked: resumed heldout shard failed head reconstruction")
+                            passed_head_checks.add(round_key)
+                    globally_done.add(claimed_key)
                     queue.complete(claimed_key)
                     continue
                 job, identity = dynamic_by_key[claimed_key]
                 execute_job(job, identity)
+                globally_done.add(claimed_key)
                 queue.complete(claimed_key)
         for job in primary_jobs:
             identity = job_identity(args, job, backend, calibration_record)
@@ -570,6 +684,8 @@ def collect(args, prompts=None, backend=None):
                "completed_generations": len(rows), "live_full_blocks_by_split": dict(live_blocks_written),
                "blocker": f"all assigned train prompts exhausted before token quota at T={missing}" if missing else None,
                "resolved_config": resolved_config(args), "project_git_commit": git_commit()}
+    if affinity is not None:
+        summary["cpu_affinity_info"] = affinity
     atomic_json(args.output / f"collection-rank{args.rank}.json", summary)
     if missing:
         raise RuntimeError(f"blocked: {summary['blocker']}")
@@ -603,6 +719,7 @@ def audit(args):
     prompts = defaultdict(set)
     generations, shards, source_shards, head_checks, excluded = [], [], [], [], []
     seen = {}
+    pending_shards = []
     for manifest_path in sorted((args.output / "traces").glob("manifest-rank*.json")):
         manifest = json.loads(manifest_path.read_text())
         for key, job in manifest.get("jobs", {}).items():
@@ -617,36 +734,48 @@ def audit(args):
             if not path.is_file() or not sidecar_path.is_file():
                 raise RuntimeError(f"blocked: missing committed trace shard {path}")
             sidecar = json.loads(sidecar_path.read_text())
-            if sidecar["disk_bytes"] != path.stat().st_size or sidecar["sha256"] != sha256(path):
+            if sidecar["disk_bytes"] != path.stat().st_size:
                 raise RuntimeError(f"blocked: corrupted committed trace shard {path}")
-            # Derived diagnostics may have been corrected since collection.
-            # Keep the immutable shard/sidecar bytes and original flags intact.
-            gen = recompute_generation_diagnostics(sidecar["generation"])
-            if gen["scale"] != args.scale:
-                continue
-            if not gen["complete"]:
-                continue
-            if sidecar.get("identity") != job["identity"]:
-                raise RuntimeError(f"blocked: shard/manifest identity mismatch: {path}")
-            output_hash = fingerprint(gen["output_tokens"])
-            if canonical_key in seen:
-                if seen[canonical_key] != output_hash:
-                    raise RuntimeError(f"blocked: duplicate job identities have different generated outputs: {path}")
-                excluded.append({"path": str(path), "reason": "duplicate_job_identity"})
-                continue
-            seen[canonical_key] = output_hash
-            condition, split, T = gen["condition"], gen["split"], gen["temperature"]
-            category = f"{condition}/{split}/T={T}"
-            totals[category] += gen["realized_length"]
-            prompts[category].add(gen["prompt_id"])
-            if condition == "standard_nonthinking" and split == "train" and gen["partition"] == "train_primary":
-                if T == 0 or (T == .7 and gen["sampling_warp_config"] == asdict(STANDARD_ARMS[1][2])):
-                    totals["primary_train_total"] += gen["realized_length"]
-                    totals[f"primary_train_T={T}"] += gen["realized_length"]
-            generations.append({k: v for k, v in gen.items() if k != "output_tokens"})
-            shards.append(str(path))
-            source_shards.append({"path": str(path.resolve()), "sha256": sidecar["sha256"],
-                                  "identity_sha256": canonical_key})
+            pending_shards.append((canonical_key, job, path, sidecar))
+
+    if len(pending_shards) > 1:
+        hash_workers = min(16, len(pending_shards), max(1, os.cpu_count() or 1))
+        with ThreadPoolExecutor(max_workers=hash_workers) as pool:
+            computed_shas = list(pool.map(lambda item: sha256(item[2]), pending_shards))
+    else:
+        computed_shas = [sha256(item[2]) for item in pending_shards]
+
+    for (canonical_key, job, path, sidecar), actual_sha in zip(pending_shards, computed_shas):
+        if sidecar["sha256"] != actual_sha:
+            raise RuntimeError(f"blocked: corrupted committed trace shard {path}")
+        # Derived diagnostics may have been corrected since collection.
+        # Keep the immutable shard/sidecar bytes and original flags intact.
+        gen = recompute_generation_diagnostics(sidecar["generation"])
+        if gen["scale"] != args.scale:
+            continue
+        if not gen["complete"]:
+            continue
+        if sidecar.get("identity") != job["identity"]:
+            raise RuntimeError(f"blocked: shard/manifest identity mismatch: {path}")
+        output_hash = fingerprint(gen["output_tokens"])
+        if canonical_key in seen:
+            if seen[canonical_key] != output_hash:
+                raise RuntimeError(f"blocked: duplicate job identities have different generated outputs: {path}")
+            excluded.append({"path": str(path), "reason": "duplicate_job_identity"})
+            continue
+        seen[canonical_key] = output_hash
+        condition, split, T = gen["condition"], gen["split"], gen["temperature"]
+        category = f"{condition}/{split}/T={T}"
+        totals[category] += gen["realized_length"]
+        prompts[category].add(gen["prompt_id"])
+        if condition == "standard_nonthinking" and split == "train" and gen["partition"] == "train_primary":
+            if T == 0 or (T == .7 and gen["sampling_warp_config"] == asdict(STANDARD_ARMS[1][2])):
+                totals["primary_train_total"] += gen["realized_length"]
+                totals[f"primary_train_T={T}"] += gen["realized_length"]
+        generations.append({k: v for k, v in gen.items() if k != "output_tokens"})
+        shards.append(str(path))
+        source_shards.append({"path": str(path.resolve()), "sha256": sidecar["sha256"],
+                              "identity_sha256": canonical_key})
     resolved_shards = {str(Path(s).resolve()) for s in shards}
     for path in sorted(args.output.glob("head_reconstruction-rank*.json")):
         head_checks.extend(

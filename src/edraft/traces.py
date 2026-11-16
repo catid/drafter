@@ -75,8 +75,21 @@ def _missing(value, names, label):
         raise ValueError(f"missing {label} fields: {sorted(absent)}")
 
 
+def _all_tensors_finite(tensors: Sequence[torch.Tensor]) -> bool:
+    non_empty = [t for t in tensors if t.numel() > 0]
+    if not non_empty:
+        return True
+    combined = non_empty[0].sum(dtype=torch.float32)
+    for t in non_empty[1:]:
+        combined = combined + t.sum(dtype=torch.float32)
+    if bool(torch.isfinite(combined)):
+        return True
+    return all(_all_finite(t) for t in non_empty)
+
+
 def compact_block(record: Mapping, metadata: Mapping, M_draft: int = 256, M_target: int = 64,
-                  special_tokens: Sequence[int] = (), retain_live_full: bool = False) -> dict:
+                  special_tokens: Sequence[int] = (), retain_live_full: bool = False,
+                  *, _trust_l_unit: bool = False) -> dict:
     """Build a canonical CPU trace from one live loop callback.
 
     Stored target probabilities are the unwarped T_train=1 full softmax values
@@ -96,7 +109,14 @@ def compact_block(record: Mapping, metadata: Mapping, M_draft: int = 256, M_targ
     target_logits = record["target_logits"].detach().float()
     if draft_logits.ndim != 2 or draft_logits.shape != target_logits.shape:
         raise ValueError("draft and target logits must share shape [K,V]")
-    if not (_all_finite(draft_logits) and _all_finite(target_logits)):
+    l_in = record.get("l_unit") if _trust_l_unit else None
+    reused_lu = (
+        l_in.detach().float()
+        if isinstance(l_in, torch.Tensor) and l_in.shape == draft_logits.shape and l_in.device == draft_logits.device
+        else None
+    )
+    finite_inputs = (draft_logits, target_logits) if reused_lu is None else (draft_logits, target_logits, reused_lu)
+    if not _all_tensors_finite(finite_inputs):
         raise ValueError("training logits must be finite and unwarped; truncation masks are forbidden")
     K, V = draft_logits.shape
     if K < 1 or len(record["draft_tokens"]) != K:
@@ -105,7 +125,7 @@ def compact_block(record: Mapping, metadata: Mapping, M_draft: int = 256, M_targ
     if any(token < 0 or token >= V for token in specials):
         raise ValueError("special token outside vocabulary")
     # Match the live full training distribution; never use inference warpers.
-    l_unit = draft_logits.log_softmax(-1)
+    l_unit = draft_logits.log_softmax(-1) if reused_lu is None else reused_lu
     P_train = target_logits.softmax(-1)
     top_draft_vals, top_draft = draft_logits.topk(min(M_draft, V), dim=-1)
     top_target_vals, top_target = target_logits.topk(min(M_target, V), dim=-1)
@@ -114,21 +134,19 @@ def compact_block(record: Mapping, metadata: Mapping, M_draft: int = 256, M_targ
     tokens_int = [int(token) for token in record["draft_tokens"]]
     if any(token < 0 or token >= V for token in tokens_int):
         raise ValueError("draft token outside vocabulary")
-    cand_parts = [
-        top_draft,
-        top_target,
-        torch.tensor(tokens_int, dtype=torch.long, device=draft_logits.device)[:, None],
-    ]
     if specials:
-        cand_parts.append(
-            torch.tensor(specials, dtype=torch.long, device=draft_logits.device)[None, :].expand(K, -1)
-        )
+        extra_cpu = torch.tensor([[tok, *specials] for tok in tokens_int], dtype=torch.long)
+    else:
+        extra_cpu = torch.tensor(tokens_int, dtype=torch.long)[:, None]
+    cand_parts = [top_draft, top_target, extra_cpu.to(device=draft_logits.device)]
     cands_sorted = torch.cat(cand_parts, dim=-1).sort(dim=-1).values
-    l_gath_cpu = l_unit.gather(-1, cands_sorted).cpu()
-    p_gath_cpu = P_train.gather(-1, cands_sorted).cpu()
+    lp_and_p_cpu = torch.stack(
+        (l_unit.gather(-1, cands_sorted), P_train.gather(-1, cands_sorted)), dim=0
+    ).cpu()
+    l_gath_cpu, p_gath_cpu = lp_and_p_cpu[0], lp_and_p_cpu[1]
     cands_cpu = cands_sorted.cpu()
-    draft_lse_cpu = draft_log_normalizer.cpu()
-    target_lse_cpu = target_log_normalizer.cpu()
+    lse_both_cpu = torch.stack((draft_log_normalizer, target_log_normalizer), dim=0).cpu()
+    draft_lse_cpu, target_lse_cpu = lse_both_cpu[0].clone(), lse_both_cpu[1].clone()
     uniq_mask = torch.ones_like(cands_cpu, dtype=torch.bool)
     if cands_cpu.shape[1] > 1:
         uniq_mask[:, 1:] = cands_cpu[:, 1:] != cands_cpu[:, :-1]
@@ -163,7 +181,8 @@ def compact_block(record: Mapping, metadata: Mapping, M_draft: int = 256, M_targ
     result["h_raw_bf16"] = result["h_raw_bf16"].to(torch.bfloat16)
     result["h"] = result["h"].float()
     if retain_live_full:
-        result["live_full"] = {"draft_l_unit": l_unit.cpu(), "target_probs": P_train.cpu(),
+        result["live_full"] = {"draft_l_unit": l_unit.detach().cpu().clone(),
+                               "target_probs": P_train.detach().cpu().clone(),
                                "purpose": "heldout_grouped_gap_and_reconstruction_diagnostic"}
     validate_block(result)
     return result
@@ -292,28 +311,89 @@ def _sha256(path: Path) -> str:
     return digest.hexdigest()
 
 
-def write_shard(path: str | Path, blocks: Sequence[Mapping], metadata: Mapping) -> dict:
+class _HashingWriter:
+    """Stream wrapper computing SHA256 in-flight during sequential `torch.save` writes."""
+
+    __slots__ = ("_raw", "_digest", "bytes_written", "seeked")
+
+    def __init__(self, raw):
+        self._raw = raw
+        self._digest = hashlib.sha256()
+        self.bytes_written = 0
+        self.seeked = False
+
+    def write(self, data) -> int:
+        mv = memoryview(data)
+        written = self._raw.write(mv)
+        if written is None:
+            written = len(mv)
+        if not self.seeked and written > 0:
+            self._digest.update(mv[:written])
+        self.bytes_written += written
+        return written
+
+    def flush(self) -> None:
+        self._raw.flush()
+
+    def fileno(self) -> int:
+        return self._raw.fileno()
+
+    def tell(self) -> int:
+        return self._raw.tell()
+
+    def seek(self, *args):
+        self.seeked = True
+        return self._raw.seek(*args)
+
+    @property
+    def hexdigest(self) -> str:
+        return self._digest.hexdigest()
+
+
+def write_shard(
+    path: str | Path,
+    blocks: Sequence[Mapping],
+    metadata: Mapping,
+    *,
+    _prevalidated_cpu: bool = False,
+) -> dict:
     """Write all bytes before publishing the shard and its checksum sidecar."""
     path = Path(path)
     if not blocks:
         raise ValueError("cannot write an empty trace shard")
-    for block in blocks:
-        validate_block(block)
+    if _prevalidated_cpu:
+        blocks_payload = list(blocks)
+    else:
+        for block in blocks:
+            validate_block(block)
+        blocks_payload = _cpu_tree(blocks)
     payload = {"schema_version": SCHEMA_VERSION, "metadata": _cpu_tree(metadata),
-               "blocks": _cpu_tree(blocks)}
+               "blocks": blocks_payload}
     path.parent.mkdir(parents=True, exist_ok=True)
     fd, tmp = tempfile.mkstemp(prefix=path.name + ".", suffix=".tmp", dir=path.parent)
+    in_flight_sha: str | None = None
+    in_flight_size: int | None = None
     try:
         with os.fdopen(fd, "wb") as stream:
-            torch.save(payload, stream)
-            stream.flush()
-            os.fsync(stream.fileno())
+            hashing_stream = _HashingWriter(stream)
+            torch.save(payload, hashing_stream)
+            hashing_stream.flush()
+            os.fsync(hashing_stream.fileno())
+            if not hashing_stream.seeked:
+                in_flight_sha = hashing_stream.hexdigest
+                in_flight_size = hashing_stream.bytes_written
         os.replace(tmp, path)
     finally:
         if os.path.exists(tmp):
             os.unlink(tmp)
+    disk_bytes = path.stat().st_size
+    digest_hex = (
+        in_flight_sha
+        if (in_flight_sha is not None and in_flight_size == disk_bytes)
+        else _sha256(path)
+    )
     summary = {"schema_version": SCHEMA_VERSION, "path": str(path.resolve()),
-               "sha256": _sha256(path), "disk_bytes": path.stat().st_size,
+               "sha256": digest_hex, "disk_bytes": disk_bytes,
                "blocks": len(blocks), "logical_slots": sum(b["block_length"] for b in blocks)}
     for key in ("generation", "identity", "rank"):
         if key in metadata:
@@ -322,7 +402,7 @@ def write_shard(path: str | Path, blocks: Sequence[Mapping], metadata: Mapping) 
     return summary
 
 
-def read_shard(path: str | Path, verify_checksum: bool = True) -> dict:
+def read_shard(path: str | Path, verify_checksum: bool = True, *, validate: bool = True) -> dict:
     path = Path(path)
     if verify_checksum:
         sidecar = json.loads(path.with_suffix(path.suffix + ".json").read_text())
@@ -331,8 +411,9 @@ def read_shard(path: str | Path, verify_checksum: bool = True) -> dict:
     payload = torch.load(path, map_location="cpu", weights_only=True)
     if payload.get("schema_version") != SCHEMA_VERSION or not payload.get("blocks"):
         raise ValueError("invalid or empty trace shard")
-    for block in payload["blocks"]:
-        validate_block(block)
+    if validate:
+        for block in payload["blocks"]:
+            validate_block(block)
     return payload
 
 
@@ -362,7 +443,14 @@ class TraceShardWriter:
         except (OSError, ValueError, KeyError):
             return False
 
-    def write(self, identity: Mapping, blocks: Sequence[Mapping], metadata: Mapping | None = None) -> Path:
+    def write(
+        self,
+        identity: Mapping,
+        blocks: Sequence[Mapping],
+        metadata: Mapping | None = None,
+        *,
+        _prevalidated_cpu: bool = False,
+    ) -> Path:
         path = self.path(identity)
         if self.completed(identity):
             return path
@@ -374,8 +462,8 @@ class TraceShardWriter:
                 if identity[identity_key] != block[block_key]:
                     raise ValueError(f"shard identity mismatch for {identity_key}")
         header = dict(metadata or {})
-        header.update({"identity": dict(identity), "rank": self.rank, "project_git_commit": git_commit()})
-        write_shard(path, blocks, header)
+        header.update({"identity": dict(identity), "rank": self.rank, "project_git_commit": _default_git_commit()})
+        write_shard(path, blocks, header, _prevalidated_cpu=_prevalidated_cpu)
         self.manifest.finish(dict(identity), path)
         return path
 

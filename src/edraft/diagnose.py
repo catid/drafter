@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from collections import Counter, defaultdict, deque
-from concurrent.futures import ProcessPoolExecutor
+from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor
 import bisect
 import hashlib
 import json
@@ -539,6 +539,7 @@ def audited_trace_sources(audit_path, scale, trace_dir=None):
     if len(paths) != len(set(paths)) or set(paths) != {str(Path(p).resolve()) for p in report['shards']}:
         raise RuntimeError('M1 audit has duplicate or inconsistent accepted source paths')
     seen_identities = set()
+    resolved_paths: list[Path] = []
     for source, path_text in zip(sources, paths):
         path = Path(path_text)
         if trace_dir is not None and not path.is_relative_to(Path(trace_dir).resolve()):
@@ -548,7 +549,17 @@ def audited_trace_sources(audit_path, scale, trace_dir=None):
         if identity_hash in seen_identities or identity_hash != source['identity_sha256']:
             raise RuntimeError('Audited source identity changed or is duplicated')
         seen_identities.add(identity_hash)
-        if sidecar['sha256'] != source['sha256'] or _file_sha256(path) != source['sha256']:
+        if sidecar['sha256'] != source['sha256'] or not path.is_file():
+            raise RuntimeError(f'Audited trace checksum changed: {path}')
+        resolved_paths.append(path)
+    if len(resolved_paths) > 1:
+        hash_workers = min(16, len(resolved_paths), max(1, os.cpu_count() or 1))
+        with ThreadPoolExecutor(max_workers=hash_workers) as pool:
+            actual_shas = list(pool.map(_file_sha256, resolved_paths))
+    else:
+        actual_shas = [_file_sha256(p) for p in resolved_paths]
+    for source, path, actual_sha in zip(sources, resolved_paths, actual_shas):
+        if actual_sha != source['sha256']:
             raise RuntimeError(f'Audited trace checksum changed: {path}')
     calibration = report['calibration']
     for name, expected in calibration['artifact_sha256'].items():
@@ -563,13 +574,16 @@ def audited_trace_sources(audit_path, scale, trace_dir=None):
                      'prompt_manifest_sha256': calibration['identity']['prompt_manifest_sha256']}
 
 
-def _accumulate_source(accumulator, source, scale):
+def _accumulate_source(accumulator, source, scale, *, preverified_audit: bool = False):
     from .traces import read_shard
     path = Path(source['path'])
     sidecar = json.loads(path.with_suffix('.pt.json').read_text())
     if sidecar['sha256'] != source['sha256']:
         raise RuntimeError(f'Audited trace checksum changed: {path}')
-    shard = read_shard(path)  # Retain full checksum and canonical-schema checks.
+    if preverified_audit:
+        shard = read_shard(path, verify_checksum=False, validate=False)
+    else:
+        shard = read_shard(path)  # Retain full checksum and canonical-schema checks.
     generation = shard['metadata'].get('generation')
     if generation is None:
         raise RuntimeError(f'{path}: generation metadata missing; realized length/repetition cannot be inferred from a cap')
@@ -588,9 +602,12 @@ def _diagnostic_worker_init():
     torch.set_num_threads(1)
 
 
-def _diagnostic_shard_worker(source, scale, context_edges, outlier_threshold, seed):
+def _diagnostic_shard_worker(source, scale, context_edges, outlier_threshold, seed, preverified_audit: bool = False):
     accumulator = DiagnosticAccumulator(context_edges, outlier_threshold, seed)
-    _accumulate_source(accumulator, source, scale)
+    if preverified_audit:
+        _accumulate_source(accumulator, source, scale, preverified_audit=True)
+    else:
+        _accumulate_source(accumulator, source, scale)
     # Avoid lambda defaultdicts and torch shared-memory/file-descriptor traffic.
     groups = {}
     for key, group in accumulator.groups.items():
@@ -635,7 +652,7 @@ def _merge_shard_result(accumulator, result, source, scale):
 
 
 def accumulate_trace_shards(sources, scale, context_edges=DEFAULT_CONTEXT_EDGES,
-                            outlier_threshold=5., seed=2026, workers=1):
+                            outlier_threshold=5., seed=2026, workers=1, *, preverified_audit: bool = False):
     """Load only caller-selected sources, with at most `workers` pending shards.
 
     Merge in source order and bootstrap once after all shards are merged. The
@@ -646,7 +663,10 @@ def accumulate_trace_shards(sources, scale, context_edges=DEFAULT_CONTEXT_EDGES,
     accumulator = DiagnosticAccumulator(context_edges, outlier_threshold, seed)
     if workers == 1:
         for source in sources:
-            _accumulate_source(accumulator, source, scale)
+            if preverified_audit:
+                _accumulate_source(accumulator, source, scale, preverified_audit=True)
+            else:
+                _accumulate_source(accumulator, source, scale)
         return accumulator
     remaining = iter(sources)
     with ProcessPoolExecutor(max_workers=workers, mp_context=multiprocessing.get_context('spawn'),
@@ -655,7 +675,10 @@ def accumulate_trace_shards(sources, scale, context_edges=DEFAULT_CONTEXT_EDGES,
         def submit_next():
             source = next(remaining, None)
             if source is not None:
-                future = pool.submit(_diagnostic_shard_worker, source, scale, context_edges, outlier_threshold, seed)
+                if preverified_audit:
+                    future = pool.submit(_diagnostic_shard_worker, source, scale, context_edges, outlier_threshold, seed, True)
+                else:
+                    future = pool.submit(_diagnostic_shard_worker, source, scale, context_edges, outlier_threshold, seed)
                 pending.append((source, future))
         for _ in range(workers):
             submit_next()
@@ -674,8 +697,11 @@ def main(argv=None):
     parser.add_argument('--m1_audit', type=Path)
     parser.add_argument('--context_edges', type=int, nargs='+', default=list(DEFAULT_CONTEXT_EDGES))
     parser.add_argument('--outlier_threshold', type=float, default=5.)
-    parser.add_argument('--workers', type=int, default=1)
+    parser.add_argument('--workers', type=int, default=None)
     args = parse_config(parser, argv)
+    auto_workers = args.workers is None
+    if auto_workers:
+        args.workers = 1 if args.scale == 'smoke' else min(16, max(1, os.cpu_count() or 1))
     if args.workers < 1:
         parser.error('--workers must be positive')
     record = record_run(args, 'diagnose')
@@ -691,8 +717,10 @@ def main(argv=None):
         accepted, audit_provenance = audited_trace_sources(
             args.m1_audit or args.output / 'm1_audit.json', args.scale, args.trace_dir)
         preflight(args, 0)
+        run_workers = min(args.workers, max(1, len(accepted))) if auto_workers else args.workers
         accumulator = accumulate_trace_shards(accepted, args.scale, args.context_edges,
-                                             args.outlier_threshold, args.seed, args.workers)
+                                             args.outlier_threshold, args.seed, run_workers,
+                                             preverified_audit=True)
         sources = [{'path': source['path'], 'sha256': source['sha256']} for source in accepted]
         report = accumulator.report()
     report.update({'label': 'synthetic' if args.scale == 'smoke' else args.scale, 'scale': args.scale,
