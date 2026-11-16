@@ -52,11 +52,6 @@ M5_ARMS = (
     'adaptive_block_length',
 )
 
-ALGORITHM_FILES = (
-    'adapter.py', 'online.py', 'features.py', 'dflash_loop.py',
-    'sampler.py', 'verify.py', 'backend.py', 'sparse.py', 'toy.py', 'diagnose.py',
-)
-IMPLEMENTATION_FILES = (*ALGORITHM_FILES, 'eval_closed_loop.py')
 FROZEN_09A5469_ALGORITHM_FILES = {
     'adapter.py': 'b8960babc3f3b126a11e1f990ef144b2a9be6331a181bdbeea3da2f4c0c5b9d5',
     'online.py': 'ba781eb2f0a5c06b29e9101001724c1045b6bdc845b13400e5305fc603fe8b22',
@@ -2424,7 +2419,11 @@ def select_calibration_prompts(args, prompt_manifest, settings):
     fallback_candidates = []
     long_token_sums = {}
     for idx, p in enumerate(long_prompts):
-        p_jobs = evaluation_jobs([p], args.stage, args.scale, args.seed)
+        p_jobs = evaluation_jobs(
+            [p], args.stage, args.scale, args.seed,
+            m5_arms=getattr(args, 'm5_arms', None),
+            include_long_oracle=bool(getattr(args, 'm5_oracle_checkpoint', None)),
+        )
         p_rows = []
         complete = True
         for job in p_jobs:

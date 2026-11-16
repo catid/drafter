@@ -1279,8 +1279,10 @@ def test_post_m4_suite_sharded_multi_gpu_workers_and_m5_eval(tmp_path):
     assert res['status'] == 'complete'
     assert res['gpus'] == [0, 1]
 
-    # 1) fastpath_bench sharded cluster scaling across ranks 0 and 1
+    # 1) fastpath_bench sharded closed-loop + 1-GPU calibration scaling across ranks 0 and 1
     fp = res['suites']['fastpath_bench']
+    assert fp['closed_loop_matched_comparison']['world_size'] == 2
+    assert fp['closed_loop_matched_comparison']['sharding_mode'] == 'sharded_2gpu'
     cs = fp['cluster_sharded_throughput']
     assert cs is not None
     assert cs['status'] == 'complete'
@@ -1312,5 +1314,405 @@ def test_post_m4_suite_sharded_multi_gpu_workers_and_m5_eval(tmp_path):
     msc = m5e['closed_loop']['matched_support_comparisons']
     compared_arms = {entry['arm'] for entry in msc}
     assert {'lookahead_static_candidate', 'lookahead_rerelax_candidate'} <= compared_arms
+
+
+def test_int_bug_10_11_12_13_14_cuda_zero_parent_context_and_ddp_flags(tmp_path, monkeypatch):
+    from types import SimpleNamespace
+    from edraft import bench_adapter, bench_grouped
+
+    # INT-BUG-14a: canonical 13-file IMPLEMENTATION_FILES with no shadowed definition
+    assert len(EVAL_IMPL_FILES) == 13
+    val_mod = _load_validator_module()
+    assert val_mod.IMPLEMENTATION_FILES == EVAL_IMPL_FILES
+
+    # INT-BUG-14b: programmatic Audit(SimpleNamespace(...)) without source_repo attribute must not raise AttributeError
+    smoke_art = tmp_path / 'smoke_val_no_src_attr'
+    eval_main(['--scale', 'smoke', '--device', 'cpu', '--stage', 'm3', '--mode', 'all', '--output', str(smoke_art)])
+    eval_main(['--scale', 'smoke', '--device', 'cpu', '--stage', 'm4', '--mode', 'all', '--output', str(smoke_art)])
+    audit_obj = val_mod.Audit(SimpleNamespace(scale='smoke', repo=ROOT, artifacts=smoke_art, seed=2026))
+    audit_obj.run()
+    assert audit_obj.failures == []
+
+    # Prepare mocked reference artifacts_root for simulated CUDA multi-GPU orchestration test (INT-BUG-10..13)
+    art_root = tmp_path / 'cuda_sim_ref_artifacts'
+    (art_root / 'traces').mkdir(parents=True)
+    (art_root / 'm2').mkdir(parents=True)
+    (art_root / 'm3').mkdir(parents=True)
+    (art_root / 'm4').mkdir(parents=True)
+    seed_fit = tmp_path / 'seed_smoke_cuda_sim'
+    train.main(['--scale', 'smoke', '--output', str(seed_fit)])
+
+    def _copy_ref_ckpt(src_pt: Path, dst_pt: Path, stage_lbl: str):
+        payload = torch.load(src_pt, map_location='cpu', weights_only=True)
+        payload['scale'] = 'reference'
+        payload['stage'] = stage_lbl
+        payload['report'] = {
+            'model_pair': ['Qwen/Qwen3-8B', 'z-lab/Qwen3-8B-DFlash-b16'],
+            'model_revisions': ['rev-t', 'rev-d'],
+            'frozen_artifacts': {'hidden_projection_sha256': 'proj-sha'},
+            'stages': {'dense_sparse': {'sparse_collision_statistics': {'collision_count': 0, 'overflow_events': 12, 'dropped_unique_keys': 34}}},
+        }
+        train.atomic_torch_save(dst_pt, payload)
+
+    _copy_ref_ckpt(seed_fit / 'm2_smoke' / 'dense.pt', art_root / 'm2' / 'dense.pt', 'dense')
+    _copy_ref_ckpt(seed_fit / 'm2_smoke' / 'dense_sparse.pt', art_root / 'm2' / 'dense_sparse.pt', 'dense_sparse')
+    (art_root / 'm1_audit.json').write_text(json.dumps({'status': 'passed', 'shards': []}))
+    (art_root / 'diagnostic_reference.json').write_text(json.dumps({'status': 'measured', 'scale': 'reference'}))
+    (art_root / 'h_proj.pt').write_bytes(b'proj')
+    (art_root / 'token_features.pt').write_bytes(b'feat')
+    (art_root / 'm2.json').write_text(json.dumps({'status': 'passed', 'scale': 'reference', 'identity': 'id-m2'}))
+    (art_root / 'm3' / 'summary.json').write_text(json.dumps({'status': 'complete', 'scale': 'reference'}))
+    (art_root / 'm4' / 'summary.json').write_text(json.dumps({'status': 'complete', 'scale': 'reference'}))
+    (art_root / 'smoke.json').write_text(json.dumps({'status': 'passed', 'tokens_per_second': 1000.0}))
+    (art_root / 'environment.json').write_text(json.dumps({'status': 'recorded'}))
+    prompts_payload = {
+        'scale': 'reference',
+        'prompts': [
+            {
+                'prompt_id': f'ref-{split}-{cond}-{i:03d}',
+                'split': split,
+                'condition': cond,
+                'text': f'Prompt {i}',
+                'dataset': 'test_ds',
+                'reference_selected': True,
+            }
+            for split, counts in (('dev', (8, 12)), ('test', (64, 32)))
+            for cond, n_req in zip(('standard_nonthinking', 'long_thinking'), counts)
+            for i in range(n_req)
+        ],
+    }
+    (art_root / 'prompts.json').write_text(json.dumps(prompts_payload))
+
+    # Forbid ANY parent-process in-process CUDA workload calls (INT-BUG-10)!
+    def _forbid_parent_inprocess(*_a, **_kw):
+        raise AssertionError('INT-BUG-10: parent post_m4_suite orchestrator executed CUDA workload in-process!')
+
+    monkeypatch.setattr(bench_adapter, 'main', _forbid_parent_inprocess)
+    monkeypatch.setattr(bench_grouped, 'main', _forbid_parent_inprocess)
+    monkeypatch.setattr(post_m4_suite, 'assert_idle', _forbid_parent_inprocess)
+    monkeypatch.setattr(post_m4_suite, '_measure_round3_compact_microbench', _forbid_parent_inprocess)
+    monkeypatch.setattr(post_m4_suite, '_run_fastpath_closed_loop_on_prompts', _forbid_parent_inprocess)
+    monkeypatch.setattr(post_m4_suite, '_run_refit_eval_bundle_on_prompts', _forbid_parent_inprocess)
+    monkeypatch.setattr(post_m4_suite, '_prepare_offline_eval_context', _forbid_parent_inprocess)
+    monkeypatch.setattr(post_m4_suite, '_offline_kl_summary', _forbid_parent_inprocess)
+    monkeypatch.setattr(train, 'main', _forbid_parent_inprocess)
+    monkeypatch.setattr('shutil.disk_usage', lambda p: type('DU', (), {'free': 200 * 2**30})())
+
+    active_gpu_owners: dict[int, int] = {}  # gpu -> pid; simulates persistent CUDA contexts!
+    seen_ddp_train_clis: list[list[str]] = []
+    seen_worker_labels: list[str] = []
+
+    def _mock_selected_gpus_idle(indices):
+        for g in indices:
+            assert g not in active_gpu_owners, f'INT-BUG-10: GPU {g} still occupied by PID {active_gpu_owners[g]}!'
+
+    monkeypatch.setattr(launch, 'selected_gpus_idle', _mock_selected_gpus_idle)
+
+    def _mock_launch_main(cli_list):
+        seen_ddp_train_clis.append(list(cli_list))
+        gpus_used = [int(x) for x in cli_list[cli_list.index('--gpus') + 1].split(',')]
+        _mock_selected_gpus_idle(gpus_used)
+        # Simulate worker allocation & clean exit releasing GPU contexts
+        for idx, g in enumerate(gpus_used):
+            active_gpu_owners[g] = 9000 + idx
+        active_gpu_owners.clear()
+        out_ws = Path(cli_list[cli_list.index('--output') + 1])
+        tag = cli_list[cli_list.index('--m5_fit_tag') + 1]
+        # Verify INT-BUG-12: --m1_diagnostic and --stats_memory_limit 32GB are passed!
+        assert '--m1_diagnostic' in cli_list
+        assert Path(cli_list[cli_list.index('--m1_diagnostic') + 1]).is_file()
+        assert cli_list[cli_list.index('--stats_memory_limit') + 1] == '32GB'
+        rdir = out_ws / tag
+        rdir.mkdir(parents=True, exist_ok=True)
+        _copy_ref_ckpt(seed_fit / 'm2_smoke' / 'dense.pt', rdir / 'dense.pt', 'dense')
+        _copy_ref_ckpt(seed_fit / 'm2_smoke' / 'dense_sparse.pt', rdir / 'dense_sparse.pt', 'dense_sparse')
+        train.scale_adapter_checkpoint(rdir / 'dense.pt', rdir / 'dense_calibrated.pt', 0.30, preserve_fit_identity=True)
+        train.scale_adapter_checkpoint(rdir / 'dense_sparse.pt', rdir / 'dense_sparse_calibrated.pt', 0.30, preserve_fit_identity=True)
+        rep = {
+            'status': 'passed',
+            'stages': {
+                'dense': {'beta_calibration': {'optimal_beta': 0.30}},
+                'dense_sparse': {
+                    'beta_calibration': {'optimal_beta': 0.30},
+                    'sparse_collision_statistics': {
+                        'collision_count': 0,
+                        'overflow_events': 42,
+                        'dropped_unique_keys': 108,
+                        'counterfactual_signed_hash_collision_count': 500,
+                    },
+                },
+            },
+        }
+        (out_ws / f'{tag}.json').write_text(json.dumps(rep))
+        return rep
+
+    monkeypatch.setattr(launch, 'main', _mock_launch_main)
+
+    def _mock_spawn_parallel_workers(worker_specs, logdir, label, *, scale, device_str, omp_threads=1):
+        seen_worker_labels.append(label)
+        if scale != 'smoke' and str(device_str).startswith('cuda'):
+            _mock_selected_gpus_idle([gpu for _, gpu, _ in worker_specs])
+        for rank, gpu, cmd in worker_specs:
+            active_gpu_owners[gpu] = 8000 + rank
+            if 'edraft.bench_adapter' in cmd:
+                od = Path(cmd[cmd.index('--output') + 1])
+                od.mkdir(parents=True, exist_ok=True)
+                (od / 'adapter_benchmark_reference.json').write_text(json.dumps({
+                    'modes': {'eager': {'synchronized_wall': {'median_ms': 1.2}}, 'compiled': {'synchronized_wall': {'median_ms': 0.8}}},
+                }))
+            elif 'edraft.bench_grouped' in cmd:
+                od = Path(cmd[cmd.index('--output') + 1])
+                od.mkdir(parents=True, exist_ok=True)
+                (od / 'grouped_benchmark_reference.json').write_text(json.dumps({
+                    'parity': {'passed': True},
+                    'forward_backward_speedup': 3.5,
+                    'precollated_forward_backward_speedup': 4.1,
+                }))
+            elif '--_worker_mode' in cmd:
+                wmode = cmd[cmd.index('--_worker_mode') + 1]
+                spec_p = Path(cmd[cmd.index('--_worker_spec') + 1])
+                out_p = Path(cmd[cmd.index('--_worker_out') + 1])
+                spec = json.loads(spec_p.read_text())
+                if wmode == 'round3_micro':
+                    post_m4_suite.atomic_json(out_p, {
+                        'affinity': {'physical_gpu': gpu, 'numa_node': gpu // 2, 'cpu_affinity': list(range(16 * gpu, 16 * gpu + 16))},
+                        'inventory': {'gpus': [gpu]},
+                        'round3_micro': {'speedups': {'bigram_round3_over_round2': 4.0}},
+                    })
+                elif wmode == 'fastpath_closed_loop_shard':
+                    s_rows, p_rows = [], []
+                    for p in spec['prompts']:
+                        for arm in spec['arms']:
+                            for rep in range(2):
+                                for m_idx, mname in enumerate(('eager_pre_round3', 'round3_compact', 'round3_compile')):
+                                    s_rows.append({
+                                        'rank': rank, 'physical_gpu': gpu, 'fastpath_mode': mname, 'arm': arm,
+                                        'prompt_id': p['prompt_id'], 'condition': p['condition'], 'repeat': rep,
+                                        'repetition_dominated': False, 'generated_tokens': 64,
+                                        'elapsed_seconds': 1.0 / (1.0 + 0.2 * m_idx),
+                                        'tokens_per_second': 64.0 * (1.0 + 0.2 * m_idx),
+                                        'mean_accepted_length': 2.5,
+                                    })
+                            for mname in ('eager_pre_round3', 'round3_compact', 'round3_compile'):
+                                p_rows.append({
+                                    'rank': rank, 'physical_gpu': gpu, 'fastpath_mode': mname, 'arm': arm,
+                                    'prompt_id': p['prompt_id'], 'condition': p['condition'],
+                                    'repetition_dominated': False,
+                                    'phase_ms': {'dflash_draft': 2.0, 'target_verification': 5.0},
+                                    'generated_tokens': 64,
+                                })
+                    post_m4_suite.atomic_json(out_p, {
+                        'rank': rank, 'physical_gpu': gpu, 'numa_node': gpu // 2,
+                        'cpu_affinity': list(range(16 * gpu, 16 * gpu + 16)), 'cpu_affinity_applied': True,
+                        'measured_speed_seconds': 12.0, 'speed_rows': s_rows, 'profile_rows': p_rows,
+                    })
+                elif wmode == 'fastpath_1gpu_calibration':
+                    # INT-BUG-11a: verify compact <= 6 prompts selected even on 96-prompt reference set!
+                    assert len(spec['prompts']) == 6
+                    c_rows = [
+                        {
+                            'arm': arm, 'prompt_id': p['prompt_id'], 'condition': p['condition'],
+                            'repeat': rep, 'repetition_dominated': False, 'generated_tokens': 64,
+                            'elapsed_seconds': 0.8, 'tokens_per_second': 80.0, 'mean_accepted_length': 2.5,
+                        }
+                        for p in spec['prompts'] for arm in spec['arms'] for rep in range(2)
+                    ]
+                    post_m4_suite.atomic_json(out_p, {
+                        'physical_gpu': gpu, 'numa_node': gpu // 2,
+                        'cpu_affinity': list(range(16 * gpu, 16 * gpu + 16)), 'cpu_affinity_applied': True,
+                        'cluster_idle_inventory': {'all_gpus_idle_before_load': True},
+                        'selected_prompt_ids': [p['prompt_id'] for p in spec['prompts']],
+                        'rows': c_rows,
+                    })
+                elif wmode == 'offline_kl_batch':
+                    res_map = {
+                        k: {
+                            'checkpoint': ck, 'stage': 'dense_sparse' if 'sparse' in k else 'dense',
+                            'checkpoint_scale': 1.0, 'sparse_backend': 'exact_observed_pairs' if 'exact' in k else 'signed_feature_hash',
+                            'collision_count': 0 if 'exact' in k else 10,
+                            'dev': {'weighted_mean_kl': 0.11}, 'test': {'weighted_mean_kl': 0.12},
+                        }
+                        for k, ck in spec['checkpoints'].items()
+                    }
+                    post_m4_suite.atomic_json(out_p, {'results': res_map})
+                elif wmode == 'refit_eval_shard':
+                    rbk = {'plain_dflash': []}
+                    v_scales = []
+                    for vn, dp, sp in spec['variants']:
+                        d_sc = float(torch.load(dp, map_location='cpu', weights_only=True).get('checkpoint_scale', 1.0))
+                        s_sc = float(torch.load(sp, map_location='cpu', weights_only=True).get('checkpoint_scale', 1.0))
+                        v_scales.append([vn, d_sc, s_sc])
+                        rbk[f'{vn}::dense'] = []
+                        rbk[f'{vn}::dense_sparse'] = []
+                    for p in spec['prompts']:
+                        for rep in range(2):
+                            for ak in rbk:
+                                rbk[ak].append({
+                                    'prompt_id': p['prompt_id'], 'condition': p['condition'],
+                                    'sampling_name': 'primary', 'repeat': rep, 'repetition_dominated': False,
+                                    'effective_beta': 1.0, 'generated_tokens': 64, 'elapsed_seconds': 0.8,
+                                    'tokens_per_second': 80.0, 'mean_accepted_length': 2.6 if ak != 'plain_dflash' else 2.2,
+                                    'median_accepted_length': 2.6, 'target_forwards_per_generated_token': 0.35,
+                                })
+                    post_m4_suite.atomic_json(out_p, {
+                        'rank': rank, 'physical_gpu': gpu, 'numa_node': gpu // 2,
+                        'cpu_affinity': list(range(16 * gpu, 16 * gpu + 16)), 'cpu_affinity_applied': True,
+                        'variant_scales': v_scales, 'rows_by_key': rbk,
+                    })
+            elif 'edraft.eval_closed_loop' in cmd:
+                od = Path(cmd[cmd.index('--output') + 1]) / 'm5'
+                od.mkdir(parents=True, exist_ok=True)
+                mode_arg = cmd[cmd.index('--mode') + 1]
+                if mode_arg == 'tune':
+                    (od / 'settings.json').write_text(json.dumps({'selected': {'plain_dflash': {}}}))
+                elif mode_arg == 'summarize':
+                    (od / 'timing.json').write_text(json.dumps({
+                        'status': 'complete', 'world_size': 2, 'sharding_mode': 'sharded_2gpu',
+                        'groups': [], 'phase_profiles': [], 'offset_bin_slices': [{'bin': '0-1K'}],
+                    }))
+                    (od / 'summary.json').write_text(json.dumps({
+                        'status': 'complete', 'missing_requests': [],
+                        'greedy_output_comparisons_complete': True,
+                        'groups': [], 'offset_bin_slices': [{'bin': '0-1K'}],
+                        'head_to_head_online_offset_comparison': [{'arm': 'online_bigram_count_gated'}],
+                        'matched_support_comparisons': [
+                            {'arm': 'lookahead_static_candidate'},
+                            {'arm': 'lookahead_rerelax_candidate'},
+                        ],
+                    }))
+        # Subprocesses exit -> release all simulated GPU contexts!
+        active_gpu_owners.clear()
+        return {'wall_elapsed_seconds': 1.0}
+
+    monkeypatch.setattr(post_m4_suite, '_spawn_parallel_workers', _mock_spawn_parallel_workers)
+
+    out_suite = tmp_path / 'cuda_sim_out'
+    summary = post_m4_suite.main([
+        '--scale', 'reference',
+        '--device', 'cuda:0',
+        '--gpus', '0,1',
+        '--suite', 'all',
+        '--artifacts_root', str(art_root),
+        '--output', str(out_suite),
+        '--timing_repeats', '2',
+        '--timing_warmups', '1',
+    ])
+
+    assert summary['status'] == 'complete'
+    assert not torch.cuda.is_initialized()
+    # Verify INT-BUG-11a: fastpath_bench sharded across 2 GPUs + 6-prompt 1-GPU calibration
+    fp = summary['suites']['fastpath_bench']
+    assert fp['closed_loop_matched_comparison']['world_size'] == 2
+    assert fp['closed_loop_matched_comparison']['sharding_mode'] == 'sharded_2gpu'
+    assert len(fp['cluster_sharded_throughput']['calibration_selected_prompt_ids']) == 6
+
+    # Verify INT-BUG-13: m5_exact_pairs used --sparse_overflow_policy freeze_new by default!
+    exact_cli = next(c for c in seen_ddp_train_clis if 'm5_exact_pairs' in c)
+    assert exact_cli[exact_cli.index('--sparse_overflow_policy') + 1] == 'freeze_new'
+    assert summary['suites']['m5_eval']['offline_fits']['exact_observed_pairs']['overflow_policy'] == 'freeze_new'
+    assert summary['suites']['m5_eval']['offline_fits']['exact_observed_pairs']['overflow_events'] == 42
+
+
+def test_int_bug_12b_15_16_reproducers(tmp_path, monkeypatch):
+    from types import SimpleNamespace
+    from edraft.runtime import common_parser, parse_config
+
+    # 1) INT-BUG-15: --stage m5 --mode timing_calibration with --m5_arms subset must not raise KeyError
+    ws_m5 = tmp_path / 'bug15_m5_cal'
+    m5_arms = ['plain_dflash', 'dense_candidate', 'lookahead_static_candidate']
+    eval_main(['--scale', 'smoke', '--device', 'cpu', '--stage', 'm5', '--mode', 'tune', '--output', str(ws_m5), '--m5_arms', *m5_arms])
+    eval_main(['--scale', 'smoke', '--device', 'cpu', '--stage', 'm5', '--mode', 'evaluate', '--output', str(ws_m5), '--m5_arms', *m5_arms])
+    eval_main(['--scale', 'smoke', '--device', 'cpu', '--stage', 'm5', '--mode', 'timing_calibration', '--output', str(ws_m5), '--m5_arms', *m5_arms])
+    cal_payload = json.loads((ws_m5 / 'm5' / 'timing_isolation_calibration.json').read_text())
+    assert cal_payload['stage'] == 'm5'
+    assert {g['arm'] for g in cal_payload['groups']} == set(m5_arms)
+
+    # 2) INT-BUG-12b: stats_memory_limit in TRANSIENT_CONFIG_KEYS preserves fit identity & checkpoint resume!
+    assert 'stats_memory_limit' in train.TRANSIENT_CONFIG_KEYS
+    same_ws = tmp_path / 'same_identity_ws'
+    r1 = train.main(['--scale', 'smoke', '--output', str(same_ws), '--stats_memory_limit', '512MB'])
+    r2 = train.main(['--scale', 'smoke', '--output', str(same_ws), '--no_resume', '--stats_memory_limit', '32GB'])
+    assert r1['identity'] == r2['identity']
+
+    resume_ws = tmp_path / 'resume_mem_limit'
+    parser = common_parser('test')
+    parser.add_argument('--no_resume', dest='resume', action='store_false', default=True)
+    parser.add_argument('--learning_rate', type=float, default=1e-3)
+    parser.add_argument('--sparse_learning_rate', type=float, default=5e-2)
+    parser.add_argument('--weight_decay', type=float, default=0.0)
+    parser.add_argument('--bias_weight_decay', type=float, default=0.0)
+    parser.add_argument('--lambda_l1', type=float, default=1e-5)
+    parser.add_argument('--sparse_capacity', type=int, default=256)
+    parser.add_argument('--M_sparse', type=int, default=4)
+    parser.add_argument('--history_depth', type=int, default=4)
+    parser.add_argument('--batch_blocks', type=int, default=4)
+    parser.add_argument('--vocab_chunk', type=int, default=64)
+    parser.add_argument('--epochs_dense', type=int, default=1)
+    parser.add_argument('--epochs_sparse', type=int, default=1)
+    parser.add_argument('--checkpoint_every', type=int, default=1)
+    parser.add_argument('--stats_memory_limit', default='512MB')
+    ns1 = parse_config(parser, ['--scale', 'smoke', '--output', str(resume_ws), '--stats_memory_limit', '512MB'])
+    trace_dir, E, head, bias, head_meta = train.smoke_bundle(ns1)
+    entries, idx_rep = train.trace_index(trace_dir)
+    inter = train.fit(entries, idx_rep, E, head, bias, head_meta, ns1, stop_after_steps=1)
+    assert inter['status'] == 'interrupted_for_resume_test'
+    ns2 = parse_config(parser, ['--scale', 'smoke', '--output', str(resume_ws), '--stats_memory_limit', '32GB'])
+    resumed_fit = train.fit(entries, idx_rep, E, head, bias, head_meta, ns2)
+    assert resumed_fit['status'] == 'passed'
+
+    # 3) INT-BUG-16: single non-zero --gpus 4 binds every stage to physical GPU 4 with child --device cuda:0!
+    ws_gpu4 = tmp_path / 'gpu4_ws'
+    (ws_gpu4 / 'm5').mkdir(parents=True)
+    (ws_gpu4 / 'm5' / 'summary.json').write_text(json.dumps({'status': 'pilot_complete', 'missing_requests': [], 'greedy_output_comparisons_complete': True}))
+    (ws_gpu4 / 'm5' / 'timing.json').write_text(json.dumps({'status': 'pilot_complete', 'world_size': 1}))
+    (ws_gpu4 / 'm5' / 'settings.json').write_text(json.dumps({'selected': {'plain_dflash': {}}}))
+    (ws_gpu4 / 'prompts.json').write_text(json.dumps({
+        'scale': 'reference',
+        'prompts': [
+            *[{'prompt_id': f'p-std-{i}', 'split': 'test', 'condition': 'standard_nonthinking', 'text': 'hi', 'dataset': 'x', 'reference_selected': True} for i in range(64)],
+            *[{'prompt_id': f'p-long-{i}', 'split': 'test', 'condition': 'long_thinking', 'text': 'hi', 'dataset': 'x', 'reference_selected': True} for i in range(32)],
+        ],
+    }))
+    args_g4 = SimpleNamespace(
+        scale='reference', seed=2026, output=ws_gpu4, device='cuda:4',
+        target='Qwen/Qwen3-8B', drafter='z-lab/Qwen3-8B-DFlash-b16',
+        allow_download=False, allow_large_run=True, resume=True, gpus='4',
+        timing_repeats=2, timing_warmups=1, timing_prompts=1,
+        max_new_tokens=64, long_max_new_tokens=64, smoke_tokens=16,
+    )
+    seen_spawns = []
+
+    def _spy_spawn(worker_specs, logdir, label, *, scale, device_str, omp_threads=1):
+        for rank, gpu, cmd in worker_specs:
+            seen_spawns.append((label, gpu, list(cmd)))
+            if '--_worker_out' in cmd:
+                out_p = Path(cmd[cmd.index('--_worker_out') + 1])
+                post_m4_suite.atomic_json(out_p, {
+                    'rank': rank, 'physical_gpu': gpu, 'numa_node': gpu // 2,
+                    'cpu_affinity': list(range(64, 80)), 'cpu_affinity_applied': True,
+                    'variant_scales': [], 'rows_by_key': {'plain_dflash': []},
+                })
+        return {'wall_elapsed_seconds': 0.1}
+
+    seen_launch_gpus = []
+
+    def _spy_launch(cli_list):
+        seen_launch_gpus.append(cli_list[cli_list.index('--gpus') + 1])
+        (ws_gpu4 / 'm5_test.json').write_text(json.dumps({'status': 'passed'}))
+
+    monkeypatch.setattr(post_m4_suite, '_spawn_parallel_workers', _spy_spawn)
+    monkeypatch.setattr(launch, 'main', _spy_launch)
+
+    post_m4_suite._execute_m5_stage_pipeline(args_g4, ws_gpu4, ['plain_dflash'], [4])
+    post_m4_suite._run_training_fit(args_g4, ws_gpu4, [4], 'm5_test', ['--calibrate_beta'])
+    post_m4_suite._evaluate_refit_variants_closed_loop(args_g4, ws_gpu4, [], gpus=[4])
+
+    assert seen_launch_gpus == ['4']
+    for label, gpu, cmd in seen_spawns:
+        assert gpu == 4, f'{label} spawned on GPU {gpu} instead of GPU 4!'
+        if label != 'm5-summarize':
+            assert cmd[cmd.index('--device') + 1] == 'cuda:0', f'{label} passed wrong child device in {cmd}'
+
+
 
 

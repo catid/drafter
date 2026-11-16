@@ -36,7 +36,7 @@ from .traces import read_shard
 
 TRANSIENT_CONFIG_KEYS = {
     'resume', 'rank', 'world_size', 'dist_backend', 'microbatch_blocks',
-    'num_workers', 'pin_memory', 'compile',
+    'num_workers', 'pin_memory', 'compile', 'stats_memory_limit', 'stats_benchmark_entries',
 }
 OPT_IMPL_DEFAULT = {
     'bf16_gemm': False,
@@ -1418,7 +1418,9 @@ def fit(entries, index_report, E, head, bias, head_metadata, args, *, stop_after
     block_shuffle = int(getattr(args, 'block_shuffle_window', 0) or 0)
     if block_shuffle < 0:
         raise ValueError('block_shuffle_window must be nonnegative')
-    stats_memory_limit = getattr(args, 'stats_memory_limit', None) or ('16GB' if args.scale == 'full' else '512MB')
+    stats_memory_limit = getattr(args, 'stats_memory_limit', None) or (
+        '32GB' if args.scale in ('reference', 'full') else '512MB'
+    )
 
     outdir = args.output / subdir
     if is_main:
@@ -2112,7 +2114,7 @@ def main(argv=None):
         if not args.calibrate_beta_grid or any(not math.isfinite(b) or b < 0.0 for b in args.calibrate_beta_grid):
             parser.error('--calibrate_beta_grid values must be finite and >= 0')
     if args.stats_memory_limit is None:
-        args.stats_memory_limit = '16GB' if args.scale == 'full' else '512MB'
+        args.stats_memory_limit = '32GB' if args.scale in ('reference', 'full') else '512MB'
     if args.m1_diagnostic is None:
         args.m1_diagnostic = args.output / f'diagnostic_{args.scale}.json'
     if min(args.batch_blocks, args.vocab_chunk, args.epochs_dense, args.epochs_sparse, args.checkpoint_every) < 1:

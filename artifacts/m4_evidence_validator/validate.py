@@ -198,10 +198,11 @@ class Audit:
             self.prompts[split] = standard[:ns] + long[:nl]
         self.require(s['development_prompt_ids'] == [p['prompt_id'] for p in self.prompts['dev']], 'development selection differs')
         self.repo_impl_hash, self.repo_alg_hash, self.repo_alg_files = self._hash_tree(self.args.repo, allow_missing_opt_files=False)
-        source_repo = (self.args.source_repo or self.args.repo).resolve()
+        src_repo_arg = getattr(self.args, 'source_repo', None)
+        source_repo = (src_repo_arg or self.args.repo).resolve()
         self.require((source_repo / 'src/edraft/eval_closed_loop.py').is_file(), f'invalid source_repo: {source_repo}')
         self.src_impl_hash, self.src_alg_hash, self.src_alg_files = self._hash_tree(
-            source_repo, allow_missing_opt_files=(self.args.source_repo is not None)
+            source_repo, allow_missing_opt_files=(src_repo_arg is not None)
         )
         self.valid_harness_hashes = {self.repo_impl_hash, self.src_impl_hash}
         self.valid_alg_hashes = {self.repo_alg_hash, self.src_alg_hash}
@@ -212,7 +213,7 @@ class Audit:
             and self.src_alg_hash == FROZEN_09A5469_ALGORITHM_HASH
             and self.src_alg_files == FROZEN_09A5469_ALGORITHM_FILES
             and (
-                self.args.source_repo is not None
+                src_repo_arg is not None
                 or (
                     self.repo_alg_hash == FROZEN_09A5469_ALGORITHM_HASH
                     and self.repo_alg_files == FROZEN_09A5469_ALGORITHM_FILES

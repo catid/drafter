@@ -2,13 +2,21 @@
 
 Executes four isolated, resumable post-M4 experiment suites without mutating
 frozen M0-M4 artifacts, supporting both 1-GPU isolated execution and 8-GPU
-NUMA/core-pinned parallel execution (`--gpus 0,1,2,3,4,5,6,7`):
+NUMA/core-pinned parallel execution (`--gpus 0,1,2,3,4,5,6,7`).
+
+When running on CUDA (`scale != 'smoke'` and `device` starting with `'cuda'`),
+the parent orchestrator process remains strictly 100% CPU-only (`0` CUDA
+contexts initialized in the parent PID) and dispatches every GPU workload into
+short-lived NUMA/core-pinned worker subprocesses so GPU memory and driver
+contexts are completely released between stages and suites:
   1. `fastpath_bench`:
-     - 1-GPU isolated (`GPU 0`, `CPUs 0..15`) `bench_adapter`, Round-3 compact
-       proposal microbenchmarks, `bench_grouped`, and matched closed-loop
-       comparison (`eager_pre_round3` vs `round3_compact` vs `round3_compile`),
-     - Multi-GPU (`--gpus`, e.g. 8-GPU) core-pinned parallel closed-loop cluster
-       throughput scaling (`cluster_sharded_throughput`).
+     - 1-GPU isolated (`gpus[0]`, `CPUs [16g..16g+15]`) `bench_adapter`,
+       `bench_grouped`, and Round-3 compact proposal microbenchmarks,
+     - Token-balanced snake-sharded (`1..8` GPUs) matched back-to-back
+       closed-loop comparison (`eager_pre_round3` vs `round3_compact` vs
+       `round3_compile`),
+     - Compact `4 std + 2 shortest non-rep long` 1-GPU cluster-isolated
+       calibration reconciled against sharded `round3_compact` (`W > 1`).
   2. `online_head_to_head`:
      - Matched closed-loop evaluation + core-pinned sharded timing across
        `plain_dflash`, `online_bigram`, `online_bigram_count_gated` (`kappa=12`),
@@ -18,16 +26,17 @@ NUMA/core-pinned parallel execution (`--gpus 0,1,2,3,4,5,6,7`):
   3. `m2_refit_calibration`:
      - Block-shuffled + weight-decayed + dev-beta-calibrated M2 refit
        (`--block_shuffle_window 32 --weight_decay 1e-2 --calibrate_beta`, with
-       8-GPU DDP support on CUDA),
+       8-GPU DDP support on CUDA and `--stats_memory_limit 32GB` default),
      - Scalar `0.20 * dense.pt` / `0.20 * dense_sparse.pt` calibration checkpoints
        via `scale_adapter_checkpoint`,
-     - Held-out offline KL and matched-bundle closed-loop acceptance/throughput
-       comparison (token-balanced snake-sharded across `--gpus` when `W > 1`)
-       across all 5 `(dense, dense_sparse)` variants at fixed `beta = 1.0`.
+     - Held-out offline KL and matched 11-arm closed-loop acceptance/throughput
+       comparison (token-balanced snake-sharded across `--gpus`) at fixed
+       `beta = 1.0`.
   4. `m5_eval`:
      - M5 `two_sided_pseudolikelihood` offline fit + held-out KL,
-     - M5 `ExactObservedPairs` (`collision_count == 0`) vs `SignedHash` offline
-       fit + held-out KL,
+     - Capacity-matched M5 `ExactObservedPairs` (`collision_count == 0`,
+       `--sparse_overflow_policy freeze_new`) vs `SignedHash` offline fit +
+       held-out KL,
      - Core-pinned sharded closed-loop M5 evaluation + timing across matched
        `C0[j]` lookahead (`dense_candidate` vs `lookahead_static_candidate` vs
        `lookahead_rerelax_candidate`), `online_two_sided_pl`,
@@ -57,6 +66,9 @@ from .bench_adapter import assert_idle, assert_no_external_gpu_processes, measur
 from .diagnose import OUTPUT_LABELS
 from .eval_closed_loop import (
     EvaluationRunner,
+    apply_gpu_cpu_affinity,
+    assert_all_gpus_idle,
+    assert_no_external_cluster_gpu_processes,
     gpu_cpu_affinity,
     implementation_hash,
     sampling_conditions,
@@ -123,6 +135,10 @@ DEFAULT_M5_EVAL_ARMS = (
 )
 
 
+def _is_cuda_run(args) -> bool:
+    return args.scale != 'smoke' and str(args.device).startswith('cuda')
+
+
 def _resolve_gpus(args) -> list[int]:
     raw = getattr(args, 'gpus', None)
     if raw is not None:
@@ -132,9 +148,16 @@ def _resolve_gpus(args) -> list[int]:
         if len(gpus) > 8:
             raise ValueError('--gpus supports at most 8 workers (0..7)')
         return gpus
-    if args.scale != 'smoke' and str(args.device).startswith('cuda'):
+    if _is_cuda_run(args):
         return list(range(8))
     return [0]
+
+
+def _default_stats_memory_limit(args) -> str:
+    explicit = getattr(args, 'stats_memory_limit', None)
+    if explicit:
+        return str(explicit)
+    return '512MB' if args.scale == 'smoke' else '32GB'
 
 
 def _snake_rank(index: int, world_size: int) -> int:
@@ -142,15 +165,9 @@ def _snake_rank(index: int, world_size: int) -> int:
     return offset if (band % 2 == 0) else (int(world_size) - 1 - offset)
 
 
-def _snake_shard_prompts(
-    selected_prompts: list[dict],
-    prompt_manifest: dict,
-    eval_ws: Path,
-    world_size: int,
-) -> tuple[int, dict[int, list[dict]], dict[str, int | None]]:
-    """Condition-stratified token-balanced snake assignment across `min(world_size, len(selected_prompts))` workers."""
-    eff_w = max(1, min(int(world_size), len(selected_prompts)))
+def _load_evaluate_prompt_stats(eval_ws: Path) -> tuple[dict[str, int], dict[str, bool], set[str]]:
     token_sums: dict[str, int] = defaultdict(int)
+    long_rep: dict[str, bool] = defaultdict(bool)
     seen_pids: set[str] = set()
     for stage_cand in ('m4', 'm3', 'm5'):
         eval_dir = eval_ws / stage_cand / 'evaluate'
@@ -166,12 +183,26 @@ def _snake_shard_prompts(
                     pid = row.get('prompt_id')
                     if pid:
                         token_sums[pid] += int(row.get('generated_tokens', 0))
+                        if bool(row.get('generation', {}).get('repetition_dominated', False)):
+                            long_rep[pid] = True
                         seen_pids.add(pid)
         if seen_pids:
             break
+    return token_sums, long_rep, seen_pids
+
+
+def _snake_shard_prompts(
+    selected_prompts: list[dict],
+    prompt_manifest: dict,
+    eval_ws: Path,
+    world_size: int,
+) -> tuple[int, dict[int, list[dict]], dict[str, int | None]]:
+    """Condition-stratified token-balanced snake assignment across `min(world_size, len(selected_prompts))` workers."""
+    eff_w = max(1, min(int(world_size), len(selected_prompts)))
+    token_sums, _, seen_pids = _load_evaluate_prompt_stats(eval_ws)
 
     manifest_order = {p['prompt_id']: idx for idx, p in enumerate(prompt_manifest.get('prompts', []))}
-    has_weights = all(p['prompt_id'] in seen_pids for p in selected_prompts)
+    has_weights = bool(selected_prompts) and all(p['prompt_id'] in seen_pids for p in selected_prompts)
     conds = sorted({p['condition'] for p in selected_prompts})
     ordered_by_cond: dict[str, list[dict]] = {}
     for cond in conds:
@@ -206,6 +237,27 @@ def _snake_shard_prompts(
         for p in selected_prompts
     }
     return eff_w, shards, weights_out
+
+
+def _select_compact_calibration_prompts(selected_prompts: list[dict], eval_ws: Path) -> list[dict]:
+    """Select up to 4 standard + 2 shortest non-repetition-dominated long prompts for 1-GPU isolation calibration."""
+    token_sums, long_rep, seen_pids = _load_evaluate_prompt_stats(eval_ws)
+    std = [p for p in selected_prompts if p['condition'] == 'standard_nonthinking'][:4]
+    long_all = [p for p in selected_prompts if p['condition'].startswith('long_')]
+    n_long = min(2, len(long_all))
+    if seen_pids:
+        non_rep = [(token_sums.get(p['prompt_id'], 0), idx, p)
+                   for idx, p in enumerate(long_all) if not long_rep.get(p['prompt_id'], False)]
+        non_rep.sort(key=lambda item: (item[0], item[1], item[2]['prompt_id']))
+        chosen_long = [item[2] for item in non_rep[:n_long]]
+        for p in long_all:
+            if len(chosen_long) >= n_long:
+                break
+            if p['prompt_id'] not in {x['prompt_id'] for x in chosen_long}:
+                chosen_long.append(p)
+    else:
+        chosen_long = long_all[:n_long]
+    return sorted(std + chosen_long, key=lambda p: p['condition'])
 
 
 def _worker_pythonpath() -> str:
@@ -410,6 +462,8 @@ def _suite_config_fingerprint(suite_name: str, args, artifacts_root: Path) -> st
     elif suite_name == 'm5_eval':
         payload.update({
             'm5_eval_arms': list(args.m5_eval_arms),
+            'm5_exact_overflow_policy': str(getattr(args, 'm5_exact_overflow_policy', 'freeze_new')),
+            'm5_exact_sparse_capacity': getattr(args, 'm5_exact_sparse_capacity', None),
             'timing_warmups': int(args.timing_warmups),
             'timing_repeats': int(args.timing_repeats),
             'timing_prompts': int(args.timing_prompts),
@@ -589,6 +643,23 @@ def _measure_round3_compact_microbench(args, device: torch.device) -> dict:
     }
 
 
+def _worker_round3_micro(args, spec_path: Path, out_path: Path) -> None:
+    spec = json.loads(spec_path.read_text())
+    rank_gpu = int(spec['physical_gpu'])
+    device = torch.device('cuda:0' if _is_cuda_run(args) else 'cpu')
+    if device.type == 'cuda':
+        torch.cuda.set_device(device)
+    affinity = apply_gpu_cpu_affinity(device, rank_gpu)
+    inventory = assert_idle(device)
+    with torch.no_grad():
+        micro = _measure_round3_compact_microbench(args, device)
+    atomic_json(out_path, {
+        'affinity': affinity,
+        'inventory': inventory,
+        'round3_micro': micro,
+    })
+
+
 def _default_closed_loop_setting(arm: str, kappa: float) -> dict:
     if arm == 'plain_dflash':
         return {}
@@ -624,45 +695,31 @@ def _is_repetition_excluded(row: dict) -> bool:
     return str(row.get('condition', '')).startswith('long_') and bool(row.get('repetition_dominated', False))
 
 
-def _run_matched_closed_loop_fastpath_bench(args, artifacts_root: Path, bench_dir: Path, *, rank_gpu: int = 0) -> dict:
-    ws = bench_dir / 'closed_loop_workspace'
+def _run_fastpath_closed_loop_on_prompts(
+    args,
+    ws: Path,
+    selected_prompts: list[dict],
+    arms: list[str],
+    arm_settings: dict[str, dict],
+    *,
+    rank: int = 0,
+    rank_gpu: int = 0,
+    world_size: int = 1,
+    device_override: str | None = None,
+) -> tuple[list[dict], list[dict], float, dict]:
+    dev_str = device_override or str(args.device)
+    device = torch.device(dev_str if args.scale != 'smoke' else 'cpu')
     if args.scale != 'smoke':
-        _link_prereqs(
-            artifacts_root,
-            ws,
-            (
-                'm2.json', 'm2', 'm3', 'm4', 'prompts.json', 'h_proj.pt',
-                'environment.json', 'smoke.json', f'diagnostic_{args.scale}.json',
-            ),
-        )
-
-    prompt_manifest = (
-        smoke_manifest()
-        if args.scale == 'smoke'
-        else json.loads((ws / 'prompts.json').read_text())
-    )
-    all_test, selected_prompts, is_pilot = _select_test_prompts(prompt_manifest, args.scale, args.timing_prompts)
-
-    m4_settings_path = ws / 'm4' / 'settings.json'
-    frozen_selected = (
-        json.loads(m4_settings_path.read_text()).get('selected', {})
-        if m4_settings_path.is_file()
-        else {}
-    )
-    arms = DEFAULT_FASTPATH_CLOSED_LOOP_ARMS
-    arm_settings = {
-        arm: frozen_selected.get(arm, _default_closed_loop_setting(arm, args.bigram_count_gate_kappa))
-        for arm in arms
-    }
+        assert_idle(device)
 
     runner_ns = SimpleNamespace(
         scale=args.scale,
         stage='m4' if (args.scale == 'smoke' or (ws / 'm3' / 'summary.json').is_file()) else 'm3',
         mode='timing',
         rank=rank_gpu,
-        world_size=1,
+        world_size=world_size,
         seed=args.seed,
-        device=args.device,
+        device=str(device),
         target=args.target,
         drafter=args.drafter,
         allow_download=getattr(args, 'allow_download', False),
@@ -734,7 +791,9 @@ def _run_matched_closed_loop_fastpath_bench(args, artifacts_root: Path, bench_di
 
     speed_rows = []
     profile_rows = []
+    measured_speed_sec = 0.0
     for j_idx, job in enumerate(jobs):
+        t_speed0 = time.perf_counter()
         for rep in range(args.timing_repeats):
             rot = (j_idx + rep) % len(modes)
             ordered_modes = modes[rot:] + modes[:rot]
@@ -742,35 +801,192 @@ def _run_matched_closed_loop_fastpath_bench(args, artifacts_root: Path, bench_di
                 assert_no_external_gpu_processes(runner.device)
                 row = _invoke(dis_r3, fp_rt, job, profile=False)
                 speed_rows.append({
+                    'rank': rank,
+                    'physical_gpu': rank_gpu,
                     'fastpath_mode': mode_name,
                     'arm': job['arm'],
                     'prompt_id': job['prompt']['prompt_id'],
                     'condition': job['prompt']['condition'],
                     'repeat': rep,
                     'repetition_dominated': bool(row.get('generation', {}).get('repetition_dominated', False)),
-                    'generated_tokens': row['generated_tokens'],
-                    'elapsed_seconds': row['elapsed_seconds'],
-                    'tokens_per_second': row['tokens_per_second'],
-                    'mean_accepted_length': row['mean_accepted_length'],
+                    'generated_tokens': int(row['generated_tokens']),
+                    'elapsed_seconds': float(row['elapsed_seconds']),
+                    'tokens_per_second': float(row['tokens_per_second']),
+                    'mean_accepted_length': float(row['mean_accepted_length']),
                 })
+        measured_speed_sec += (time.perf_counter() - t_speed0)
         for mode_name, dis_r3, fp_rt in modes:
             assert_no_external_gpu_processes(runner.device)
             p_row = _invoke(dis_r3, fp_rt, job, profile=True)
             profile_rows.append({
+                'rank': rank,
+                'physical_gpu': rank_gpu,
                 'fastpath_mode': mode_name,
                 'arm': job['arm'],
                 'prompt_id': job['prompt']['prompt_id'],
                 'condition': job['prompt']['condition'],
                 'repetition_dominated': bool(p_row.get('generation', {}).get('repetition_dominated', False)),
                 'phase_ms': p_row['phase_ms'],
-                'generated_tokens': p_row['generated_tokens'],
+                'generated_tokens': int(p_row['generated_tokens']),
             })
 
     runner.args.disable_round3_compact = False
     runner.fastpath = None
+    affinity = getattr(runner, 'affinity_info', None) or gpu_cpu_affinity(rank_gpu)
+    return speed_rows, profile_rows, measured_speed_sec, affinity
 
+
+def _worker_fastpath_closed_loop_shard(args, spec_path: Path, out_path: Path) -> None:
+    spec = json.loads(spec_path.read_text())
+    ws = Path(spec['workspace'])
+    rank = int(spec['rank'])
+    rank_gpu = int(spec['physical_gpu'])
+    worker_dev = 'cuda:0' if _is_cuda_run(args) else 'cpu'
+    speed_rows, profile_rows, measured_speed_sec, affinity = _run_fastpath_closed_loop_on_prompts(
+        args, ws, spec['prompts'], spec['arms'], spec['arm_settings'],
+        rank=rank, rank_gpu=rank_gpu, world_size=int(spec['world_size']),
+        device_override=worker_dev,
+    )
+    atomic_json(out_path, {
+        'rank': rank,
+        'physical_gpu': affinity['physical_gpu'],
+        'numa_node': affinity['numa_node'],
+        'cpu_affinity': affinity['cpu_affinity'],
+        'cpu_affinity_applied': bool(affinity.get('cpu_affinity_applied', False)),
+        'measured_speed_seconds': measured_speed_sec,
+        'speed_rows': speed_rows,
+        'profile_rows': profile_rows,
+    })
+
+
+def _worker_fastpath_1gpu_calibration(args, spec_path: Path, out_path: Path) -> None:
+    """Run compact `<= 6`-prompt 1-GPU cluster-isolated `round3_compact` calibration on `gpus[0]`."""
+    spec = json.loads(spec_path.read_text())
+    ws = Path(spec['workspace'])
+    rank_gpu = int(spec['physical_gpu'])
+    cal_prompts = spec['prompts']
+    arms = spec['arms']
+    arm_settings = spec['arm_settings']
+    use_cuda = _is_cuda_run(args)
+    device = torch.device('cuda:0' if use_cuda else 'cpu')
+    cluster_idle_inventory = None
+    if use_cuda:
+        if rank_gpu == 0:
+            cluster_idle_inventory = assert_all_gpus_idle(device)
+        else:
+            cluster_idle_inventory = assert_idle(device)
+
+    runner_ns = SimpleNamespace(
+        scale=args.scale,
+        stage='m4' if (args.scale == 'smoke' or (ws / 'm3' / 'summary.json').is_file()) else 'm3',
+        mode='timing',
+        rank=rank_gpu,
+        world_size=1,
+        seed=args.seed,
+        device=str(device),
+        target=args.target,
+        drafter=args.drafter,
+        allow_download=getattr(args, 'allow_download', False),
+        allow_large_run=getattr(args, 'allow_large_run', False),
+        output=ws,
+        prompts_manifest=ws / 'prompts.json',
+        dense_checkpoint=ws / 'm2' / 'dense.pt',
+        sparse_checkpoint=ws / 'm2' / 'dense_sparse.pt',
+        projection=ws / 'h_proj.pt',
+        max_new_tokens=args.max_new_tokens,
+        long_max_new_tokens=args.long_max_new_tokens,
+        smoke_tokens=args.smoke_tokens,
+        compile=False,
+        cuda_graph=False,
+        simulate_cpu_graph=False,
+        bf16_gemm=False,
+        compile_drafter=False,
+        compile_online=False,
+        disable_round3_compact=False,
+        m5_oracle_checkpoint=None,
+        checkpoint_scale=None,
+        m5_triton=False,
+        m5_torch_compile=False,
+    )
+    runner = EvaluationRunner(runner_ns)
+
+    for cond in sorted({p['condition'] for p in cal_prompts}):
+        w_prompt = next(p for p in cal_prompts if p['condition'] == cond)
+        w_name, w_temp, w_warp = sampling_conditions(cond, primary_only=True)[0]
+        for _ in range(args.timing_warmups):
+            for arm in arms:
+                w_job = {
+                    'prompt': w_prompt,
+                    'sampling_name': w_name,
+                    'temperature': w_temp,
+                    'warper': w_warp,
+                    'seed': args.seed,
+                    'arm': arm,
+                    'max_new_tokens_override': 64,
+                }
+                runner.run(w_job, arm_settings[arm], profile=False)
+
+    rows = []
+    for p_idx, prompt in enumerate(cal_prompts):
+        name, temperature, warp = sampling_conditions(prompt['condition'], primary_only=True)[0]
+        for rep in range(args.timing_repeats):
+            rot = (p_idx + rep) % len(arms)
+            ordered_arms = arms[rot:] + arms[:rot]
+            for arm in ordered_arms:
+                if use_cuda and rank_gpu == 0:
+                    assert_no_external_cluster_gpu_processes(runner.device)
+                else:
+                    assert_no_external_gpu_processes(runner.device)
+                job = {
+                    'prompt': prompt,
+                    'sampling_name': name,
+                    'temperature': temperature,
+                    'warper': warp,
+                    'seed': args.seed,
+                    'arm': arm,
+                }
+                r = runner.run(job, arm_settings[arm], profile=False)
+                rows.append({
+                    'arm': arm,
+                    'prompt_id': prompt['prompt_id'],
+                    'condition': prompt['condition'],
+                    'repeat': rep,
+                    'repetition_dominated': bool(r.get('generation', {}).get('repetition_dominated', False)),
+                    'generated_tokens': int(r['generated_tokens']),
+                    'elapsed_seconds': float(r['elapsed_seconds']),
+                    'tokens_per_second': float(r['tokens_per_second']),
+                    'mean_accepted_length': float(r['mean_accepted_length']),
+                })
+
+    affinity = getattr(runner, 'affinity_info', None) or gpu_cpu_affinity(rank_gpu)
+    atomic_json(out_path, {
+        'physical_gpu': affinity['physical_gpu'],
+        'numa_node': affinity['numa_node'],
+        'cpu_affinity': affinity['cpu_affinity'],
+        'cpu_affinity_applied': bool(affinity.get('cpu_affinity_applied', False)),
+        'cluster_idle_inventory': cluster_idle_inventory,
+        'selected_prompt_ids': [p['prompt_id'] for p in cal_prompts],
+        'rows': rows,
+    })
+
+
+def _summarize_fastpath_closed_loop_rows(
+    args,
+    all_test: list[dict],
+    selected_prompts: list[dict],
+    is_pilot: bool,
+    arms: list[str],
+    speed_rows: list[dict],
+    profile_rows: list[dict],
+    *,
+    world_size: int,
+    gpus: list[int],
+    rank_affinity: dict | None = None,
+    max_rank_speed_seconds: float | None = None,
+) -> dict:
+    mode_names = ('eager_pre_round3', 'round3_compact', 'round3_compile')
     summary_by_mode_arm = []
-    for mode_name, _, _ in modes:
+    for mode_name in mode_names:
         for arm in arms:
             m_rows = [r for r in speed_rows if r['fastpath_mode'] == mode_name and r['arm'] == arm]
             m_primary = [r for r in m_rows if not _is_repetition_excluded(r)]
@@ -867,10 +1083,15 @@ def _run_matched_closed_loop_fastpath_bench(args, artifacts_root: Path, bench_di
     return {
         'status': 'pilot_complete' if is_pilot else 'complete',
         'is_pilot_subset': is_pilot,
+        'world_size': world_size,
+        'gpus': gpus,
+        'sharding_mode': 'single_gpu' if world_size == 1 else f'sharded_{world_size}gpu',
+        'rank_affinity': rank_affinity,
+        'max_rank_speed_seconds': max_rank_speed_seconds,
         'selected_prompt_count': len(selected_prompts),
         'total_test_prompt_count': len(all_test),
         'arms': list(arms),
-        'modes': [m[0] for m in modes],
+        'modes': list(mode_names),
         'prompt_ids': [p['prompt_id'] for p in selected_prompts],
         'repeats': args.timing_repeats,
         'warmups': args.timing_warmups,
@@ -881,125 +1102,31 @@ def _run_matched_closed_loop_fastpath_bench(args, artifacts_root: Path, bench_di
     }
 
 
-def _worker_fastpath_shard(args, spec_path: Path, out_path: Path) -> None:
-    spec = json.loads(spec_path.read_text())
-    ws = Path(spec['workspace'])
-    rank_gpu = int(spec['physical_gpu'])
-    shard_prompts = spec['prompts']
-    arms = spec['arms']
-    arm_settings = spec['arm_settings']
-    worker_dev = 'cpu' if args.scale == 'smoke' or not str(args.device).startswith('cuda') else 'cuda:0'
-
-    runner_ns = SimpleNamespace(
-        scale=args.scale,
-        stage='m4' if (args.scale == 'smoke' or (ws / 'm3' / 'summary.json').is_file()) else 'm3',
-        mode='timing',
-        rank=rank_gpu,
-        world_size=int(spec['world_size']),
-        seed=args.seed,
-        device=worker_dev,
-        target=args.target,
-        drafter=args.drafter,
-        allow_download=getattr(args, 'allow_download', False),
-        allow_large_run=getattr(args, 'allow_large_run', False),
-        output=ws,
-        prompts_manifest=ws / 'prompts.json',
-        dense_checkpoint=ws / 'm2' / 'dense.pt',
-        sparse_checkpoint=ws / 'm2' / 'dense_sparse.pt',
-        projection=ws / 'h_proj.pt',
-        max_new_tokens=args.max_new_tokens,
-        long_max_new_tokens=args.long_max_new_tokens,
-        smoke_tokens=args.smoke_tokens,
-        compile=False,
-        cuda_graph=False,
-        simulate_cpu_graph=False,
-        bf16_gemm=False,
-        compile_drafter=False,
-        compile_online=False,
-        disable_round3_compact=False,
-        m5_oracle_checkpoint=None,
-        checkpoint_scale=None,
-        m5_triton=False,
-        m5_torch_compile=False,
-    )
-    runner = EvaluationRunner(runner_ns)
-
-    for cond in sorted({p['condition'] for p in shard_prompts}):
-        w_prompt = next(p for p in shard_prompts if p['condition'] == cond)
-        w_name, w_temp, w_warp = sampling_conditions(cond, primary_only=True)[0]
-        for _ in range(args.timing_warmups):
-            for arm in arms:
-                w_job = {
-                    'prompt': w_prompt,
-                    'sampling_name': w_name,
-                    'temperature': w_temp,
-                    'warper': w_warp,
-                    'seed': args.seed,
-                    'arm': arm,
-                    'max_new_tokens_override': 64,
-                }
-                runner.run(w_job, arm_settings[arm], profile=False)
-
-    t0 = time.perf_counter()
-    rows = []
-    for p_idx, prompt in enumerate(shard_prompts):
-        name, temperature, warp = sampling_conditions(prompt['condition'], primary_only=True)[0]
-        for rep in range(args.timing_repeats):
-            rot = (p_idx + rep) % len(arms)
-            ordered_arms = arms[rot:] + arms[:rot]
-            for arm in ordered_arms:
-                assert_no_external_gpu_processes(runner.device)
-                job = {
-                    'prompt': prompt,
-                    'sampling_name': name,
-                    'temperature': temperature,
-                    'warper': warp,
-                    'seed': args.seed,
-                    'arm': arm,
-                }
-                r = runner.run(job, arm_settings[arm], profile=False)
-                rows.append({
-                    'rank': int(spec['rank']),
-                    'physical_gpu': rank_gpu,
-                    'arm': arm,
-                    'prompt_id': prompt['prompt_id'],
-                    'condition': prompt['condition'],
-                    'repeat': rep,
-                    'repetition_dominated': bool(r.get('generation', {}).get('repetition_dominated', False)),
-                    'generated_tokens': int(r['generated_tokens']),
-                    'elapsed_seconds': float(r['elapsed_seconds']),
-                    'tokens_per_second': float(r['tokens_per_second']),
-                    'mean_accepted_length': float(r['mean_accepted_length']),
-                })
-    measured_elapsed = time.perf_counter() - t0
-    affinity = getattr(runner, 'affinity_info', None) or gpu_cpu_affinity(rank_gpu)
-    atomic_json(out_path, {
-        'rank': int(spec['rank']),
-        'physical_gpu': affinity['physical_gpu'],
-        'numa_node': affinity['numa_node'],
-        'cpu_affinity': affinity['cpu_affinity'],
-        'cpu_affinity_applied': bool(affinity.get('cpu_affinity_applied', False)),
-        'measured_elapsed_seconds': measured_elapsed,
-        'rows': rows,
-    })
-
-
-def _run_sharded_cluster_fastpath_throughput(
+def _run_matched_closed_loop_fastpath_bench(
     args,
-    gpus: list[int],
     artifacts_root: Path,
     bench_dir: Path,
-    single_gpu_closed_loop: dict,
+    *,
+    gpus: list[int] | None = None,
 ) -> dict:
+    active_gpus = gpus if gpus is not None else _resolve_gpus(args)
     ws = bench_dir / 'closed_loop_workspace'
+    if args.scale != 'smoke':
+        _link_prereqs(
+            artifacts_root,
+            ws,
+            (
+                'm2.json', 'm2', 'm3', 'm4', 'prompts.json', 'h_proj.pt',
+                'environment.json', 'smoke.json', f'diagnostic_{args.scale}.json',
+            ),
+        )
+
     prompt_manifest = (
         smoke_manifest()
         if args.scale == 'smoke'
         else json.loads((ws / 'prompts.json').read_text())
     )
-    _, selected_prompts, is_pilot = _select_test_prompts(prompt_manifest, args.scale, args.timing_prompts)
-    eff_w, shards, _ = _snake_shard_prompts(selected_prompts, prompt_manifest, ws, len(gpus))
-    eff_gpus = gpus[:eff_w]
+    all_test, selected_prompts, is_pilot = _select_test_prompts(prompt_manifest, args.scale, args.timing_prompts)
 
     m4_settings_path = ws / 'm4' / 'settings.json'
     frozen_selected = (
@@ -1013,7 +1140,23 @@ def _run_sharded_cluster_fastpath_throughput(
         for arm in arms
     }
 
-    shard_dir = bench_dir / 'cluster_sharded_throughput'
+    use_cuda = _is_cuda_run(args)
+    if not use_cuda and len(active_gpus) <= 1:
+        g0 = active_gpus[0] if active_gpus else 0
+        speed_rows, profile_rows, measured_speed_sec, affinity = _run_fastpath_closed_loop_on_prompts(
+            args, ws, selected_prompts, arms, arm_settings,
+            rank=0, rank_gpu=g0, world_size=1,
+        )
+        return _summarize_fastpath_closed_loop_rows(
+            args, all_test, selected_prompts, is_pilot, arms, speed_rows, profile_rows,
+            world_size=1, gpus=[g0],
+            rank_affinity={'0': affinity},
+            max_rank_speed_seconds=measured_speed_sec,
+        )
+
+    eff_w, shards, _ = _snake_shard_prompts(selected_prompts, prompt_manifest, ws, len(active_gpus))
+    eff_gpus = active_gpus[:eff_w]
+    shard_dir = bench_dir / 'closed_loop_shards'
     shard_dir.mkdir(parents=True, exist_ok=True)
     worker_specs = []
     out_paths = []
@@ -1031,71 +1174,157 @@ def _run_sharded_cluster_fastpath_throughput(
         })
         cmd = [
             sys.executable, '-m', 'edraft.post_m4_suite',
-            *_cli_base_flags(args, bench_dir),
+            *_cli_base_flags(args, bench_dir, device_override='cuda:0' if use_cuda else 'cpu'),
             '--timing_warmups', str(args.timing_warmups),
             '--timing_repeats', str(args.timing_repeats),
             '--smoke_tokens', str(args.smoke_tokens),
             '--max_new_tokens', str(args.max_new_tokens),
             '--long_max_new_tokens', str(args.long_max_new_tokens),
-            '--_worker_mode', 'fastpath_shard',
+            '--_worker_mode', 'fastpath_closed_loop_shard',
             '--_worker_spec', str(spec_path),
             '--_worker_out', str(out_path),
         ]
         worker_specs.append((r, gpu, cmd))
         out_paths.append(out_path)
 
-    proc_state = _spawn_parallel_workers(
-        worker_specs, shard_dir / 'logs', 'fastpath-cluster',
+    _spawn_parallel_workers(
+        worker_specs, shard_dir / 'logs', 'fastpath-closed-loop',
         scale=args.scale, device_str=str(args.device), omp_threads=1,
     )
     shard_payloads = [json.loads(p.read_text()) for p in out_paths]
-    all_rows = [row for sp in shard_payloads for row in sp['rows']]
-    max_rank_measured_sec = max((float(sp['measured_elapsed_seconds']) for sp in shard_payloads), default=0.0)
-    total_tokens = sum(int(r['generated_tokens']) for r in all_rows)
-    cluster_tps = total_tokens / max(max_rank_measured_sec, 1e-9)
-
-    single_r3_by_arm = {
-        s['arm']: s['mean_tokens_per_second']
-        for s in single_gpu_closed_loop['summary_by_mode_and_arm']
-        if s['fastpath_mode'] == 'round3_compact'
+    prompt_order = {p['prompt_id']: idx for idx, p in enumerate(selected_prompts)}
+    speed_rows = [rw for sp in shard_payloads for rw in sp['speed_rows']]
+    speed_rows.sort(key=lambda rw: (prompt_order.get(rw['prompt_id'], 0), int(rw['repeat']), rw['arm'], rw['fastpath_mode']))
+    profile_rows = [rw for sp in shard_payloads for rw in sp['profile_rows']]
+    profile_rows.sort(key=lambda rw: (prompt_order.get(rw['prompt_id'], 0), rw['arm'], rw['fastpath_mode']))
+    rank_affinity = {
+        str(sp['rank']): {
+            'physical_gpu': sp['physical_gpu'],
+            'numa_node': sp['numa_node'],
+            'cpu_affinity': sp['cpu_affinity'],
+            'cpu_affinity_applied': sp['cpu_affinity_applied'],
+        }
+        for sp in shard_payloads
     }
+    max_speed_sec = max((float(sp['measured_speed_seconds']) for sp in shard_payloads), default=0.0)
+    return _summarize_fastpath_closed_loop_rows(
+        args, all_test, selected_prompts, is_pilot, arms, speed_rows, profile_rows,
+        world_size=eff_w, gpus=eff_gpus,
+        rank_affinity=rank_affinity,
+        max_rank_speed_seconds=max_speed_sec,
+    )
+
+
+def _run_sharded_cluster_fastpath_throughput(
+    args,
+    gpus: list[int],
+    bench_dir: Path,
+    sharded_closed_loop: dict,
+) -> dict:
+    """Reconcile W-GPU sharded `round3_compact` against a compact `<=6`-prompt 1-GPU isolated calibration on `gpus[0]`."""
+    ws = bench_dir / 'closed_loop_workspace'
+    prompt_manifest = (
+        smoke_manifest()
+        if args.scale == 'smoke'
+        else json.loads((ws / 'prompts.json').read_text())
+    )
+    _, selected_prompts, is_pilot = _select_test_prompts(prompt_manifest, args.scale, args.timing_prompts)
+    cal_prompts = _select_compact_calibration_prompts(selected_prompts, ws)
+
+    m4_settings_path = ws / 'm4' / 'settings.json'
+    frozen_selected = (
+        json.loads(m4_settings_path.read_text()).get('selected', {})
+        if m4_settings_path.is_file()
+        else {}
+    )
+    arms = list(DEFAULT_FASTPATH_CLOSED_LOOP_ARMS)
+    arm_settings = {
+        arm: frozen_selected.get(arm, _default_closed_loop_setting(arm, args.bigram_count_gate_kappa))
+        for arm in arms
+    }
+
+    cal_dir = bench_dir / 'cluster_1gpu_calibration'
+    cal_dir.mkdir(parents=True, exist_ok=True)
+    spec_path = cal_dir / 'spec-cal-rank0.json'
+    out_path = cal_dir / 'result-cal-rank0.json'
+    atomic_json(spec_path, {
+        'physical_gpu': gpus[0],
+        'workspace': str(ws.resolve()),
+        'prompts': cal_prompts,
+        'arms': arms,
+        'arm_settings': arm_settings,
+    })
+    cal_cmd = [
+        sys.executable, '-m', 'edraft.post_m4_suite',
+        *_cli_base_flags(args, bench_dir, device_override='cuda:0' if _is_cuda_run(args) else 'cpu'),
+        '--timing_warmups', str(args.timing_warmups),
+        '--timing_repeats', str(args.timing_repeats),
+        '--smoke_tokens', str(args.smoke_tokens),
+        '--max_new_tokens', str(args.max_new_tokens),
+        '--long_max_new_tokens', str(args.long_max_new_tokens),
+        '--_worker_mode', 'fastpath_1gpu_calibration',
+        '--_worker_spec', str(spec_path),
+        '--_worker_out', str(out_path),
+    ]
+    _spawn_parallel_workers(
+        [(0, gpus[0], cal_cmd)], cal_dir / 'logs', 'fastpath-1gpu-cal',
+        scale=args.scale, device_str=str(args.device), omp_threads=1,
+    )
+    cal_payload = json.loads(out_path.read_text())
+    cal_rows = cal_payload['rows']
+    cal_pids = set(cal_payload['selected_prompt_ids'])
+
+    eff_w = int(sharded_closed_loop['world_size'])
+    eff_gpus = list(sharded_closed_loop['gpus'])
+    r3_sharded_rows = [
+        r for r in sharded_closed_loop['speed_rows']
+        if r['fastpath_mode'] == 'round3_compact'
+    ]
+    r3_wall_per_rank = [
+        sum(float(r['elapsed_seconds']) for r in r3_sharded_rows if r.get('rank', 0) == rk)
+        for rk in range(eff_w)
+    ]
+    max_r3_rank_sec = max(r3_wall_per_rank, default=0.0)
+    total_r3_tokens = sum(int(r['generated_tokens']) for r in r3_sharded_rows)
+    cluster_tps = total_r3_tokens / max(max_r3_rank_sec, 1e-9)
+
     by_arm = []
     for arm in arms:
-        a_rows = [r for r in all_rows if r['arm'] == arm and not _is_repetition_excluded(r)]
+        a_sharded = [r for r in r3_sharded_rows if r['arm'] == arm and not _is_repetition_excluded(r)]
         per_rank_means = []
-        for r in range(eff_w):
-            rk_rows = [rw for rw in a_rows if rw['rank'] == r]
+        for rk in range(eff_w):
+            rk_rows = [rw for rw in a_sharded if rw.get('rank', 0) == rk]
             if rk_rows:
                 per_rank_means.append(statistics.mean(rw['tokens_per_second'] for rw in rk_rows))
         sum_rank_tps = sum(per_rank_means) if per_rank_means else None
-        tps_1gpu = single_r3_by_arm.get(arm)
-        scaling_ratio = (sum_rank_tps / tps_1gpu) if (sum_rank_tps is not None and tps_1gpu) else None
+
+        a_cal_1 = [r for r in cal_rows if r['arm'] == arm and not _is_repetition_excluded(r)]
+        a_cal_w = [r for r in a_sharded if r['prompt_id'] in cal_pids]
+        tps_1gpu_cal = statistics.mean(r['tokens_per_second'] for r in a_cal_1) if a_cal_1 else None
+        tps_wgpu_cal = statistics.mean(r['tokens_per_second'] for r in a_cal_w) if a_cal_w else None
+        per_gpu_ratio = (tps_wgpu_cal / tps_1gpu_cal) if (tps_wgpu_cal is not None and tps_1gpu_cal) else None
+        est_cluster_speedup = (eff_w * per_gpu_ratio) if per_gpu_ratio is not None else None
         by_arm.append({
             'arm': arm,
-            'primary_timed_runs': len(a_rows),
+            'primary_timed_runs': len(a_sharded),
             'mean_per_rank_tokens_per_second': statistics.mean(per_rank_means) if per_rank_means else None,
             'sum_across_ranks_tokens_per_second': sum_rank_tps,
-            'isolated_1gpu_tokens_per_second': tps_1gpu,
-            'cluster_over_1gpu_throughput_ratio': scaling_ratio,
-            'per_gpu_scaling_efficiency': (scaling_ratio / eff_w) if scaling_ratio is not None else None,
+            'calibration_1gpu_tokens_per_second': tps_1gpu_cal,
+            'calibration_sharded_per_gpu_tokens_per_second': tps_wgpu_cal,
+            'sharded_over_1gpu_per_gpu_ratio': per_gpu_ratio,
+            'cluster_over_1gpu_throughput_ratio': est_cluster_speedup,
+            'per_gpu_scaling_efficiency': per_gpu_ratio,
         })
 
     return {
         'status': 'pilot_complete' if is_pilot else 'complete',
         'world_size': eff_w,
         'gpus': eff_gpus,
-        'rank_affinity': {
-            str(sp['rank']): {
-                'physical_gpu': sp['physical_gpu'],
-                'numa_node': sp['numa_node'],
-                'cpu_affinity': sp['cpu_affinity'],
-                'cpu_affinity_applied': sp['cpu_affinity_applied'],
-            }
-            for sp in shard_payloads
-        },
-        'wall_spawn_to_join_seconds': proc_state['wall_elapsed_seconds'],
-        'max_rank_measured_seconds': max_rank_measured_sec,
-        'total_generated_tokens': total_tokens,
+        'rank_affinity': sharded_closed_loop.get('rank_affinity') or {},
+        'calibration_1gpu_gpu': gpus[0],
+        'calibration_selected_prompt_ids': cal_payload['selected_prompt_ids'],
+        'max_rank_round3_measured_seconds': max_r3_rank_sec,
+        'total_generated_tokens': total_r3_tokens,
         'aggregate_cluster_tokens_per_second': cluster_tps,
         'by_arm': by_arm,
     }
@@ -1114,11 +1343,8 @@ def run_fastpath_bench(args, artifacts_root: Path, suite_root: Path) -> dict:
         return cached
 
     gpus = _resolve_gpus(args)
+    use_cuda = _is_cuda_run(args)
     caller_threads = torch.get_num_threads()
-    use_cuda = (args.scale != 'smoke' and str(args.device).startswith('cuda'))
-    iso_device_str = f'cuda:{gpus[0]}' if (use_cuda and not os.environ.get('CUDA_VISIBLE_DEVICES')) else str(args.device)
-    device = torch.device(iso_device_str if args.scale != 'smoke' else 'cpu')
-    inventory = assert_idle(device)
     _update_latest_ws_symlink(suite_root / 'fastpath_bench', sub_dir)
     adapter_dir = sub_dir / 'adapter'
     grouped_dir = sub_dir / 'grouped'
@@ -1127,35 +1353,83 @@ def run_fastpath_bench(args, artifacts_root: Path, suite_root: Path) -> dict:
         _link_prereqs(artifacts_root, grouped_dir, ('smoke.json', 'environment.json'))
 
     try:
-        adapter_report = bench_adapter.main(
-            _cli_base_flags(args, adapter_dir, device_override=str(device)) + [
+        if use_cuda:
+            logdir = sub_dir / 'logs'
+            ad_cmd = [
+                sys.executable, '-m', 'edraft.bench_adapter',
+                *_cli_base_flags(args, adapter_dir, device_override='cuda:0'),
                 '--warmups', str(args.bench_warmups),
                 '--repeats', str(args.bench_repeats),
                 '--compile',
             ]
-        )
-        grouped_report = bench_grouped.main(
-            _cli_base_flags(args, grouped_dir, device_override=str(device)) + [
-                '--warmups', str(args.bench_warmups),
-                '--repeats', str(args.bench_repeats),
-                '--compile',
-            ]
-        )
-        with torch.no_grad():
-            round3_micro = _measure_round3_compact_microbench(args, device)
-        if args.scale != 'smoke':
-            torch.set_num_threads(caller_threads)
-        orig_dev = args.device
-        try:
-            if args.scale != 'smoke':
-                args.device = str(device)
-            closed_loop = _run_matched_closed_loop_fastpath_bench(
-                args, artifacts_root, sub_dir, rank_gpu=gpus[0],
+            _spawn_parallel_workers(
+                [(0, gpus[0], ad_cmd)], logdir, 'bench-adapter',
+                scale=args.scale, device_str=str(args.device), omp_threads=1,
             )
-        finally:
-            args.device = orig_dev
+            adapter_report = json.loads((adapter_dir / f'adapter_benchmark_{args.scale}.json').read_text())
+
+            gr_cmd = [
+                sys.executable, '-m', 'edraft.bench_grouped',
+                *_cli_base_flags(args, grouped_dir, device_override='cuda:0'),
+                '--warmups', str(args.bench_warmups),
+                '--repeats', str(args.bench_repeats),
+                '--compile',
+            ]
+            _spawn_parallel_workers(
+                [(0, gpus[0], gr_cmd)], logdir, 'bench-grouped',
+                scale=args.scale, device_str=str(args.device), omp_threads=1,
+            )
+            grouped_report = json.loads((grouped_dir / f'grouped_benchmark_{args.scale}.json').read_text())
+
+            r3_spec = sub_dir / 'round3_micro_spec.json'
+            r3_out = sub_dir / 'round3_micro_result.json'
+            atomic_json(r3_spec, {'physical_gpu': gpus[0]})
+            r3_cmd = [
+                sys.executable, '-m', 'edraft.post_m4_suite',
+                *_cli_base_flags(args, sub_dir, device_override='cuda:0'),
+                '--bench_warmups', str(args.bench_warmups),
+                '--bench_repeats', str(args.bench_repeats),
+                '--bigram_count_gate_kappa', str(args.bigram_count_gate_kappa),
+                '--_worker_mode', 'round3_micro',
+                '--_worker_spec', str(r3_spec),
+                '--_worker_out', str(r3_out),
+            ]
+            _spawn_parallel_workers(
+                [(0, gpus[0], r3_cmd)], logdir, 'bench-round3-micro',
+                scale=args.scale, device_str=str(args.device), omp_threads=1,
+            )
+            r3_payload = json.loads(r3_out.read_text())
+            inventory = r3_payload['inventory']
+            round3_micro = r3_payload['round3_micro']
+            device_label = f'cuda:{gpus[0]}'
+        else:
+            device = torch.device('cpu')
+            inventory = assert_idle(device)
+            adapter_report = bench_adapter.main(
+                _cli_base_flags(args, adapter_dir, device_override='cpu') + [
+                    '--warmups', str(args.bench_warmups),
+                    '--repeats', str(args.bench_repeats),
+                    '--compile',
+                ]
+            )
+            grouped_report = bench_grouped.main(
+                _cli_base_flags(args, grouped_dir, device_override='cpu') + [
+                    '--warmups', str(args.bench_warmups),
+                    '--repeats', str(args.bench_repeats),
+                    '--compile',
+                ]
+            )
+            with torch.no_grad():
+                round3_micro = _measure_round3_compact_microbench(args, device)
+            if args.scale != 'smoke':
+                torch.set_num_threads(caller_threads)
+            device_label = str(device)
+
+        closed_loop = _run_matched_closed_loop_fastpath_bench(
+            args, artifacts_root, sub_dir, gpus=gpus,
+        )
         cluster_scaling = (
-            _run_sharded_cluster_fastpath_throughput(args, gpus, artifacts_root, sub_dir, closed_loop)
+            _run_sharded_cluster_fastpath_throughput(args, gpus, sub_dir, closed_loop)
             if len(gpus) > 1
             else None
         )
@@ -1167,7 +1441,7 @@ def run_fastpath_bench(args, artifacts_root: Path, suite_root: Path) -> dict:
         'scale': args.scale,
         'status': closed_loop['status'],
         'config_fingerprint': cfg_fp,
-        'device': str(device),
+        'device': device_label,
         'gpus': gpus,
         'device_inventory': inventory,
         'adapter_microbenchmark': {
@@ -1199,9 +1473,10 @@ def _execute_m5_stage_pipeline(
     *,
     extra_m5_flags: list[str] | None = None,
 ) -> tuple[dict, dict, dict]:
-    """Run M5 `tune` + `evaluate` + `timing` + `summarize` in-process (`W == 1`) or sharded (`W > 1`)."""
+    """Run M5 `tune` + `evaluate` + `timing` + `summarize`; always subprocess-isolated on CUDA."""
     from . import eval_closed_loop
 
+    use_cuda = _is_cuda_run(args)
     extra = list(extra_m5_flags or [])
     shared_stage_flags = [
         '--stage', 'm5',
@@ -1219,14 +1494,13 @@ def _execute_m5_stage_pipeline(
         *extra,
     ]
 
-    if len(gpus) == 1:
+    if not use_cuda and len(gpus) == 1:
         eval_closed_loop.main(_cli_base_flags(args, sub_ws) + ['--mode', 'all', *shared_stage_flags])
     else:
-        use_cuda = (args.scale != 'smoke' and str(args.device).startswith('cuda'))
         worker_dev = 'cuda:0' if use_cuda else 'cpu'
         logdir = sub_ws / 'logs'
 
-        # 1) Dev tune on GPU 0 (world_size=1)
+        # 1) Dev tune on gpus[0] (world_size=1)
         tune_cmd = [
             sys.executable, '-m', 'edraft.eval_closed_loop',
             *_cli_base_flags(args, sub_ws, device_override=worker_dev),
@@ -1291,7 +1565,7 @@ def _execute_m5_stage_pipeline(
             scale=args.scale, device_str=str(args.device), omp_threads=1,
         )
 
-        # 4) Summarize sharded timing + evaluate into timing.json and summary.json
+        # 4) Pure-CPU summarize into timing.json and summary.json
         sum_cmd = [
             sys.executable, '-m', 'edraft.eval_closed_loop',
             *_cli_base_flags(args, sub_ws, device_override='cpu'),
@@ -1388,11 +1662,12 @@ def _ensure_smoke_baseline_m2(args, ws: Path) -> None:
 
 
 def _run_training_fit(args, ws: Path, gpus: list[int], fit_tag: str, extra_train_flags: list[str]) -> dict:
+    """Run offline training fit; always subprocess-isolated via `launch.main` on CUDA (`1..8` GPUs)."""
     from . import launch, train
 
     fit_subdir = f'{fit_tag}_smoke' if args.scale == 'smoke' else fit_tag
-    use_ddp = (len(gpus) > 1 and args.scale != 'smoke' and str(args.device).startswith('cuda'))
-    if use_ddp:
+    stats_mem = _default_stats_memory_limit(args)
+    if _is_cuda_run(args):
         ddp_cli = [
             '--scale', args.scale,
             '--seed', str(args.seed),
@@ -1401,6 +1676,8 @@ def _run_training_fit(args, ws: Path, gpus: list[int], fit_tag: str, extra_train
             '--drafter', str(args.drafter),
             '--task', 'train',
             '--gpus', ','.join(str(g) for g in gpus),
+            '--m1_diagnostic', str(ws / f'diagnostic_{args.scale}.json'),
+            '--stats_memory_limit', stats_mem,
             '--m5_fit_tag', fit_tag,
             *extra_train_flags,
         ]
@@ -1412,6 +1689,7 @@ def _run_training_fit(args, ws: Path, gpus: list[int], fit_tag: str, extra_train
         return json.loads((ws / f'{fit_subdir}.json').read_text())
 
     train_cli = _cli_base_flags(args, ws) + [
+        '--stats_memory_limit', stats_mem,
         '--m5_fit_tag', fit_tag,
         *extra_train_flags,
     ]
@@ -1593,7 +1871,7 @@ def _worker_refit_eval_shard(args, spec_path: Path, out_path: Path) -> None:
     variants = [(v_name, Path(d_p), Path(s_p)) for v_name, d_p, s_p in spec['variants']]
     shard_prompts = spec['prompts']
     rank_gpu = int(spec['physical_gpu'])
-    worker_dev = 'cpu' if args.scale == 'smoke' or not str(args.device).startswith('cuda') else 'cuda:0'
+    worker_dev = 'cuda:0' if _is_cuda_run(args) else 'cpu'
     rows_by_key, variant_scales, affinity = _run_refit_eval_bundle_on_prompts(
         args, ws, variants, shard_prompts,
         rank_gpu=rank_gpu, world_size=int(spec['world_size']), device_override=worker_dev,
@@ -1624,7 +1902,8 @@ def _evaluate_refit_variants_closed_loop(
     )
     all_test, selected_prompts, is_pilot = _select_test_prompts(prompt_manifest, args.scale, args.timing_prompts)
 
-    if len(active_gpus) <= 1:
+    use_cuda = _is_cuda_run(args)
+    if not use_cuda and len(active_gpus) <= 1:
         rows_by_key, variant_scales, _ = _run_refit_eval_bundle_on_prompts(
             args, ws, variants, selected_prompts,
             rank_gpu=active_gpus[0] if active_gpus else 0, world_size=1,
@@ -1650,7 +1929,7 @@ def _evaluate_refit_variants_closed_loop(
             })
             cmd = [
                 sys.executable, '-m', 'edraft.post_m4_suite',
-                *_cli_base_flags(args, ws),
+                *_cli_base_flags(args, ws, device_override='cuda:0' if use_cuda else 'cpu'),
                 '--timing_warmups', str(args.timing_warmups),
                 '--timing_repeats', str(args.timing_repeats),
                 '--smoke_tokens', str(args.smoke_tokens),
@@ -1812,9 +2091,69 @@ def _offline_kl_summary(eval_ctx, ckpt_path: Path, device: torch.device) -> dict
         'checkpoint_scale': meta.get('checkpoint_scale', 1.0),
         'sparse_backend': meta.get('sparse_backend', 'signed_feature_hash'),
         'collision_count': collision_count,
+        'overflow_events': rep_collision_stats.get('overflow_events'),
+        'dropped_unique_keys': rep_collision_stats.get('dropped_unique_keys'),
         'counterfactual_signed_hash_collision_count': rep_collision_stats.get('counterfactual_signed_hash_collision_count'),
         'dev': dev_eval,
         'test': test_eval,
+    }
+
+
+def _worker_offline_kl_batch(args, spec_path: Path, out_path: Path) -> None:
+    spec = json.loads(spec_path.read_text())
+    ws = Path(spec['workspace'])
+    rank_gpu = int(spec['physical_gpu'])
+    device = torch.device('cuda:0' if _is_cuda_run(args) else 'cpu')
+    if device.type == 'cuda':
+        torch.cuda.set_device(device)
+    apply_gpu_cpu_affinity(device, rank_gpu)
+    if args.scale != 'smoke':
+        assert_idle(device)
+    eval_ctx = _prepare_offline_eval_context(args, ws, device)
+    results = {
+        key: _offline_kl_summary(eval_ctx, Path(ckpt_str), device)
+        for key, ckpt_str in spec['checkpoints'].items()
+    }
+    atomic_json(out_path, {'results': results})
+
+
+def _evaluate_offline_kl_batch(
+    args,
+    ws: Path,
+    checkpoints_by_key: dict[str, Path],
+    *,
+    gpu_index: int = 0,
+) -> dict[str, dict]:
+    """Evaluate held-out offline KL for a dictionary of checkpoints; subprocess-isolated on CUDA."""
+    if _is_cuda_run(args):
+        kl_dir = ws / 'offline_kl_eval'
+        kl_dir.mkdir(parents=True, exist_ok=True)
+        tag = fingerprint(sorted((k, str(v.resolve())) for k, v in checkpoints_by_key.items()))[:10]
+        spec_path = kl_dir / f'spec-{tag}.json'
+        out_path = kl_dir / f'result-{tag}.json'
+        atomic_json(spec_path, {
+            'physical_gpu': gpu_index,
+            'workspace': str(ws.resolve()),
+            'checkpoints': {k: str(v.resolve()) for k, v in checkpoints_by_key.items()},
+        })
+        cmd = [
+            sys.executable, '-m', 'edraft.post_m4_suite',
+            *_cli_base_flags(args, ws, device_override='cuda:0'),
+            '--_worker_mode', 'offline_kl_batch',
+            '--_worker_spec', str(spec_path),
+            '--_worker_out', str(out_path),
+        ]
+        _spawn_parallel_workers(
+            [(0, gpu_index, cmd)], kl_dir / 'logs', f'offline-kl-{tag}',
+            scale=args.scale, device_str=str(args.device), omp_threads=2,
+        )
+        return json.loads(out_path.read_text())['results']
+
+    device = torch.device('cpu')
+    eval_ctx = _prepare_offline_eval_context(args, ws, device)
+    return {
+        k: _offline_kl_summary(eval_ctx, ckpt_p, device)
+        for k, ckpt_p in checkpoints_by_key.items()
     }
 
 
@@ -1888,27 +2227,21 @@ def run_m2_refit_calibration(args, artifacts_root: Path, suite_root: Path, *, cp
         (f'refit_shuf_wd_scale_{scale_tag}', refit_dense_s, refit_sparse_s),
     ]
 
-    use_cuda = (args.scale != 'smoke' and str(args.device).startswith('cuda'))
-    eval_dev_str = f'cuda:{gpus[0]}' if (use_cuda and not os.environ.get('CUDA_VISIBLE_DEVICES')) else str(args.device)
-    device = torch.device(eval_dev_str if args.scale != 'smoke' else 'cpu')
-    eval_ctx = _prepare_offline_eval_context(args, ws, device)
-    offline_by_variant = {}
+    ckpt_batch = {}
     for v_name, d_ckpt, s_ckpt in variants:
-        offline_by_variant[v_name] = (
-            _offline_kl_summary(eval_ctx, d_ckpt, device),
-            _offline_kl_summary(eval_ctx, s_ckpt, device),
-        )
+        ckpt_batch[f'{v_name}::dense'] = d_ckpt
+        ckpt_batch[f'{v_name}::dense_sparse'] = s_ckpt
+    batch_kl = _evaluate_offline_kl_batch(args, ws, ckpt_batch, gpu_index=gpus[0])
 
     cl_status, cl_by_variant = _evaluate_refit_variants_closed_loop(args, ws, variants, gpus=gpus)
     variant_reports = []
     for v_name, d_ckpt, s_ckpt in variants:
-        dense_kl, sparse_kl = offline_by_variant[v_name]
         variant_reports.append({
             'variant': v_name,
             'dense_checkpoint': str(d_ckpt.resolve()),
             'sparse_checkpoint': str(s_ckpt.resolve()),
-            'offline_dense_kl': dense_kl,
-            'offline_dense_sparse_kl': sparse_kl,
+            'offline_dense_kl': batch_kl[f'{v_name}::dense'],
+            'offline_dense_sparse_kl': batch_kl[f'{v_name}::dense_sparse'],
             'closed_loop': cl_by_variant[v_name],
         })
 
@@ -1925,6 +2258,7 @@ def run_m2_refit_calibration(args, artifacts_root: Path, suite_root: Path, *, cp
             'weight_decay': args.weight_decay,
             'calibrate_beta': True,
             'fixed_checkpoint_scale': args.fixed_checkpoint_scale,
+            'stats_memory_limit': _default_stats_memory_limit(args),
         },
         'refit_report_path': str((ws / f'{fit_subdir}.json').resolve()),
         'beta_calibration': {
@@ -1976,26 +2310,37 @@ def run_m5_eval(args, artifacts_root: Path, suite_root: Path, *, cpu_threads: in
         ['--objective', 'two_sided_pseudolikelihood', '--calibrate_beta'],
     )
 
-    # 2. Offline Fit B: Collision-Free Exact Observed Pairs (`exact_observed_pairs`, `collision_count == 0`)
+    # 2. Offline Fit B: Capacity-Matched Collision-Free Exact Observed Pairs (`collision_count == 0`)
     exact_tag = 'm5_exact_pairs'
     exact_subdir = f'{exact_tag}_smoke' if args.scale == 'smoke' else exact_tag
-    exact_fit_report = _run_training_fit(
-        args, ws, gpus, exact_tag,
-        ['--sparse_backend', 'exact_observed_pairs', '--sparse_overflow_policy', 'error', '--calibrate_beta'],
-    )
+    overflow_policy = str(getattr(args, 'm5_exact_overflow_policy', 'freeze_new'))
+    exact_flags = [
+        '--sparse_backend', 'exact_observed_pairs',
+        '--sparse_overflow_policy', overflow_policy,
+        '--calibrate_beta',
+    ]
+    if getattr(args, 'm5_exact_sparse_capacity', None) is not None:
+        exact_flags.extend(['--sparse_capacity', str(args.m5_exact_sparse_capacity)])
+    exact_fit_report = _run_training_fit(args, ws, gpus, exact_tag, exact_flags)
 
     if cpu_threads is not None and args.scale != 'smoke':
         torch.set_num_threads(cpu_threads)
 
-    use_cuda = (args.scale != 'smoke' and str(args.device).startswith('cuda'))
-    eval_dev_str = f'cuda:{gpus[0]}' if (use_cuda and not os.environ.get('CUDA_VISIBLE_DEVICES')) else str(args.device)
-    device = torch.device(eval_dev_str if args.scale != 'smoke' else 'cpu')
-    eval_ctx = _prepare_offline_eval_context(args, ws, device)
-
     base_subdir = 'm2_smoke' if args.scale == 'smoke' else 'm2'
-    base_sparse_kl = _offline_kl_summary(eval_ctx, ws / base_subdir / 'dense_sparse.pt', device)
-    pl_sparse_kl = _offline_kl_summary(eval_ctx, ws / pl_subdir / 'dense_sparse.pt', device)
-    exact_sparse_kl = _offline_kl_summary(eval_ctx, ws / exact_subdir / 'dense_sparse.pt', device)
+    batch_kl = _evaluate_offline_kl_batch(
+        args,
+        ws,
+        {
+            'base_sparse': ws / base_subdir / 'dense_sparse.pt',
+            'pl_sparse': ws / pl_subdir / 'dense_sparse.pt',
+            'exact_sparse': ws / exact_subdir / 'dense_sparse.pt',
+        },
+        gpu_index=gpus[0],
+    )
+    base_sparse_kl = batch_kl['base_sparse']
+    pl_sparse_kl = batch_kl['pl_sparse']
+    exact_sparse_kl = batch_kl['exact_sparse']
+
     exact_stats = exact_fit_report.get('stages', {}).get('dense_sparse', {}).get('sparse_collision_statistics', {})
     exact_collision_count = exact_stats.get('collision_count', exact_sparse_kl.get('collision_count'))
     exact_sparse_kl['collision_count'] = exact_collision_count
@@ -2041,7 +2386,14 @@ def run_m5_eval(args, artifacts_root: Path, suite_root: Path, *, cpu_threads: in
             'exact_observed_pairs': {
                 'fit_status': exact_fit_report.get('status'),
                 'report_path': str((ws / f'{exact_subdir}.json').resolve()),
-                'collision_count': exact_sparse_kl['collision_count'],
+                'overflow_policy': overflow_policy,
+                'collision_count': exact_collision_count,
+                'overflow_events': exact_stats.get('overflow_events', exact_sparse_kl.get('overflow_events')),
+                'dropped_unique_keys': exact_stats.get('dropped_unique_keys', exact_sparse_kl.get('dropped_unique_keys')),
+                'counterfactual_signed_hash_collision_count': exact_stats.get(
+                    'counterfactual_signed_hash_collision_count',
+                    exact_sparse_kl.get('counterfactual_signed_hash_collision_count'),
+                ),
                 'held_out_union_rest_grouped_kl': exact_sparse_kl,
                 'test_grouped_kl_delta_vs_signed_hash': (
                     float(exact_sparse_kl['test']['weighted_mean_kl'])
@@ -2093,6 +2445,9 @@ def main(argv=None):
     parser.add_argument('--bigram_count_gate_kappa', type=float, default=12.0)
     parser.add_argument('--online_arms', nargs='+', default=list(DEFAULT_ONLINE_HEAD_TO_HEAD_ARMS))
     parser.add_argument('--m5_eval_arms', nargs='+', default=list(DEFAULT_M5_EVAL_ARMS))
+    parser.add_argument('--m5_exact_overflow_policy', choices=['freeze_new', 'error'], default='freeze_new')
+    parser.add_argument('--m5_exact_sparse_capacity', type=int, default=None)
+    parser.add_argument('--stats_memory_limit', default=None)
     parser.add_argument('--block_shuffle_window', type=int, default=32)
     parser.add_argument('--weight_decay', type=float, default=1e-2)
     parser.add_argument('--fixed_checkpoint_scale', type=float, default=0.20)
@@ -2105,7 +2460,12 @@ def main(argv=None):
     parser.add_argument('--max_new_tokens', type=int, default=2048)
     parser.add_argument('--long_max_new_tokens', type=int, default=24576)
     parser.add_argument('--smoke_tokens', type=int, default=32)
-    parser.add_argument('--_worker_mode', choices=['fastpath_shard', 'refit_eval_shard'], default=None, help=argparse.SUPPRESS)
+    parser.add_argument(
+        '--_worker_mode',
+        choices=['round3_micro', 'fastpath_closed_loop_shard', 'fastpath_1gpu_calibration', 'offline_kl_batch', 'refit_eval_shard'],
+        default=None,
+        help=argparse.SUPPRESS,
+    )
     parser.add_argument('--_worker_spec', type=Path, default=None, help=argparse.SUPPRESS)
     parser.add_argument('--_worker_out', type=Path, default=None, help=argparse.SUPPRESS)
     args = parse_config(parser, argv)
@@ -2120,10 +2480,18 @@ def main(argv=None):
         torch.set_num_threads(1)
         if args._worker_spec is None or args._worker_out is None:
             parser.error('internal worker mode requires --_worker_spec and --_worker_out')
-        if args._worker_mode == 'fastpath_shard':
-            _worker_fastpath_shard(args, Path(args._worker_spec), Path(args._worker_out))
+        spec_p = Path(args._worker_spec)
+        out_p = Path(args._worker_out)
+        if args._worker_mode == 'round3_micro':
+            _worker_round3_micro(args, spec_p, out_p)
+        elif args._worker_mode == 'fastpath_closed_loop_shard':
+            _worker_fastpath_closed_loop_shard(args, spec_p, out_p)
+        elif args._worker_mode == 'fastpath_1gpu_calibration':
+            _worker_fastpath_1gpu_calibration(args, spec_p, out_p)
+        elif args._worker_mode == 'offline_kl_batch':
+            _worker_offline_kl_batch(args, spec_p, out_p)
         elif args._worker_mode == 'refit_eval_shard':
-            _worker_refit_eval_shard(args, Path(args._worker_spec), Path(args._worker_out))
+            _worker_refit_eval_shard(args, spec_p, out_p)
         return None
 
     try:
@@ -2131,6 +2499,8 @@ def main(argv=None):
     except ValueError as err:
         parser.error(str(err))
 
+    if args.m5_exact_sparse_capacity is not None and args.m5_exact_sparse_capacity < 1:
+        parser.error('--m5_exact_sparse_capacity must be >= 1')
     if not math.isfinite(args.bigram_count_gate_kappa) or args.bigram_count_gate_kappa <= 0:
         parser.error('--bigram_count_gate_kappa must be finite and > 0')
     if args.block_shuffle_window < 1:
@@ -2154,6 +2524,7 @@ def main(argv=None):
     if not tiny:
         preflight(SimpleNamespace(scale=args.scale, output=suite_root), 4096)
 
+    use_cuda = _is_cuda_run(args)
     orig_threads = torch.get_num_threads()
     try:
         if tiny:
@@ -2164,24 +2535,23 @@ def main(argv=None):
             else [args.suite]
         )
         results = {}
-        if 'fastpath_bench' in selected_suites:
-            results['fastpath_bench'] = run_fastpath_bench(args, artifacts_root, suite_root)
-            if not tiny:
-                torch.set_num_threads(orig_threads)
-        if 'online_head_to_head' in selected_suites:
-            results['online_head_to_head'] = run_online_head_to_head(args, artifacts_root, suite_root)
-            if not tiny:
-                torch.set_num_threads(orig_threads)
-        if 'm2_refit_calibration' in selected_suites:
-            results['m2_refit_calibration'] = run_m2_refit_calibration(
-                args, artifacts_root, suite_root, cpu_threads=orig_threads,
-            )
-            if not tiny:
-                torch.set_num_threads(orig_threads)
-        if 'm5_eval' in selected_suites:
-            results['m5_eval'] = run_m5_eval(
-                args, artifacts_root, suite_root, cpu_threads=orig_threads,
-            )
+        for suite_name in selected_suites:
+            if suite_name == 'fastpath_bench':
+                results['fastpath_bench'] = run_fastpath_bench(args, artifacts_root, suite_root)
+            elif suite_name == 'online_head_to_head':
+                results['online_head_to_head'] = run_online_head_to_head(args, artifacts_root, suite_root)
+            elif suite_name == 'm2_refit_calibration':
+                results['m2_refit_calibration'] = run_m2_refit_calibration(
+                    args, artifacts_root, suite_root, cpu_threads=orig_threads,
+                )
+            elif suite_name == 'm5_eval':
+                results['m5_eval'] = run_m5_eval(
+                    args, artifacts_root, suite_root, cpu_threads=orig_threads,
+                )
+            if use_cuda and torch.cuda.is_initialized():
+                raise RuntimeError(
+                    f'Parent post_m4_suite orchestrator initialized CUDA context during {suite_name}'
+                )
             if not tiny:
                 torch.set_num_threads(orig_threads)
     finally:

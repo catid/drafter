@@ -112,6 +112,9 @@ def main(argv=None):
     parser.add_argument('--apply_calibrated_beta', action='store_true', default=False)
     parser.add_argument('--calibrate_beta_grid', type=float, nargs='+', default=None)
     parser.add_argument('--sparse_backend', choices=['signed_feature_hash', 'exact_observed_pairs'], default=None)
+    parser.add_argument('--sparse_capacity', type=int, default=None)
+    parser.add_argument('--stats_memory_limit', default=None)
+    parser.add_argument('--m1_diagnostic', type=Path, default=None)
     parser.add_argument('--objective', choices=['union_rest_grouped', 'two_sided_pseudolikelihood'], default=None)
     parser.add_argument('--allow_long_oracle_fit', action='store_true', default=False)
     parser.add_argument('--allow_pure_t1_ablation', action='store_true', default=False)
@@ -146,6 +149,8 @@ def main(argv=None):
     if args.bigram_count_gate_kappa is not None:
         if not math.isfinite(args.bigram_count_gate_kappa) or args.bigram_count_gate_kappa <= 0:
             parser.error('--bigram_count_gate_kappa must be finite and > 0')
+    if args.sparse_capacity is not None and args.sparse_capacity < 1:
+        parser.error('--sparse_capacity must be >= 1')
     if args.m5_server_timeout is not None:
         if not math.isfinite(args.m5_server_timeout) or args.m5_server_timeout <= 0:
             parser.error('--m5_server_timeout must be finite and > 0')
@@ -259,9 +264,11 @@ def main(argv=None):
                     '--seed', str(args.seed), '--output', str(args.output), '--target', args.target,
                     '--drafter', args.drafter]
             if args.task == 'train':
+                m1_diag = Path(args.m1_diagnostic) if args.m1_diagnostic is not None else (args.output / f'diagnostic_{args.scale}.json')
                 command = [sys.executable, '-m', 'edraft.train', *base,
                            '--trace_dir', str(args.output / 'traces'),
                            '--m1_audit', str(args.output / 'm1_audit.json'),
+                           '--m1_diagnostic', str(m1_diag),
                            '--features', str(args.output / 'token_features.pt'),
                            '--projection', str(args.output / 'h_proj.pt'),
                            '--prompts', str(args.output / 'prompts.json'),
@@ -286,8 +293,8 @@ def main(argv=None):
                     'learning_rate', 'weight_decay', 'bias_weight_decay',
                     'sparse_learning_rate', 'lambda_l1', 'epochs_dense',
                     'epochs_sparse', 'pace_pullback', 'anchor_soda',
-                    'sparse_backend', 'sparse_overflow_policy', 'objective',
-                    'm5_fit_tag',
+                    'sparse_backend', 'sparse_capacity', 'sparse_overflow_policy',
+                    'stats_memory_limit', 'objective', 'm5_fit_tag',
                 ):
                     val = getattr(args, flag_name)
                     if val is not None:
