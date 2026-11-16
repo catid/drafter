@@ -1,0 +1,358 @@
+"""End-to-end CPU tests for Phase-B secondary reference ablations and `--scale full` sharding."""
+from __future__ import annotations
+
+import copy
+import json
+from pathlib import Path
+from types import SimpleNamespace
+
+import pytest
+
+from edraft import eval_closed_loop, phase_b_suite, prompts
+from edraft.runtime import ROOT, atomic_json, fingerprint
+
+
+def _make_full_scale_synthetic_manifest() -> dict:
+    rows = []
+    for i in range(64):
+        rows.append({
+            'prompt_id': f'std-dev-{i:03d}',
+            'dataset': 'synthetic_gsm',
+            'split': 'dev',
+            'condition': 'standard_nonthinking',
+            'reference_selected': True,
+            'text': f'Standard dev {i}',
+        })
+    for i in range(6850):
+        rows.append({
+            'prompt_id': f'std-train-{i:04d}',
+            'dataset': 'synthetic_gsm',
+            'split': 'train',
+            'condition': 'standard_nonthinking',
+            'reference_selected': True,
+            'text': f'Standard train {i}',
+        })
+    for i in range(164):
+        rows.append({
+            'prompt_id': f'he-test-{i:03d}',
+            'dataset': 'synthetic_humaneval',
+            'split': 'test',
+            'condition': 'standard_nonthinking',
+            'reference_selected': i < 128,
+            'text': f'Standard test {i}',
+        })
+    for i in range(32):
+        rows.append({
+            'prompt_id': f'long-dev-{i:03d}',
+            'dataset': 'synthetic_math500',
+            'split': 'dev',
+            'condition': 'long_thinking',
+            'reference_selected': True,
+            'text': f'Long dev {i}',
+        })
+    for i in range(96):
+        rows.append({
+            'prompt_id': f'long-test-{i:03d}',
+            'dataset': 'synthetic_math500',
+            'split': 'test',
+            'condition': 'long_thinking',
+            'reference_selected': True,
+            'text': f'Long test {i}',
+        })
+    return {
+        'scale': 'full',
+        'seed': 2026,
+        'complete_heldout_dataset': 'synthetic_humaneval',
+        'calibration_ids': [f'std-train-{i:04d}' for i in range(64)],
+        'prompts': rows,
+    }
+
+
+def test_bigram_eviction_arms_and_memory_summary_end_to_end(tmp_path):
+    ws = tmp_path / 'bigram_evict_ws'
+    arms = [
+        'plain_dflash',
+        'online_bigram',
+        'online_bigram_kret256',
+        'online_bigram_kret128',
+        'online_bigram_count_gated',
+    ]
+    base = [
+        '--scale', 'smoke', '--device', 'cpu', '--stage', 'm5',
+        '--output', str(ws),
+        '--timing_repeats', '2', '--timing_warmups', '1', '--smoke_tokens', '16',
+        '--bigram_k_ret', '2',
+        '--bigram_count_gate_kappa', '12.0',
+        '--m5_arms', *arms,
+    ]
+    for r in range(2):
+        eval_closed_loop.main([*base, '--mode', 'tune', '--rank', str(r), '--world_size', '2', '--logical_session', 'sess_bg'])
+    eval_closed_loop.main([*base, '--mode', 'tune_summarize'])
+    settings = json.loads((ws / 'm5' / 'settings.json').read_text())
+    assert settings['selected']['online_bigram_kret256']['k_ret'] == 2
+    assert settings['selected']['online_bigram_kret128']['k_ret'] == 128
+    assert settings['selected']['online_bigram']['k_ret'] is None
+
+    for r in range(2):
+        eval_closed_loop.main([*base, '--mode', 'evaluate', '--schedule', 'dynamic', '--rank', str(r), '--world_size', '2'])
+    for r in range(2):
+        eval_closed_loop.main([*base, '--mode', 'timing', '--rank', str(r), '--world_size', '2', '--logical_session', 'sess_tm'])
+    eval_closed_loop.main([*base, '--mode', 'summarize'])
+
+    summary = json.loads((ws / 'm5' / 'summary.json').read_text())
+    assert summary['status'] == 'complete'
+    bg_mem = summary.get('bigram_memory_ablation', [])
+    assert len(bg_mem) > 0
+    by_arm = {row['arm']: row for row in bg_mem if row['temperature'] > 0}
+    assert by_arm['online_bigram']['k_ret'] is None
+    assert by_arm['online_bigram_kret256']['k_ret'] == 2
+    assert by_arm['online_bigram_kret256']['retained_prior_pairs_mean'] <= by_arm['online_bigram']['exact_ledger_pairs_mean']
+    matched_families = {row['matched_support_family'] for row in summary['matched_support_comparisons']}
+    assert 'online_bigram_topk_eviction' in matched_families
+
+
+def test_full_scale_m3_and_m4_sharded_tune_and_multi_rank_token_weights(tmp_path):
+    # 1. Verify smoke and reference M3/M4 still reject world_size > 1 tune & tune_summarize
+    for bad_scale in ('smoke', 'reference'):
+        for stg in ('m3', 'm4'):
+            with pytest.raises(SystemExit):
+                eval_closed_loop.main([
+                    '--scale', bad_scale, '--device', 'cpu', '--stage', stg,
+                    '--mode', 'tune', '--rank', '0', '--world_size', '2',
+                    '--output', str(tmp_path / f'reject_{bad_scale}_{stg}'),
+                ])
+            with pytest.raises(SystemExit):
+                eval_closed_loop.main([
+                    '--scale', bad_scale, '--device', 'cpu', '--stage', stg,
+                    '--mode', 'tune_summarize',
+                    '--output', str(tmp_path / f'reject_sum_{bad_scale}_{stg}'),
+                ])
+
+    # 2. Verify full-scale M3 & M4 (all 9 full M4 arms!) run sharded tune (W=4) + tune_summarize cleanly
+    #    and `compute_tune_sharding_plan` consumes m1_audit.json for M3, then multi-rank M3 tune for M4!
+    ws = tmp_path / 'full_tune_ws'
+    manifest = _make_full_scale_synthetic_manifest()
+    dev_prompts = eval_closed_loop.select_prompts(manifest, 'dev', 'full', standard_dev_prompts=4, long_dev_prompts=32)
+    assert len(dev_prompts) == 36
+
+    # Populate m1_audit.json so M3 sharded tune uses `m1_audit_realized_tokens`
+    m1_gens = [
+        {'prompt_id': p['prompt_id'], 'realized_length': (1000 + 50 * idx) if p['condition'].startswith('long_') else (100 + 10 * idx)}
+        for idx, p in enumerate(dev_prompts)
+    ]
+    atomic_json(ws / 'm1_audit.json', {'scale': 'full', 'status': 'passed', 'generations': m1_gens})
+
+    class _FakeShardedRunner:
+        def __init__(self, stage: str, rank: int, world_size: int):
+            self.args = SimpleNamespace(
+                scale='full',
+                allow_large_run=True,
+                stage=stage,
+                mode='tune',
+                rank=rank,
+                world_size=world_size,
+                seed=2026,
+                device='cpu',
+                output=ws,
+                max_new_tokens=2048,
+                long_max_new_tokens=24576,
+                smoke_tokens=32,
+                standard_dev_prompts=4,
+                long_dev_prompts=32,
+                timing_warmups=1,
+                fresh_session=False,
+                logical_session=f'sess_{stage}',
+                m5_arms=None,
+                m5_oracle_checkpoint=None,
+            )
+            self.tiny = False
+            self.device = eval_closed_loop.torch.device('cpu')
+            self.affinity_info = eval_closed_loop.gpu_cpu_affinity(rank, total_cpus=128)
+            self.affinity_info['cpu_affinity_applied'] = True
+            self.checkpoint_hashes = {
+                'dense': 'a' * 64,
+                'dense_sparse': 'b' * 64,
+                'projection': 'c' * 64,
+                'implementation': eval_closed_loop.implementation_hash(stage),
+            }
+            self.model_pair = ['Qwen/Qwen3-8B', 'z-lab/Qwen3-8B-DFlash-b16']
+            self.model_revisions = ['rev_t', 'rev_d']
+            self.generation_environment = {'synthetic_full_stub': True}
+            self.fastpath = None
+
+        def run(self, job, setting, profile=False):
+            pid = job['prompt']['prompt_id']
+            arm = job['arm']
+            toks = 240 if job['prompt']['condition'].startswith('long_') else 64
+            bonus = 1.15 if setting.get('update_stride') == 5 or setting.get('beta') == 0.5 or setting.get('lambda_tr') == 0.2 else 1.0
+            tps = 100.0 * bonus
+            return {
+                'scale': 'full',
+                'label': 'full',
+                'stage': self.args.stage,
+                'arm': arm,
+                'prompt_id': pid,
+                'split': 'dev',
+                'condition': job['prompt']['condition'],
+                'seed': job['seed'],
+                'sampling_name': job['sampling_name'],
+                'temperature': job['temperature'],
+                'sampling_warp_config': eval_closed_loop.asdict(job['warper']),
+                'settings': setting,
+                'verification_rule': 'ratio' if job['temperature'] > 0 else 'greedy',
+                'model_pair': self.model_pair,
+                'model_revisions': self.model_revisions,
+                'checkpoint_hashes': self.checkpoint_hashes,
+                'generated_tokens': toks,
+                'elapsed_seconds': toks / tps,
+                'tokens_per_second': tps,
+                'mean_accepted_length': 4.5,
+                'median_accepted_length': 4.0,
+                'target_forwards_per_generated_token': 0.2,
+                'phase_ms': {},
+                'blocks': [],
+                'generation': {'complete': True, 'repetition_dominated': False},
+                'output_tokens': [1] * toks,
+                'phase_profile': profile,
+            }
+
+    # Run 4-rank sharded M3 tune + tune_summarize
+    for r in range(4):
+        out_r = eval_closed_loop.tune(_FakeShardedRunner('m3', r, 4), manifest)
+        assert out_r['status'] == 'tune_rank_complete'
+    m3_plan = json.loads((ws / 'm3' / 'tune' / 'sharding_plan.json').read_text())
+    assert m3_plan['weight_source'] == 'm1_audit_realized_tokens'
+
+    sum_args_m3 = copy.copy(_FakeShardedRunner('m3', 0, 1).args)
+    m3_settings = eval_closed_loop.summarize_sharded_tune(sum_args_m3, manifest)
+    assert m3_settings['sharding_mode'] == 'sharded_4gpu'
+    assert set(m3_settings['selected']) == set(eval_closed_loop.M3_ARMS)
+    eval_closed_loop.validate_frozen_settings(
+        m3_settings, 'm3', 'full', m3_settings['checkpoint_hashes'], manifest,
+        m3_settings['generation_caps'], m3_settings['model_pair'], m3_settings['model_revisions'],
+        m3_settings['generation_environment'],
+    )
+
+    # Run 4-rank sharded M4 tune + tune_summarize (9 full-scale arms, weighted from multi-rank m3 tune!)
+    for r in range(4):
+        out_r4 = eval_closed_loop.tune(_FakeShardedRunner('m4', r, 4), manifest)
+        assert out_r4['status'] == 'tune_rank_complete'
+    m4_plan = json.loads((ws / 'm4' / 'tune' / 'sharding_plan.json').read_text())
+    assert m4_plan['weight_source'] == 'm3_tune_realized_tokens'
+
+    sum_args_m4 = copy.copy(_FakeShardedRunner('m4', 0, 1).args)
+    m4_settings = eval_closed_loop.summarize_sharded_tune(sum_args_m4, manifest)
+    assert m4_settings['sharding_mode'] == 'sharded_4gpu'
+    expected_full_m4 = {
+        'plain_dflash', 'online_bigram', 'offline_static', 'offline_online_stride1', 'online_dbS',
+        'offline_online_stride5', 'zero_offline_online_only', 'online_rejection_relative', 'online_cutoff',
+    }
+    assert set(m4_settings['selected']) == expected_full_m4
+    eval_closed_loop.validate_frozen_settings(
+        m4_settings, 'm4', 'full', m4_settings['checkpoint_hashes'], manifest,
+        m4_settings['generation_caps'], m4_settings['model_pair'], m4_settings['model_revisions'],
+        m4_settings['generation_environment'],
+    )
+
+
+def test_real_cached_prompts_full_scale_capacity_verification(tmp_path):
+    ref_env = ROOT / 'artifacts' / 'environment.json'
+    if not ref_env.is_file():
+        ref_env = Path('/home/catid/drafter/artifacts/environment.json')
+    if not ref_env.is_file():
+        pytest.skip('No local reference environment.json cached on this machine')
+    env_data = json.loads(ref_env.read_text())
+    ds_art = env_data.get('dataset_artifacts', {})
+    if not all(Path(ds_art.get(d, {}).get('path', '')).is_dir() for d in prompts.DATASETS):
+        pytest.skip('Cached HF benchmark datasets not present on disk')
+
+    out_dir = tmp_path / 'full_prompts_out'
+    out_dir.mkdir(parents=True)
+    atomic_json(out_dir / 'environment.json', env_data)
+    ns = prompts.parse_config(
+        prompts.common_parser('test'),
+        ['--scale', 'full', '--allow_large_run', '--seed', '2026', '--output', str(out_dir)],
+    )
+    ns.m5_long_train_prompts = 0
+    built = prompts.build_manifest(ns)
+    cap_rep = phase_b_suite.verify_full_scale_prompt_capacity(built, 'full')
+    assert cap_rep['status'] == 'passed'
+    assert cap_rep['counts']['standard_train_prompts'] == 7409
+    assert cap_rep['counts']['standard_dev_prompts'] == 64
+    assert cap_rep['counts']['standard_test_selected'] == 128
+    assert cap_rep['counts']['standard_test_total_heldout'] == 164
+    assert cap_rep['counts']['long_dev_prompts'] == 32
+    assert cap_rep['counts']['long_test_selected'] == 96
+
+
+def test_phase_b_suite_smoke_all_cache_hit_and_upstream_immutability(tmp_path, monkeypatch):
+    ref_dir = tmp_path / 'frozen_ref_artifacts'
+    ref_dir.mkdir(parents=True)
+    (ref_dir / 'm4').mkdir(parents=True)
+    atomic_json(ref_dir / 'milestones.json', {'m4': 'passed'})
+    atomic_json(ref_dir / 'm4' / 'summary.json', {'status': 'complete', 'scale': 'reference'})
+
+    # Guard: --output cannot equal populated --reference_artifacts on non-smoke scales
+    with pytest.raises(SystemExit):
+        phase_b_suite.main([
+            '--scale', 'reference', '--suite', 'ref_secondary_ablations',
+            '--output', str(ref_dir), '--reference_artifacts', str(ref_dir),
+        ])
+
+    # Fingerprint invariance between `--scale reference` and `--scale full --allow_large_run`
+    # for the 3 secondary reference ablations so Step 5 (`--suite all`) is a guaranteed cache hit!
+    base_args_ref = SimpleNamespace(
+        scale='reference', seed=2026, device='cuda:0', gpus='0,1,2,3,4,5,6,7',
+        target='Qwen/Qwen3-8B', drafter='z-lab/Qwen3-8B-DFlash-b16',
+        max_new_tokens=2048, long_max_new_tokens=24576, smoke_tokens=32,
+        timing_repeats=3, timing_warmups=1, timing_prompts=0,
+        bigram_eviction_arms=list(phase_b_suite.DEFAULT_BIGRAM_EVICTION_ARMS),
+        bigram_k_ret=256, bigram_count_gate_kappa=12.0,
+        full_vocab_lookahead_arms=list(phase_b_suite.DEFAULT_FULL_VOCAB_LOOKAHEAD_ARMS),
+        lookahead_dense_checkpoint=None, lookahead_sparse_checkpoint=None, lookahead_checkpoint_scale=None,
+        m5_beta_relax=1.0, m5_beta_candidates=[0.5, 1.0],
+        pure_t1_tag='m5_pure_t1_calibration', block_shuffle_window=32,
+        weight_decay=1e-2, fixed_checkpoint_scale=0.20,
+    )
+    base_args_full = copy.copy(base_args_ref)
+    base_args_full.scale = 'full'
+    for s_name in phase_b_suite.REF_SECONDARY_SUITES:
+        assert (
+            phase_b_suite._suite_config_fingerprint(s_name, base_args_ref, ref_dir)
+            == phase_b_suite._suite_config_fingerprint(s_name, base_args_full, ref_dir)
+        )
+
+    out_root = tmp_path / 'phase_b_out'
+    common_cli = [
+        '--scale', 'smoke',
+        '--output', str(out_root),
+        '--reference_artifacts', str(ref_dir),
+        '--timing_repeats', '2',
+        '--timing_warmups', '1',
+        '--smoke_tokens', '16',
+        '--block_shuffle_window', '2',
+    ]
+
+    # Run Steps 1..4 individually, then Step 5 (`--suite all`) with compute entrypoints blocked!
+    for step_suite in ('bigram_eviction', 'full_vocab_lookahead', 'pure_t1_fit', 'full_scale'):
+        res = phase_b_suite.main([*common_cli, '--suite', step_suite])
+        assert res['status'] == 'complete'
+        assert res['suites'][step_suite]['status'] == 'complete'
+
+    def _forbid(*_a, **_kw):
+        raise AssertionError('Expected 100% cache hit in --suite all without recomputing!')
+
+    monkeypatch.setattr(phase_b_suite, '_execute_closed_loop_stage', _forbid)
+    monkeypatch.setattr(phase_b_suite, '_run_training_fit_isolated', _forbid)
+    monkeypatch.setattr(phase_b_suite, '_bootstrap_full_scale_workspace', _forbid)
+    master = phase_b_suite.main([*common_cli, '--suite', 'all'])
+    assert master['status'] == 'complete'
+    assert set(master['suites']) == {'bigram_eviction', 'full_vocab_lookahead', 'pure_t1_fit', 'full_scale'}
+    assert master['upstream_reference_immutability']['status'] == 'intact'
+    assert master['upstream_reference_immutability']['verified_files'] == 2
+
+    # Verify M4 in full_scale_pipeline ran cleanly and upstream sentinel mutation is caught
+    before = phase_b_suite._snapshot_upstream_hashes(ref_dir)
+    atomic_json(ref_dir / 'milestones.json', {'m4': 'tampered'})
+    with pytest.raises(RuntimeError, match='mutated'):
+        phase_b_suite._verify_upstream_immutability(ref_dir, before)

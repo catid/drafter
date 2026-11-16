@@ -30,6 +30,8 @@ M4_ARMS = ('plain_dflash', 'online_bigram', 'offline_static', 'offline_online_st
 M5_ARMS = (
     'plain_dflash',
     'online_bigram',
+    'online_bigram_kret256',
+    'online_bigram_kret128',
     'online_bigram_count_gated',
     'offline_online_stride1',
     'zero_offline_online_only',
@@ -324,11 +326,25 @@ def evaluation_jobs(prompts, stage, scale, seed=2026, *, m5_arms=None, include_l
     return jobs
 
 
-def candidate_settings(arm, *, bigram_count_gate_kappa=None, m5_beta_candidates=None, m5_beta_relax=None):
+def candidate_settings(
+    arm,
+    *,
+    bigram_count_gate_kappa=None,
+    bigram_k_ret=None,
+    m5_beta_candidates=None,
+    m5_beta_relax=None,
+):
     if arm == 'plain_dflash':
         return [{}]
     if arm == 'online_bigram':
         return [{'lambda_tr': .05, 'alpha': .5, 'k_ret': None}, {'lambda_tr': .2, 'alpha': 1., 'k_ret': None}]
+    if arm == 'online_bigram_kret256':
+        kr = 256 if bigram_k_ret is None else int(bigram_k_ret)
+        if kr < 1:
+            raise ValueError('bigram_k_ret must be a positive integer')
+        return [{'lambda_tr': .05, 'alpha': .5, 'k_ret': kr}, {'lambda_tr': .2, 'alpha': 1., 'k_ret': kr}]
+    if arm == 'online_bigram_kret128':
+        return [{'lambda_tr': .05, 'alpha': .5, 'k_ret': 128}, {'lambda_tr': .2, 'alpha': 1., 'k_ret': 128}]
     if arm == 'online_bigram_count_gated':
         if bigram_count_gate_kappa is not None:
             kappa = float(bigram_count_gate_kappa)
@@ -424,7 +440,10 @@ def validate_frozen_settings(settings, stage, scale, checkpoint_hashes, prompt_m
         raise ValueError('frozen settings omit a required arm')
     if stage == 'm5':
         matched_c0_arms = [
-            a for a in ('dense_candidate', 'lookahead_static_candidate', 'lookahead_rerelax_candidate')
+            a for a in (
+                'dense_candidate', 'lookahead_static_candidate', 'lookahead_rerelax_candidate',
+                'lookahead_static_full', 'lookahead_rerelax_full',
+            )
             if a in settings['selected']
         ]
         if matched_c0_arms:
@@ -711,7 +730,7 @@ class EvaluationRunner:
                 )
                 eos = bool(result.output_tokens and result.output_tokens[-1] in self.backend.stop_token_ids)
         else:
-            if arm in ('online_bigram', 'online_bigram_count_gated'):
+            if arm in ('online_bigram', 'online_bigram_kret256', 'online_bigram_kret128', 'online_bigram_count_gated'):
                 bigram = OnlineBigram(self.dense.E.shape[0], **setting)
             elif arm == 'dense':
                 adapter = self.dense
@@ -1306,37 +1325,63 @@ def _select_from_dev_observations(active_arms, arm_candidates, observations):
 
 
 def compute_tune_sharding_plan(args, prompt_manifest, prompts, arm_candidates):
-    """Condition-stratified token-balanced snake assignment of dev prompts across `1..8` M5 tune ranks."""
+    """Condition-stratified token-balanced snake assignment of dev prompts across `1..8` sharded tune ranks."""
     token_sums = defaultdict(int)
     weight_source = 'prompt_manifest_order_fallback'
     has_weights = False
     target_pids = {p['prompt_id'] for p in prompts}
     for prior_stage in ('m4', 'm3'):
-        mpath = args.output / prior_stage / 'tune' / 'manifest-rank0.json'
-        if not mpath.is_file():
+        if prior_stage == args.stage:
+            continue
+        prior_tune_dir = args.output / prior_stage / 'tune'
+        mpaths = sorted(prior_tune_dir.glob('manifest-rank*.json')) if prior_tune_dir.is_dir() else []
+        if not mpaths:
             continue
         stage_sums = defaultdict(int)
         seen_pids = set()
-        for entry in Manifest(mpath).data.get('jobs', {}).values():
-            if entry.get('status') != 'complete':
-                continue
-            rpath = Path(entry.get('result_path', ''))
-            if not rpath.is_file() and rpath.name:
-                alt = mpath.parent / 'rank0' / rpath.name
-                if alt.is_file():
-                    rpath = alt
-            if not rpath.is_file():
-                continue
-            row = json.loads(rpath.read_text())
-            pid = row.get('prompt_id')
-            if pid in target_pids:
-                stage_sums[pid] += int(row.get('generated_tokens', 0))
-                seen_pids.add(pid)
+        seen_job_keys = set()
+        for mpath in mpaths:
+            for jkey, entry in Manifest(mpath).data.get('jobs', {}).items():
+                if entry.get('status') != 'complete' or jkey in seen_job_keys:
+                    continue
+                rpath = Path(entry.get('result_path', ''))
+                if not rpath.is_file() and rpath.name:
+                    for sub in sorted(prior_tune_dir.glob('rank*')):
+                        alt = sub / rpath.name
+                        if alt.is_file():
+                            rpath = alt
+                            break
+                if not rpath.is_file():
+                    continue
+                row = json.loads(rpath.read_text())
+                pid = row.get('prompt_id')
+                if pid in target_pids:
+                    seen_job_keys.add(jkey)
+                    stage_sums[pid] += int(row.get('generated_tokens', 0))
+                    seen_pids.add(pid)
         if target_pids and target_pids <= seen_pids:
             token_sums = stage_sums
             weight_source = f'{prior_stage}_tune_realized_tokens'
             has_weights = True
             break
+    if not has_weights:
+        m1_audit_path = args.output / 'm1_audit.json'
+        if m1_audit_path.is_file():
+            try:
+                m1_data = json.loads(m1_audit_path.read_text())
+                m1_sums = defaultdict(int)
+                seen_m1 = set()
+                for gen in m1_data.get('generations', []):
+                    pid = gen.get('prompt_id')
+                    if pid in target_pids and gen.get('realized_length') is not None:
+                        m1_sums[pid] += int(gen['realized_length'])
+                        seen_m1.add(pid)
+                if target_pids and target_pids <= seen_m1:
+                    token_sums = m1_sums
+                    weight_source = 'm1_audit_realized_tokens'
+                    has_weights = True
+            except (OSError, ValueError, TypeError):
+                pass
 
     manifest_order = {p['prompt_id']: idx for idx, p in enumerate(prompt_manifest['prompts'])}
     conditions_sorted = sorted({p['condition'] for p in prompts})
@@ -1505,41 +1550,48 @@ def sharded_tune_session(runner, logical_session, configuration, plan_path, plan
 
 
 def summarize_sharded_tune(args, manifest):
-    """Pure-CPU aggregation of sharded M5 dev comparison bundles into `m5/settings.json`."""
+    """Pure-CPU aggregation of sharded dev comparison bundles into `<stage>/settings.json`."""
     from types import SimpleNamespace
-    if args.stage != 'm5':
-        raise ValueError('summarize_sharded_tune is only supported for stage m5')
+    if not (args.stage == 'm5' or args.scale == 'full'):
+        raise ValueError('summarize_sharded_tune is only supported for stage m5 or scale full')
     tune_dir = args.output / args.stage / 'tune'
     plan_path = tune_dir / 'sharding_plan.json'
     settings_path = args.output / args.stage / 'settings.json'
     if not plan_path.is_file():
         if settings_path.is_file():
             return json.loads(settings_path.read_text())
-        raise FileNotFoundError(f'missing M5 tune sharding_plan.json: {plan_path}')
+        raise FileNotFoundError(f'missing {args.stage} tune sharding_plan.json: {plan_path}')
     plan = json.loads(plan_path.read_text())
     if plan.get('stage') != args.stage or plan.get('scale') != args.scale:
-        raise ValueError('M5 tune sharding_plan.json stage/scale mismatch')
+        raise ValueError('tune sharding_plan.json stage/scale mismatch')
     world_size = int(plan['world_size'])
     if world_size < 2 or world_size > 8:
-        raise ValueError('M5 tune sharding_plan.json world_size must lie in 2..8')
+        raise ValueError('tune sharding_plan.json world_size must lie in 2..8')
     active_arms = _arms_from_args(args)
-    kappa = getattr(args, 'bigram_count_gate_kappa', None)
-    m5_betas = getattr(args, 'm5_beta_candidates', None)
-    m5_br = getattr(args, 'm5_beta_relax', None)
+    kappa = getattr(args, 'bigram_count_gate_kappa', None) if args.stage == 'm5' else None
+    k_ret = getattr(args, 'bigram_k_ret', None) if args.stage == 'm5' else None
+    m5_betas = getattr(args, 'm5_beta_candidates', None) if args.stage == 'm5' else None
+    m5_br = getattr(args, 'm5_beta_relax', None) if args.stage == 'm5' else None
     arm_candidates = {
-        a: candidate_settings(a, bigram_count_gate_kappa=kappa, m5_beta_candidates=m5_betas, m5_beta_relax=m5_br)
+        a: candidate_settings(
+            a,
+            bigram_count_gate_kappa=kappa,
+            bigram_k_ret=k_ret,
+            m5_beta_candidates=m5_betas,
+            m5_beta_relax=m5_br,
+        )
         for a in active_arms
     }
     if plan.get('candidates_hash') != fingerprint(arm_candidates):
-        raise ValueError('M5 tune sharding_plan.json candidates_hash differs from requested M5 arms/candidates')
+        raise ValueError('tune sharding_plan.json candidates_hash differs from requested arms/candidates')
     prompts = select_prompts(manifest, 'dev', args.scale, args.standard_dev_prompts, args.long_dev_prompts)
     if [p['prompt_id'] for p in prompts] != plan.get('selected_prompt_ids'):
-        raise ValueError('M5 tune sharding_plan.json selected_prompt_ids mismatch')
+        raise ValueError('tune sharding_plan.json selected_prompt_ids mismatch')
     logical_session = plan['logical_session']
     session_paths = [tune_dir / 'sessions' / f'{logical_session}-rank{r}.json' for r in range(world_size)]
     manifest_paths = [tune_dir / f'manifest-rank{r}.json' for r in range(world_size)]
     if not all(p.is_file() for p in session_paths + manifest_paths):
-        raise RuntimeError('sharded M5 tune is incomplete; missing rank session or manifest files')
+        raise RuntimeError(f'sharded {args.stage} tune is incomplete; missing rank session or manifest files')
     rank_sessions = [json.loads(p.read_text()) for p in session_paths]
     rank_manifests = [json.loads(p.read_text()) for p in manifest_paths]
 
@@ -1551,16 +1603,16 @@ def summarize_sharded_tune(args, manifest):
         for key in ('checkpoint_hashes', 'model_pair', 'model_revisions', 'generation_environment',
                     'generation_caps', 'stage', 'scale', 'seed'):
             if rcfg.get(key) != cfg0.get(key):
-                raise ValueError(f'sharded M5 tune rank {r} configuration mismatch on {key}')
+                raise ValueError(f'sharded tune rank {r} configuration mismatch on {key}')
         phys_gpu = sess.get('physical_gpu')
         numa_node = sess.get('numa_node')
         cpus = list(sess.get('cpu_affinity') or [])
         if phys_gpu is None or numa_node is None or not cpus:
-            raise ValueError(f'sharded M5 tune session rank {r} lacks GPU/NUMA/CPU affinity metadata')
+            raise ValueError(f'sharded tune session rank {r} lacks GPU/NUMA/CPU affinity metadata')
         if phys_gpu in seen_gpus:
-            raise ValueError(f'duplicate physical_gpu {phys_gpu} across sharded M5 tune ranks')
+            raise ValueError(f'duplicate physical_gpu {phys_gpu} across sharded tune ranks')
         if seen_cpus.intersection(cpus):
-            raise ValueError(f'overlapping cpu_affinity across sharded M5 tune ranks on rank {r}')
+            raise ValueError(f'overlapping cpu_affinity across sharded tune ranks on rank {r}')
         seen_gpus.add(phys_gpu)
         seen_cpus.update(cpus)
         rank_affinity[str(r)] = {
@@ -1593,7 +1645,7 @@ def summarize_sharded_tune(args, manifest):
             manifest=rank_manifests[r], rank=r,
         )
         if rows is None:
-            raise RuntimeError(f'sharded M5 tune is incomplete; missing completed dev bundle for {prompt["prompt_id"]} on rank {r}')
+            raise RuntimeError(f'sharded {args.stage} tune is incomplete; missing completed dev bundle for {prompt["prompt_id"]} on rank {r}')
         for row in rows:
             observations[row['arm']][fingerprint(row['settings'])].append(row)
 
@@ -1619,8 +1671,8 @@ def summarize_sharded_tune(args, manifest):
         'settings_seed': args.seed,
         'created_at_unix': min(s['created_at_unix'] for s in rank_sessions),
     }
-    triton_rep = rank_sessions[0].get('triton_gate_report')
-    tc_rep = rank_sessions[0].get('torch_compile_gate_report')
+    triton_rep = rank_sessions[0].get('triton_gate_report') if args.stage == 'm5' else None
+    tc_rep = rank_sessions[0].get('torch_compile_gate_report') if args.stage == 'm5' else None
     if triton_rep is not None:
         frozen['triton_gate_report'] = triton_rep
     if tc_rep is not None:
@@ -1640,23 +1692,31 @@ def summarize_sharded_tune(args, manifest):
 
 def tune(runner, manifest):
     args = runner.args
-    if args.stage != 'm5':
+    sharded_tune_ok = (args.stage == 'm5' or args.scale == 'full')
+    if not sharded_tune_ok:
         if args.rank != 0 or args.world_size != 1:
             raise ValueError('dev selection is a single-process matched timing session')
     else:
         if args.world_size < 1 or args.world_size > 8 or not (0 <= args.rank < args.world_size):
-            raise ValueError('M5 dev selection requires world_size in 1..8 and 0 <= rank < world_size')
+            raise ValueError('sharded dev selection requires world_size in 1..8 and 0 <= rank < world_size')
     active_arms = _arms_from_args(args)
-    kappa = getattr(args, 'bigram_count_gate_kappa', None)
+    kappa = getattr(args, 'bigram_count_gate_kappa', None) if args.stage == 'm5' else None
+    k_ret = getattr(args, 'bigram_k_ret', None) if args.stage == 'm5' else None
     m5_betas = getattr(args, 'm5_beta_candidates', None) if args.stage == 'm5' else None
     m5_br = getattr(args, 'm5_beta_relax', None) if args.stage == 'm5' else None
     arm_candidates = {
-        a: candidate_settings(a, bigram_count_gate_kappa=kappa, m5_beta_candidates=m5_betas, m5_beta_relax=m5_br)
+        a: candidate_settings(
+            a,
+            bigram_count_gate_kappa=kappa,
+            bigram_k_ret=k_ret,
+            m5_beta_candidates=m5_betas,
+            m5_beta_relax=m5_br,
+        )
         for a in active_arms
     }
     prompts = select_prompts(manifest, 'dev', args.scale, args.standard_dev_prompts, args.long_dev_prompts)
 
-    if args.stage == 'm5' and args.world_size > 1:
+    if sharded_tune_ok and args.world_size > 1:
         plan_path, plan, plan_sha256 = ensure_tune_sharding_plan(args, manifest, prompts, arm_candidates)
         logical_session = plan['logical_session']
         rank_pids = set(plan['ranks'][str(args.rank)])
@@ -3173,30 +3233,40 @@ def timing_calibration(runner, prompt_manifest, settings, cluster_idle_inventory
         session_state['all_gpus_idle_verified'] = True
         session_state['cluster_idle_inventory'] = cluster_idle_inventory
         atomic_json(session_path, session_state)
-    for condition in sorted({p['condition'] for p in selected}):
-        prompt = next(p for p in selected if p['condition'] == condition)
-        name, temperature, warp = sampling_conditions(condition, primary_only=True)[0]
-        for _ in range(args.timing_warmups):
-            for arm in active_arms:
-                job = {'prompt': prompt, 'sampling_name': name, 'temperature': temperature,
-                       'warper': warp, 'seed': args.seed, 'arm': arm, 'max_new_tokens_override': 64}
-                runner.run(job, settings['selected'][arm], profile=False)
-    session_state['warmup_completed'] = True
-    atomic_json(session_path, session_state)
-    rows = []
     groups_by_prompt = defaultdict(list)
     for job in jobs:
         groups_by_prompt[(job['prompt']['prompt_id'], job['sampling_name'], job['seed'])].append(job)
+    cal_bundle_specs = []
+    need_warmup = False
     for group_index, same_prompt_jobs in enumerate(groups_by_prompt.values()):
         for repeat in range(cal_repeats):
             offset = (group_index + repeat) % len(same_prompt_jobs)
             comparisons = [(job, settings['selected'][job['arm']])
                            for job in same_prompt_jobs[offset:] + same_prompt_jobs[:offset]]
-            results = comparison_bundle(
+            prior = read_comparison_bundle(runner, 'timing_calibration', comparisons, frozen_hash, session_state, repeat, False)
+            if prior is None:
+                need_warmup = True
+            cal_bundle_specs.append((repeat, comparisons, prior))
+    if need_warmup:
+        for condition in sorted({p['condition'] for p in selected}):
+            prompt = next(p for p in selected if p['condition'] == condition)
+            name, temperature, warp = sampling_conditions(condition, primary_only=True)[0]
+            for _ in range(args.timing_warmups):
+                for arm in active_arms:
+                    job = {'prompt': prompt, 'sampling_name': name, 'temperature': temperature,
+                           'warper': warp, 'seed': args.seed, 'arm': arm, 'max_new_tokens_override': 64}
+                    runner.run(job, settings['selected'][arm], profile=False)
+        session_state['warmup_completed'] = True
+        atomic_json(session_path, session_state)
+    rows = []
+    for repeat, comparisons, prior in cal_bundle_specs:
+        results = (
+            prior if prior is not None else comparison_bundle(
                 runner, 'timing_calibration', comparisons, frozen_hash,
                 session_path, session_state, epoch, repeat, profile=False,
             )
-            rows.extend(results)
+        )
+        rows.extend(results)
     return reconcile_timing_isolation_calibration(
         args, prompt_manifest, settings,
         session_path=session_path, session_state=session_state,
@@ -3381,6 +3451,8 @@ M5_MATCHED_PAIRS = (
     ('lookahead_rerelax_full', 'dense_full', 'full_vocabulary'),
     ('exact_observed_pairs_online', 'signed_feature_hash_online', 'online_sparse_representation'),
     ('online_buffered_stride5', 'offline_online_stride5', 'online_stride5_update_mode'),
+    ('online_bigram_kret256', 'online_bigram', 'online_bigram_topk_eviction'),
+    ('online_bigram_kret128', 'online_bigram', 'online_bigram_topk_eviction'),
     ('online_bigram_count_gated', 'online_bigram', 'online_bigram_count_gate'),
     ('online_dbS_zero_init', 'online_bigram_count_gated', 'online_zero_init_dbS_vs_count_gated_bigram'),
     ('zero_offline_online_only', 'offline_online_stride1', 'online_zero_vs_checkpoint_offline_init'),
@@ -3389,11 +3461,16 @@ M5_MATCHED_PAIRS = (
 
 M5_ONLINE_HEAD_TO_HEAD_PAIRS = (
     ('online_bigram', 'plain_dflash'),
+    ('online_bigram_kret256', 'plain_dflash'),
+    ('online_bigram_kret128', 'plain_dflash'),
     ('online_bigram_count_gated', 'plain_dflash'),
     ('offline_online_stride1', 'plain_dflash'),
     ('zero_offline_online_only', 'plain_dflash'),
     ('online_dbS', 'plain_dflash'),
     ('online_dbS_zero_init', 'plain_dflash'),
+    ('online_bigram_kret256', 'online_bigram'),
+    ('online_bigram_kret128', 'online_bigram'),
+    ('online_bigram_kret256', 'online_bigram_kret128'),
     ('online_bigram_count_gated', 'online_bigram'),
     ('zero_offline_online_only', 'online_bigram'),
     ('zero_offline_online_only', 'online_bigram_count_gated'),
@@ -4011,12 +4088,66 @@ def aggregate(args, prompt_manifest, settings):
         report['head_to_head_online_offset_comparison'] = compute_head_to_head_online_offset_comparison(
             rows, isolated_rows
         )
+        bigram_mem = summarize_bigram_memory(rows)
+        if bigram_mem:
+            report['bigram_memory_ablation'] = bigram_mem
         if settings.get('triton_gate_report') is not None:
             report['triton_gate_report'] = settings['triton_gate_report']
         if settings.get('torch_compile_gate_report') is not None:
             report['torch_compile_gate_report'] = settings['torch_compile_gate_report']
     atomic_json(args.output / args.stage / 'summary.json', report)
     return report
+
+
+def summarize_bigram_memory(rows) -> list[dict]:
+    """Summarize per-request OnlineBigram exact ledger vs top-k_ret retained-prior footprint."""
+    grouped = defaultdict(list)
+    for row in rows:
+        bg = row.get('bigram')
+        if not isinstance(bg, dict):
+            continue
+        warp = json.dumps(row['sampling_warp_config'], sort_keys=True)
+        grouped[(row['condition'], row['temperature'], warp, row['arm'])].append(row)
+    summaries = []
+    for (condition, temperature, warp, arm), group in sorted(grouped.items()):
+        primary = [
+            r for r in group
+            if not (condition.startswith('long_') and r['generation']['repetition_dominated'])
+        ]
+        if not primary:
+            continue
+        exact_list = [int(r['bigram']['exact_ledger_pairs']) for r in primary]
+        ret_list = [int(r['bigram']['retained_prior_pairs']) for r in primary]
+        evict_list = [int(r['bigram']['exact_ledger_pairs']) - int(r['bigram']['retained_prior_pairs']) for r in primary]
+        trans_list = [int(r['bigram']['counted_transitions']) for r in primary]
+        frac_list = [
+            (float(ret) / float(ex)) if ex > 0 else 1.0
+            for ret, ex in zip(ret_list, exact_list)
+        ]
+        sample_bg = primary[0]['bigram']
+        summaries.append({
+            'condition': condition,
+            'temperature': temperature,
+            'sampling_warp_config': json.loads(warp),
+            'arm': arm,
+            'k_ret': sample_bg.get('k_ret'),
+            'count_gate_kappa': sample_bg.get('count_gate_kappa'),
+            'ledger_retained_for_exact_counts': bool(sample_bg.get('ledger_retained_for_exact_counts', True)),
+            'primary_requests': len(primary),
+            'repetition_excluded': len(group) - len(primary),
+            'counted_transitions_mean': statistics.mean(trans_list),
+            'exact_ledger_pairs_mean': statistics.mean(exact_list),
+            'exact_ledger_pairs_max': max(exact_list),
+            'retained_prior_pairs_mean': statistics.mean(ret_list),
+            'retained_prior_pairs_max': max(ret_list),
+            'evicted_prior_pairs_mean': statistics.mean(evict_list),
+            'evicted_prior_pairs_max': max(evict_list),
+            'retained_pair_fraction_mean': statistics.mean(frac_list),
+            'retained_prior_payload_bytes_mean': statistics.mean(r * 12 for r in ret_list),
+            'exact_ledger_payload_bytes_mean': statistics.mean(x * 16 for x in exact_list),
+            'memory_disclosure': 'Full exact ledger is retained in diagnostic mode so reappearing tokens receive exact counts; retained_prior_pairs measures the active top-k_ret prior footprint.',
+        })
+    return summaries
 
 
 def smoke_manifest():
@@ -4070,6 +4201,8 @@ def main(argv=None):
     parser.add_argument('--m5_server_timeout', type=float, default=600.)
     parser.add_argument('--bigram_count_gate_kappa', type=float, default=None,
                         help='M5 count-confidence gate kappa > 0 for online_bigram_count_gated')
+    parser.add_argument('--bigram_k_ret', type=int, default=None,
+                        help='M5 top-k_ret eviction retention count >= 1 for online_bigram_kret256 (default 256)')
     parser.add_argument('--checkpoint_scale', type=float, default=None,
                         help='M5 scalar multiplier applied to loaded dense/dense_sparse parameters (e.g. 0.20)')
     parser.add_argument('--m5_beta_candidates', type=float, nargs=2, default=None,
@@ -4091,16 +4224,19 @@ def main(argv=None):
         parser.error('generation caps must be positive')
     if args.mode in ('timing_calibration', 'all', 'tune_summarize') and (args.world_size != 1 or args.rank != 0):
         parser.error('timing_calibration, tune_summarize, and all require world_size=1 and rank=0')
+    sharded_tune_ok = (args.stage == 'm5' or args.scale == 'full')
     if args.mode == 'tune':
-        if args.stage != 'm5' and (args.world_size != 1 or args.rank != 0):
-            parser.error('M3/M4 tune requires world_size=1 and rank=0')
-        if args.stage == 'm5' and args.world_size > 8:
-            parser.error('M5 sharded tune world_size must lie in 1..8')
+        if not sharded_tune_ok and (args.world_size != 1 or args.rank != 0):
+            parser.error('M3/M4 reference/smoke tune requires world_size=1 and rank=0')
+        if sharded_tune_ok and args.world_size > 8:
+            parser.error('sharded tune world_size must lie in 1..8')
     if args.mode == 'timing' and args.world_size > 8:
         parser.error('timing world_size must lie in 1..8')
     if args.bigram_count_gate_kappa is not None:
         if not math.isfinite(args.bigram_count_gate_kappa) or args.bigram_count_gate_kappa <= 0:
             parser.error('--bigram_count_gate_kappa must be finite and > 0')
+    if args.bigram_k_ret is not None and args.bigram_k_ret < 1:
+        parser.error('--bigram_k_ret must be an integer >= 1')
     if args.checkpoint_scale is not None:
         if not math.isfinite(args.checkpoint_scale) or args.checkpoint_scale < 0:
             parser.error('--checkpoint_scale must be finite and >= 0')
@@ -4112,12 +4248,15 @@ def main(argv=None):
         if not math.isfinite(args.m5_beta_relax) or args.m5_beta_relax < 0:
             parser.error('--m5_beta_relax must be finite and >= 0')
     if args.stage != 'm5' and (args.m5_arms or args.m5_oracle_checkpoint or args.m5_triton
-                               or args.m5_torch_compile or args.mode in ('server_eval', 'tune_summarize')
+                               or args.m5_torch_compile
+                               or args.mode == 'server_eval'
+                               or (args.mode == 'tune_summarize' and not sharded_tune_ok)
                                or args.bigram_count_gate_kappa is not None
+                               or args.bigram_k_ret is not None
                                or args.checkpoint_scale is not None
                                or args.m5_beta_candidates is not None
                                or args.m5_beta_relax is not None):
-        parser.error('M5-specific options (--m5_*, --checkpoint_scale, --bigram_count_gate_kappa, --mode server_eval|tune_summarize) require --stage m5')
+        parser.error('M5-specific options (--m5_*, --checkpoint_scale, --bigram_count_gate_kappa, --bigram_k_ret, --mode server_eval) require --stage m5 (and --mode tune_summarize requires --stage m5 or --scale full)')
     record_run(args, f'{args.stage}-{args.mode}')
     torch.set_num_threads(1)
     prompt_manifest = smoke_manifest() if args.scale == 'smoke' else json.loads(args.prompts_manifest.read_text())
