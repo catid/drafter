@@ -1,0 +1,205 @@
+{
+  "schema_version": 1,
+  "frozen": true,
+  "scale": "reference",
+  "stage": "m3",
+  "development_prompt_ids": [
+    "gsm8k-main-train-04298",
+    "gsm8k-main-train-01021",
+    "gsm8k-main-train-01916",
+    "gsm8k-main-train-01582",
+    "gsm8k-main-train-06800",
+    "gsm8k-main-train-02980",
+    "gsm8k-main-train-07102",
+    "gsm8k-main-train-02661",
+    "math500-long-0176",
+    "math500-long-0151",
+    "math500-long-0134",
+    "math500-long-0497",
+    "math500-long-0126",
+    "math500-long-0137",
+    "math500-long-0193",
+    "math500-long-0361",
+    "math500-long-0064",
+    "math500-long-0456",
+    "math500-long-0462",
+    "math500-long-0336"
+  ],
+  "prompt_manifest_hash": "d7edc83fffc63a127fc309fd4ca2a3e2154120a30ba116a27ddf372cfb5a421d",
+  "generation_caps": {
+    "standard": 2048,
+    "long": 24576,
+    "smoke": 32
+  },
+  "comparison_session": "00df5018aa1946d6821bd38a71de77b8",
+  "warmup_policy": "all candidates on each condition before measured dev requests",
+  "checkpoint_hashes": {
+    "dense": "53ed0f23458bceb44842d2598a51b78604897347915df5be01c6f1a16a8229da",
+    "dense_sparse": "926d143079658508c5d406e3416c413468339b19584e5a4b4c26165e86f90758",
+    "projection": "4614a3a5384d49563d485083e9386ca30e93500144cf346b2dba714cc476dd8a",
+    "implementation": "60da3e0c57fee2fbd9cd7ce756c66c56ba5642a63da27ef428b9b30538a459df"
+  },
+  "model_pair": [
+    "Qwen/Qwen3-8B",
+    "z-lab/Qwen3-8B-DFlash-b16"
+  ],
+  "model_revisions": [
+    "b968826d9c46dd6066d109eabc6255188de91218",
+    "9b41424b7109f9c5413454f481b09a82b85333f4"
+  ],
+  "selected": {
+    "plain_dflash": {},
+    "online_bigram": {
+      "lambda_tr": 0.2,
+      "alpha": 1.0,
+      "k_ret": null
+    },
+    "dense": {
+      "beta": 0.5
+    },
+    "dense_sparse": {
+      "beta": 0.5
+    }
+  },
+  "generation_environment": {
+    "tokenizer": {
+      "model": "Qwen/Qwen3-8B",
+      "revision": "b968826d9c46dd6066d109eabc6255188de91218",
+      "class": "transformers.models.qwen2.tokenization_qwen2.Qwen2Tokenizer",
+      "vocabulary_sha256": "c96fa22dee2dd9c98c4f0c73ea423e21907bc96abda81fa5c6b2e24a670c66bf",
+      "backend_sha256": "41e00eccf531cffc2e562d38bdd879d41e5044ea279af5b73c6a32aabcc8fe04",
+      "chat_template_sha256": "41d5929bf73796beb66809ac700b2cf3ff81694f933e5c14d52b7fd6963c947d",
+      "special_tokens_sha256": "edcb2fc2acbbe77f858a9c4fe51295ffdb84711efba5703ec5906b3d67282569"
+    },
+    "target_config_sha256": "39cf41bc29f4ac7e8f9fa38aec5b389b6204cd542db83f13d2595048d24dab4a",
+    "target_generation_config_sha256": "575d108feb0068c13ef22ec61d2159ed897c6dc47a6b6a508399426658153937",
+    "stop_token_ids": [
+      151645,
+      151643
+    ],
+    "context_limit": 40960,
+    "dtype": "torch.bfloat16",
+    "torch_version": "2.13.0+cu130"
+  },
+  "candidates": {
+    "plain_dflash": [
+      {
+        "settings": {},
+        "selection_score": 1.0,
+        "condition_normalized_throughput": {
+          "standard_nonthinking": 1.0,
+          "long_thinking": 1.0
+        },
+        "dev_requests": 20,
+        "repetition_excluded_matched_pairs": 0,
+        "long_condition_data_sparsity": false,
+        "generated_tokens": 149685,
+        "wall_seconds": 2043.259405667428
+      }
+    ],
+    "online_bigram": [
+      {
+        "settings": {
+          "lambda_tr": 0.05,
+          "alpha": 0.5,
+          "k_ret": null
+        },
+        "selection_score": 0.8824914518002035,
+        "condition_normalized_throughput": {
+          "standard_nonthinking": 0.8866222102581627,
+          "long_thinking": 0.8783606933422443
+        },
+        "dev_requests": 20,
+        "repetition_excluded_matched_pairs": 0,
+        "long_condition_data_sparsity": false,
+        "generated_tokens": 145999,
+        "wall_seconds": 2112.503648086684
+      },
+      {
+        "settings": {
+          "lambda_tr": 0.2,
+          "alpha": 1.0,
+          "k_ret": null
+        },
+        "selection_score": 0.9735525581038229,
+        "condition_normalized_throughput": {
+          "standard_nonthinking": 0.9608448072125788,
+          "long_thinking": 0.9862603089950671
+        },
+        "dev_requests": 20,
+        "repetition_excluded_matched_pairs": 1,
+        "long_condition_data_sparsity": false,
+        "generated_tokens": 149552,
+        "wall_seconds": 2016.5007787190843
+      }
+    ],
+    "dense": [
+      {
+        "settings": {
+          "beta": 0.5
+        },
+        "selection_score": 0.7911249470576611,
+        "condition_normalized_throughput": {
+          "standard_nonthinking": 0.8251616025953087,
+          "long_thinking": 0.7570882915200137
+        },
+        "dev_requests": 20,
+        "repetition_excluded_matched_pairs": 0,
+        "long_condition_data_sparsity": false,
+        "generated_tokens": 153180,
+        "wall_seconds": 2626.6086810526904
+      },
+      {
+        "settings": {
+          "beta": 1.0
+        },
+        "selection_score": 0.6558372906363608,
+        "condition_normalized_throughput": {
+          "standard_nonthinking": 0.7028813082056763,
+          "long_thinking": 0.6087932730670452
+        },
+        "dev_requests": 20,
+        "repetition_excluded_matched_pairs": 0,
+        "long_condition_data_sparsity": false,
+        "generated_tokens": 149035,
+        "wall_seconds": 3002.2263952223584
+      }
+    ],
+    "dense_sparse": [
+      {
+        "settings": {
+          "beta": 0.5
+        },
+        "selection_score": 0.7140257318026189,
+        "condition_normalized_throughput": {
+          "standard_nonthinking": 0.7222128646138422,
+          "long_thinking": 0.7058385989913957
+        },
+        "dev_requests": 20,
+        "repetition_excluded_matched_pairs": 1,
+        "long_condition_data_sparsity": false,
+        "generated_tokens": 161731,
+        "wall_seconds": 2704.25790755637
+      },
+      {
+        "settings": {
+          "beta": 1.0
+        },
+        "selection_score": 0.5331169091198703,
+        "condition_normalized_throughput": {
+          "standard_nonthinking": 0.5863099267253966,
+          "long_thinking": 0.47992389151434395
+        },
+        "dev_requests": 20,
+        "repetition_excluded_matched_pairs": 0,
+        "long_condition_data_sparsity": false,
+        "generated_tokens": 164943,
+        "wall_seconds": 4293.684871792095
+      }
+    ]
+  },
+  "selection_metric": "mean across conditions of prompt throughput relative to same-prompt plain DFlash",
+  "budget": "two configurations per tuned arm, identical dev prompts, seeds and token caps; plain DFlash has no tuned parameters",
+  "settings_seed": 2026,
+  "created_at_unix": 1794622606.5631518
+}

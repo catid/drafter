@@ -3,6 +3,24 @@
 `prompt.md` is the authoritative project specification. Read it before starting
 work and recheck the relevant requirements after each round of work.
 
+Before running any experiment, benchmark, training job, or evaluation:
+
+- **Optimize Before Long-Running Experiments**: Profile and optimize hot paths,
+  device utilization (e.g., multi-GPU sharding, NUMA/core pinning, batched/fused
+  ops, zero host syncs), and memory/IO bottlenecks *before* launching
+  long-running jobs—never burn hours on unoptimized loops when a validated
+  fastpath can run an order of magnitude faster.
+- **Mandatory Pre-Experiment Bug-Check Gate**: Always double-check all new or
+  modified code, optimizations, configs, launch scripts, and validators for bugs
+  *before* running experiments with them. Require parallel independent
+  verification (line-by-line review, conformance audit, and
+  adversarial/differential testing, including target-device CUDA checks before
+  GPU runs) with zero open bugs.
+- **Periodic Parallel Bug Checks**: Periodically run independent bug checks in
+  parallel across active branches, launch/driver scripts, validators, and live
+  experiment artifacts/manifests to catch subtle numerical, state, concurrency,
+  provenance, or schema bugs early.
+
 After each round of work:
 
 - Thoroughly double-check the changes and results for bugs, using independent

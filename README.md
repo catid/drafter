@@ -2,17 +2,35 @@
 
 This repository tests whether a small learned energy correction improves a parallel
 DFlash drafter after its scoring, sampling, verification, and update costs. The full
-experiment specification is [prompt.md](prompt.md). M0 and all three M1 stages
-have passed at reference scale. M2 fitting and independent artifact validation
-are complete: both fitted adapters worsened grouped KL on train, dev, and test.
-The final dense+sparse dev loss is 76.3% above zero-weight DFlash; extra fitting
-stopped under the specified rule. A repetition-detector correction excluded one
-M1 long-test loop from primary summaries; the complete regenerated reports and
-M2 artifact checks passed. Fresh M3 development selection is running. M3 test
-evaluation and timing, and the M4 experiments, remain pending.
-No adapter improvement or end-to-end speedup claim is established. See
-[the research summary](reports/SUMMARY.md) and
-[milestone status](artifacts/milestones.json) for the recorded evidence.
+experiment specification is [prompt.md](prompt.md). **All mandatory reference milestones
+(`M0`, `M1-pre`, `M1a`, `M1b`, `M2`, `M3`, and `M4`) have passed** (`45,158,121` M3
+validator checks and `18,983,686` M4 validator checks with zero failures):
+- **M2 offline fitting (`artifacts/m2.json`):** under the predeclared constant-LR AdamW
+  schedule, both fitted checkpoints worsened grouped KL on train, dev, and test
+  (`+72.7%` dense and `+76.3%` dense+bias+sparse on dev; extra epochs stopped under the
+  `<1%` rule). A read-only post-hoc 1D ray check (`0.20 * dense.pt`) reduced sampled M1
+  dev grouped KL by `-11.2%` (`1.1483 -> 1.0202`), diagnosing ~5x parameter-norm
+  overshoot from shard-sequential mini-batching; gated M2 checkpoints remained
+  unmodified for M3 and M4.
+- **M3 static & M4 synchronous online closed-loop evaluation (`artifacts/m3/`, `artifacts/m4/`):**
+  static M2 adapters (`beta=0.5`) reduced closed-loop acceptance and single-GPU
+  throughput across all conditions. On out-of-distribution `long_thinking` (`T=0.6`,
+  paired with M1b `h[i]` covariate shift via `artifacts/m4/feature_context.json`),
+  synchronous full-adapter online updates (`offline_online_stride1`, `beta=1.0, lr=1e-4,
+  stride=1`) recovered and surpassed `plain_dflash` acceptance (**`2.574 [2.424, 2.730]`**
+  vs **`2.476 [2.289, 2.654]`**, `+3.94%`, and `+30.5%` over `offline_static` `1.972`),
+  whereas bias+sparse-only `online_dbS` (`dW=0, dA=0`) dropped to `1.435`, demonstrating
+  that adapting dense `dW, dA` features is essential under `h[i]` shift (`online_bigram`
+  reached `2.651`). Long-output `16K+` bins have `< 8` primary prompts across every arm
+  and are marked **SPARSE (`conclusion unavailable`)**; `lookahead_iterations = 0.0 ms
+  [disabled in M0-M4]`.
+- **End-to-end speed (`artifacts/m3/timing.json`, `artifacts/m4/timing.json`):** in the
+  eager M0–M4 reference implementation (zero custom kernels), full-vocabulary proposal
+  scoring, sparse gathering, and per-round autograd `L_full` updates outweighed target
+  verification savings, so **no net `tokens/sec` speedup over `plain_dflash` is
+  established in M0–M4** (`0.20x–0.42x` for online adapter arms; `0.86x–0.97x` for
+  `online_bigram`). See [the research summary](reports/SUMMARY.md) and
+  [milestone status](artifacts/milestones.json) for complete evidence.
 
 The supported reference pair is `Qwen/Qwen3-8B` with
 `z-lab/Qwen3-8B-DFlash-b16`, using Hugging Face Transformers. Source and dependencies
@@ -177,6 +195,20 @@ CUDA_VISIBLE_DEVICES="$EDRAFT_SINGLE_GPU" uv run --frozen python -m edraft.eval_
 uv run --frozen python -m edraft.eval_closed_loop --scale reference --stage m4 --mode summarize --device cpu
 ```
 
+For multi-GPU servers, `launch --task m4_timing` executes deterministic token-balanced
+whole-prompt sharded timing (`world_size=8` on 8-GPU nodes) with disjoint NUMA-local
+16-physical-core `cpu_affinity` core-pinning (`GPU g -> CPUs [16g..16g+15]`, NUMA node
+`g // 2`, `OMP_NUM_THREADS=1`), per-GPU idle checks around every rotated 5-arm bundle,
+and mandatory reconciliation against a 1-GPU isolated calibration run
+(`artifacts/m4/timing_isolation_calibration.json`, matching 8-GPU `standard_nonthinking`
+throughput within `±0.51%` across all five arms while keeping all 10 core algorithm
+files byte-identical):
+
+```bash
+CUDA_VISIBLE_DEVICES="$EDRAFT_SINGLE_GPU" uv run --frozen python -m edraft.eval_closed_loop --scale reference --stage m4 --mode timing_calibration --device cuda:0 --max_new_tokens 2048 --long_max_new_tokens 24576
+uv run --frozen python -m edraft.launch --scale reference --task m4_timing --gpus 0,1,2,3,4,5,6,7 --evaluation_max_new_tokens 2048 --long_max_new_tokens 24576
+```
+
 Each stage stores frozen `settings.json`, rank-local evaluation manifests, a
 `timing.json`, and `summary.json` under `artifacts/m3/` or `artifacts/m4/`.
 Large trace/checkpoint files and detailed reference request trajectories remain
@@ -289,8 +321,10 @@ supported by the target but out of distribution for this drafter. Realized lengt
 and repetition checks determine usable long-output bins; a cap alone does not
 establish long-context evidence. Conditions and temperatures remain separate.
 
-The two DFlash paths agree with each other in M0 but can differ from target-only
-greedy execution at BF16 ties. Those measured mismatches and their numerical
-investigation are reported in SUMMARY. The 4B pair is configurable but has not
-been evaluated here. Changing model pairs requires new source inspection,
-calibration, reproduction gates, and matching sampling settings.
+The two DFlash paths agree with each other in M0 (`0/7,128` token diffs) and every M3/M4
+greedy arm matches `plain_dflash` bit-for-bit (`0/64` sequences, `0/19,081` tokens),
+while differing from 1-token `target_only` greedy execution at BF16 maximum-logit ties
+(`8/20` sequences in M0; `42/64` sequences in M3/M4). Those measured mismatches and
+their numerical investigation are reported in [SUMMARY](reports/SUMMARY.md). The 4B pair
+is configurable but has not been evaluated here. Changing model pairs requires new
+source inspection, calibration, reproduction gates, and matching sampling settings.

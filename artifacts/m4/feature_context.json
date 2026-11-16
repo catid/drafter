@@ -1,0 +1,631 @@
+{
+  "status": "complete",
+  "label": "reference",
+  "source": "plain DFlash M1b before offline fit and online adaptation",
+  "interpretation": "Feature covariate shift is context from the plain-DFlash M1 trace distribution, not measurements of updated M4 arms.",
+  "diagnostic_path": "/home/catid/drafter/artifacts/diagnostic_reference.json",
+  "diagnostic_sha256": "857e048f6f4a91310ace919e5dabcfb0ad5bb74acd794600c75794e2b84fee6c",
+  "audit_path": "/home/catid/drafter/artifacts/m1_audit.json",
+  "audit_sha256": "d25db4b425bb1de84a8901c1624283b882075307bcb28b1222e3080ce8d61dd7",
+  "calibration_path": "/home/catid/drafter/artifacts/calibration.json",
+  "calibration_sha256": "1fd5e35b6a68e7d54b36dbcc3b83d66a79f032a76e17dd8c51466ee5737721c7",
+  "calibration_identity": {
+    "model_pair": [
+      "Qwen/Qwen3-8B",
+      "z-lab/Qwen3-8B-DFlash-b16"
+    ],
+    "checkpoint": [
+      "b968826d9c46dd6066d109eabc6255188de91218",
+      "9b41424b7109f9c5413454f481b09a82b85333f4"
+    ],
+    "seed": 2026,
+    "prompt_ids": [
+      "gsm8k-main-train-02568",
+      "gsm8k-main-train-03882",
+      "gsm8k-main-train-02222",
+      "gsm8k-main-train-04645",
+      "gsm8k-main-train-02299",
+      "gsm8k-main-train-06873",
+      "gsm8k-main-train-05600",
+      "gsm8k-main-train-03413",
+      "gsm8k-main-train-00903",
+      "gsm8k-main-train-06430",
+      "gsm8k-main-train-03625",
+      "gsm8k-main-train-03603",
+      "gsm8k-main-train-00142",
+      "gsm8k-main-train-03512",
+      "gsm8k-main-train-03918",
+      "gsm8k-main-train-06039",
+      "gsm8k-main-train-06031",
+      "gsm8k-main-train-07385",
+      "gsm8k-main-train-04538",
+      "gsm8k-main-train-00294",
+      "gsm8k-main-train-02492",
+      "gsm8k-main-train-01828",
+      "gsm8k-main-train-07290",
+      "gsm8k-main-train-02482",
+      "gsm8k-main-train-05287",
+      "gsm8k-main-train-05663",
+      "gsm8k-main-train-05098",
+      "gsm8k-main-train-01256",
+      "gsm8k-main-train-01770",
+      "gsm8k-main-train-01510",
+      "gsm8k-main-train-01044",
+      "gsm8k-main-train-00066",
+      "gsm8k-main-train-05406",
+      "gsm8k-main-train-00616",
+      "gsm8k-main-train-02767",
+      "gsm8k-main-train-03632",
+      "gsm8k-main-train-03078",
+      "gsm8k-main-train-06908",
+      "gsm8k-main-train-05550",
+      "gsm8k-main-train-04310",
+      "gsm8k-main-train-01377",
+      "gsm8k-main-train-02288",
+      "gsm8k-main-train-04568",
+      "gsm8k-main-train-00671",
+      "gsm8k-main-train-04773",
+      "gsm8k-main-train-02674",
+      "gsm8k-main-train-01163",
+      "gsm8k-main-train-00606",
+      "gsm8k-main-train-02960",
+      "gsm8k-main-train-05555",
+      "gsm8k-main-train-01984",
+      "gsm8k-main-train-06511",
+      "gsm8k-main-train-02745",
+      "gsm8k-main-train-01344",
+      "gsm8k-main-train-06477",
+      "gsm8k-main-train-02735",
+      "gsm8k-main-train-06537",
+      "gsm8k-main-train-04146",
+      "gsm8k-main-train-02984",
+      "gsm8k-main-train-01408",
+      "gsm8k-main-train-00518",
+      "gsm8k-main-train-00495",
+      "gsm8k-main-train-03721",
+      "gsm8k-main-train-03852"
+    ],
+    "projection_dim": 256,
+    "feature_rank": 64,
+    "embedding_source": "target_input",
+    "max_new_tokens": 128,
+    "scale": "reference",
+    "calibration_temperatures": [
+      0.0,
+      0.7
+    ],
+    "prompt_manifest_sha256": "1f4789116c53beaea8460020659f695f9d4d6e09bd60470f9cd7dd056e622182",
+    "calibration_warper_positive": {
+      "top_k": 20,
+      "top_p": 0.8,
+      "min_p": 0.0
+    }
+  },
+  "frozen_artifact_sha256": {
+    "h_proj.pt": "4614a3a5384d49563d485083e9386ca30e93500144cf346b2dba714cc476dd8a",
+    "token_features.pt": "d0646fd668917bb1878164b5f07216d5ea9412d16d4689438854647380981377"
+  },
+  "prompt_manifest_sha256": "1f4789116c53beaea8460020659f695f9d4d6e09bd60470f9cd7dd056e622182",
+  "source_set_sha256": "edb1504bef0253785a38aeff90fc82eb3265a633d6722da58681af4bfb4dd9aa",
+  "source_shard_count": 2184,
+  "matched_test_prompt_conditions": 224,
+  "feature_group_count": 13,
+  "groups": [
+    {
+      "condition": "long_thinking",
+      "collection_temperature": 0.6,
+      "sampling_warp_config": {
+        "min_p": 0.0,
+        "top_k": 20,
+        "top_p": 0.95
+      },
+      "split": "test",
+      "axis": "output_offset",
+      "bin": "0-1K",
+      "data_policy": "on_policy",
+      "inclusion": "primary",
+      "logical_slots": 31576,
+      "features": {
+        "coordinate_mean_norm": 7.945472580881836,
+        "variance_ratio_to_standard_calibration": 0.8952230921630389,
+        "calibration_reference": "standardized training-calibration per-coordinate population variance = 1",
+        "l2_norm_quantiles": {
+          "p0": 11.679860329570385,
+          "p25": 15.721646007388454,
+          "p50": 16.76214087764179,
+          "p75": 17.980235054753507,
+          "p95": 20.28958376243569,
+          "p99": 22.934788104576125,
+          "p100": 29.3030043011913
+        },
+        "outlier_threshold_abs_coordinate": 5.0,
+        "outlier_slot_rate": 0.0033253103623004814,
+        "outlier_coordinate_rate": 1.3979169305801874e-05
+      }
+    },
+    {
+      "condition": "long_thinking",
+      "collection_temperature": 0.6,
+      "sampling_warp_config": {
+        "min_p": 0.0,
+        "top_k": 20,
+        "top_p": 0.95
+      },
+      "split": "test",
+      "axis": "output_offset",
+      "bin": "0-1K",
+      "data_policy": "on_policy",
+      "inclusion": "repetition_excluded",
+      "logical_slots": 1018,
+      "features": {
+        "coordinate_mean_norm": 8.687320827087534,
+        "variance_ratio_to_standard_calibration": 0.8405974934710143,
+        "calibration_reference": "standardized training-calibration per-coordinate population variance = 1",
+        "l2_norm_quantiles": {
+          "p0": 13.490541695611336,
+          "p25": 15.603062029644953,
+          "p50": 16.583385940657337,
+          "p75": 17.796497218090806,
+          "p95": 20.652515267133026,
+          "p99": 23.40856634521642,
+          "p100": 27.573503395722216
+        },
+        "outlier_threshold_abs_coordinate": 5.0,
+        "outlier_slot_rate": 0.004911591355599214,
+        "outlier_coordinate_rate": 1.918590373280943e-05
+      }
+    },
+    {
+      "condition": "long_thinking",
+      "collection_temperature": 0.6,
+      "sampling_warp_config": {
+        "min_p": 0.0,
+        "top_k": 20,
+        "top_p": 0.95
+      },
+      "split": "test",
+      "axis": "output_offset",
+      "bin": "16K+",
+      "data_policy": "on_policy",
+      "inclusion": "primary",
+      "logical_slots": 4115,
+      "features": {
+        "coordinate_mean_norm": 10.287713713922296,
+        "variance_ratio_to_standard_calibration": 0.7359002402586008,
+        "calibration_reference": "standardized training-calibration per-coordinate population variance = 1",
+        "l2_norm_quantiles": {
+          "p0": 13.107429858609141,
+          "p25": 15.365746003445132,
+          "p50": 16.485944621223368,
+          "p75": 17.94137252284444,
+          "p95": 21.85004826426332,
+          "p99": 24.04187823420847,
+          "p100": 27.836551506016292
+        },
+        "outlier_threshold_abs_coordinate": 5.0,
+        "outlier_slot_rate": 0.008748481166464156,
+        "outlier_coordinate_rate": 3.417375455650061e-05
+      }
+    },
+    {
+      "condition": "long_thinking",
+      "collection_temperature": 0.6,
+      "sampling_warp_config": {
+        "min_p": 0.0,
+        "top_k": 20,
+        "top_p": 0.95
+      },
+      "split": "test",
+      "axis": "output_offset",
+      "bin": "16K+",
+      "data_policy": "on_policy",
+      "inclusion": "repetition_excluded",
+      "logical_slots": 8171,
+      "features": {
+        "coordinate_mean_norm": 10.505016183168697,
+        "variance_ratio_to_standard_calibration": 0.5288872563400671,
+        "calibration_reference": "standardized training-calibration per-coordinate population variance = 1",
+        "l2_norm_quantiles": {
+          "p0": 12.916791321830278,
+          "p25": 14.871873036549442,
+          "p50": 15.513327728727585,
+          "p75": 16.271365513031185,
+          "p95": 17.6814364723562,
+          "p99": 18.83669051796234,
+          "p100": 22.30994514385757
+        },
+        "outlier_threshold_abs_coordinate": 5.0,
+        "outlier_slot_rate": 0.0,
+        "outlier_coordinate_rate": 0.0
+      }
+    },
+    {
+      "condition": "long_thinking",
+      "collection_temperature": 0.6,
+      "sampling_warp_config": {
+        "min_p": 0.0,
+        "top_k": 20,
+        "top_p": 0.95
+      },
+      "split": "test",
+      "axis": "output_offset",
+      "bin": "1K-4K",
+      "data_policy": "on_policy",
+      "inclusion": "primary",
+      "logical_slots": 93579,
+      "features": {
+        "coordinate_mean_norm": 8.174558476347077,
+        "variance_ratio_to_standard_calibration": 0.9201097939129457,
+        "calibration_reference": "standardized training-calibration per-coordinate population variance = 1",
+        "l2_norm_quantiles": {
+          "p0": 11.921039958974434,
+          "p25": 15.968734750310265,
+          "p50": 17.059432667236408,
+          "p75": 18.314261120238456,
+          "p95": 20.674912225735348,
+          "p99": 23.230969653875036,
+          "p100": 32.75873102142126
+        },
+        "outlier_threshold_abs_coordinate": 5.0,
+        "outlier_slot_rate": 0.004990435888393764,
+        "outlier_coordinate_rate": 2.1121859605253315e-05
+      }
+    },
+    {
+      "condition": "long_thinking",
+      "collection_temperature": 0.6,
+      "sampling_warp_config": {
+        "min_p": 0.0,
+        "top_k": 20,
+        "top_p": 0.95
+      },
+      "split": "test",
+      "axis": "output_offset",
+      "bin": "1K-4K",
+      "data_policy": "on_policy",
+      "inclusion": "repetition_excluded",
+      "logical_slots": 3042,
+      "features": {
+        "coordinate_mean_norm": 9.034187598772611,
+        "variance_ratio_to_standard_calibration": 0.8699049510603842,
+        "calibration_reference": "standardized training-calibration per-coordinate population variance = 1",
+        "l2_norm_quantiles": {
+          "p0": 13.33282023796243,
+          "p25": 16.118583541058364,
+          "p50": 16.991407233379576,
+          "p75": 18.21832719137914,
+          "p95": 20.771794326421418,
+          "p99": 23.698004087297836,
+          "p100": 31.186892419832056
+        },
+        "outlier_threshold_abs_coordinate": 5.0,
+        "outlier_slot_rate": 0.004273504273504274,
+        "outlier_coordinate_rate": 2.3113905325443786e-05
+      }
+    },
+    {
+      "condition": "long_thinking",
+      "collection_temperature": 0.6,
+      "sampling_warp_config": {
+        "min_p": 0.0,
+        "top_k": 20,
+        "top_p": 0.95
+      },
+      "split": "test",
+      "axis": "output_offset",
+      "bin": "4K-8K",
+      "data_policy": "on_policy",
+      "inclusion": "primary",
+      "logical_slots": 114615,
+      "features": {
+        "coordinate_mean_norm": 8.433580415965745,
+        "variance_ratio_to_standard_calibration": 0.8238902950874589,
+        "calibration_reference": "standardized training-calibration per-coordinate population variance = 1",
+        "l2_norm_quantiles": {
+          "p0": 11.779223516928496,
+          "p25": 15.579984559345553,
+          "p50": 16.51720159846759,
+          "p75": 17.58319076289215,
+          "p95": 19.60621127449619,
+          "p99": 22.17308006419785,
+          "p100": 30.701165661565945
+        },
+        "outlier_threshold_abs_coordinate": 5.0,
+        "outlier_slot_rate": 0.0039174628102778865,
+        "outlier_coordinate_rate": 1.7142989573790515e-05
+      }
+    },
+    {
+      "condition": "long_thinking",
+      "collection_temperature": 0.6,
+      "sampling_warp_config": {
+        "min_p": 0.0,
+        "top_k": 20,
+        "top_p": 0.95
+      },
+      "split": "test",
+      "axis": "output_offset",
+      "bin": "4K-8K",
+      "data_policy": "on_policy",
+      "inclusion": "repetition_excluded",
+      "logical_slots": 4028,
+      "features": {
+        "coordinate_mean_norm": 9.837941013126562,
+        "variance_ratio_to_standard_calibration": 0.7972035508198876,
+        "calibration_reference": "standardized training-calibration per-coordinate population variance = 1",
+        "l2_norm_quantiles": {
+          "p0": 13.006030463005855,
+          "p25": 15.866735836476295,
+          "p50": 16.894423513778776,
+          "p75": 18.303531034205122,
+          "p95": 20.922022588470647,
+          "p99": 22.742717326169803,
+          "p100": 25.753396548829876
+        },
+        "outlier_threshold_abs_coordinate": 5.0,
+        "outlier_slot_rate": 0.003227408142999007,
+        "outlier_coordinate_rate": 1.260706305858987e-05
+      }
+    },
+    {
+      "condition": "long_thinking",
+      "collection_temperature": 0.6,
+      "sampling_warp_config": {
+        "min_p": 0.0,
+        "top_k": 20,
+        "top_p": 0.95
+      },
+      "split": "test",
+      "axis": "output_offset",
+      "bin": "8K-16K",
+      "data_policy": "on_policy",
+      "inclusion": "primary",
+      "logical_slots": 91331,
+      "features": {
+        "coordinate_mean_norm": 9.152197710248817,
+        "variance_ratio_to_standard_calibration": 0.7489194408354911,
+        "calibration_reference": "standardized training-calibration per-coordinate population variance = 1",
+        "l2_norm_quantiles": {
+          "p0": 12.173532556289574,
+          "p25": 15.35751375770858,
+          "p50": 16.249354508844817,
+          "p75": 17.30151187607538,
+          "p95": 19.618293457211784,
+          "p99": 22.787029816938574,
+          "p100": 30.618169456479762
+        },
+        "outlier_threshold_abs_coordinate": 5.0,
+        "outlier_slot_rate": 0.005365100568262693,
+        "outlier_coordinate_rate": 2.3010396250999113e-05
+      }
+    },
+    {
+      "condition": "long_thinking",
+      "collection_temperature": 0.6,
+      "sampling_warp_config": {
+        "min_p": 0.0,
+        "top_k": 20,
+        "top_p": 0.95
+      },
+      "split": "test",
+      "axis": "output_offset",
+      "bin": "8K-16K",
+      "data_policy": "on_policy",
+      "inclusion": "repetition_excluded",
+      "logical_slots": 8120,
+      "features": {
+        "coordinate_mean_norm": 10.226452209373644,
+        "variance_ratio_to_standard_calibration": 0.6223615126452204,
+        "calibration_reference": "standardized training-calibration per-coordinate population variance = 1",
+        "l2_norm_quantiles": {
+          "p0": 12.992035765026225,
+          "p25": 15.20826001251864,
+          "p50": 15.97981185784738,
+          "p75": 16.929901550421253,
+          "p95": 18.724245529609288,
+          "p99": 20.36761061094463,
+          "p100": 24.953686799771646
+        },
+        "outlier_threshold_abs_coordinate": 5.0,
+        "outlier_slot_rate": 0.0002463054187192118,
+        "outlier_coordinate_rate": 9.621305418719211e-07
+      }
+    },
+    {
+      "condition": "standard_nonthinking",
+      "collection_temperature": 0.0,
+      "sampling_warp_config": {
+        "min_p": 0.0,
+        "top_k": 0,
+        "top_p": 1.0
+      },
+      "split": "test",
+      "axis": "output_offset",
+      "bin": "0-1K",
+      "data_policy": "on_policy",
+      "inclusion": "primary",
+      "logical_slots": 18785,
+      "features": {
+        "coordinate_mean_norm": 11.32819668263779,
+        "variance_ratio_to_standard_calibration": 1.344469708255727,
+        "calibration_reference": "standardized training-calibration per-coordinate population variance = 1",
+        "l2_norm_quantiles": {
+          "p0": 14.062156835383677,
+          "p25": 18.980918846021634,
+          "p50": 20.83349852078121,
+          "p75": 23.43759920615701,
+          "p95": 28.127973354915692,
+          "p99": 31.45275753364063,
+          "p100": 35.76942027591306
+        },
+        "outlier_threshold_abs_coordinate": 5.0,
+        "outlier_slot_rate": 0.1138142134681927,
+        "outlier_coordinate_rate": 0.0006269546845887676
+      }
+    },
+    {
+      "condition": "standard_nonthinking",
+      "collection_temperature": 0.7,
+      "sampling_warp_config": {
+        "min_p": 0.0,
+        "top_k": 20,
+        "top_p": 0.8
+      },
+      "split": "test",
+      "axis": "output_offset",
+      "bin": "0-1K",
+      "data_policy": "on_policy",
+      "inclusion": "primary",
+      "logical_slots": 18887,
+      "features": {
+        "coordinate_mean_norm": 11.301819217373424,
+        "variance_ratio_to_standard_calibration": 1.3465070415447906,
+        "calibration_reference": "standardized training-calibration per-coordinate population variance = 1",
+        "l2_norm_quantiles": {
+          "p0": 14.169953279041003,
+          "p25": 18.94817975402615,
+          "p50": 20.83897065259076,
+          "p75": 23.39611754454072,
+          "p95": 28.16616841146721,
+          "p99": 31.330368817696556,
+          "p100": 36.14518156238384
+        },
+        "outlier_threshold_abs_coordinate": 5.0,
+        "outlier_slot_rate": 0.11388785937417271,
+        "outlier_coordinate_rate": 0.0006386668078572563
+      }
+    },
+    {
+      "condition": "standard_nonthinking",
+      "collection_temperature": 1.0,
+      "sampling_warp_config": {
+        "min_p": 0.0,
+        "top_k": 0,
+        "top_p": 1.0
+      },
+      "split": "test",
+      "axis": "output_offset",
+      "bin": "0-1K",
+      "data_policy": "on_policy",
+      "inclusion": "primary",
+      "logical_slots": 18822,
+      "features": {
+        "coordinate_mean_norm": 11.31947489142726,
+        "variance_ratio_to_standard_calibration": 1.3454978785645644,
+        "calibration_reference": "standardized training-calibration per-coordinate population variance = 1",
+        "l2_norm_quantiles": {
+          "p0": 13.749955781961086,
+          "p25": 18.949362754377837,
+          "p50": 20.808286994208366,
+          "p75": 23.45078337819787,
+          "p95": 28.228178430637307,
+          "p99": 31.34587812145851,
+          "p100": 36.53548606358432
+        },
+        "outlier_threshold_abs_coordinate": 5.0,
+        "outlier_slot_rate": 0.11162469450642865,
+        "outlier_coordinate_rate": 0.0006213639623844437
+      }
+    }
+  ],
+  "condition_bin_coverage": [
+    {
+      "condition": "long_thinking",
+      "collection_temperature": 0.6,
+      "sampling_warp_config": {
+        "min_p": 0.0,
+        "top_k": 20,
+        "top_p": 0.95
+      },
+      "observed_bins": [
+        "0-1K",
+        "1K-4K",
+        "4K-8K",
+        "8K-16K",
+        "16K+"
+      ],
+      "empty_bins": [],
+      "primary_empty_bins": [],
+      "logical_slots": 359595,
+      "feature_group_count": 10
+    },
+    {
+      "condition": "standard_nonthinking",
+      "collection_temperature": 0.0,
+      "sampling_warp_config": {
+        "min_p": 0.0,
+        "top_k": 0,
+        "top_p": 1.0
+      },
+      "observed_bins": [
+        "0-1K"
+      ],
+      "empty_bins": [
+        "1K-4K",
+        "4K-8K",
+        "8K-16K",
+        "16K+"
+      ],
+      "primary_empty_bins": [
+        "1K-4K",
+        "4K-8K",
+        "8K-16K",
+        "16K+"
+      ],
+      "logical_slots": 18785,
+      "feature_group_count": 1
+    },
+    {
+      "condition": "standard_nonthinking",
+      "collection_temperature": 0.7,
+      "sampling_warp_config": {
+        "min_p": 0.0,
+        "top_k": 20,
+        "top_p": 0.8
+      },
+      "observed_bins": [
+        "0-1K"
+      ],
+      "empty_bins": [
+        "1K-4K",
+        "4K-8K",
+        "8K-16K",
+        "16K+"
+      ],
+      "primary_empty_bins": [
+        "1K-4K",
+        "4K-8K",
+        "8K-16K",
+        "16K+"
+      ],
+      "logical_slots": 18887,
+      "feature_group_count": 1
+    },
+    {
+      "condition": "standard_nonthinking",
+      "collection_temperature": 1.0,
+      "sampling_warp_config": {
+        "min_p": 0.0,
+        "top_k": 0,
+        "top_p": 1.0
+      },
+      "observed_bins": [
+        "0-1K"
+      ],
+      "empty_bins": [
+        "1K-4K",
+        "4K-8K",
+        "8K-16K",
+        "16K+"
+      ],
+      "primary_empty_bins": [
+        "1K-4K",
+        "4K-8K",
+        "8K-16K",
+        "16K+"
+      ],
+      "logical_slots": 18822,
+      "feature_group_count": 1
+    }
+  ]
+}

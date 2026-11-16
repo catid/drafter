@@ -267,50 +267,135 @@
     "current_validation_sha256": "e73c573814df719d6c61482f619a3d0c0027caca0bea4b014fa95bd9c5b48772"
   },
   "M3": {
-    "status": "running",
-    "current_phase": "fresh development selection after repetition correction",
-    "driver_pid": 2946860,
-    "exec_session_id": 12898,
+    "status": "passed",
+    "current_phase": "complete",
     "started_at_utc": "2026-11-14T02:16:38.558762+00:00",
+    "completed_utc": "2026-11-15T12:23:53.695423+00:00",
+    "source_commit": "09a5469c72c442408d1a85af7ccd58c231db9fb9",
     "continuation_state": "artifacts/reference_continuation_state.json",
-    "required_evaluation_requests": 1920,
-    "required_timing_requests": 5760,
-    "required_profile_requests": 1920,
-    "interruption_evidence": "artifacts/repetition_detector_review/interruption.json",
-    "child_pid": 2946875,
-    "correction_restart_preparation": "artifacts/repetition_detector_review/continuation_restart_preparation.json",
-    "previous_attempt_terminal": {
-      "driver_pid": 2921664,
-      "child_pid": 2921703,
-      "driver_exit_code": 1,
-      "child_exit_code": -15,
-      "reason": "intentional stop for confirmed detector defect; evidence preserved"
+    "frozen_settings_hash": "35ade67825d3eaa6788734809456de212459415209c40abc713045fdfa039163",
+    "selected_settings": {
+      "plain_dflash": {},
+      "online_bigram": {
+        "alpha": 1.0,
+        "k_ret": null,
+        "lambda_tr": 0.2
+      },
+      "dense": {
+        "beta": 0.5
+      },
+      "dense_sparse": {
+        "beta": 0.5
+      }
     },
-    "first_complete_long_development_bundle": {
-      "status": "audited_partial_development_evidence",
-      "prompt_id": "math500-long-0176",
-      "artifact": "artifacts/m3_first_long_bundle_validation.json",
-      "artifact_sha256": "4cdad06cd4f090956d86b85c8db696798b4392a303488e97e94301ff843b1041",
-      "candidate_rows": 7,
-      "summed_request_seconds": 2040.5450274967588,
-      "completed_dev_bundles_at_first_observation": 9,
-      "completed_dev_requests_at_first_observation": 63,
-      "required_dev_bundles": 20,
-      "required_dev_requests": 140,
-      "limitation": "One dev prompt; full test/timing and settings selection remain pending."
-    }
+    "development_requests": 140,
+    "evaluation_requests": 1920,
+    "greedy_target_only_requests": 64,
+    "timing_requests": 5760,
+    "profile_requests": 1920,
+    "timing_isolation": "single process on GPU 0; idle-device check before model load",
+    "evidence": [
+      "artifacts/m3/settings.json",
+      "artifacts/m3/summary.json",
+      "artifacts/m3/timing.json",
+      "artifacts/m3/greedy_output_comparisons.json",
+      "artifacts/m3_validation_reference.json"
+    ],
+    "artifact_sha256": {
+      "settings": "fdbb3442436d0b22c5261b27ca254257bcdd110ec2188eb78d4ee65eff1f972c",
+      "summary": "2a33c48d538ef250799dc6410eff4ba01ec1f9eb08fde90d4ef1332f1476d85a",
+      "timing": "7b38b6d3f959b9c9bdce8df79c3b485e712290d226fab3d7bb5416f438a9f0bb",
+      "greedy_output_comparisons": "0ba88d0847ba92dac21022d3119eb8b363906ddcd4640429fbc0f4a2cd9ad6b9",
+      "validation_reference": "0a72610194f74ff06de6f553a5c455b985e4ddaffdf546d9d22f8a99841a53d6"
+    },
+    "validation": {
+      "status": "passed",
+      "checks": 45158121,
+      "completed_at_utc": "2026-11-16T17:35:23.657047+00:00",
+      "artifact": "artifacts/m3_validation_reference.json"
+    },
+    "result": "protocol passed; static M2 adapters reduced closed-loop acceptance and net tokens/sec across all four conditions; online_bigram modestly increased mean accepted length (standard T=0.7: 5.195 vs 5.136; long_thinking T=0.6: 2.651 vs 2.476) without net tokens/sec improvement after proposal/sampling overhead",
+    "interruption_evidence": "artifacts/repetition_detector_review/interruption.json",
+    "correction_restart_preparation": "artifacts/repetition_detector_review/continuation_restart_preparation.json"
   },
   "M4": {
-    "status": "not_run",
-    "independent_validation_preparation": {
-      "status": "prepared_smoke_validated",
-      "actual_reference_audit": "pending",
+    "status": "passed",
+    "current_phase": "complete",
+    "started_at_utc": "2026-11-15T12:23:54.750335+00:00",
+    "completed_utc": "2026-11-16T08:41:55.398320+00:00",
+    "algorithm_source_commit": "09a5469c72c442408d1a85af7ccd58c231db9fb9",
+    "algorithm_implementation_sha256": "54b714207e175169a0971a4d7b7f0820cb69f5fa8ac50d799c2eef397db7dd8f",
+    "timing_harness_commit": "dfe72a007287d19c4e500e36760f08d9ffb9c67d",
+    "timing_harness_implementation_sha256": "33e30f47057e21c8e6731c1717cfc492533b04bd49ad90a15ea0ebd0ad8b041b",
+    "frozen_settings_hash": "2ec65cf4fb12b0044197a2d1c2e06a9e3cd7c3fd3eea27109ca193e3c88af056",
+    "selected_settings": {
+      "plain_dflash": {},
+      "online_bigram": {
+        "alpha": 1.0,
+        "k_ret": null,
+        "lambda_tr": 0.2
+      },
+      "offline_static": {
+        "beta": 0.5
+      },
+      "offline_online_stride1": {
+        "beta": 1.0,
+        "lambda_l1_b": 1e-06,
+        "lambda_l1_s": 1e-05,
+        "lambda_l2": 0.01,
+        "lr": 0.0001,
+        "update_stride": 1,
+        "weighting_mode": "exponential"
+      },
+      "online_dbS": {
+        "beta": 1.0,
+        "lambda_l1_b": 1e-06,
+        "lambda_l1_s": 1e-05,
+        "lambda_l2": 0.01,
+        "lr": 0.0001,
+        "update_stride": 1,
+        "weighting_mode": "exponential"
+      }
+    },
+    "development_requests": 180,
+    "evaluation_requests": 2400,
+    "reused_m3_baseline_evaluation_requests": 960,
+    "timing_calibration_1gpu_requests": 60,
+    "timing_requests": 7200,
+    "profile_requests": 2400,
+    "timing_sharding_mode": "sharded_8gpu",
+    "timing_world_size": 8,
+    "timing_isolation": "8 NUMA/core-pinned processes (16 physical cores/GPU, GPU g -> CPUs [16g..16g+15], NUMA node g // 2) with per-GPU idle checks and rotated 5-arm comparison bundles, reconciled with 1-GPU cluster-isolated calibration on GPU 0 (60 runs, within +-0.51% on standard_nonthinking)",
+    "evidence": [
+      "artifacts/m4/settings.json",
+      "artifacts/m4/summary.json",
+      "artifacts/m4/timing.json",
+      "artifacts/m4/timing_isolation_calibration.json",
+      "artifacts/m4/feature_context.json",
+      "artifacts/m4/greedy_output_comparisons.json",
+      "artifacts/m4/timing/sharding_plan.json",
+      "artifacts/logs/m4_sharded_timing_state.json",
+      "artifacts/m4_validation_reference.json"
+    ],
+    "artifact_sha256": {
+      "settings": "ecda99fe4fb24c5f5cb7f9cfc5db07107c0aca182f1383c8c6f8314111d72188",
+      "summary": "3a3581df393f1b9ee92496e7c4c86f48fd74fa3d03c887d2769016b522644ef5",
+      "timing": "7f9f8adef3ef26479f637ac393cbc9e1a77ab64534c79c7aff722c5e32f7cda2",
+      "timing_isolation_calibration": "0b9441b84a69e8eb0fe181199e42395837c77e3e2b3a9a8f7b7f9ffca2ee4f11",
+      "feature_context": "a957e7ebeec97b66caee04e7d581154dc11919adc0dda8ac0bb68ee8f2b60b6d",
+      "greedy_output_comparisons": "bc12fb7b1837b276861f7a6c49f7573ec71f89648fff34f6e6115f7676d664c7",
+      "sharding_plan": "05d3bda590913bb0ba67c86afb1cdec64c0f49bd120729a280e66823891ca77a",
+      "sharded_timing_state": "1cc939229157f93b16183c2fe85f5626de9a1e5aa69493a4eaa783ea1d00da18",
+      "validation_reference": "742c2867a5fd3f8e5d50a998d83e4b404dd5e30b95440e32cf4b6ed3a2412cf4"
+    },
+    "validation": {
+      "status": "passed",
+      "checks": 18983686,
+      "completed_at_utc": "2026-11-16T17:35:13.176533+00:00",
       "source": "artifacts/m4_evidence_validator/validate.py",
-      "smoke_evidence": "artifacts/m4_evidence_validator/validation_smoke.json",
-      "wrapper_fault_evidence": "artifacts/m4_evidence_validator/fault_validation.json",
-      "online_fault_evidence": "artifacts/m4_evidence_validator/online_probe_validation.json",
-      "reference_command": "CUDA_VISIBLE_DEVICES='' .venv/bin/python artifacts/m4_evidence_validator/validate.py --scale reference --artifacts artifacts --output artifacts/m4_validation_reference.json"
-    }
+      "artifact": "artifacts/m4_validation_reference.json"
+    },
+    "result": "protocol passed; on OOD long_thinking (T=0.6), synchronous full-adapter online updates (offline_online_stride1) recovered and exceeded plain_dflash acceptance (2.574 [2.424, 2.730] vs 2.476 [2.289, 2.654], +3.94%; +30.5% over offline_static 1.972) while bias+sparse-only online_dbS fell to 1.435, showing dense dW/dA adaptation is critical under h[i] shift; however, eager full-vocabulary scoring and per-round autograd online updates incurred substantial latency overhead, yielding no net tokens/sec improvement over plain_dflash in M0-M4"
   },
   "M5": {
     "status": "not_run",

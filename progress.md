@@ -340,3 +340,18 @@ git ls-remote origin refs/heads/main
 If it expires, inspect current tmux session environments and owned socket paths;
 do not inspect private keys. GitHub `main` and local HEAD matched `c6c0caa` before
 this handoff. No production source changes were pending.
+
+---
+
+## Gate E Completion Update (`2026-11-16 UTC` — All Mandatory M0–M4 Reference Milestones Complete)
+
+All six handoff completion items above have been executed and independently verified at `--scale reference`:
+
+1. **Full M3 & M4 Reference Execution Completed (`0` reduced counts):**
+   - **M3 (`09a5469c72c442408d1a85af7ccd58c231db9fb9`):** `m3_tune` (`140` dev requests / `20` bundles on GPU 0), `m3_evaluate` (`1,920` test requests + `64` `greedy_target_only` diagnostics), `m3_timing` (`5,760` timed + `1,920` separate CUDA-event profile runs on isolated GPU 0), and `m3_summarize` (`artifacts/m3/summary.json`, `status: "complete"`).
+   - **M4 (`09a5469` algorithm SHA256 `54b71420...` preserved byte-for-byte; `dfe72a0` 8-GPU NUMA/core-pinned timing harness SHA256 `33e30f47...`):** `m4_tune` (`180` dev requests / `20` bundles on GPU 0), `m4_evaluate` (`2,400` test requests), Step A 1-GPU cluster-isolated `timing_calibration` (`60` runs / `12` bundles on GPU 0 `CPUs 0..15`), and Step B 8-GPU NUMA/16-core-pinned sharded `m4_timing` + auto-`summarize` + calibration reconciliation (`7,200` timed + `2,400` profile runs across `1,920` rotated 5-arm bundles on GPUs `0..7`, `GPU g -> CPUs [16g..16g+15]`, NUMA `g // 2`, matching 1-GPU `standard_nonthinking` throughput within `+-0.51%`).
+2. **Independent Reference Validators Passed (`64,141,807` Total Checks, `0` Failures):**
+   - `artifacts/m3_validation_reference.json` (`sha256: 0a72610194f74ff06de6f553a5c455b985e4ddaffdf546d9d22f8a99841a53d6`): `status == "passed"`, `45,158,121` checks.
+   - `artifacts/m4_validation_reference.json` (`sha256: 742c2867a5fd3f8e5d50a998d83e4b404dd5e30b95440e32cf4b6ed3a2412cf4`): `status == "passed"`, `18,983,686` checks.
+3. **Empirical Reporting & Milestone Status Finalized (`0` Drift vs Raw Artifacts):**
+   - Updated `artifacts/milestones.json` (`M0` through `M4` all `"passed"`), `reports/SUMMARY.md`, `README.md`, and `NOTES.md` with complete M0–M4 reference tables, SHA256s, M2 overshoot diagnosis (`0.20 * dense.pt` `-11.2%` sampled dev KL while keeping gated M2 checkpoints unmodified), 8-GPU sharded + 1-GPU calibration disclosures, `16K+` sparse-bin `conclusion unavailable` flags, `lookahead_iterations = 0.0 ms [disabled in M0-M4]`, greedy BF16 tie rates (`0/64` vs `plain_dflash`, `42/64` vs `target_only`), M1b `h[i]` covariate-shift pairing (`feature_context.json`), and external baselines not run.
