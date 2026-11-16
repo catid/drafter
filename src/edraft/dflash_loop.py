@@ -261,7 +261,7 @@ def _sample_proposal(draft_logits, h_raw, prefix, *, temperature, warper, genera
                     (state.l_unit.shape[-1],), -torch.inf, device=cand_scores.device, dtype=cand_scores.dtype
                 ).scatter(0, ids, cand_scores)
             else:
-                score = state.l_unit[i] - beta * state.g[i]
+                score = state.full_slot_scores(i, beta)
             if bigram is not None:
                 with timer.phase("bigram_score"):
                     previous = tokens[-1] if tokens else (prefix[-1] if prefix else None)

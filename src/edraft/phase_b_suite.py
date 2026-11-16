@@ -382,6 +382,23 @@ def _cli_base_flags(
     return flags
 
 
+def _find_phase_a_calibrated_refit(reference_artifacts: Path) -> tuple[Path, Path] | None:
+    """Locate Phase-A calibrated refit `(dense_calibrated.pt, dense_sparse_calibrated.pt)` if present."""
+    refit_candidates = [
+        reference_artifacts / 'post_m4_suite' / 'm2_refit_workspace' / 'post_m4_shuf32_wd1e2',
+    ]
+    post_m4_dir = reference_artifacts / 'post_m4_suite'
+    if post_m4_dir.is_dir():
+        for cand_ws in sorted(post_m4_dir.glob('m2_refit_ws_*')):
+            refit_candidates.append(cand_ws / 'post_m4_shuf32_wd1e2')
+    for cand in refit_candidates:
+        d_cal = cand / 'dense_calibrated.pt'
+        s_cal = cand / 'dense_sparse_calibrated.pt'
+        if d_cal.is_file() and s_cal.is_file():
+            return d_cal, s_cal
+    return None
+
+
 def _resolve_lookahead_checkpoints(args, reference_artifacts: Path, sub_ws: Path, eff_scale: str) -> dict:
     """Resolve calibrated or scaled offline checkpoints for `full_vocab_lookahead`."""
     if eff_scale == 'smoke':
@@ -400,23 +417,14 @@ def _resolve_lookahead_checkpoints(args, reference_artifacts: Path, sub_ws: Path
             'sparse_checkpoint': s_p,
             'checkpoint_scale': getattr(args, 'lookahead_checkpoint_scale', None),
         }
-    refit_candidates = [
-        reference_artifacts / 'post_m4_suite' / 'm2_refit_workspace' / 'post_m4_shuf32_wd1e2',
-    ]
-    post_m4_dir = reference_artifacts / 'post_m4_suite'
-    if post_m4_dir.is_dir():
-        for cand_ws in sorted(post_m4_dir.glob('m2_refit_ws_*')):
-            refit_candidates.append(cand_ws / 'post_m4_shuf32_wd1e2')
-    for cand in refit_candidates:
-        d_cal = cand / 'dense_calibrated.pt'
-        s_cal = cand / 'dense_sparse_calibrated.pt'
-        if d_cal.is_file() and s_cal.is_file():
-            return {
-                'source': 'phase_a_calibrated_refit',
-                'dense_checkpoint': d_cal,
-                'sparse_checkpoint': s_cal,
-                'checkpoint_scale': getattr(args, 'lookahead_checkpoint_scale', None),
-            }
+    phase_a_pair = _find_phase_a_calibrated_refit(reference_artifacts)
+    if phase_a_pair is not None:
+        return {
+            'source': 'phase_a_calibrated_refit',
+            'dense_checkpoint': phase_a_pair[0],
+            'sparse_checkpoint': phase_a_pair[1],
+            'checkpoint_scale': getattr(args, 'lookahead_checkpoint_scale', None),
+        }
     fallback_scale = (
         float(args.lookahead_checkpoint_scale)
         if getattr(args, 'lookahead_checkpoint_scale', None) is not None
@@ -487,11 +495,17 @@ def _suite_config_fingerprint(suite_name: str, args, reference_artifacts: Path) 
             'm5_beta_candidates': [float(b) for b in args.m5_beta_candidates],
         })
     elif suite_name == 'pure_t1_fit':
+        phase_a_pair = _find_phase_a_calibrated_refit(reference_artifacts) if eff_scale != 'smoke' else None
         payload.update({
             'pure_t1_tag': str(args.pure_t1_tag),
             'block_shuffle_window': int(args.block_shuffle_window),
             'weight_decay': float(args.weight_decay),
             'fixed_checkpoint_scale': float(args.fixed_checkpoint_scale),
+            'phase_a_refit_sha256': (
+                [file_sha256(phase_a_pair[0]), file_sha256(phase_a_pair[1])]
+                if phase_a_pair is not None
+                else None
+            ),
         })
     elif suite_name == 'full_scale':
         payload.update({
@@ -1103,6 +1117,8 @@ def _run_training_fit_isolated(
             ddp_cli.extend(['--checkpoint_every', '1000'])
         if eff_scale == 'full' or getattr(args, 'allow_large_run', False):
             ddp_cli.append('--allow_large_run')
+        if getattr(args, 'allow_download', False):
+            ddp_cli.append('--allow_download')
         if not args.resume:
             ddp_cli.append('--no_resume')
         launch.main(ddp_cli)
@@ -1651,12 +1667,12 @@ def run_pure_t1_fit(args, reference_artifacts: Path, ablations_root: Path) -> di
         ('pure_t1_uncalibrated', t1_dir / 'dense.pt', t1_dir / 'dense_sparse.pt'),
         ('pure_t1_dev_calibrated', t1_dir / 'dense_calibrated.pt', t1_dir / 'dense_sparse_calibrated.pt'),
     ]
-    phase_a_refit = reference_artifacts / 'post_m4_suite' / 'm2_refit_workspace' / 'post_m4_shuf32_wd1e2'
-    if eff_scale != 'smoke' and (phase_a_refit / 'dense_calibrated.pt').is_file() and (phase_a_refit / 'dense_sparse_calibrated.pt').is_file():
+    phase_a_pair = _find_phase_a_calibrated_refit(reference_artifacts) if eff_scale != 'smoke' else None
+    if phase_a_pair is not None:
         variants.append((
             'primary_refit_shuf32_calibrated',
-            phase_a_refit / 'dense_calibrated.pt',
-            phase_a_refit / 'dense_sparse_calibrated.pt',
+            phase_a_pair[0],
+            phase_a_pair[1],
         ))
 
     ckpt_batch = {}
@@ -1773,6 +1789,9 @@ def _bootstrap_full_scale_workspace(args, reference_artifacts: Path, full_ws: Pa
         if not (full_ws / 'smoke.json').is_file():
             run_smoke(SimpleNamespace(scale='smoke', seed=args.seed, device='cpu', output=full_ws))
     else:
+        ref_env = reference_artifacts / 'environment.json'
+        if not (full_ws / 'environment.json').is_file() and ref_env.is_file():
+            _atomic_copy_file(ref_env, full_ws / 'environment.json')
         write_environment(resolved_config(args), output_dir=full_ws)
         ref_smoke = reference_artifacts / 'smoke.json'
         if not (full_ws / 'smoke.json').is_file():

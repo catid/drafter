@@ -30,8 +30,6 @@ M4_ARMS = ('plain_dflash', 'online_bigram', 'offline_static', 'offline_online_st
 M5_ARMS = (
     'plain_dflash',
     'online_bigram',
-    'online_bigram_kret256',
-    'online_bigram_kret128',
     'online_bigram_count_gated',
     'offline_online_stride1',
     'zero_offline_online_only',
@@ -52,6 +50,10 @@ M5_ARMS = (
     'tts',
     'sharp_draft',
     'adaptive_block_length',
+)
+M5_EXTRA_ARMS = (
+    'online_bigram_kret256',
+    'online_bigram_kret128',
 )
 
 FROZEN_09A5469_ALGORITHM_FILES = {
@@ -254,9 +256,10 @@ def arms_for(stage, scale='reference', *, m5_arms=None, include_long_oracle=Fals
                            'online_rejection_relative', 'online_cutoff') if scale == 'full' else ())
     if stage != 'm5':
         raise ValueError('stage must be m3, m4, or m5')
-    available = M5_ARMS + (('long_oracle_offline',) if include_long_oracle else ())
+    default_m5 = M5_ARMS + (('long_oracle_offline',) if include_long_oracle else ())
     if not m5_arms:
-        return available
+        return default_m5
+    available = default_m5 + M5_EXTRA_ARMS
     requested = tuple(dict.fromkeys(m5_arms))
     unknown = set(requested) - set(available)
     if unknown:
@@ -3461,16 +3464,11 @@ M5_MATCHED_PAIRS = (
 
 M5_ONLINE_HEAD_TO_HEAD_PAIRS = (
     ('online_bigram', 'plain_dflash'),
-    ('online_bigram_kret256', 'plain_dflash'),
-    ('online_bigram_kret128', 'plain_dflash'),
     ('online_bigram_count_gated', 'plain_dflash'),
     ('offline_online_stride1', 'plain_dflash'),
     ('zero_offline_online_only', 'plain_dflash'),
     ('online_dbS', 'plain_dflash'),
     ('online_dbS_zero_init', 'plain_dflash'),
-    ('online_bigram_kret256', 'online_bigram'),
-    ('online_bigram_kret128', 'online_bigram'),
-    ('online_bigram_kret256', 'online_bigram_kret128'),
     ('online_bigram_count_gated', 'online_bigram'),
     ('zero_offline_online_only', 'online_bigram'),
     ('zero_offline_online_only', 'online_bigram_count_gated'),
@@ -3479,6 +3477,13 @@ M5_ONLINE_HEAD_TO_HEAD_PAIRS = (
     ('online_dbS_zero_init', 'online_bigram'),
     ('online_dbS_zero_init', 'online_bigram_count_gated'),
     ('online_dbS', 'online_bigram_count_gated'),
+)
+M5_EXTRA_ONLINE_HEAD_TO_HEAD_PAIRS = (
+    ('online_bigram_kret256', 'plain_dflash'),
+    ('online_bigram_kret128', 'plain_dflash'),
+    ('online_bigram_kret256', 'online_bigram'),
+    ('online_bigram_kret128', 'online_bigram'),
+    ('online_bigram_kret256', 'online_bigram_kret128'),
 )
 
 
@@ -3637,7 +3642,7 @@ def compute_head_to_head_online_offset_comparison(eval_rows, isolated_timing_row
         timed_by_slot[(row['condition'], row['temperature'], warp, row['prompt_id'],
                        row['seed'], row.get('repeat'), row['arm'])] = row
     comparisons = []
-    for arm, ref_arm in M5_ONLINE_HEAD_TO_HEAD_PAIRS:
+    for arm, ref_arm in M5_ONLINE_HEAD_TO_HEAD_PAIRS + M5_EXTRA_ONLINE_HEAD_TO_HEAD_PAIRS:
         if arm not in active_arms or ref_arm not in active_arms:
             continue
         for condition, temperature, warp in sorted(regimes):
