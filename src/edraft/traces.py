@@ -324,12 +324,15 @@ class _HashingWriter:
 
     def write(self, data) -> int:
         mv = memoryview(data)
-        written = self._raw.write(mv)
+        byte_mv = mv.cast("B") if mv.c_contiguous else memoryview(mv.tobytes())
+        written = self._raw.write(byte_mv)
         if written is None:
-            written = len(mv)
-        if not self.seeked and written > 0:
-            self._digest.update(mv[:written])
-        self.bytes_written += written
+            written = len(byte_mv)
+        if written < 0 or written > len(byte_mv):
+            self.seeked = True
+        elif not self.seeked and written > 0:
+            self._digest.update(byte_mv[:written])
+        self.bytes_written += max(0, written)
         return written
 
     def flush(self) -> None:

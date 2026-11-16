@@ -106,37 +106,49 @@ def sha256(path):
     return digest.hexdigest()
 
 
-def _resolve_m0_artifact(name: str, args) -> Path:
-    local = Path(args.output) / name
-    if local.exists():
-        return local
+def _resolve_m0_bundle_root(args) -> Path:
+    """Resolve M0 gate files (`m0.json`, `m0_numerics.json`, `m0/*.json`) atomically from one root."""
+    local_root = Path(args.output)
+    if (local_root / "m0.json").is_file() or (local_root / "m0_numerics.json").is_file():
+        return local_root
     default_artifacts = (ROOT / "artifacts").resolve()
+    env_root = os.environ.get("EDRAFT_ARTIFACTS_ROOT")
     allow_fallback = (
-        bool(os.environ.get("EDRAFT_ARTIFACTS_ROOT"))
+        bool(env_root)
         or args.scale == "full"
-        or Path(args.output).resolve().is_relative_to(default_artifacts)
+        or local_root.resolve().is_relative_to(default_artifacts)
     )
-    if allow_fallback:
-        return resolve_artifact_path(name, args.output, root=ROOT)
-    return local
+    if not allow_fallback:
+        return local_root
+    if env_root:
+        env_path = Path(env_root)
+        if (env_path / "m0.json").is_file() or (env_path / "m0_numerics.json").is_file():
+            return env_path
+    return ROOT / "artifacts"
 
 
 def check_reference_gates(args):
     """Require actual complete M0 evidence, not just the presence of status files."""
     if args.scale == "smoke":
         return
+    m0_root = _resolve_m0_bundle_root(args)
     try:
-        m0 = json.loads(_resolve_m0_artifact("m0.json", args).read_text())
-        numerics = json.loads(_resolve_m0_artifact("m0_numerics.json", args).read_text())
+        m0 = json.loads((m0_root / "m0.json").read_text())
+        numerics = json.loads((m0_root / "m0_numerics.json").read_text())
     except FileNotFoundError as error:
         raise RuntimeError("blocked: M0 reproduction and numerical investigation must finish before M1") from error
     allowed_m0_scales = {"reference", "full"} if args.scale == "full" else {"reference"}
+    min_prompts = int(m0.get("num_distinct_prompts", 0))
     if (m0.get("scale") not in allowed_m0_scales or m0.get("status") != "passed"
-            or m0.get("num_distinct_prompts", 0) < 20
+            or min_prompts < 20
             or m0["comparisons"]["upstream_local"]["mismatched_tokens"] != 0):
         raise RuntimeError("blocked: complete real M0 token reproduction gate has not passed")
+    m0_dir = m0_root / "m0"
+    row_paths = sorted(m0_dir.glob("*.json")) if m0_dir.is_dir() else []
+    if len(row_paths) < min_prompts:
+        raise RuntimeError("blocked: complete real M0 token reproduction gate has not passed")
     mismatch_ids = set()
-    for path in _resolve_m0_artifact("m0", args).glob("*.json"):
+    for path in row_paths:
         row = json.loads(path.read_text())
         if row.get("local_target", {}).get("sequence_equal") is False:
             mismatch_ids.add(row["identity"]["prompt"])
