@@ -1694,6 +1694,10 @@ def _checkpoint_file_signature(path: Path) -> tuple[str, str]:
     return (str(resolved), 'missing')
 
 
+def _is_finite_number(val: object) -> bool:
+    return not isinstance(val, bool) and isinstance(val, (int, float)) and math.isfinite(float(val))
+
+
 def _valid_cached_dual_kl_shard(out_path: Path, assigned_tasks: Sequence[dict]) -> dict | None:
     if not out_path.is_file():
         return None
@@ -1714,9 +1718,9 @@ def _valid_cached_dual_kl_shard(out_path: Path, assigned_tasks: Sequence[dict]) 
             test = entry.get('test')
             if (
                 not isinstance(dev, dict)
-                or 'weighted_mean_kl' not in dev
+                or not _is_finite_number(dev.get('weighted_mean_kl'))
                 or not isinstance(test, dict)
-                or 'weighted_mean_kl' not in test
+                or not _is_finite_number(test.get('weighted_mean_kl'))
             ):
                 return None
         return payload
@@ -2072,7 +2076,12 @@ def _valid_cached_variant_eval_shard(
             rlist = rows_by_key.get(k)
             if not isinstance(rlist, list) or len(rlist) != len(expected_slots):
                 return None
-            if not all(isinstance(r, dict) for r in rlist):
+            if not all(
+                isinstance(r, dict)
+                and _is_finite_number(r.get('mean_accepted_length'))
+                and _is_finite_number(r.get('tokens_per_second'))
+                for r in rlist
+            ):
                 return None
             got_slots = {(str(r.get('prompt_id')), str(r.get('sampling_name')), int(r.get('repeat', -1))) for r in rlist}
             if got_slots != expected_slots:
@@ -2284,10 +2293,30 @@ def _ensure_scaled_adapter_checkpoint(
             src_ckpt = torch.load(src_path, map_location='cpu', weights_only=True)
             dst_ckpt = torch.load(dst_path, map_location='cpu', weights_only=True)
             if isinstance(src_ckpt, dict) and isinstance(dst_ckpt, dict):
+                s = float(scale)
                 src_base_id = src_ckpt.get('base_identity', src_ckpt.get('identity'))
-                expected_eff_scale = float(src_ckpt.get('checkpoint_scale', 1.0)) * float(scale)
+                expected_eff_scale = float(src_ckpt.get('checkpoint_scale', 1.0)) * s
+                src_state = src_ckpt.get('adapter_state')
+                dst_state = dst_ckpt.get('adapter_state')
+                state_ok = (
+                    isinstance(src_state, dict)
+                    and isinstance(dst_state, dict)
+                    and set(src_state.keys()) == set(dst_state.keys())
+                    and all(
+                        isinstance(src_state[k], torch.Tensor)
+                        and isinstance(dst_state[k], torch.Tensor)
+                        and src_state[k].dtype == dst_state[k].dtype
+                        and src_state[k].shape == dst_state[k].shape
+                        and torch.equal(
+                            dst_state[k],
+                            (src_state[k] * s) if k in ('W', 'A', 'b', 'sparse.values') else src_state[k],
+                        )
+                        for k in src_state
+                    )
+                )
                 if (
-                    dst_ckpt.get('base_identity') == src_base_id
+                    state_ok
+                    and dst_ckpt.get('base_identity') == src_base_id
                     and dst_ckpt.get('stage') == src_ckpt.get('stage')
                     and math.isclose(
                         float(dst_ckpt.get('checkpoint_scale', -1.0)),

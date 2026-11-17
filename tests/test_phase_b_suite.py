@@ -1181,13 +1181,45 @@ def test_pure_t1_resume_mtime_bug1_and_1worker_stale_shard_cleanup(tmp_path, mon
     assert st_1w == 'complete'
     assert list(shard_dir.glob('*.json')) == []
 
-    # 5. #320 Item 2: Malformed cached JSON list / non-dict elements return None cleanly without raising
+    # 5. #320 Item 2 & #326: Malformed cached JSON list / non-dict / None-metric elements return None cleanly
     bad_json = tmp_path / 'bad_cache.json'
     for bad_payload in (
         [1, 2, 3],
         {'spec_fingerprint': 'fp', 'variant_scales': [['missing_two']], 'rows_by_key': {}},
         {'spec_fingerprint': 'fp', 'variant_scales': [['v_b', 1.0, 1.0]], 'rows_by_key': {'plain_dflash': ['not_a_dict']}},
+        {
+            'primary_heldout_kl': {'k': {'dev': {'weighted_mean_kl': None}, 'test': {'weighted_mean_kl': 1.0}}},
+            'pure_t1_heldout_kl': {'k': {'dev': {'weighted_mean_kl': 1.0}, 'test': {'weighted_mean_kl': 1.0}}},
+        },
+        {
+            'primary_heldout_kl': {'k': {'dev': {'weighted_mean_kl': True}, 'test': {'weighted_mean_kl': 1.0}}},
+            'pure_t1_heldout_kl': {'k': {'dev': {'weighted_mean_kl': 1.0}, 'test': {'weighted_mean_kl': 1.0}}},
+        },
     ):
         atomic_json(bad_json, bad_payload)
         assert phase_b_suite._valid_cached_variant_eval_shard(bad_json, 'fp', variants_1w, [], 2) is None
         assert phase_b_suite._valid_cached_dual_kl_shard(bad_json, [{'regime': 'primary', 'key': 'k'}]) is None
+
+    # 6. #326 PURE-T1-SCALED-CKPT-STALE-WEIGHTS-BUG-2: mutating src adapter_state['W'] under identical `identity`
+    #    forces `_ensure_scaled_adapter_checkpoint(..., resume=True)` to regenerate `dst_path` to `0.20 * W_new`!
+    import torch
+
+    src_dense = ws / 'm2_smoke' / 'dense.pt'
+    dst_scaled = ws / 'baseline_m2_scaled' / 'dense_scale0p20.pt'
+    phase_b_suite._ensure_scaled_adapter_checkpoint(src_dense, dst_scaled, 0.20, resume=True)
+    sha_before = phase_b_suite.file_sha256(dst_scaled)
+    # Idempotent when untouched: 0-byte rewrite, identical SHA256
+    phase_b_suite._ensure_scaled_adapter_checkpoint(src_dense, dst_scaled, 0.20, resume=True)
+    assert phase_b_suite.file_sha256(dst_scaled) == sha_before
+
+    # Mutate `W` in-place while preserving `identity` unchanged
+    mut_ckpt = torch.load(src_dense, map_location='cpu', weights_only=True)
+    orig_id = mut_ckpt['identity']
+    mut_ckpt['adapter_state']['W'] = mut_ckpt['adapter_state']['W'] + 5.0
+    train.atomic_torch_save(src_dense, mut_ckpt)
+    assert torch.load(src_dense, map_location='cpu', weights_only=True)['identity'] == orig_id
+
+    phase_b_suite._ensure_scaled_adapter_checkpoint(src_dense, dst_scaled, 0.20, resume=True)
+    reloaded_dst = torch.load(dst_scaled, map_location='cpu', weights_only=True)
+    assert torch.equal(reloaded_dst['adapter_state']['W'], mut_ckpt['adapter_state']['W'] * 0.20)
+    assert phase_b_suite.file_sha256(dst_scaled) != sha_before
