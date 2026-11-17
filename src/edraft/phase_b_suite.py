@@ -49,6 +49,8 @@ from __future__ import annotations
 
 import argparse
 from collections import defaultdict
+from collections.abc import Mapping, Sequence
+import inspect
 import json
 import math
 import os
@@ -1258,6 +1260,7 @@ def _prepare_offline_eval_context(
     device: torch.device,
     *,
     regime: str = 'primary',
+    shared_head: tuple | None = None,
 ):
     allow_t1 = (regime == 'pure_t1')
     elig_fn = pure_t1_eligible if allow_t1 else primary_eligible
@@ -1284,9 +1287,12 @@ def _prepare_offline_eval_context(
             ws / 'traces', accepted_paths=audit['shards'],
             eligibility_fn=elig_fn, regime=idx_regime,
         )
-        first = read_shard(entries[0].path)['blocks'][0]
-        head_metadata = first['draft_lm_head']
-        head, bias = load_frozen_head(head_metadata, device, output_dir=ws)
+        if shared_head is not None:
+            head, bias, head_metadata = shared_head
+        else:
+            first = read_shard(entries[0].path)['blocks'][0]
+            head_metadata = first['draft_lm_head']
+            head, bias = load_frozen_head(head_metadata, device, output_dir=ws)
     refs = {
         'dev': epoch_references(entries, 'dev'),
         'test': epoch_references(entries, 'test'),
@@ -1325,6 +1331,98 @@ def _offline_kl_summary(eval_ctx, ckpt_path: Path, device: torch.device) -> dict
     }
 
 
+def _dual_offline_kl_regime_weights(ws: Path) -> tuple[int, int]:
+    """Return held-out block (or token) weights for `primary` (`T in {0, 0.7}`) vs `pure_t1` (`T=1.0`)."""
+    audit_path = ws / 'm1_audit.json'
+    if audit_path.is_file():
+        try:
+            audit = json.loads(audit_path.read_text())
+            shards = audit.get('shards') or []
+            prim_blocks = 0
+            t1_blocks = 0
+            for raw_p in shards:
+                side_p = Path(raw_p).with_suffix('.pt.json')
+                if not side_p.is_file():
+                    continue
+                side = json.loads(side_p.read_text())
+                gen = side.get('generation') or {}
+                ident = side.get('identity') or {}
+                if gen.get('split') not in ('dev', 'test') or not gen.get('complete'):
+                    continue
+                cand = {
+                    **gen,
+                    'condition': ident.get('condition'),
+                    'temperature': ident.get('temperature'),
+                    'sampling_warp_config': ident.get('sampling_warp_config') or {},
+                }
+                blks = int(side.get('blocks', 0))
+                if primary_eligible(cand):
+                    prim_blocks += blks
+                elif pure_t1_eligible(cand):
+                    t1_blocks += blks
+            if prim_blocks > 0 and t1_blocks > 0:
+                return prim_blocks, t1_blocks
+
+            tc = audit.get('token_counts') or {}
+            prim_tok = sum(
+                max(
+                    int(tc.get(f'standard_nonthinking/{sp}/T=0.0', 0)),
+                    int(tc.get(f'standard_nonthinking/{sp}/T=0', 0)),
+                )
+                + int(tc.get(f'standard_nonthinking/{sp}/T=0.7', 0))
+                for sp in ('dev', 'test')
+            )
+            t1_tok = sum(
+                max(
+                    int(tc.get(f'standard_nonthinking/{sp}/T=1.0', 0)),
+                    int(tc.get(f'standard_nonthinking/{sp}/T=1', 0)),
+                )
+                for sp in ('dev', 'test')
+            )
+            if prim_tok > 0 and t1_tok > 0:
+                return prim_tok, t1_tok
+        except (OSError, ValueError, TypeError):
+            pass
+    return 13209, 7687
+
+
+def _plan_dual_offline_kl_shards(
+    checkpoints_by_key: Mapping[str, Path],
+    active_gpus: Sequence[int],
+    *,
+    primary_weight: int = 13209,
+    pure_t1_weight: int = 7687,
+) -> list[tuple[int, int, list[dict], int]]:
+    """Deterministic LPT load-balanced sharding of `(regime, checkpoint)` tasks across `active_gpus`."""
+    if not checkpoints_by_key or not active_gpus:
+        return []
+    prim_w = max(1, int(primary_weight))
+    t1_w = max(1, int(pure_t1_weight))
+    regime_order = (
+        (('primary', prim_w), ('pure_t1', t1_w))
+        if prim_w >= t1_w
+        else (('pure_t1', t1_w), ('primary', prim_w))
+    )
+    all_tasks: list[tuple[str, str, str, int]] = []
+    for regime, weight in regime_order:
+        for key, ckpt in checkpoints_by_key.items():
+            all_tasks.append((regime, str(key), str(Path(ckpt).resolve()), weight))
+
+    num_shards = min(len(active_gpus), len(all_tasks))
+    loads = [0] * num_shards
+    buckets: list[list[dict]] = [[] for _ in range(num_shards)]
+    for regime, key, ckpt_str, weight in all_tasks:
+        best_r = min(range(num_shards), key=lambda r: (loads[r], r))
+        buckets[best_r].append({'regime': regime, 'key': key, 'checkpoint': ckpt_str})
+        loads[best_r] += weight
+
+    return [
+        (r, int(active_gpus[r]), buckets[r], loads[r])
+        for r in range(num_shards)
+        if buckets[r]
+    ]
+
+
 def _worker_dual_offline_kl(args, spec_path: Path, out_path: Path) -> None:
     spec = json.loads(spec_path.read_text())
     ws = Path(spec['workspace'])
@@ -1338,20 +1436,94 @@ def _worker_dual_offline_kl(args, spec_path: Path, out_path: Path) -> None:
     if device.type == 'cuda':
         torch.cuda.set_device(device)
 
-    primary_ctx = _prepare_offline_eval_context(ws, eff_scale, int(args.seed), device, regime='primary')
-    pure_t1_ctx = _prepare_offline_eval_context(ws, eff_scale, int(args.seed), device, regime='pure_t1')
-    primary_results = {
-        key: _offline_kl_summary(primary_ctx, Path(ckpt_str), device)
-        for key, ckpt_str in spec['checkpoints'].items()
-    }
-    pure_t1_results = {
-        key: _offline_kl_summary(pure_t1_ctx, Path(ckpt_str), device)
-        for key, ckpt_str in spec['checkpoints'].items()
-    }
+    raw_tasks = spec.get('tasks')
+    if raw_tasks is None:
+        ckpts = spec.get('checkpoints', {})
+        tasks = (
+            [{'regime': 'primary', 'key': k, 'checkpoint': v} for k, v in ckpts.items()]
+            + [{'regime': 'pure_t1', 'key': k, 'checkpoint': v} for k, v in ckpts.items()]
+        )
+    else:
+        tasks = list(raw_tasks)
+
+    needed_regimes: list[str] = []
+    for item in tasks:
+        reg = str(item['regime'])
+        if reg not in ('primary', 'pure_t1'):
+            raise ValueError(f'Unknown dual offline KL regime: {reg}')
+        if reg not in needed_regimes:
+            needed_regimes.append(reg)
+
+    accepts_shared_head = (
+        'shared_head' in inspect.signature(_prepare_offline_eval_context).parameters
+    )
+    ctx_by_regime: dict[str, object] = {}
+    cached_head: tuple | None = None
+    for reg in needed_regimes:
+        if cached_head is not None and accepts_shared_head:
+            ctx = _prepare_offline_eval_context(
+                ws, eff_scale, int(args.seed), device, regime=reg, shared_head=cached_head
+            )
+        else:
+            ctx = _prepare_offline_eval_context(
+                ws, eff_scale, int(args.seed), device, regime=reg
+            )
+        ctx_by_regime[reg] = ctx
+        if cached_head is None and isinstance(ctx, (tuple, list)) and len(ctx) >= 5:
+            cached_head = (ctx[2], ctx[3], ctx[4])
+
+    primary_results: dict[str, dict] = {}
+    pure_t1_results: dict[str, dict] = {}
+    for item in tasks:
+        reg = str(item['regime'])
+        key = str(item['key'])
+        summary = _offline_kl_summary(ctx_by_regime[reg], Path(item['checkpoint']), device)
+        if reg == 'primary':
+            primary_results[key] = summary
+        else:
+            pure_t1_results[key] = summary
+
     atomic_json(out_path, {
         'primary_heldout_kl': primary_results,
         'pure_t1_heldout_kl': pure_t1_results,
     })
+
+
+def _checkpoint_file_signature(path: Path) -> tuple[str, int, int]:
+    resolved = path.resolve()
+    try:
+        st = resolved.stat()
+        return (str(resolved), int(st.st_size), int(st.st_mtime_ns))
+    except OSError:
+        return (str(resolved), -1, -1)
+
+
+def _valid_cached_dual_kl_shard(out_path: Path, assigned_tasks: Sequence[dict]) -> dict | None:
+    if not out_path.is_file():
+        return None
+    try:
+        payload = json.loads(out_path.read_text())
+        prim = payload.get('primary_heldout_kl', {})
+        t1 = payload.get('pure_t1_heldout_kl', {})
+        if not isinstance(prim, dict) or not isinstance(t1, dict):
+            return None
+        for item in assigned_tasks:
+            bucket = prim if item['regime'] == 'primary' else t1
+            entry = bucket.get(item['key'])
+            if not isinstance(entry, dict):
+                return None
+            dev = entry.get('dev')
+            test = entry.get('test')
+            if (
+                not isinstance(dev, dict)
+                or 'weighted_mean_kl' not in dev
+                or not isinstance(test, dict)
+                or 'weighted_mean_kl' not in test
+            ):
+                return None
+        return payload
+    except (OSError, ValueError, TypeError):
+        return None
 
 
 def _evaluate_dual_offline_kl_batch(
@@ -1361,37 +1533,106 @@ def _evaluate_dual_offline_kl_batch(
     checkpoints_by_key: dict[str, Path],
     *,
     gpu_index: int = 0,
+    gpus: Sequence[int] | None = None,
 ) -> tuple[dict[str, dict], dict[str, dict]]:
+    if not checkpoints_by_key:
+        return {}, {}
     use_cuda = (eff_scale != 'smoke' and str(args.device).startswith('cuda'))
     if use_cuda:
+        active_gpus = list(dict.fromkeys(int(g) for g in gpus)) if gpus else [int(gpu_index)]
         kl_dir = ws / 'dual_offline_kl_eval'
         kl_dir.mkdir(parents=True, exist_ok=True)
-        tag = fingerprint(sorted((k, str(v.resolve())) for k, v in checkpoints_by_key.items()))[:10]
-        spec_path = kl_dir / f'spec-{tag}.json'
-        out_path = kl_dir / f'result-{tag}.json'
-        atomic_json(spec_path, {
-            'physical_gpu': gpu_index,
+        ckpt_sigs = {k: _checkpoint_file_signature(Path(v)) for k, v in checkpoints_by_key.items()}
+        tag = fingerprint({
             'effective_scale': eff_scale,
-            'workspace': str(ws.resolve()),
-            'checkpoints': {k: str(v.resolve()) for k, v in checkpoints_by_key.items()},
-        })
-        cmd = [
-            sys.executable, '-m', 'edraft.phase_b_suite',
-            *_cli_base_flags(args, ws, scale_override=eff_scale, device_override='cuda:0'),
-            '--_worker_mode', 'dual_offline_kl',
-            '--_worker_spec', str(spec_path),
-            '--_worker_out', str(out_path),
-        ]
-        _spawn_parallel_workers(
-            [(0, gpu_index, cmd)], kl_dir / 'logs', f'dual-offline-kl-{tag}',
-            scale=eff_scale, device_str='cuda:0', omp_threads=2,
+            'seed': int(args.seed),
+            'checkpoints': sorted(ckpt_sigs.items()),
+        })[:10]
+        prim_w, t1_w = _dual_offline_kl_regime_weights(ws)
+        shards = _plan_dual_offline_kl_shards(
+            checkpoints_by_key, active_gpus, primary_weight=prim_w, pure_t1_weight=t1_w,
         )
-        payload = json.loads(out_path.read_text())
-        return payload['primary_heldout_kl'], payload['pure_t1_heldout_kl']
+        allow_resume = bool(getattr(args, 'resume', True))
+        worker_specs: list[tuple[int, int, list[str]]] = []
+        shard_records: list[tuple[list[dict], Path, dict | None]] = []
+        for rank, phys_gpu, tasks, est_load in shards:
+            rank_tag = fingerprint({
+                'effective_scale': eff_scale,
+                'seed': int(args.seed),
+                'tasks': [(t['regime'], t['key'], ckpt_sigs[t['key']]) for t in tasks],
+            })[:12]
+            spec_path = kl_dir / f'spec-rank{rank}-{rank_tag}.json'
+            out_path = kl_dir / f'result-rank{rank}-{rank_tag}.json'
+            cached_payload = _valid_cached_dual_kl_shard(out_path, tasks) if allow_resume else None
+            if cached_payload is None:
+                atomic_json(spec_path, {
+                    'rank': rank,
+                    'world_size': len(shards),
+                    'physical_gpu': phys_gpu,
+                    'estimated_weight': est_load,
+                    'effective_scale': eff_scale,
+                    'workspace': str(ws.resolve()),
+                    'tasks': tasks,
+                })
+                cmd = [
+                    sys.executable, '-m', 'edraft.phase_b_suite',
+                    *_cli_base_flags(args, ws, scale_override=eff_scale, device_override='cuda:0'),
+                    '--_worker_mode', 'dual_offline_kl',
+                    '--_worker_spec', str(spec_path),
+                    '--_worker_out', str(out_path),
+                ]
+                worker_specs.append((rank, phys_gpu, cmd))
+            shard_records.append((tasks, out_path, cached_payload))
+
+        if worker_specs:
+            _spawn_parallel_workers(
+                worker_specs, kl_dir / 'logs', f'dual-offline-kl-{tag}',
+                scale=eff_scale, device_str='cuda:0', omp_threads=2,
+            )
+
+        raw_prim: dict[str, dict] = {}
+        raw_t1: dict[str, dict] = {}
+        for tasks, out_path, cached_payload in shard_records:
+            payload = cached_payload if cached_payload is not None else json.loads(out_path.read_text())
+            p_part = payload.get('primary_heldout_kl', {})
+            t_part = payload.get('pure_t1_heldout_kl', {})
+            for item in tasks:
+                k = item['key']
+                if item['regime'] == 'primary':
+                    if k not in p_part:
+                        raise RuntimeError(f'Missing primary_heldout_kl[{k!r}] in {out_path}')
+                    raw_prim[k] = p_part[k]
+                else:
+                    if k not in t_part:
+                        raise RuntimeError(f'Missing pure_t1_heldout_kl[{k!r}] in {out_path}')
+                    raw_t1[k] = t_part[k]
+
+        expected_keys = list(checkpoints_by_key.keys())
+        if set(raw_prim.keys()) != set(expected_keys) or set(raw_t1.keys()) != set(expected_keys):
+            raise RuntimeError('Incomplete sharded dual offline KL merge across checkpoints')
+        primary_ordered = {k: raw_prim[k] for k in expected_keys}
+        pure_t1_ordered = {k: raw_t1[k] for k in expected_keys}
+        consolidated_out = kl_dir / f'result-{tag}.json'
+        atomic_json(consolidated_out, {
+            'world_size': len(shards),
+            'gpus': [phys_gpu for _, phys_gpu, _, _ in shards],
+            'primary_heldout_kl': primary_ordered,
+            'pure_t1_heldout_kl': pure_t1_ordered,
+        })
+        return primary_ordered, pure_t1_ordered
 
     device = torch.device('cpu')
     primary_ctx = _prepare_offline_eval_context(ws, eff_scale, int(args.seed), device, regime='primary')
-    pure_t1_ctx = _prepare_offline_eval_context(ws, eff_scale, int(args.seed), device, regime='pure_t1')
+    accepts_shared = 'shared_head' in inspect.signature(_prepare_offline_eval_context).parameters
+    if accepts_shared and isinstance(primary_ctx, (tuple, list)) and len(primary_ctx) >= 5:
+        shared = (primary_ctx[2], primary_ctx[3], primary_ctx[4])
+        pure_t1_ctx = _prepare_offline_eval_context(
+            ws, eff_scale, int(args.seed), device, regime='pure_t1', shared_head=shared,
+        )
+    else:
+        pure_t1_ctx = _prepare_offline_eval_context(
+            ws, eff_scale, int(args.seed), device, regime='pure_t1',
+        )
     return (
         {k: _offline_kl_summary(primary_ctx, p, device) for k, p in checkpoints_by_key.items()},
         {k: _offline_kl_summary(pure_t1_ctx, p, device) for k, p in checkpoints_by_key.items()},
@@ -1785,7 +2026,7 @@ def run_pure_t1_fit(args, reference_artifacts: Path, ablations_root: Path) -> di
         ckpt_batch[f'{v_name}::dense'] = d_ckpt
         ckpt_batch[f'{v_name}::dense_sparse'] = s_ckpt
     primary_kl, pure_t1_kl = _evaluate_dual_offline_kl_batch(
-        args, ws, eff_scale, ckpt_batch, gpu_index=gpus[0],
+        args, ws, eff_scale, ckpt_batch, gpu_index=gpus[0], gpus=gpus,
     )
     cl_status, cl_by_variant = _evaluate_variants_closed_loop(args, ws, eff_scale, variants, gpus)
 
@@ -1908,7 +2149,11 @@ def _bootstrap_full_scale_workspace(args, reference_artifacts: Path, full_ws: Pa
 
         # 2. Seed verified M0 reproduction & numerics gate into full_ws (`collect.py:117` allows reference M0 for full scale)
         m0_prov = {}
-        if not (full_ws / 'm0.json').is_file() or not (full_ws / 'm0_numerics.json').is_file():
+        if (
+            not (full_ws / 'm0.json').is_file()
+            or not (full_ws / 'm0_numerics.json').is_file()
+            or not (full_ws / 'm0_provenance.json').is_file()
+        ):
             ref_m0 = reference_artifacts / 'm0.json'
             ref_num = reference_artifacts / 'm0_numerics.json'
             if not ref_m0.is_file() or not ref_num.is_file():

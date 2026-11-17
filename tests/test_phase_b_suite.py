@@ -614,3 +614,278 @@ def test_fast_decode_wiring_across_collect_eval_launch_and_phase_b_suite(tmp_pat
     assert res['status'] == 'complete'
     m4_tim = json.loads(Path(res['suites']['full_scale']['m4_closed_loop']['timing_json']).read_text())
     assert m4_tim['fastpath']['fast_decode'] is True
+
+
+def test_dual_offline_kl_sharding_load_balance_resume_and_parity(tmp_path, monkeypatch):
+    import torch
+    from edraft import train
+
+    # 1. Verify _dual_offline_kl_regime_weights (default fallback, token_counts without 0/0.0 double count, and real sidecars)
+    empty_ws = tmp_path / 'empty_ws'
+    empty_ws.mkdir()
+    assert phase_b_suite._dual_offline_kl_regime_weights(empty_ws) == (13209, 7687)
+
+    tc_ws = tmp_path / 'tc_ws'
+    tc_ws.mkdir()
+    atomic_json(tc_ws / 'm1_audit.json', {
+        'token_counts': {
+            'standard_nonthinking/dev/T=0.0': 20280,
+            'standard_nonthinking/dev/T=0': 20280,
+            'standard_nonthinking/dev/T=0.7': 19932,
+            'standard_nonthinking/test/T=0.0': 19081,
+            'standard_nonthinking/test/T=0.7': 19143,
+            'standard_nonthinking/dev/T=1.0': 19788,
+            'standard_nonthinking/dev/T=1': 19788,
+            'standard_nonthinking/test/T=1.0': 19054,
+        },
+    })
+    assert phase_b_suite._dual_offline_kl_regime_weights(tc_ws) == (78436, 38842)
+
+    real_ref = Path('/home/catid/drafter/artifacts')
+    if (real_ref / 'm1_audit.json').is_file():
+        assert phase_b_suite._dual_offline_kl_regime_weights(real_ref) == (13209, 7687)
+
+    # 2. Verify _plan_dual_offline_kl_shards across 10 checkpoints (5 variants) and 8 GPUs
+    ten_ckpts = {f'var{i // 2}::{"dense" if i % 2 == 0 else "dense_sparse"}': tmp_path / f'c{i}.pt' for i in range(10)}
+    shards_10 = phase_b_suite._plan_dual_offline_kl_shards(
+        ten_ckpts, list(range(8)), primary_weight=13209, pure_t1_weight=7687,
+    )
+    assert len(shards_10) == 8
+    seen_pairs = [(t['regime'], t['key']) for _, _, tasks, _ in shards_10 for t in tasks]
+    assert len(seen_pairs) == 20 and len(set(seen_pairs)) == 20
+    max_load_10 = max(est for _, _, _, est in shards_10)
+    total_load_10 = 10 * (13209 + 7687)
+    assert max_load_10 == 28583
+    assert total_load_10 / max_load_10 > 7.30  # 7.31x speedup vs 1-GPU sequential (vs 5.0x naive ckpt sharding)
+    assert {t['regime'] for t in shards_10[0][2]} == {'primary'}
+    assert {t['regime'] for t in shards_10[1][2]} == {'primary'}
+
+    # 8 checkpoints across 8 GPUs -> exact 1x primary + 1x pure_t1 on every rank (8.00x = 100% balance)
+    eight_ckpts = {k: v for idx, (k, v) in enumerate(ten_ckpts.items()) if idx < 8}
+    shards_8 = phase_b_suite._plan_dual_offline_kl_shards(
+        eight_ckpts, list(range(8)), primary_weight=13209, pure_t1_weight=7687,
+    )
+    assert [est for _, _, _, est in shards_8] == [20896] * 8
+
+    # Fewer tasks than GPUs spawns only needed ranks
+    one_ckpt = {'only::dense': tmp_path / 'only.pt'}
+    shards_1 = phase_b_suite._plan_dual_offline_kl_shards(one_ckpt, list(range(8)))
+    assert len(shards_1) == 2
+
+    # 3. Build a real mini reference-layout workspace on CPU to verify 0-ULP parity, shared_head, and per-rank resume
+    from safetensors.torch import save_file as save_safetensors
+
+    ws = tmp_path / 'dual_kl_ref_ws'
+    ws.mkdir(parents=True)
+    train.main(['--scale', 'smoke', '--device', 'cpu', '--seed', '2026', '--output', str(ws)])
+    _, _, smoke_head, smoke_bias, head_meta = train.smoke_bundle(
+        SimpleNamespace(
+            output=ws, seed=2026, history_depth=4,
+            allow_pure_t1_ablation=True, allow_long_oracle_fit=False,
+        )
+    )
+
+    shard_paths = sorted(
+        str(p.resolve())
+        for sub in ('m2_smoke_traces', 'm2_smoke_t1_traces')
+        for p in (ws / sub).glob('rank*/*.pt')
+    )
+    assert len(shard_paths) > 0
+    (ws / 'traces').symlink_to(ws / 'm2_smoke_traces')
+    atomic_json(ws / 'm1_audit.json', {'scale': 'reference', 'status': 'passed', 'shards': shard_paths})
+
+    # Materialize real safetensors head snapshot + environment.json so load_frozen_head runs unmocked
+    snap_dir = ws / 'fake_head_snap' / head_meta['revision']
+    snap_dir.mkdir(parents=True)
+    atomic_json(snap_dir / 'config.json', {'tie_word_embeddings': bool(head_meta['tied_weights'])})
+    head_tensors = {'lm_head.weight': smoke_head.detach().cpu()}
+    if smoke_bias is not None:
+        head_tensors['lm_head.bias'] = smoke_bias.detach().cpu()
+    save_safetensors(head_tensors, str(snap_dir / 'model.safetensors'))
+    atomic_json(ws / 'environment.json', {
+        'model_artifacts': {
+            head_meta['artifact_id']: {
+                'revision': head_meta['revision'],
+                'path': str(snap_dir.resolve()),
+            }
+        }
+    })
+
+    # Create 5 variants = 10 distinct scaled/unscaled checkpoints matching pure_t1_fit
+    base_d = ws / 'm2_smoke' / 'dense.pt'
+    base_s = ws / 'm2_smoke' / 'dense_sparse.pt'
+    ckpts_dir = ws / 'ckpts'
+    ckpt_map: dict[str, Path] = {
+        'v0_unscaled::dense': base_d,
+        'v0_unscaled::dense_sparse': base_s,
+    }
+    for idx, sc in enumerate((0.20, 0.50, 0.75, 1.15), start=1):
+        d_dst = ckpts_dir / f'v{idx}_dense.pt'
+        s_dst = ckpts_dir / f'v{idx}_sparse.pt'
+        train.scale_adapter_checkpoint(base_d, d_dst, sc)
+        train.scale_adapter_checkpoint(base_s, s_dst, sc)
+        ckpt_map[f'v{idx}::dense'] = d_dst
+        ckpt_map[f'v{idx}::dense_sparse'] = s_dst
+    assert len(ckpt_map) == 10
+
+    # Baseline 1-process CPU evaluation
+    cpu_args = SimpleNamespace(
+        scale='reference', seed=2026, device='cpu',
+        target='Qwen/Qwen3-8B', drafter='z-lab/Qwen3-8B-DFlash-b16',
+        resume=True,
+    )
+    ref_prim, ref_t1 = phase_b_suite._evaluate_dual_offline_kl_batch(
+        cpu_args, ws, 'reference', ckpt_map, gpu_index=0, gpus=[0],
+    )
+
+    # Monkeypatch _spawn_parallel_workers to run _worker_dual_offline_kl in-process on CPU while tracking head loads & spawns
+    spawn_history: list[list[tuple[int, int]]] = []
+    head_loads_per_worker: list[int] = []
+    real_load_head = phase_b_suite.load_frozen_head
+
+    def _fake_spawn(worker_specs, logdir, label, *, scale, device_str, omp_threads=1):
+        del logdir, label, scale, device_str, omp_threads
+        spawn_history.append([(r, g) for r, g, _ in worker_specs])
+        for _rank, _gpu, cmd in worker_specs:
+            spec_idx = cmd.index('--_worker_spec') + 1
+            out_idx = cmd.index('--_worker_out') + 1
+            calls = [0]
+
+            def _counting_head(*a, **kw):
+                calls[0] += 1
+                return real_load_head(*a, **kw)
+
+            monkeypatch.setattr(phase_b_suite, 'load_frozen_head', _counting_head)
+            try:
+                phase_b_suite._worker_dual_offline_kl(
+                    SimpleNamespace(device='cpu', seed=2026),
+                    Path(cmd[spec_idx]),
+                    Path(cmd[out_idx]),
+                )
+            finally:
+                monkeypatch.setattr(phase_b_suite, 'load_frozen_head', real_load_head)
+            head_loads_per_worker.append(calls[0])
+        return {'status': 'complete'}
+
+    monkeypatch.setattr(phase_b_suite, '_spawn_parallel_workers', _fake_spawn)
+
+    cuda_args = SimpleNamespace(
+        scale='reference', seed=2026, device='cuda:0',
+        target='Qwen/Qwen3-8B', drafter='z-lab/Qwen3-8B-DFlash-b16',
+        resume=True,
+    )
+    sharded_prim, sharded_t1 = phase_b_suite._evaluate_dual_offline_kl_batch(
+        cuda_args, ws, 'reference', ckpt_map, gpu_index=0, gpus=list(range(8)),
+    )
+    assert len(spawn_history) == 1
+    assert spawn_history[0] == [(r, r) for r in range(8)]
+    # Every worker loads the frozen head ONCE (shared across primary & pure_t1 on mixed-regime workers!)
+    assert head_loads_per_worker == [1] * 8
+    assert list(sharded_prim.keys()) == list(ref_prim.keys())
+    assert list(sharded_t1.keys()) == list(ref_t1.keys())
+    assert sharded_prim == ref_prim
+    assert sharded_t1 == ref_t1
+
+    # Full cache hit on --resume: 0 workers spawned!
+    spawn_history.clear()
+    cached_prim, cached_t1 = phase_b_suite._evaluate_dual_offline_kl_batch(
+        cuda_args, ws, 'reference', ckpt_map, gpu_index=0, gpus=list(range(8)),
+    )
+    assert spawn_history == []
+    assert cached_prim == ref_prim and cached_t1 == ref_t1
+
+    # Partial resume: delete ONLY rank 3's result file -> spawns ONLY rank 3!
+    rank3_files = list((ws / 'dual_offline_kl_eval').glob('result-rank3-*.json'))
+    assert len(rank3_files) == 1
+    rank3_files[0].unlink()
+    spawn_history.clear()
+    part_prim, part_t1 = phase_b_suite._evaluate_dual_offline_kl_batch(
+        cuda_args, ws, 'reference', ckpt_map, gpu_index=0, gpus=list(range(8)),
+    )
+    assert spawn_history == [[(3, 3)]]
+    assert part_prim == ref_prim and part_t1 == ref_t1
+
+    # Checkpoint modification invalidates ONLY the shards containing that checkpoint!
+    train.scale_adapter_checkpoint(base_d, ckpts_dir / 'v4_dense.pt', 0.35)
+    spawn_history.clear()
+    upd_prim, upd_t1 = phase_b_suite._evaluate_dual_offline_kl_batch(
+        cuda_args, ws, 'reference', ckpt_map, gpu_index=0, gpus=list(range(8)),
+    )
+    assert len(spawn_history) == 1
+    assert 1 <= len(spawn_history[0]) <= 2  # at most 2 ranks (primary + pure_t1 for v4::dense) recomputed!
+    ref_prim_upd, ref_t1_upd = phase_b_suite._evaluate_dual_offline_kl_batch(
+        cpu_args, ws, 'reference', ckpt_map, gpu_index=0, gpus=[0],
+    )
+    assert upd_prim == ref_prim_upd and upd_t1 == ref_t1_upd
+
+    # --no_resume (resume=False) forces all 8 ranks to recompute
+    no_res_args = copy.copy(cuda_args)
+    no_res_args.resume = False
+    spawn_history.clear()
+    nr_prim, nr_t1 = phase_b_suite._evaluate_dual_offline_kl_batch(
+        no_res_args, ws, 'reference', ckpt_map, gpu_index=0, gpus=list(range(8)),
+    )
+    assert spawn_history == [[(r, r) for r in range(8)]]
+    assert nr_prim == ref_prim_upd and nr_t1 == ref_t1_upd
+
+    # Legacy `checkpoints` spec + monkeypatched `_prepare_offline_eval_context -> None` compatibility
+    monkeypatch.setattr(phase_b_suite, 'apply_gpu_cpu_affinity', lambda *_a, **_kw: {})
+    monkeypatch.setattr(phase_b_suite, 'assert_idle', lambda *_a, **_kw: {'ok': True})
+    monkeypatch.setattr(phase_b_suite, '_prepare_offline_eval_context', lambda *_a, **_kw: None)
+    monkeypatch.setattr(phase_b_suite, '_offline_kl_summary', lambda *_a, **_kw: {'dev': {'weighted_mean_kl': 1.0}, 'test': {'weighted_mean_kl': 1.0}})
+    leg_spec = tmp_path / 'legacy_spec.json'
+    leg_out = tmp_path / 'legacy_out.json'
+    atomic_json(leg_spec, {
+        'workspace': str(ws),
+        'effective_scale': 'smoke',
+        'physical_gpu': 0,
+        'checkpoints': {'leg::dense': str(base_d)},
+    })
+    phase_b_suite._worker_dual_offline_kl(SimpleNamespace(device='cpu', seed=2026), leg_spec, leg_out)
+    leg_payload = json.loads(leg_out.read_text())
+    assert 'leg::dense' in leg_payload['primary_heldout_kl']
+    assert 'leg::dense' in leg_payload['pure_t1_heldout_kl']
+
+
+def test_bootstrap_full_scale_heals_interrupted_m0_copy(tmp_path, monkeypatch):
+    fake_ref = tmp_path / 'ref_art'
+    (fake_ref / 'm0').mkdir(parents=True)
+    atomic_json(fake_ref / 'environment.json', {
+        'models': {'target': 'Qwen/Qwen3-8B', 'drafter': 'z-lab/Qwen3-8B-DFlash-b16'},
+        'model_artifacts': {
+            'Qwen/Qwen3-8B': {'revision': 'rev-t'},
+            'z-lab/Qwen3-8B-DFlash-b16': {'revision': 'rev-d'},
+        },
+        'dataset_artifacts': {
+            'openai/gsm8k': {'revision': 'rev-g'},
+            'openai/openai_humaneval': {'revision': 'rev-h'},
+            'HuggingFaceH4/MATH-500': {'revision': 'rev-m'},
+        },
+    })
+    atomic_json(fake_ref / 'smoke.json', {'status': 'passed'})
+    atomic_json(fake_ref / 'm0.json', {'status': 'passed', 'scale': 'reference', 'num_distinct_prompts': 3})
+    atomic_json(fake_ref / 'm0_numerics.json', {'status': 'passed'})
+    for i in range(3):
+        atomic_json(fake_ref / 'm0' / f'row_{i:02d}.json', {'idx': i})
+
+    # Simulate crash after m0.json + m0_numerics.json were copied, before m0/*.json and m0_provenance.json finished
+    full_ws = tmp_path / 'full_ws_interrupted'
+    (full_ws / 'm0').mkdir(parents=True)
+    atomic_json(full_ws / 'm0.json', {'status': 'passed', 'scale': 'reference', 'num_distinct_prompts': 3})
+    atomic_json(full_ws / 'm0_numerics.json', {'status': 'passed'})
+    atomic_json(full_ws / 'prompts.json', _make_full_scale_synthetic_manifest())
+
+    fake_root = tmp_path / 'empty_root'
+    fake_root.mkdir(parents=True)
+    monkeypatch.setattr('edraft.runtime.ROOT', fake_root)
+    ns = SimpleNamespace(
+        scale='full', seed=2026, device='cpu', target='Qwen/Qwen3-8B',
+        drafter='z-lab/Qwen3-8B-DFlash-b16', allow_large_run=True,
+        allow_download=False, resume=True, output=full_ws,
+    )
+    cap = phase_b_suite._bootstrap_full_scale_workspace(ns, fake_ref, full_ws, 'full', [0])
+    assert cap['status'] == 'passed'
+    assert (full_ws / 'm0_provenance.json').is_file()
+    assert len(list((full_ws / 'm0').glob('*.json'))) == 3
+    prov = json.loads((full_ws / 'm0_provenance.json').read_text())
+    assert prov['m0_row_files_copied'] == 3
