@@ -1235,7 +1235,7 @@ class _FullVocabLookaheadCache:
     """Precomputed block-static candidate tensors and batched [K, V] full-vocab lookahead buffers."""
     __slots__ = (
         'K', 'V', 'M', 'r_dim', 'D', 'dtype', 'device',
-        'c0_mat', 'E_cast', 'A_cast', 'l_w', 'U', 'sparse',
+        'c0_mat', 'E_cast', 'E_bf16', 'A_cast', 'l_w', 'U', 'sparse',
         'msg_pref', 'sparse_base', 'pair_k', 'pair_i', 'S_pairs',
         'g_mat', 'r_mat', 'mu_mat', 'r_sup_mat',
         'clamped_mask_py', 'clamped_tokens_gpu', 'first_unclamped', 'n_clamped', 'unclamped_idx_gpu',
@@ -1256,6 +1256,8 @@ class _FullVocabLookaheadCache:
         sparse,
         T_relax_f: float,
         beta_relax_f: float,
+        bf16_gemm: bool = False,
+        E_bf16: torch.Tensor | None = None,
     ):
         self.K, self.M = int(c0_mat.shape[0]), int(c0_mat.shape[1])
         self.V, self.r_dim = int(E_cast.shape[0]), int(E_cast.shape[1])
@@ -1264,6 +1266,18 @@ class _FullVocabLookaheadCache:
         self.device = U.device
         self.c0_mat = c0_mat
         self.E_cast = E_cast
+        if bf16_gemm and self.dtype == torch.float32:
+            if (
+                E_bf16 is not None
+                and E_bf16.device == self.device
+                and E_bf16.dtype == torch.bfloat16
+                and E_bf16.shape == E_cast.shape
+            ):
+                self.E_bf16: torch.Tensor | None = E_bf16
+            else:
+                self.E_bf16 = E_cast.to(device=self.device, dtype=torch.bfloat16)
+        else:
+            self.E_bf16 = None
         self.A_cast = A_cast
         self.l_w = l_w
         self.U = U
@@ -1305,7 +1319,10 @@ class _FullVocabLookaheadCache:
         if T_relax_f != 1.0:
             init_scores.div_(T_relax_f)
         self.r_mat = torch.softmax(init_scores, dim=-1).to(self.dtype)
-        self.mu_mat = torch.mm(self.r_mat, E_cast)
+        if self.E_bf16 is not None:
+            self.mu_mat = torch.mm(self.r_mat.bfloat16(), self.E_bf16).to(self.dtype)
+        else:
+            self.mu_mat = torch.mm(self.r_mat, E_cast)
         self.r_sup_mat = torch.gather(self.r_mat, 1, c0_mat)
 
         self.clamped_mask_py: list[bool] = [False] * self.K
@@ -1758,7 +1775,8 @@ def compute_frozen_candidates(snapshot: ProposalSnapshot, l_unit: torch.Tensor,
 def initialize_lookahead(snapshot, l_unit, H, prefix, domain='candidate_masked',
                          T_relax=1., beta_relax=1., U_precomputed=None, *,
                          use_fast_candidate: bool = True,
-                         use_fast_lookahead: bool | None = None):
+                         use_fast_lookahead: bool | None = None,
+                         bf16_gemm: bool = False):
     if not _valid_real_scalar(T_relax) or float(T_relax) <= 0:
         raise ValueError('T_relax must be finite and strictly positive')
     if not _valid_real_scalar(beta_relax):
@@ -1767,7 +1785,7 @@ def initialize_lookahead(snapshot, l_unit, H, prefix, domain='candidate_masked',
         raise ValueError('unknown belief domain')
     T_relax_f = float(T_relax)
     beta_relax_f = float(beta_relax)
-    raw_U = snapshot.unary(H) if U_precomputed is None else U_precomputed
+    raw_U = snapshot.unary(H, bf16_gemm=bf16_gemm) if U_precomputed is None else U_precomputed
     work_dtype = torch.promote_types(torch.promote_types(l_unit.dtype, raw_U.dtype), torch.float32)
     l_w = l_unit.to(work_dtype)
     U = raw_U.to(work_dtype)
@@ -1805,19 +1823,33 @@ def initialize_lookahead(snapshot, l_unit, H, prefix, domain='candidate_masked',
 
     support = [ids.clone() for ids in snapshot.C0]
     if can_use_fast and c0_mat is not None:
-        cache_cls = _CandidateLookaheadCache if domain == 'candidate_masked' else _FullVocabLookaheadCache
         with torch.no_grad():
-            fast_cache = cache_cls(
-                c0_mat=c0_mat,
-                E_cast=E_w,
-                A_cast=snapshot.A.to(work_dtype),
-                l_w=l_w,
-                U=U,
-                prefix=tuple(prefix),
-                sparse=snapshot.sparse,
-                T_relax_f=T_relax_f,
-                beta_relax_f=beta_relax_f,
-            )
+            if domain == 'candidate_masked':
+                fast_cache = _CandidateLookaheadCache(
+                    c0_mat=c0_mat,
+                    E_cast=E_w,
+                    A_cast=snapshot.A.to(work_dtype),
+                    l_w=l_w,
+                    U=U,
+                    prefix=tuple(prefix),
+                    sparse=snapshot.sparse,
+                    T_relax_f=T_relax_f,
+                    beta_relax_f=beta_relax_f,
+                )
+            else:
+                fast_cache = _FullVocabLookaheadCache(
+                    c0_mat=c0_mat,
+                    E_cast=E_w,
+                    A_cast=snapshot.A.to(work_dtype),
+                    l_w=l_w,
+                    U=U,
+                    prefix=tuple(prefix),
+                    sparse=snapshot.sparse,
+                    T_relax_f=T_relax_f,
+                    beta_relax_f=beta_relax_f,
+                    bf16_gemm=bool(bf16_gemm),
+                    E_bf16=snapshot._token_features_bf16() if bf16_gemm else None,
+                )
         return LookaheadState(
             snapshot, l_w, U, tuple(prefix), support, [None] * K,
             [], [], None, domain, T_relax_f, beta_relax_f, _fast=fast_cache,
@@ -1958,7 +1990,12 @@ def damped_lookahead_step(state: LookaheadState, eta=0.5):
                 if fast.first_unclamped == fast.n_clamped:
                     s = fast.first_unclamped
                     g_slice = fast.g_mat[s:]
-                    tilde_slice = torch.addmm(fast.U[s:], msg_tot[s:], fast.E_cast.T)
+                    if fast.E_bf16 is not None:
+                        tilde_slice = fast.U[s:] + torch.mm(
+                            msg_tot[s:].bfloat16(), fast.E_bf16.T
+                        ).to(fast.dtype)
+                    else:
+                        tilde_slice = torch.addmm(fast.U[s:], msg_tot[s:], fast.E_cast.T)
                     if s_tot is not None:
                         tilde_slice.scatter_add_(1, fast.c0_mat[s:], s_tot[s:])
                     g_slice.lerp_(tilde_slice, eta_f)
@@ -1966,17 +2003,26 @@ def damped_lookahead_step(state: LookaheadState, eta=0.5):
                     if state.T_relax != 1.0:
                         tilde_slice.div_(state.T_relax)
                     torch.softmax(tilde_slice, dim=-1, out=fast.r_mat[s:])
-                    torch.mm(fast.r_mat[s:], fast.E_cast, out=fast.mu_mat[s:])
+                    if fast.E_bf16 is not None:
+                        fast.mu_mat[s:].copy_(torch.mm(fast.r_mat[s:].bfloat16(), fast.E_bf16))
+                    else:
+                        torch.mm(fast.r_mat[s:], fast.E_cast, out=fast.mu_mat[s:])
                     torch.gather(fast.r_mat[s:], 1, fast.c0_mat[s:], out=fast.r_sup_mat[s:])
                 else:
                     u_idx = fast.unclamped_idx_gpu
                     assert u_idx is not None and u_idx.numel() > 0
                     c0_u = fast.c0_mat.index_select(0, u_idx)
-                    tilde_u = torch.addmm(
-                        fast.U.index_select(0, u_idx),
-                        msg_tot.index_select(0, u_idx),
-                        fast.E_cast.T,
-                    )
+                    if fast.E_bf16 is not None:
+                        tilde_u = fast.U.index_select(0, u_idx) + torch.mm(
+                            msg_tot.index_select(0, u_idx).bfloat16(),
+                            fast.E_bf16.T,
+                        ).to(fast.dtype)
+                    else:
+                        tilde_u = torch.addmm(
+                            fast.U.index_select(0, u_idx),
+                            msg_tot.index_select(0, u_idx),
+                            fast.E_cast.T,
+                        )
                     if s_tot is not None:
                         tilde_u.scatter_add_(1, c0_u, s_tot.index_select(0, u_idx))
                     g_u = fast.g_mat.index_select(0, u_idx)
@@ -1986,7 +2032,10 @@ def damped_lookahead_step(state: LookaheadState, eta=0.5):
                     if state.T_relax != 1.0:
                         tilde_u.div_(state.T_relax)
                     r_u = torch.softmax(tilde_u, dim=-1).to(fast.dtype)
-                    mu_u = torch.mm(r_u, fast.E_cast)
+                    if fast.E_bf16 is not None:
+                        mu_u = torch.mm(r_u.bfloat16(), fast.E_bf16).to(fast.dtype)
+                    else:
+                        mu_u = torch.mm(r_u, fast.E_cast)
                     r_sup_u = torch.gather(r_u, 1, c0_u)
                     fast.r_mat.index_copy_(0, u_idx, r_u)
                     fast.mu_mat.index_copy_(0, u_idx, mu_u)

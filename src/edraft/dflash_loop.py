@@ -101,17 +101,16 @@ def _sample_proposal(draft_logits, h_raw, prefix, *, temperature, warper, genera
                      proposal_controller=None, return_proposal_meta: bool = False,
                      beta_relax: float | None = None, enable_round3_compact: bool = True):
     K = len(draft_logits)
-    probs_fn = None if fastpath is None else fastpath.probabilities
-    compact_probs_fn = None if fastpath is None else fastpath.compact_probabilities
-    unary_fn = (
-        fastpath.unary
-        if (fastpath is not None and (
+    use_compiled_or_graphed = bool(
+        fastpath is not None and (
             fastpath.config.compile
             or fastpath.config.cuda_graph
             or fastpath.config.simulate_cpu_graph
-        ))
-        else None
+        )
     )
+    probs_fn = fastpath.probabilities if use_compiled_or_graphed else None
+    compact_probs_fn = fastpath.compact_probabilities if use_compiled_or_graphed else None
+    unary_fn = fastpath.unary if use_compiled_or_graphed else None
     bf16_gemm = bool(fastpath is not None and fastpath.bf16_gemm)
     lookahead_mode = 'off' if lookahead is None else lookahead.mode
     if proposal_mode not in ('dense_full', 'dense_candidate'):
@@ -178,6 +177,7 @@ def _sample_proposal(draft_logits, h_raw, prefix, *, temperature, warper, genera
                 domain=lookahead.domain, T_relax=lookahead.T_relax,
                 beta_relax=eff_beta_relax, U_precomputed=U_all,
                 use_fast_candidate=enable_round3_compact,
+                bf16_gemm=bf16_gemm,
             )
             for _ in range(lookahead.R_init):
                 damped_lookahead_step(state, eta=lookahead.eta)
@@ -250,6 +250,77 @@ def _sample_proposal(draft_logits, h_raw, prefix, *, temperature, warper, genera
                     vocab_size=V,
                 )
                 q_out = comp_q if _allow_compact_q else comp_q.to_dense()
+            return _ret(tok_buf, q_out, state.snapshot.C0, mode_label)
+
+        if (
+            enable_round3_compact
+            and lookahead.domain == 'full_vocabulary'
+            and bigram is None
+            and state._fast is not None
+        ):
+            device = draft_logits.device
+            V = draft_logits.shape[-1]
+            tok_buf = torch.empty(K, dtype=torch.long, device=device)
+            if _allow_compact_q:
+                compact_k = warper.top_k if (temperature > 0 and 0 < warper.top_k < V) else 0
+                slot_probs: torch.Tensor | None = None
+                slot_indices = torch.empty((K, compact_k), dtype=torch.long, device=device) if compact_k else None
+                q_sel_buf: torch.Tensor | None = None
+                full_qs: list[torch.Tensor] | None = [] if (temperature > 0 and not compact_k) else None
+                for i in range(K):
+                    score = state.full_slot_scores(i, beta)
+                    with timer.phase("sequential_sampling"):
+                        tok_t, p_sub, idx_sub, q_sel = sample_token_compact_with_prob(
+                            score, temperature, warper, generator, compact_probs_fn=compact_probs_fn,
+                        )
+                        tok_buf[i] = tok_t
+                        state._clamp_full_vocab_tensor(i, tok_t)
+                    if p_sub is not None:
+                        if compact_k:
+                            if slot_probs is None:
+                                slot_probs = torch.empty((K, compact_k), dtype=p_sub.dtype, device=device)
+                                q_sel_buf = torch.empty(K, dtype=p_sub.dtype, device=device)
+                            slot_probs[i] = p_sub
+                            slot_indices[i] = idx_sub
+                            q_sel_buf[i] = q_sel
+                        else:
+                            full_qs.append(p_sub)
+                    if lookahead.mode == 'rerelax' and i + 1 < K:
+                        with timer.phase("lookahead_iterations"):
+                            for _ in range(lookahead.R_clamp):
+                                damped_lookahead_step(state, eta=lookahead.eta)
+                if temperature == 0:
+                    q_out = None
+                elif compact_k:
+                    q_out = (
+                        None
+                        if slot_probs is None
+                        else CompactProposal(
+                            slot_indices=slot_indices,
+                            slot_probs=slot_probs,
+                            q_selected=q_sel_buf,
+                            vocab_size=V,
+                        )
+                    )
+                else:
+                    q_out = torch.stack(full_qs) if full_qs else None
+            else:
+                dense_qs: list[torch.Tensor] | None = [] if temperature > 0 else None
+                for i in range(K):
+                    score = state.full_slot_scores(i, beta)
+                    with timer.phase("sequential_sampling"):
+                        tok_t, q_i = sample_token_tensor(
+                            score, temperature, warper, generator, probs_fn=probs_fn,
+                        )
+                        tok_buf[i] = tok_t
+                        state._clamp_full_vocab_tensor(i, tok_t)
+                    if q_i is not None and dense_qs is not None:
+                        dense_qs.append(q_i)
+                    if lookahead.mode == 'rerelax' and i + 1 < K:
+                        with timer.phase("lookahead_iterations"):
+                            for _ in range(lookahead.R_clamp):
+                                damped_lookahead_step(state, eta=lookahead.eta)
+                q_out = torch.stack(dense_qs) if dense_qs else None
             return _ret(tok_buf, q_out, state.snapshot.C0, mode_label)
 
         tokens, qs = [], []

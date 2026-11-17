@@ -1409,3 +1409,157 @@ def test_eval_closed_loop_quadratic_lpt_tune_and_timing_sharding_and_legacy_pari
                 for r in range(8)
             ]
             assert (max(q_loads) - min(q_loads)) / (sum(q_loads) / 8.0) < 0.01
+
+
+def test_phase_b_bf16_gemm_and_timing_repeats2_lookahead_and_driver(tmp_path: Path):
+    """Verify `--timing_repeats 2 --bf16_gemm --fast_decode` across `_FullVocabLookaheadCache`, `dflash_loop`, and `phase_b_suite`."""
+    import importlib.util
+    import torch
+    import torch.nn.functional as F
+    from edraft.adapter import DenseAdapter, LookaheadConfig, _FullVocabLookaheadCache, damped_lookahead_step, initialize_lookahead
+    from edraft.dflash_loop import PhaseTimer, _sample_proposal
+    from edraft.fastpath import FastPathConfig, FastPathRuntime
+    from edraft.sampler import SamplingWarper
+    from edraft.sparse import SignedHash
+    from edraft.verify import CompactProposal
+
+    # 1. _FullVocabLookaheadCache bf16_gemm=True vs bf16_gemm=False numerical closeness & 0-ULP FP32/FP64 preservation
+    gen = torch.Generator().manual_seed(370)
+    V, r_dim, p_dim, D, M, K = 128, 16, 20, 4, 16, 6
+    E = F.normalize(torch.randn((V, r_dim), generator=gen, dtype=torch.float32), dim=-1)
+    sp = SignedHash(256)
+    with torch.no_grad():
+        sp.values.normal_(0.0, 0.1, generator=gen)
+    adapter = DenseAdapter(E, p=p_dim, D=D, sparse=sp, M_sparse=M)
+    with torch.no_grad():
+        adapter.W.normal_(0.0, 0.1, generator=gen)
+        adapter.A.normal_(0.0, 0.1, generator=gen)
+        adapter.b.normal_(0.0, 0.05, generator=gen)
+    snap = adapter.snapshot(version=3)
+    l_unit = torch.randn((K, V), generator=gen, dtype=torch.float32).log_softmax(-1)
+    H = torch.randn((K, p_dim), generator=gen, dtype=torch.float32)
+    prefix = [3, 9, 27, 81]
+
+    st_fp32_a = initialize_lookahead(snap, l_unit, H, prefix, domain='full_vocabulary', T_relax=0.9, beta_relax=0.8, bf16_gemm=False)
+    st_fp32_b = initialize_lookahead(snap, l_unit, H, prefix, domain='full_vocabulary', T_relax=0.9, beta_relax=0.8, bf16_gemm=False)
+    st_bf16 = initialize_lookahead(snap, l_unit, H, prefix, domain='full_vocabulary', T_relax=0.9, beta_relax=0.8, bf16_gemm=True)
+    assert isinstance(st_fp32_a._fast, _FullVocabLookaheadCache) and st_fp32_a._fast.E_bf16 is None
+    assert isinstance(st_bf16._fast, _FullVocabLookaheadCache) and st_bf16._fast.E_bf16 is not None
+    assert st_bf16._fast.E_bf16.dtype == torch.bfloat16
+    assert st_bf16._fast.dtype == torch.float32
+
+    # Exercise both prefix-clamped (slot 0) and non-prefix-clamped (slot 3 before slot 1) paths
+    for st in (st_fp32_a, st_fp32_b, st_bf16):
+        damped_lookahead_step(st, eta=0.5)
+        st.clamp(0, 7)
+        damped_lookahead_step(st, eta=0.5)
+        st.clamp(3, 42)
+        damped_lookahead_step(st, eta=0.5)
+
+    assert torch.equal(st_fp32_a.g, st_fp32_b.g)
+    torch.testing.assert_close(st_bf16.g, st_fp32_a.g, atol=2e-2, rtol=2e-2)
+    for r_bf, r_fp in zip(st_bf16.r, st_fp32_a.r):
+        torch.testing.assert_close(r_bf, r_fp, atol=2e-2, rtol=2e-2)
+    for mu_bf, mu_fp in zip(st_bf16.mu, st_fp32_a.mu):
+        torch.testing.assert_close(mu_bf, mu_fp, atol=2e-2, rtol=2e-2)
+
+    # FP64 never downcasts to BF16 even if bf16_gemm=True is requested
+    st64 = initialize_lookahead(
+        snap, l_unit.double(), H.double(), prefix, domain='full_vocabulary', bf16_gemm=True
+    )
+    assert isinstance(st64._fast, _FullVocabLookaheadCache) and st64._fast.E_bf16 is None
+    assert st64._fast.dtype == torch.float64
+
+    # 2. _sample_proposal with _allow_compact_q=True + FastPathRuntime(bf16_gemm=True, fast_decode=True) returns CompactProposal
+    fp = FastPathRuntime(FastPathConfig(bf16_gemm=True, fast_decode=True))
+    la_rerelax = LookaheadConfig(mode='rerelax', domain='full_vocabulary', R_init=2, R_clamp=1, eta=0.5, T_relax=1.0)
+    warper = SamplingWarper(top_k=12, top_p=0.85)
+    tok_t, q_comp, _, _, cands, mode_lbl = _sample_proposal(
+        l_unit, H, prefix, temperature=0.7, warper=warper,
+        generator=torch.Generator().manual_seed(123),
+        snapshot=snap, projection=None, beta=0.6, bigram=None,
+        timer=PhaseTimer('cpu', enabled=False),
+        fastpath=fp, _return_token_tensor=True, _allow_compact_q=True,
+        lookahead=la_rerelax, return_proposal_meta=True, enable_round3_compact=True,
+    )
+    assert isinstance(tok_t, torch.Tensor) and tok_t.shape == (K,)
+    assert isinstance(q_comp, CompactProposal) and q_comp.slot_probs.shape == (K, 12)
+    assert mode_lbl == 'lookahead_rerelax_full' and len(cands) == K
+
+    # 3. Verify Step 1..4 _suite_config_fingerprint == Step 5 (--suite all) with --timing_repeats 2 --bf16_gemm --fast_decode
+    ref_dir = tmp_path / 'ref_art'
+    out_dir = tmp_path / 'out_art'
+    ref_dir.mkdir()
+    out_dir.mkdir()
+
+    drv_path = Path('/tmp/edraft_m3_validator/phase_b_suite_driver.py')
+    if drv_path.is_file():
+        spec_drv = importlib.util.spec_from_file_location('phase_b_suite_driver_test', drv_path)
+        drv_mod = importlib.util.module_from_spec(spec_drv)
+        spec_drv.loader.exec_module(drv_mod)
+        prod_args = drv_mod.build_parser().parse_args([
+            '--dry_run', '--output', str(out_dir), '--reference_artifacts', str(ref_dir),
+        ])
+        assert prod_args.timing_repeats == 2 and prod_args.bf16_gemm is True and prod_args.fast_decode is True
+        prod_steps = drv_mod.build_steps(prod_args)
+        assert len(prod_steps) == 5
+        for st_info in prod_steps:
+            argv = st_info['argv']
+            assert '--bf16_gemm' in argv and '--fast_decode' in argv
+            tr_idx = argv.index('--timing_repeats')
+            assert argv[tr_idx + 1] == '2'
+
+        # Reject --timing_repeats 1
+        bad_tr_args = drv_mod.build_parser().parse_args([
+            '--dry_run', '--timing_repeats', '1', '--output', str(out_dir), '--reference_artifacts', str(ref_dir),
+        ])
+        with pytest.raises(ValueError, match='timing_repeats'):
+            drv_mod.build_steps(bad_tr_args)
+
+        # --no_bf16_gemm omits --bf16_gemm across all 5 steps
+        nobf_args = drv_mod.build_parser().parse_args([
+            '--dry_run', '--no_bf16_gemm', '--output', str(out_dir), '--reference_artifacts', str(ref_dir),
+        ])
+        for st_info in drv_mod.build_steps(nobf_args):
+            assert '--bf16_gemm' not in st_info['argv']
+
+    # 4. Run full_vocab_lookahead smoke + Step-5 _can_resume_report cache check with --timing_repeats 2 --bf16_gemm --fast_decode
+    rc = phase_b_suite.main([
+        '--scale', 'smoke',
+        '--suite', 'full_vocab_lookahead',
+        '--device', 'cpu',
+        '--gpus', '0,1',
+        '--output', str(out_dir),
+        '--reference_artifacts', str(ref_dir),
+        '--smoke_tokens', '8',
+        '--timing_repeats', '2',
+        '--timing_warmups', '1',
+        '--bf16_gemm',
+        '--fast_decode',
+    ])
+    assert rc['status'] == 'complete'
+    rep_fvl = rc['suites']['full_vocab_lookahead']
+    assert rep_fvl['status'] == 'complete'
+    assert rc['resolved_config']['bf16_gemm'] is True and rc['resolved_config']['fast_decode'] is True
+    ws_fvl = out_dir / 'reference_secondary_ablations' / f"full_vocab_lookahead_ws_{rep_fvl['config_fingerprint'][:12]}"
+    timing_fvl = json.loads((ws_fvl / 'm5' / 'timing.json').read_text())
+    assert timing_fvl['repeats'] == 2
+    assert timing_fvl['fastpath']['bf16_gemm'] is True and timing_fvl['fastpath']['fast_decode'] is True
+
+    # CLI-less summarize on ws_fvl preserves bf16_gemm=True & fast_decode=True
+    eval_closed_loop.main([
+        '--scale', 'smoke',
+        '--stage', 'm5',
+        '--mode', 'summarize',
+        '--device', 'cpu',
+        '--output', str(ws_fvl),
+        '--m5_arms', *phase_b_suite.DEFAULT_FULL_VOCAB_LOOKAHEAD_ARMS,
+        '--smoke_tokens', '8',
+        '--timing_repeats', '2',
+        '--timing_warmups', '1',
+    ])
+    sum_json = json.loads((ws_fvl / 'm5' / 'summary.json').read_text())
+    assert sum_json['status'] == 'complete'
+    timing_fvl_after = json.loads((ws_fvl / 'm5' / 'timing.json').read_text())
+    assert timing_fvl_after['fastpath'] == timing_fvl['fastpath']
+
