@@ -75,7 +75,7 @@ def live_block_diagnostics(record: dict, seed: int, *, _return_shared: bool = Fa
         raise ValueError('live diagnostics require full K-by-V target and draft tensors')
     T = float(record['collection_temperature'])
     warper = SamplingWarper(**record['sampling_warp_config'])
-    p_train = target.softmax(-1) if _return_shared else target.log_softmax(-1).exp()
+    p_train = target.softmax(-1)
     q_train = l_unit.exp()
     target_ids = target.argmax(-1)
     max_ids = torch.topk(l_unit, min(max(TOP_M), V), dim=-1).indices
@@ -117,7 +117,7 @@ def live_block_diagnostics(record: dict, seed: int, *, _return_shared: bool = Fa
         replacement_rank_dev = None
 
     if T == 0:
-        same_top1 = (target_ids == max_ids[:, 0])
+        same_top1 = (target_ids == l_unit.argmax(-1))
         zero_mass = (~same_top1).to(target.dtype)
         overlap_sampling = same_top1.to(target.dtype)
         ce = torch.where(

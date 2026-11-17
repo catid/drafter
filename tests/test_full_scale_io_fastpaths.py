@@ -726,13 +726,10 @@ def test_fused_live_block_diagnostics_compact_and_buffered_sparse_recorder_parit
         d_fus, p_sh = live_block_diagnostics(dict(rec), seed=99, _return_shared=True)
         c_fus = compact_block(
             dict(rec, diagnostics=d_fus), meta, special_tokens=specials,
-            _trust_l_unit=True, _precomputed_p_train=p_sh, _prevalidated_collect=True,
+            _trust_l_unit=True, _precomputed_p_train=p_sh,
         )
         validate_block(c_fus)
-        assert d_fus["target_rank"] == d_std["target_rank"]
-        assert d_fus["sampled_target_rank"] == d_std["sampled_target_rank"]
-        assert d_fus["sampled_target_rank_unwarped"] == d_std["sampled_target_rank_unwarped"]
-        assert d_fus["first_rejection"] == d_std["first_rejection"]
+        assert d_fus == d_std
         for ua, ub in zip(c_fus["union_ids"], c_std["union_ids"]):
             assert torch.equal(ua, ub)
         for la, lb in zip(c_fus["draft_l_unit_union"], c_std["draft_l_unit_union"]):
@@ -740,6 +737,86 @@ def test_fused_live_block_diagnostics_compact_and_buffered_sparse_recorder_parit
         for pa, pb in zip(c_fus["target_probs_union"], c_std["target_probs_union"]):
             assert torch.equal(pa, pb)
         assert torch.equal(c_fus["target_rest_mass"], c_std["target_rest_mass"])
+
+    # BUG-66BB-A1: T=0 tied BF16 top-1 draft logits use deterministic lowest-ID tie-break (`argmax`, not `topk`)
+    tied_d = torch.full((2, 512), -2.0, dtype=torch.bfloat16)
+    tied_t = torch.full((2, 512), -2.0, dtype=torch.bfloat16)
+    tied_d[0, 5] = 8.0
+    tied_d[0, 199] = 8.0
+    tied_d[0, 377] = 8.0
+    tied_t[0, 5] = 8.0  # lowest tied ID wins under greedy argmax
+    tied_d[1, 10] = 8.0
+    tied_d[1, 250] = 8.0
+    tied_t[1, 250] = 8.0  # target picks higher ID -> greedy draft (10) != target (250)
+    tied_rec = {
+        "round_idx": 1,
+        "draft_tokens": [5, 10],
+        "draft_logits": tied_d,
+        "l_unit": tied_d.float().log_softmax(-1),
+        "target_logits": tied_t,
+        "h_raw_bf16": torch.zeros((2, hidden), dtype=torch.bfloat16),
+        "h": torch.zeros((2, p_dim), dtype=torch.float32),
+        "draft_lm_head": {
+            "artifact_id": "x", "revision": "y", "dtype": "torch.bfloat16",
+            "tied_weights": False, "bias": False, "shape": [512, hidden], "hook": "draft_lm_head",
+        },
+        "collection_temperature": 0.0,
+        "loss_temperature": 1.0,
+        "verification_rule": "greedy",
+        "sampling_warp_config": {"top_k": 0, "top_p": 1.0, "min_p": 0.0},
+        "absolute_output_offset": 0,
+        "input_context_length": 16,
+        "verified_prefix_tail": [1, 2, 3, 4],
+        "physical_to_logical": {"anchor_physical_index": 0, "logical_to_physical": [1, 2]},
+        "accepted_length": 1,
+        "first_rejection_index": 1,
+        "replacement_token": 250,
+        "adapter_version": 0,
+    }
+    d_tied = live_block_diagnostics(tied_rec, seed=12345)
+    assert d_tied["overlap_sampling"] == [1.0, 0.0]
+    assert d_tied["target_mass_on_zero_proposal"] == [0.0, 1.0]
+    assert d_tied["sampling_cross_entropy_infinite"] == [False, True]
+    assert d_tied["sampling_cross_entropy"][0] == 0.0 and d_tied["sampling_cross_entropy"][1] is None
+
+    # BUG-66BB-A2: `-inf` truncation masks outside top-`M_target` (`64`) MUST raise ValueError unconditionally
+    masked_t = torch.randn((2, 512), generator=gen, dtype=torch.float32)
+    masked_t[:, 100:] = -float("inf")
+    masked_d = torch.randn((2, 512), generator=gen, dtype=torch.float32)
+    masked_rec = dict(
+        tied_rec,
+        draft_logits=masked_d,
+        l_unit=masked_d.log_softmax(-1),
+        target_logits=masked_t,
+    )
+    with pytest.raises(ValueError, match="training logits must be finite and unwarped"):
+        compact_block(masked_rec, meta, M_draft=64, M_target=64, _trust_l_unit=True)
+    # Also verify `-inf` in reused `l_unit` is caught
+    bad_lu = masked_d.log_softmax(-1)
+    bad_lu[0, 500] = -float("inf")
+    with pytest.raises(ValueError, match="training logits must be finite and unwarped"):
+        compact_block(dict(tied_rec, draft_logits=masked_d, l_unit=bad_lu, target_logits=masked_d), meta, _trust_l_unit=True)
+
+    # BUG-66BB-A3: `collect` capture runs full `validate_block` inside `compact_block` before writing any shard
+    bad_collect_dir = tmp_path / "bad_collect_validate"
+    collect_mod.main(["--scale", "smoke", "--output", str(bad_collect_dir), "--stage", "calibrate"])
+    orig_gen = CollectionBackend.generate
+
+    def _corrupt_first_rej(self, row, max_new_tokens, temperature, warper, seed, projection=None, on_block=None):
+        def _wrapped(blk):
+            blk["first_rejection_index"] = int(blk["accepted_length"]) + 1
+            if on_block is not None:
+                on_block(blk)
+        return orig_gen(self, row, max_new_tokens, temperature, warper, seed, projection=projection, on_block=_wrapped)
+
+    orig_backend_gen = CollectionBackend.generate
+    CollectionBackend.generate = _corrupt_first_rej
+    try:
+        with pytest.raises(ValueError, match="accepted length/first rejection index"):
+            collect_mod.main(["--scale", "smoke", "--output", str(bad_collect_dir), "--stage", "collect"])
+    finally:
+        CollectionBackend.generate = orig_backend_gen
+    assert list((bad_collect_dir / "traces").rglob("*.pt")) == []
 
     # Buffered SparseAccessRecorder(flush_every=8) + mid-stream checkpoint flush matches flush_every=1 bit-for-bit
     batches = [torch.randint(0, 50_000, (512,), generator=gen, dtype=torch.int64) for _ in range(21)]
@@ -762,4 +839,21 @@ def test_fused_live_block_diagnostics_compact_and_buffered_sparse_recorder_parit
         "collision_count", "distinct_keys_in_collided_buckets", "frequency_weighted_collision_count",
     ):
         assert s_buf[k] == s_ref[k]
+
+    # SPARSE-STATS-ALLZERO-EVENTS-1: all-zero-key flushed chunks verify SHA256 and return {'status': 'not_run'}
+    r_zero = SparseAccessRecorder(tmp_path, "allzero", 128, flush_every=2)
+    empty_k = torch.empty(0, dtype=torch.int64)
+    ch_zero = []
+    ch_zero.extend(r_zero.record_batch(empty_k, 0, 0))
+    ch_zero.extend(r_zero.record_batch(empty_k, 0, 1))
+    ch_zero.extend(r_zero.record_batch(empty_k, 0, 2))
+    ch_zero.extend(r_zero.flush())
+    assert len(ch_zero) == 2 and sum(c["events"] for c in ch_zero) == 0
+    s_zero = r_zero.finalize(ch_zero, sp_tbl, memory_limit="256MB", benchmark_entries=1000, seed=2026)
+    assert s_zero == {"status": "not_run", "reason": "no sparse-stage lookup events"}
+    # Corrupting a 0-event chunk still fails SHA256 verification before returning `not_run`
+    p_z0 = Path(ch_zero[0]["path"])
+    p_z0.write_bytes(p_z0.read_bytes() + b"\x00")
+    with pytest.raises(ValueError, match="changed after its optimizer checkpoint"):
+        r_zero.finalize(ch_zero, sp_tbl, memory_limit="256MB", benchmark_entries=1000, seed=2026)
 

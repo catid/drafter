@@ -167,7 +167,7 @@ class SparseAccessRecorder:
         for item in chunks:
             if hashlib.sha256(Path(item['path']).read_bytes()).hexdigest() != item['sha256']:
                 raise ValueError('Sparse statistics chunk changed after its optimizer checkpoint')
-        if not paths:
+        if not paths or sum(int(c['events']) for c in chunks) == 0:
             return {'status': 'not_run', 'reason': 'no sparse-stage lookup events'}
         database = self.directory / 'exact_key_counts.duckdb'
         connection = duckdb.connect(str(database))

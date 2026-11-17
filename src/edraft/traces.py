@@ -91,8 +91,7 @@ def _all_tensors_finite(tensors: Sequence[torch.Tensor]) -> bool:
 def compact_block(record: Mapping, metadata: Mapping, M_draft: int = 256, M_target: int = 64,
                   special_tokens: Sequence[int] = (), retain_live_full: bool = False,
                   *, _trust_l_unit: bool = False,
-                  _precomputed_p_train: torch.Tensor | None = None,
-                  _prevalidated_collect: bool = False) -> dict:
+                  _precomputed_p_train: torch.Tensor | None = None) -> dict:
     """Build a canonical CPU trace from one live loop callback.
 
     Stored target probabilities are the unwarped T_train=1 full softmax values
@@ -153,21 +152,20 @@ def compact_block(record: Mapping, metadata: Mapping, M_draft: int = 256, M_targ
         cand_parts = [top_draft, top_target, tok_dev]
     cands_sorted = torch.cat(cand_parts, dim=-1).sort(dim=-1).values
     C = cands_sorted.shape[1]
+    fin_ok = torch.isfinite(draft_logits).all() & torch.isfinite(target_logits).all()
+    if reused_lu is not None:
+        fin_ok = fin_ok & torch.isfinite(reused_lu).all()
     float_pack_cpu = torch.cat(
         (
             l_unit.gather(-1, cands_sorted),
             P_train.gather(-1, cands_sorted),
             draft_log_normalizer[:, None],
             target_log_normalizer[:, None],
+            fin_ok.to(dtype=draft_log_normalizer.dtype).reshape(1, 1).expand(K, 1),
         ),
         dim=-1,
     ).cpu()
-    if not bool(torch.isfinite(float_pack_cpu).all()):
-        finite_inputs = (draft_logits, target_logits) if reused_lu is None else (draft_logits, target_logits, reused_lu)
-        if not _all_tensors_finite(finite_inputs):
-            raise ValueError("training logits must be finite and unwarped; truncation masks are forbidden")
-    finite_inputs = (draft_logits, target_logits) if reused_lu is None else (draft_logits, target_logits, reused_lu)
-    if not draft_logits.is_cuda and not _all_tensors_finite(finite_inputs):
+    if not bool(torch.isfinite(float_pack_cpu).all()) or float(float_pack_cpu[0, 2 * C + 2].item()) != 1.0:
         raise ValueError("training logits must be finite and unwarped; truncation masks are forbidden")
     l_gath_cpu = float_pack_cpu[:, :C]
     p_gath_cpu = float_pack_cpu[:, C:2 * C]
@@ -211,13 +209,7 @@ def compact_block(record: Mapping, metadata: Mapping, M_draft: int = 256, M_targ
         result["live_full"] = {"draft_l_unit": l_unit.detach().cpu().clone(),
                                "target_probs": P_train.detach().cpu().clone(),
                                "purpose": "heldout_grouped_gap_and_reconstruction_diagnostic"}
-    if retain_live_full or not _prevalidated_collect:
-        validate_block(result)
-    else:
-        for name in ("h", "h_raw_bf16"):
-            val = result[name]
-            if val.ndim != 2 or val.shape[0] != K or not _all_finite(val):
-                raise ValueError(f"invalid {name} tensor")
+    validate_block(result)
     return result
 
 

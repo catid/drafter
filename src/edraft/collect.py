@@ -592,8 +592,7 @@ def collect(args, prompts=None, backend=None):
                       and live_blocks_written[row["split"]] < args.live_full_blocks)
             blocks.append(compact_block(block, metadata, special_tokens=backend.special_tokens,
                                         retain_live_full=retain, _trust_l_unit=True,
-                                        _precomputed_p_train=p_train_shared,
-                                        _prevalidated_collect=True))
+                                        _precomputed_p_train=p_train_shared))
             live_blocks_written[row["split"]] += int(retain)
             live_count += int(retain)
         generated = backend.generate(row, job["max_new_tokens"], job["temperature"], job["warper"],
