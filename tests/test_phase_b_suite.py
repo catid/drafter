@@ -889,3 +889,120 @@ def test_bootstrap_full_scale_heals_interrupted_m0_copy(tmp_path, monkeypatch):
     assert len(list((full_ws / 'm0').glob('*.json'))) == 3
     prov = json.loads((full_ws / 'm0_provenance.json').read_text())
     assert prov['m0_row_files_copied'] == 3
+
+
+def test_pure_t1_closed_loop_shards_quadratic_lpt_balance_and_per_rank_resume(tmp_path, monkeypatch):
+    from edraft import train
+
+    # 1. Real reference artifacts check (read-only): <1% quadratic cost spread & exact 4 long prompts/rank across 8 GPUs
+    real_ref = Path('/home/catid/drafter/artifacts')
+    if (real_ref / 'prompts.json').is_file() and (real_ref / 'm4' / 'timing' / 'sharding_plan.json').is_file():
+        pm_real = json.loads((real_ref / 'prompts.json').read_text())
+        _, sel_real, _ = phase_b_suite._select_test_prompts(pm_real, 'reference', 0)
+        eff_w, shards_real, meta_real = phase_b_suite._plan_closed_loop_prompt_shards(
+            sel_real, pm_real, real_ref, 8, timing_repeats=3,
+        )
+        assert eff_w == 8
+        assert meta_real['weight_source'] == 'closed_loop_sharding_plan_quadratic_lpt'
+        all_assigned = [p['prompt_id'] for r in range(8) for p in shards_real[r]]
+        assert len(all_assigned) == 96 and len(set(all_assigned)) == 96
+        for r in range(8):
+            assert sum(1 for p in shards_real[r] if p['condition'].startswith('long_')) == 4
+            assert sum(1 for p in shards_real[r] if p['condition'] == 'standard_nonthinking') >= 1
+        loads_real = [meta_real['rank_estimated_loads'][str(r)] for r in range(8)]
+        spread = (max(loads_real) - min(loads_real)) / (sum(loads_real) / 8.0)
+        assert spread < 0.01  # 0.46% spread vs 46.19% unweighted manifest snake!
+
+    # 2. Synthetic m1_audit.json fallback with extreme 24,576 vs 1,000 outlier: count guard keeps <= ceil(N_long/W) per rank
+    syn_manifest = _make_full_scale_synthetic_manifest()
+    _, sel_full, _ = phase_b_suite._select_test_prompts(syn_manifest, 'full', 0)
+    m1_ws = tmp_path / 'm1_only_ws'
+    m1_ws.mkdir()
+    gens = []
+    for idx, p in enumerate(sel_full):
+        if p['condition'].startswith('long_'):
+            rl = 24576 if idx % 8 == 0 else (1200 + 100 * (idx % 7))
+        else:
+            rl = 200 + 15 * (idx % 10)
+        gens.append({'prompt_id': p['prompt_id'], 'split': 'test', 'realized_length': rl})
+    atomic_json(m1_ws / 'm1_audit.json', {'scale': 'full', 'status': 'passed', 'generations': gens})
+    eff_w_m1, shards_m1, meta_m1 = phase_b_suite._plan_closed_loop_prompt_shards(
+        sel_full, syn_manifest, m1_ws, 8, timing_repeats=3,
+    )
+    assert eff_w_m1 == 8
+    assert meta_m1['weight_source'] == 'm1_audit_realized_tokens_lpt'
+    for r in range(8):
+        # 64 selected long prompts across 8 GPUs -> exact 8 long prompts per rank despite 24,576 outliers!
+        assert sum(1 for p in shards_m1[r] if p['condition'].startswith('long_')) == 8
+
+    # Pilot 1-per-condition (`2` prompts across `2` GPUs) leaves zero empty ranks
+    _, sel_pilot2, _ = phase_b_suite._select_test_prompts(syn_manifest, 'full', 1)
+    eff_w_p2, shards_p2, _ = phase_b_suite._plan_closed_loop_prompt_shards(
+        sel_pilot2, syn_manifest, m1_ws, 2, timing_repeats=2,
+    )
+    assert eff_w_p2 == 2 and all(len(shards_p2[r]) == 1 for r in range(2))
+
+    # 3. End-to-end _evaluate_variants_closed_loop per-rank --resume & stale higher-rank cleanup
+    ws = tmp_path / 'var_cl_ws'
+    ws.mkdir()
+    train.main(['--scale', 'smoke', '--device', 'cpu', '--seed', '2026', '--output', str(ws)])
+    variants = [
+        ('v_base', ws / 'm2_smoke' / 'dense.pt', ws / 'm2_smoke' / 'dense_sparse.pt'),
+    ]
+    base_args = SimpleNamespace(
+        scale='smoke', seed=2026, device='cpu',
+        target='Qwen/Qwen3-8B', drafter='z-lab/Qwen3-8B-DFlash-b16',
+        timing_warmups=1, timing_repeats=2, timing_prompts=0,
+        smoke_tokens=8, max_new_tokens=64, long_max_new_tokens=128,
+        resume=True,
+    )
+    st_1gpu, out_1gpu = phase_b_suite._evaluate_variants_closed_loop(base_args, ws, 'smoke', variants, [0])
+    assert st_1gpu == 'complete'
+
+    # Plant a stale rank-3 file to verify stale ranks >= eff_w are purged before globbing
+    stale_dir = ws / 'pure_t1_closed_loop_shards'
+    stale_dir.mkdir(parents=True, exist_ok=True)
+    atomic_json(stale_dir / 'result-rank3.json', {'stale': True})
+    atomic_json(stale_dir / 'spec-rank3.json', {'stale': True})
+
+    real_spawn = phase_b_suite._spawn_parallel_workers
+    spawned_ranks: list[list[int]] = []
+
+    def _tracking_spawn(worker_specs, *a, **kw):
+        spawned_ranks.append([r for r, _, _ in worker_specs])
+        return real_spawn(worker_specs, *a, **kw)
+
+    monkeypatch.setattr(phase_b_suite, '_spawn_parallel_workers', _tracking_spawn)
+    st_2gpu, out_2gpu = phase_b_suite._evaluate_variants_closed_loop(base_args, ws, 'smoke', variants, [0, 1])
+    assert st_2gpu == 'complete'
+    assert spawned_ranks == [[0, 1]]
+    assert not (stale_dir / 'result-rank3.json').exists()
+    assert not (stale_dir / 'spec-rank3.json').exists()
+    assert (stale_dir / 'sharding_plan.json').is_file()
+    assert out_2gpu['v_base']['dense']['mean_accepted_length'] == pytest.approx(
+        out_1gpu['v_base']['dense']['mean_accepted_length']
+    )
+
+    # Full cache hit on --resume: 0 workers spawned
+    spawned_ranks.clear()
+    st_cached, out_cached = phase_b_suite._evaluate_variants_closed_loop(base_args, ws, 'smoke', variants, [0, 1])
+    assert st_cached == 'complete'
+    assert spawned_ranks == []
+    assert out_cached == out_2gpu
+
+    # Partial resume: delete ONLY result-rank1.json -> spawns ONLY rank 1 while rank 0 stays untouched!
+    r0_before = (stale_dir / 'result-rank0.json').read_text()
+    (stale_dir / 'result-rank1.json').unlink()
+    spawned_ranks.clear()
+    st_part, out_part = phase_b_suite._evaluate_variants_closed_loop(base_args, ws, 'smoke', variants, [0, 1])
+    assert st_part == 'complete'
+    assert spawned_ranks == [[1]]
+    assert (stale_dir / 'result-rank0.json').read_text() == r0_before
+    for sub in ('plain_dflash', 'dense', 'dense_sparse'):
+        assert out_part['v_base'][sub]['requests'] == out_2gpu['v_base'][sub]['requests']
+        assert out_part['v_base'][sub]['primary_requests'] == out_2gpu['v_base'][sub]['primary_requests']
+        assert out_part['v_base'][sub]['mean_accepted_length'] == out_2gpu['v_base'][sub]['mean_accepted_length']
+    assert (
+        out_part['v_base']['dense']['paired_accepted_length_delta_vs_plain']
+        == out_2gpu['v_base']['dense']['paired_accepted_length_delta_vs_plain']
+    )

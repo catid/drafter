@@ -590,35 +590,230 @@ def _snake_rank(index: int, world_size: int) -> int:
     return offset if (band % 2 == 0) else (int(world_size) - 1 - offset)
 
 
+def _resolve_closed_loop_prompt_weights(
+    selected_prompts: Sequence[dict],
+    eval_ws: Path,
+    *,
+    timing_repeats: int = 3,
+) -> tuple[dict[str, float] | None, str]:
+    """Resolve deterministic per-prompt closed-loop cost weights from frozen `eval_ws` artifacts."""
+    if not selected_prompts:
+        return {}, 'empty'
+    reps = float(max(1, int(timing_repeats)))
+    eval_ws_path = Path(eval_ws)
+
+    # Priority 1: Multi-arm realized closed-loop token sums from frozen m4/m3 sharding_plan.json
+    tok_acc: dict[str, float] = defaultdict(float)
+    runs_acc: dict[str, float] = defaultdict(float)
+    seen_plans: set[Path] = set()
+    for stage_name, default_arms in (('m4', 5), ('m3', 4)):
+        plan_p = eval_ws_path / stage_name / 'timing' / 'sharding_plan.json'
+        if not plan_p.is_file():
+            continue
+        resolved_plan = plan_p.resolve()
+        if resolved_plan in seen_plans:
+            continue
+        seen_plans.add(resolved_plan)
+        try:
+            plan = json.loads(resolved_plan.read_text())
+            if plan.get('weight_source') != 'evaluate_realized_tokens':
+                continue
+            pts = plan.get('prompt_token_sums')
+            if not isinstance(pts, dict):
+                continue
+            n_arms = default_arms
+            settings_p = plan_p.parent.parent / 'settings.json'
+            if settings_p.is_file():
+                sel_arms = json.loads(settings_p.read_text()).get('selected')
+                if isinstance(sel_arms, dict) and sel_arms:
+                    n_arms = len(sel_arms)
+            plan_scale = str(plan.get('scale', 'reference'))
+            for p in selected_prompts:
+                pid = str(p['prompt_id'])
+                raw_tok = pts.get(pid)
+                if isinstance(raw_tok, (int, float)) and not isinstance(raw_tok, bool) and float(raw_tok) > 0.0:
+                    is_long = str(p.get('condition', '')).startswith('long_')
+                    runs_per_arm = (3.0 if plan_scale == 'full' else 1.0) if is_long else 7.0
+                    tok_acc[pid] += float(raw_tok)
+                    runs_acc[pid] += float(n_arms) * runs_per_arm
+        except (OSError, ValueError, TypeError):
+            continue
+
+    if all(runs_acc.get(str(p['prompt_id']), 0.0) > 0.0 and tok_acc.get(str(p['prompt_id']), 0.0) > 0.0 for p in selected_prompts):
+        costs: dict[str, float] = {}
+        for p in selected_prompts:
+            pid = str(p['prompt_id'])
+            mean_len = tok_acc[pid] / runs_acc[pid]
+            regimes = 1.0 if str(p.get('condition', '')).startswith('long_') else 3.0
+            # Include FlashAttention KV-cache scan scaling `(1 + L / 12288)` so 16K-24K long prompts never stack on one GPU
+            costs[pid] = regimes * reps * mean_len * (1.0 + mean_len / 12288.0)
+        return costs, 'closed_loop_sharding_plan_quadratic_lpt'
+
+    # Priority 2: Frozen m1_audit.json realized generation lengths (generations list or sidecars)
+    audit_p = eval_ws_path / 'm1_audit.json'
+    if audit_p.is_file():
+        try:
+            audit = json.loads(audit_p.read_text())
+            m1_tok: dict[str, float] = defaultdict(float)
+            m1_runs: dict[str, int] = defaultdict(int)
+            for gen in audit.get('generations') or ():
+                if not isinstance(gen, dict):
+                    continue
+                pid = gen.get('prompt_id')
+                rl = gen.get('realized_length')
+                if pid and isinstance(rl, (int, float)) and not isinstance(rl, bool) and float(rl) > 0.0:
+                    m1_tok[str(pid)] += float(rl)
+                    m1_runs[str(pid)] += 1
+            if not all(m1_runs.get(str(p['prompt_id']), 0) > 0 for p in selected_prompts):
+                for raw_s in audit.get('shards') or ():
+                    side_p = Path(raw_s).with_suffix('.pt.json')
+                    if not side_p.is_file():
+                        continue
+                    side = json.loads(side_p.read_text())
+                    gen = side.get('generation') or {}
+                    ident = side.get('identity') or {}
+                    pid = ident.get('prompt')
+                    rl = gen.get('realized_length')
+                    if (
+                        gen.get('complete')
+                        and pid
+                        and isinstance(rl, (int, float))
+                        and not isinstance(rl, bool)
+                        and float(rl) > 0.0
+                    ):
+                        m1_tok[str(pid)] += float(rl)
+                        m1_runs[str(pid)] += 1
+            if all(m1_runs.get(str(p['prompt_id']), 0) > 0 and m1_tok.get(str(p['prompt_id']), 0.0) > 0.0 for p in selected_prompts):
+                costs = {}
+                for p in selected_prompts:
+                    pid = str(p['prompt_id'])
+                    mean_len = m1_tok[pid] / float(m1_runs[pid])
+                    regimes = 1.0 if str(p.get('condition', '')).startswith('long_') else 3.0
+                    costs[pid] = regimes * reps * mean_len
+                return costs, 'm1_audit_realized_tokens_lpt'
+        except (OSError, ValueError, TypeError):
+            pass
+
+    return None, 'prompt_manifest_snake_fallback'
+
+
+def _plan_closed_loop_prompt_shards(
+    selected_prompts: list[dict],
+    prompt_manifest: dict,
+    eval_ws: Path,
+    world_size: int,
+    *,
+    timing_repeats: int = 3,
+) -> tuple[int, dict[int, list[dict]], dict]:
+    """Condition-stratified cost-weighted LPT prompt sharding with manifest-snake fallback."""
+    if not selected_prompts:
+        return 1, {0: []}, {'weight_source': 'empty', 'rank_estimated_loads': {'0': 0.0}}
+    eff_w = max(1, min(int(world_size), len(selected_prompts)))
+    manifest_order = {p['prompt_id']: idx for idx, p in enumerate(prompt_manifest.get('prompts', []))}
+    sel_order = {p['prompt_id']: idx for idx, p in enumerate(selected_prompts)}
+    conds = sorted({p['condition'] for p in selected_prompts})
+    cost_by_pid, weight_source = _resolve_closed_loop_prompt_weights(
+        selected_prompts, eval_ws, timing_repeats=timing_repeats,
+    )
+
+    if cost_by_pid is None or eff_w == 1:
+        ordered_by_cond = {
+            cond: sorted(
+                [p for p in selected_prompts if p['condition'] == cond],
+                key=lambda p: (manifest_order.get(p['prompt_id'], 0), p['prompt_id']),
+            )
+            for cond in conds
+        }
+        prompt_to_rank: dict[str, int] = {}
+        if all(len(v) >= eff_w for v in ordered_by_cond.values()):
+            for cond in conds:
+                for k, p in enumerate(ordered_by_cond[cond]):
+                    prompt_to_rank[p['prompt_id']] = _snake_rank(k, eff_w)
+        else:
+            flat = [p for cond in conds for p in ordered_by_cond[cond]]
+            for k, p in enumerate(flat):
+                prompt_to_rank[p['prompt_id']] = _snake_rank(k, eff_w)
+        shards = {
+            r: [p for p in selected_prompts if prompt_to_rank[p['prompt_id']] == r]
+            for r in range(eff_w)
+        }
+        est_loads = {
+            str(r): float(sum((cost_by_pid or {}).get(p['prompt_id'], 1.0) for p in shards[r]))
+            for r in range(eff_w)
+        }
+        return eff_w, shards, {
+            'weight_source': weight_source if eff_w > 1 else 'single_worker',
+            'rank_estimated_loads': est_loads,
+        }
+
+    by_cond = {cond: [p for p in selected_prompts if p['condition'] == cond] for cond in conds}
+    loads = [0.0] * eff_w
+    shards = {r: [] for r in range(eff_w)}
+    if all(len(by_cond[c]) >= eff_w for c in conds):
+        for cond in conds:
+            c_prompts = sorted(
+                by_cond[cond],
+                key=lambda p: (-cost_by_pid[p['prompt_id']], manifest_order.get(p['prompt_id'], 0), p['prompt_id']),
+            )
+            cond_counts = [0] * eff_w
+            max_per_rank = (
+                math.ceil(len(c_prompts) / eff_w)
+                if str(cond).startswith('long_')
+                else len(c_prompts)
+            )
+            for p in c_prompts:
+                need_seed = any(cnt == 0 for cnt in cond_counts)
+                best_r = min(
+                    range(eff_w),
+                    key=lambda r: (
+                        1 if (need_seed and cond_counts[r] > 0) else 0,
+                        1 if cond_counts[r] >= max_per_rank else 0,
+                        loads[r],
+                        r,
+                    ),
+                )
+                shards[best_r].append(p)
+                cond_counts[best_r] += 1
+                loads[best_r] += float(cost_by_pid[p['prompt_id']])
+    else:
+        flat = sorted(
+            selected_prompts,
+            key=lambda p: (-cost_by_pid[p['prompt_id']], manifest_order.get(p['prompt_id'], 0), p['prompt_id']),
+        )
+        for p in flat:
+            need_nonempty = any(len(shards[r]) == 0 for r in range(eff_w))
+            best_r = min(
+                range(eff_w),
+                key=lambda r: (
+                    1 if (need_nonempty and len(shards[r]) > 0) else 0,
+                    loads[r],
+                    r,
+                ),
+            )
+            shards[best_r].append(p)
+            loads[best_r] += float(cost_by_pid[p['prompt_id']])
+
+    for r in range(eff_w):
+        shards[r].sort(key=lambda p: sel_order.get(p['prompt_id'], 0))
+
+    return eff_w, shards, {
+        'weight_source': weight_source,
+        'rank_estimated_loads': {str(r): loads[r] for r in range(eff_w)},
+        'prompt_weights': {p['prompt_id']: cost_by_pid[p['prompt_id']] for p in selected_prompts},
+    }
+
+
 def _snake_shard_prompts(
     selected_prompts: list[dict],
     prompt_manifest: dict,
     eval_ws: Path,
     world_size: int,
+    *,
+    timing_repeats: int = 3,
 ) -> tuple[int, dict[int, list[dict]]]:
-    eff_w = max(1, min(int(world_size), len(selected_prompts)))
-    manifest_order = {p['prompt_id']: idx for idx, p in enumerate(prompt_manifest.get('prompts', []))}
-    conds = sorted({p['condition'] for p in selected_prompts})
-    ordered_by_cond = {
-        cond: sorted(
-            [p for p in selected_prompts if p['condition'] == cond],
-            key=lambda p: (manifest_order.get(p['prompt_id'], 0), p['prompt_id']),
-        )
-        for cond in conds
-    }
-    prompt_to_rank: dict[str, int] = {}
-    if all(len(v) >= eff_w for v in ordered_by_cond.values()):
-        for cond in conds:
-            for k, p in enumerate(ordered_by_cond[cond]):
-                prompt_to_rank[p['prompt_id']] = _snake_rank(k, eff_w)
-    else:
-        flat = [p for cond in conds for p in ordered_by_cond[cond]]
-        for k, p in enumerate(flat):
-            prompt_to_rank[p['prompt_id']] = _snake_rank(k, eff_w)
-    shards = {
-        r: [p for p in selected_prompts if prompt_to_rank[p['prompt_id']] == r]
-        for r in range(eff_w)
-    }
+    eff_w, shards, _ = _plan_closed_loop_prompt_shards(
+        selected_prompts, prompt_manifest, eval_ws, world_size, timing_repeats=timing_repeats,
+    )
     return eff_w, shards
 
 
@@ -1814,9 +2009,50 @@ def _worker_variant_eval_shard(args, spec_path: Path, out_path: Path) -> None:
         'numa_node': affinity['numa_node'],
         'cpu_affinity': affinity['cpu_affinity'],
         'cpu_affinity_applied': bool(affinity.get('cpu_affinity_applied', False)),
+        'spec_fingerprint': spec.get('spec_fingerprint'),
         'variant_scales': variant_scales,
         'rows_by_key': rows_by_key,
     })
+
+
+def _valid_cached_variant_eval_shard(
+    out_path: Path,
+    expected_fp: str,
+    variants: Sequence[tuple[str, Path, Path]],
+    shard_prompts: Sequence[dict],
+    timing_repeats: int,
+) -> dict | None:
+    if not out_path.is_file():
+        return None
+    try:
+        payload = json.loads(out_path.read_text())
+        if payload.get('spec_fingerprint') != expected_fp:
+            return None
+        v_scales = payload.get('variant_scales')
+        if not isinstance(v_scales, list) or [v[0] for v in v_scales] != [v[0] for v in variants]:
+            return None
+        rows_by_key = payload.get('rows_by_key')
+        if not isinstance(rows_by_key, dict):
+            return None
+        expected_slots = {
+            (str(p['prompt_id']), s_name, rep)
+            for p in shard_prompts
+            for s_name, _, _ in sampling_conditions(p['condition'], primary_only=p['condition'].startswith('long_'))
+            for rep in range(int(timing_repeats))
+        }
+        expected_keys = ['plain_dflash']
+        for vn, _, _ in variants:
+            expected_keys.extend([f'{vn}::dense', f'{vn}::dense_sparse'])
+        for k in expected_keys:
+            rlist = rows_by_key.get(k)
+            if not isinstance(rlist, list) or len(rlist) != len(expected_slots):
+                return None
+            got_slots = {(str(r.get('prompt_id')), str(r.get('sampling_name')), int(r.get('repeat', -1))) for r in rlist}
+            if got_slots != expected_slots:
+                return None
+        return payload
+    except (OSError, ValueError, TypeError):
+        return None
 
 
 def _evaluate_variants_closed_loop(
@@ -1840,46 +2076,96 @@ def _evaluate_variants_closed_loop(
             rank_gpu=gpus[0] if gpus else 0, world_size=1,
         )
     else:
-        eff_w, shards = _snake_shard_prompts(selected_prompts, prompt_manifest, ws, len(gpus))
+        eff_w, shards, shard_meta = _plan_closed_loop_prompt_shards(
+            selected_prompts, prompt_manifest, ws, len(gpus),
+            timing_repeats=int(args.timing_repeats),
+        )
         eff_gpus = gpus[:eff_w]
         shard_dir = ws / 'pure_t1_closed_loop_shards'
         shard_dir.mkdir(parents=True, exist_ok=True)
+        # Remove any stale higher-rank files so `glob('result-rank*.json')` never sees old world_size leftovers
+        for stale_p in sorted(shard_dir.glob('*-rank*.json')):
+            stem = stale_p.stem
+            rank_tok = stem.split('-rank', 1)[-1]
+            if rank_tok.isdigit() and int(rank_tok) >= eff_w:
+                stale_p.unlink()
+
+        atomic_json(shard_dir / 'sharding_plan.json', {
+            'world_size': eff_w,
+            'gpus': eff_gpus,
+            'effective_scale': eff_scale,
+            'weight_source': shard_meta['weight_source'],
+            'rank_estimated_loads': shard_meta['rank_estimated_loads'],
+            'ranks': {str(r): [p['prompt_id'] for p in shards[r]] for r in range(eff_w)},
+        })
+
+        fp_dict, fp_flags = _fastpath_config_and_flags(args)
+        variant_sigs = [
+            (vn, _checkpoint_file_signature(dc), _checkpoint_file_signature(sc))
+            for vn, dc, sc in variants
+        ]
+        allow_resume = bool(getattr(args, 'resume', True))
         worker_specs = []
-        out_paths = []
+        shard_records: list[tuple[Path, dict | None]] = []
         serialized_variants = [(vn, str(dc.resolve()), str(sc.resolve())) for vn, dc, sc in variants]
         for r, gpu in enumerate(eff_gpus):
             spec_path = shard_dir / f'spec-rank{r}.json'
             out_path = shard_dir / f'result-rank{r}.json'
-            atomic_json(spec_path, {
-                'rank': r,
-                'world_size': eff_w,
-                'physical_gpu': gpu,
+            spec_fp = fingerprint({
                 'effective_scale': eff_scale,
-                'workspace': str(ws.resolve()),
-                'variants': serialized_variants,
-                'prompts': shards[r],
+                'seed': int(args.seed),
+                'timing_warmups': int(args.timing_warmups),
+                'timing_repeats': int(args.timing_repeats),
+                'smoke_tokens': int(args.smoke_tokens),
+                'max_new_tokens': int(args.max_new_tokens),
+                'long_max_new_tokens': int(args.long_max_new_tokens),
+                'fastpath': fp_dict,
+                'variants': variant_sigs,
+                'prompt_ids': [p['prompt_id'] for p in shards[r]],
             })
-            cmd = [
-                sys.executable, '-m', 'edraft.phase_b_suite',
-                *_cli_base_flags(args, ws, scale_override=eff_scale, device_override='cuda:0' if use_cuda else 'cpu'),
-                '--timing_warmups', str(args.timing_warmups),
-                '--timing_repeats', str(args.timing_repeats),
-                '--smoke_tokens', str(args.smoke_tokens),
-                '--max_new_tokens', str(args.max_new_tokens),
-                '--long_max_new_tokens', str(args.long_max_new_tokens),
-                *_fastpath_config_and_flags(args)[1],
-                '--_worker_mode', 'variant_eval_shard',
-                '--_worker_spec', str(spec_path),
-                '--_worker_out', str(out_path),
-            ]
-            worker_specs.append((r, gpu, cmd))
-            out_paths.append(out_path)
+            cached_shard = (
+                _valid_cached_variant_eval_shard(out_path, spec_fp, variants, shards[r], int(args.timing_repeats))
+                if allow_resume
+                else None
+            )
+            if cached_shard is None:
+                atomic_json(spec_path, {
+                    'rank': r,
+                    'world_size': eff_w,
+                    'physical_gpu': gpu,
+                    'effective_scale': eff_scale,
+                    'workspace': str(ws.resolve()),
+                    'sharding_weight_source': shard_meta['weight_source'],
+                    'estimated_cost_weight': shard_meta['rank_estimated_loads'].get(str(r)),
+                    'spec_fingerprint': spec_fp,
+                    'variants': serialized_variants,
+                    'prompts': shards[r],
+                })
+                cmd = [
+                    sys.executable, '-m', 'edraft.phase_b_suite',
+                    *_cli_base_flags(args, ws, scale_override=eff_scale, device_override='cuda:0' if use_cuda else 'cpu'),
+                    '--timing_warmups', str(args.timing_warmups),
+                    '--timing_repeats', str(args.timing_repeats),
+                    '--smoke_tokens', str(args.smoke_tokens),
+                    '--max_new_tokens', str(args.max_new_tokens),
+                    '--long_max_new_tokens', str(args.long_max_new_tokens),
+                    *fp_flags,
+                    '--_worker_mode', 'variant_eval_shard',
+                    '--_worker_spec', str(spec_path),
+                    '--_worker_out', str(out_path),
+                ]
+                worker_specs.append((r, gpu, cmd))
+            shard_records.append((out_path, cached_shard))
 
-        _spawn_parallel_workers(
-            worker_specs, shard_dir / 'logs', 'pure-t1-eval',
-            scale=eff_scale, device_str='cuda:0' if use_cuda else 'cpu', omp_threads=1,
-        )
-        shard_payloads = [json.loads(p.read_text()) for p in out_paths]
+        if worker_specs:
+            _spawn_parallel_workers(
+                worker_specs, shard_dir / 'logs', 'pure-t1-eval',
+                scale=eff_scale, device_str='cuda:0' if use_cuda else 'cpu', omp_threads=1,
+            )
+        shard_payloads = [
+            cached if cached is not None else json.loads(out_p.read_text())
+            for out_p, cached in shard_records
+        ]
         variant_scales = [(vn, float(ds), float(ss)) for vn, ds, ss in shard_payloads[0]['variant_scales']]
         prompt_order = {p['prompt_id']: idx for idx, p in enumerate(selected_prompts)}
         rows_by_key = {}
