@@ -1006,3 +1006,188 @@ def test_pure_t1_closed_loop_shards_quadratic_lpt_balance_and_per_rank_resume(tm
         out_part['v_base']['dense']['paired_accepted_length_delta_vs_plain']
         == out_2gpu['v_base']['dense']['paired_accepted_length_delta_vs_plain']
     )
+
+
+def test_pure_t1_resume_mtime_bug1_and_1worker_stale_shard_cleanup(tmp_path, monkeypatch):
+    import os
+    import shutil
+
+    ref_dir = tmp_path / 'ref_dir'
+    ref_dir.mkdir(parents=True)
+    out_dir = tmp_path / 'phase_b_out'
+    cli_2gpu = [
+        '--scale', 'smoke',
+        '--suite', 'pure_t1_fit',
+        '--gpus', '0,1',
+        '--output', str(out_dir),
+        '--reference_artifacts', str(ref_dir),
+        '--smoke_tokens', '8',
+        '--timing_repeats', '2',
+        '--timing_warmups', '1',
+        '--block_shuffle_window', '2',
+    ]
+
+    # 1. Initial full 2-worker run via top-level phase_b_suite.main
+    res1 = phase_b_suite.main(cli_2gpu)
+    assert res1['status'] == 'complete'
+
+    abl_root = out_dir / 'reference_secondary_ablations'
+    report_path = abl_root / 'pure_t1_fit.json'
+    ws = (abl_root / 'pure_t1_workspace').resolve()
+    shard_dir = ws / 'pure_t1_closed_loop_shards'
+    assert report_path.is_file()
+    assert (shard_dir / 'result-rank0.json').is_file()
+    assert (shard_dir / 'result-rank1.json').is_file()
+
+    # 2. Simulate partial crash before pure_t1_fit.json wrote (result-rank1.json missing) + mtime_ns bump
+    r0_bytes_before = (shard_dir / 'result-rank0.json').read_text()
+    report_path.unlink()
+    (shard_dir / 'result-rank1.json').unlink()
+    for p_touch in (ws / 'm2_smoke' / 'dense.pt', ws / 'baseline_m2_scaled' / 'dense_scale0p20.pt'):
+        st = p_touch.stat()
+        os.utime(p_touch, ns=(st.st_atime_ns, st.st_mtime_ns + 60_000_000_000))
+
+    real_spawn = phase_b_suite._spawn_parallel_workers
+    spawn_calls: list[tuple[str, list[int]]] = []
+    kl_summary_calls = [0]
+    real_kl_sum = phase_b_suite._offline_kl_summary
+
+    def _spy_spawn(worker_specs, logdir, label, **kw):
+        spawn_calls.append((label, [r for r, _, _ in worker_specs]))
+        return real_spawn(worker_specs, logdir, label, **kw)
+
+    def _spy_kl(*a, **kw):
+        kl_summary_calls[0] += 1
+        return real_kl_sum(*a, **kw)
+
+    monkeypatch.setattr(phase_b_suite, '_spawn_parallel_workers', _spy_spawn)
+    monkeypatch.setattr(phase_b_suite, '_offline_kl_summary', _spy_kl)
+
+    res2 = phase_b_suite.main(cli_2gpu)
+    assert res2['status'] == 'complete'
+    # 0 dual_offline_kl_eval recomputations AND only closed-loop rank 1 respawned!
+    assert kl_summary_calls[0] == 0
+    assert spawn_calls == [('pure-t1-eval', [1])]
+    assert (shard_dir / 'result-rank0.json').read_text() == r0_bytes_before
+
+    # 3. Also verify CUDA-branch (`eff_scale='reference', device='cuda:0'`) partial resume inside run_pure_t1_fit
+    #    on mtime bump: 0 `dual-offline-kl-*` workers spawned and only `[1]` `pure-t1-eval` worker spawned!
+    from safetensors.torch import save_file as save_safetensors
+    from edraft import train
+
+    cuda_ref = tmp_path / 'cuda_ref'
+    cuda_ref.mkdir()
+    cuda_abl = tmp_path / 'cuda_abl'
+    cuda_abl.mkdir()
+    cuda_args = SimpleNamespace(
+        scale='reference', seed=2026, device='cuda:0', gpus='0,1',
+        target='Qwen/Qwen3-8B', drafter='z-lab/Qwen3-8B-DFlash-b16',
+        max_new_tokens=64, long_max_new_tokens=128, smoke_tokens=8,
+        timing_repeats=2, timing_warmups=1, timing_prompts=1,
+        pure_t1_tag='m5_pure_t1_calibration', block_shuffle_window=2,
+        weight_decay=1e-2, fixed_checkpoint_scale=0.20,
+        compile=False, cuda_graph=False, bf16_gemm=False,
+        compile_drafter=False, compile_online=False, fast_decode=False,
+        analytic_online_grad=True, resume=True,
+    )
+    cfg_fp = phase_b_suite._suite_config_fingerprint('pure_t1_fit', cuda_args, cuda_ref)
+    c_ws = cuda_abl / f'pure_t1_ws_{cfg_fp[:12]}'
+    c_ws.mkdir(parents=True)
+    # Populate valid reference-layout smoke artifacts in c_ws so run_pure_t1_fit exercises use_cuda=True on CPU
+    _, _, s_head, s_bias, h_meta = train.smoke_bundle(
+        SimpleNamespace(output=c_ws, seed=2026, history_depth=4, allow_pure_t1_ablation=True, allow_long_oracle_fit=False)
+    )
+    train.main(['--scale', 'smoke', '--device', 'cpu', '--seed', '2026', '--output', str(c_ws)])
+    shutil.copytree(c_ws / 'm2_smoke', c_ws / 'm2')
+    t1_fit_dir = c_ws / 'm5_pure_t1_calibration'
+    shutil.copytree(c_ws / 'm2_smoke', t1_fit_dir)
+    shutil.copy2(t1_fit_dir / 'dense.pt', t1_fit_dir / 'dense_calibrated.pt')
+    shutil.copy2(t1_fit_dir / 'dense_sparse.pt', t1_fit_dir / 'dense_sparse_calibrated.pt')
+    atomic_json(c_ws / 'm5_pure_t1_calibration.json', {'status': 'passed', 'scale': 'reference', 'stages': {}})
+    s_paths = sorted(str(p.resolve()) for sub in ('m2_smoke_traces', 'm2_smoke_t1_traces') for p in (c_ws / sub).glob('rank*/*.pt'))
+    (c_ws / 'traces').symlink_to(c_ws / 'm2_smoke_traces')
+    atomic_json(c_ws / 'm1_audit.json', {'scale': 'reference', 'status': 'passed', 'shards': s_paths})
+    atomic_json(c_ws / 'prompts.json', _make_full_scale_synthetic_manifest())
+    snap_d = c_ws / 'snap' / h_meta['revision']
+    snap_d.mkdir(parents=True)
+    atomic_json(snap_d / 'config.json', {'tie_word_embeddings': False})
+    save_safetensors({'lm_head.weight': s_head.detach().cpu(), 'lm_head.bias': s_bias.detach().cpu()}, str(snap_d / 'model.safetensors'))
+    atomic_json(c_ws / 'environment.json', {'model_artifacts': {h_meta['artifact_id']: {'revision': h_meta['revision'], 'path': str(snap_d)}}})
+
+    cuda_spawns: list[tuple[str, list[int]]] = []
+
+    def _fake_cuda_spawn(worker_specs, logdir, label, **kw):
+        del logdir, kw
+        cuda_spawns.append((label, [r for r, _, _ in worker_specs]))
+        for _r, _g, cmd in worker_specs:
+            mode = cmd[cmd.index('--_worker_mode') + 1]
+            spec_p = Path(cmd[cmd.index('--_worker_spec') + 1])
+            out_p = Path(cmd[cmd.index('--_worker_out') + 1])
+            if mode == 'dual_offline_kl':
+                phase_b_suite._worker_dual_offline_kl(SimpleNamespace(device='cpu', seed=2026), spec_p, out_p)
+            else:
+                spec_d = json.loads(spec_p.read_text())
+                fake_rows = {}
+                for ak in ['plain_dflash', *[f'{vn}::{st}' for vn, _, _ in spec_d['variants'] for st in ('dense', 'dense_sparse')]]:
+                    fake_rows[ak] = [
+                        {
+                            'prompt_id': p['prompt_id'], 'condition': p['condition'],
+                            'sampling_name': sn, 'temperature': float(tp), 'repeat': rp,
+                            'repetition_dominated': False, 'generation': {'repetition_dominated': False},
+                            'effective_beta': 1.0, 'generated_tokens': 16, 'elapsed_seconds': 0.1,
+                            'tokens_per_second': 160.0, 'mean_accepted_length': 4.0,
+                            'median_accepted_length': 4.0, 'target_forwards_per_generated_token': 0.25,
+                        }
+                        for p in spec_d['prompts']
+                        for sn, tp, _ in eval_closed_loop.sampling_conditions(p['condition'], primary_only=p['condition'].startswith('long_'))
+                        for rp in range(2)
+                    ]
+                atomic_json(out_p, {
+                    'rank': spec_d['rank'], 'physical_gpu': spec_d['physical_gpu'],
+                    'numa_node': 0, 'cpu_affinity': [0], 'cpu_affinity_applied': False,
+                    'spec_fingerprint': spec_d['spec_fingerprint'],
+                    'variant_scales': [(vn, 1.0, 1.0) for vn, _, _ in spec_d['variants']],
+                    'rows_by_key': fake_rows,
+                })
+        return {'status': 'complete'}
+
+    monkeypatch.setattr(phase_b_suite, '_run_training_fit_isolated', lambda *_a, **_kw: {'status': 'passed', 'stages': {}})
+    monkeypatch.setattr(phase_b_suite, '_spawn_parallel_workers', _fake_cuda_spawn)
+
+    rep_c1 = phase_b_suite.run_pure_t1_fit(cuda_args, cuda_ref, cuda_abl)
+    assert rep_c1['status'] == 'pilot_complete'
+    assert [ranks for _, ranks in cuda_spawns] == [[0, 1], [0, 1]]
+
+    # Delete pure_t1_fit.json + closed-loop result-rank1.json, re-run run_pure_t1_fit -> 0 dual-kl spawns, [1] closed-loop spawn!
+    (cuda_abl / 'pure_t1_fit.json').unlink()
+    (c_ws / 'pure_t1_closed_loop_shards' / 'result-rank1.json').unlink()
+    cuda_spawns.clear()
+    rep_c2 = phase_b_suite.run_pure_t1_fit(cuda_args, cuda_ref, cuda_abl)
+    assert rep_c2['status'] == 'pilot_complete'
+    assert cuda_spawns == [('pure-t1-eval', [1])]
+
+    # 4. #320 Item 1: 1-worker rerun on CPU/smoke purges stale `pure_t1_closed_loop_shards/*.json`
+    monkeypatch.setattr(phase_b_suite, '_spawn_parallel_workers', real_spawn)
+    variants_1w = [('v_b', ws / 'm2_smoke' / 'dense.pt', ws / 'm2_smoke' / 'dense_sparse.pt')]
+    args_1w = SimpleNamespace(
+        scale='smoke', seed=2026, device='cpu',
+        target='Qwen/Qwen3-8B', drafter='z-lab/Qwen3-8B-DFlash-b16',
+        timing_warmups=1, timing_repeats=2, timing_prompts=0,
+        smoke_tokens=8, max_new_tokens=64, long_max_new_tokens=128,
+        resume=False,
+    )
+    assert len(list(shard_dir.glob('result-rank*.json'))) == 2
+    st_1w, _ = phase_b_suite._evaluate_variants_closed_loop(args_1w, ws, 'smoke', variants_1w, [0])
+    assert st_1w == 'complete'
+    assert list(shard_dir.glob('*.json')) == []
+
+    # 5. #320 Item 2: Malformed cached JSON list / non-dict elements return None cleanly without raising
+    bad_json = tmp_path / 'bad_cache.json'
+    for bad_payload in (
+        [1, 2, 3],
+        {'spec_fingerprint': 'fp', 'variant_scales': [['missing_two']], 'rows_by_key': {}},
+        {'spec_fingerprint': 'fp', 'variant_scales': [['v_b', 1.0, 1.0]], 'rows_by_key': {'plain_dflash': ['not_a_dict']}},
+    ):
+        atomic_json(bad_json, bad_payload)
+        assert phase_b_suite._valid_cached_variant_eval_shard(bad_json, 'fp', variants_1w, [], 2) is None
+        assert phase_b_suite._valid_cached_dual_kl_shard(bad_json, [{'regime': 'primary', 'key': 'k'}]) is None

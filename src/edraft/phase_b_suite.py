@@ -1684,13 +1684,14 @@ def _worker_dual_offline_kl(args, spec_path: Path, out_path: Path) -> None:
     })
 
 
-def _checkpoint_file_signature(path: Path) -> tuple[str, int, int]:
+def _checkpoint_file_signature(path: Path) -> tuple[str, str]:
     resolved = path.resolve()
-    try:
-        st = resolved.stat()
-        return (str(resolved), int(st.st_size), int(st.st_mtime_ns))
-    except OSError:
-        return (str(resolved), -1, -1)
+    if resolved.is_file():
+        try:
+            return (str(resolved), file_sha256(resolved))
+        except OSError:
+            pass
+    return (str(resolved), 'missing')
 
 
 def _valid_cached_dual_kl_shard(out_path: Path, assigned_tasks: Sequence[dict]) -> dict | None:
@@ -1698,6 +1699,8 @@ def _valid_cached_dual_kl_shard(out_path: Path, assigned_tasks: Sequence[dict]) 
         return None
     try:
         payload = json.loads(out_path.read_text())
+        if not isinstance(payload, dict):
+            return None
         prim = payload.get('primary_heldout_kl', {})
         t1 = payload.get('pure_t1_heldout_kl', {})
         if not isinstance(prim, dict) or not isinstance(t1, dict):
@@ -1717,7 +1720,7 @@ def _valid_cached_dual_kl_shard(out_path: Path, assigned_tasks: Sequence[dict]) 
             ):
                 return None
         return payload
-    except (OSError, ValueError, TypeError):
+    except (OSError, ValueError, TypeError, KeyError, IndexError, AttributeError):
         return None
 
 
@@ -1733,21 +1736,24 @@ def _evaluate_dual_offline_kl_batch(
     if not checkpoints_by_key:
         return {}, {}
     use_cuda = (eff_scale != 'smoke' and str(args.device).startswith('cuda'))
+    kl_dir = ws / 'dual_offline_kl_eval'
+    kl_dir.mkdir(parents=True, exist_ok=True)
+    ckpt_sigs = {k: _checkpoint_file_signature(Path(v)) for k, v in checkpoints_by_key.items()}
+    tag = fingerprint({
+        'effective_scale': eff_scale,
+        'seed': int(args.seed),
+        'checkpoints': sorted(ckpt_sigs.items()),
+    })[:10]
+    allow_resume = bool(getattr(args, 'resume', True))
+    expected_keys = list(checkpoints_by_key.keys())
+    consolidated_out = kl_dir / f'result-{tag}.json'
+
     if use_cuda:
         active_gpus = list(dict.fromkeys(int(g) for g in gpus)) if gpus else [int(gpu_index)]
-        kl_dir = ws / 'dual_offline_kl_eval'
-        kl_dir.mkdir(parents=True, exist_ok=True)
-        ckpt_sigs = {k: _checkpoint_file_signature(Path(v)) for k, v in checkpoints_by_key.items()}
-        tag = fingerprint({
-            'effective_scale': eff_scale,
-            'seed': int(args.seed),
-            'checkpoints': sorted(ckpt_sigs.items()),
-        })[:10]
         prim_w, t1_w = _dual_offline_kl_regime_weights(ws)
         shards = _plan_dual_offline_kl_shards(
             checkpoints_by_key, active_gpus, primary_weight=prim_w, pure_t1_weight=t1_w,
         )
-        allow_resume = bool(getattr(args, 'resume', True))
         worker_specs: list[tuple[int, int, list[str]]] = []
         shard_records: list[tuple[list[dict], Path, dict | None]] = []
         for rank, phys_gpu, tasks, est_load in shards:
@@ -1802,12 +1808,10 @@ def _evaluate_dual_offline_kl_batch(
                         raise RuntimeError(f'Missing pure_t1_heldout_kl[{k!r}] in {out_path}')
                     raw_t1[k] = t_part[k]
 
-        expected_keys = list(checkpoints_by_key.keys())
         if set(raw_prim.keys()) != set(expected_keys) or set(raw_t1.keys()) != set(expected_keys):
             raise RuntimeError('Incomplete sharded dual offline KL merge across checkpoints')
         primary_ordered = {k: raw_prim[k] for k in expected_keys}
         pure_t1_ordered = {k: raw_t1[k] for k in expected_keys}
-        consolidated_out = kl_dir / f'result-{tag}.json'
         atomic_json(consolidated_out, {
             'world_size': len(shards),
             'gpus': [phys_gpu for _, phys_gpu, _, _ in shards],
@@ -1815,6 +1819,18 @@ def _evaluate_dual_offline_kl_batch(
             'pure_t1_heldout_kl': pure_t1_ordered,
         })
         return primary_ordered, pure_t1_ordered
+
+    all_cpu_tasks = [
+        {'regime': reg, 'key': k}
+        for reg in ('primary', 'pure_t1')
+        for k in expected_keys
+    ]
+    cached_cpu = _valid_cached_dual_kl_shard(consolidated_out, all_cpu_tasks) if allow_resume else None
+    if cached_cpu is not None:
+        return (
+            {k: cached_cpu['primary_heldout_kl'][k] for k in expected_keys},
+            {k: cached_cpu['pure_t1_heldout_kl'][k] for k in expected_keys},
+        )
 
     device = torch.device('cpu')
     primary_ctx = _prepare_offline_eval_context(ws, eff_scale, int(args.seed), device, regime='primary')
@@ -1828,10 +1844,15 @@ def _evaluate_dual_offline_kl_batch(
         pure_t1_ctx = _prepare_offline_eval_context(
             ws, eff_scale, int(args.seed), device, regime='pure_t1',
         )
-    return (
-        {k: _offline_kl_summary(primary_ctx, p, device) for k, p in checkpoints_by_key.items()},
-        {k: _offline_kl_summary(pure_t1_ctx, p, device) for k, p in checkpoints_by_key.items()},
-    )
+    primary_ordered = {k: _offline_kl_summary(primary_ctx, p, device) for k, p in checkpoints_by_key.items()}
+    pure_t1_ordered = {k: _offline_kl_summary(pure_t1_ctx, p, device) for k, p in checkpoints_by_key.items()}
+    atomic_json(consolidated_out, {
+        'world_size': 1,
+        'gpus': [int(gpu_index)],
+        'primary_heldout_kl': primary_ordered,
+        'pure_t1_heldout_kl': pure_t1_ordered,
+    })
+    return primary_ordered, pure_t1_ordered
 
 
 def _is_rep_excluded(row: dict) -> bool:
@@ -2026,10 +2047,14 @@ def _valid_cached_variant_eval_shard(
         return None
     try:
         payload = json.loads(out_path.read_text())
-        if payload.get('spec_fingerprint') != expected_fp:
+        if not isinstance(payload, dict) or payload.get('spec_fingerprint') != expected_fp:
             return None
         v_scales = payload.get('variant_scales')
-        if not isinstance(v_scales, list) or [v[0] for v in v_scales] != [v[0] for v in variants]:
+        if (
+            not isinstance(v_scales, list)
+            or not all(isinstance(v, (list, tuple)) and len(v) == 3 for v in v_scales)
+            or [v[0] for v in v_scales] != [v[0] for v in variants]
+        ):
             return None
         rows_by_key = payload.get('rows_by_key')
         if not isinstance(rows_by_key, dict):
@@ -2047,11 +2072,13 @@ def _valid_cached_variant_eval_shard(
             rlist = rows_by_key.get(k)
             if not isinstance(rlist, list) or len(rlist) != len(expected_slots):
                 return None
+            if not all(isinstance(r, dict) for r in rlist):
+                return None
             got_slots = {(str(r.get('prompt_id')), str(r.get('sampling_name')), int(r.get('repeat', -1))) for r in rlist}
             if got_slots != expected_slots:
                 return None
         return payload
-    except (OSError, ValueError, TypeError):
+    except (OSError, ValueError, TypeError, KeyError, IndexError, AttributeError):
         return None
 
 
@@ -2071,6 +2098,10 @@ def _evaluate_variants_closed_loop(
     use_cuda = (eff_scale != 'smoke' and str(args.device).startswith('cuda'))
 
     if not use_cuda and len(gpus) <= 1:
+        stale_shard_dir = ws / 'pure_t1_closed_loop_shards'
+        if stale_shard_dir.is_dir():
+            for stale_p in sorted(stale_shard_dir.glob('*.json')):
+                stale_p.unlink()
         rows_by_key, variant_scales, _ = _run_variant_bundle_on_prompts(
             args, ws, eff_scale, variants, selected_prompts,
             rank_gpu=gpus[0] if gpus else 0, world_size=1,
@@ -2241,6 +2272,36 @@ def _evaluate_variants_closed_loop(
     return cl_status, out_by_variant
 
 
+def _ensure_scaled_adapter_checkpoint(
+    src_path: Path,
+    dst_path: Path,
+    scale: float,
+    *,
+    resume: bool = True,
+) -> None:
+    if resume and dst_path.is_file() and src_path.is_file():
+        try:
+            src_ckpt = torch.load(src_path, map_location='cpu', weights_only=True)
+            dst_ckpt = torch.load(dst_path, map_location='cpu', weights_only=True)
+            if isinstance(src_ckpt, dict) and isinstance(dst_ckpt, dict):
+                src_base_id = src_ckpt.get('base_identity', src_ckpt.get('identity'))
+                expected_eff_scale = float(src_ckpt.get('checkpoint_scale', 1.0)) * float(scale)
+                if (
+                    dst_ckpt.get('base_identity') == src_base_id
+                    and dst_ckpt.get('stage') == src_ckpt.get('stage')
+                    and math.isclose(
+                        float(dst_ckpt.get('checkpoint_scale', -1.0)),
+                        expected_eff_scale,
+                        rel_tol=0.0,
+                        abs_tol=1e-12,
+                    )
+                ):
+                    return
+        except Exception:
+            pass
+    scale_adapter_checkpoint(src_path, dst_path, scale)
+
+
 def run_pure_t1_fit(args, reference_artifacts: Path, ablations_root: Path) -> dict:
     from . import train
 
@@ -2290,8 +2351,13 @@ def run_pure_t1_fit(args, reference_artifacts: Path, ablations_root: Path) -> di
     base_scaled_dir = ws / 'baseline_m2_scaled'
     base_dense_s = base_scaled_dir / f'dense_scale{scale_tag}.pt'
     base_sparse_s = base_scaled_dir / f'dense_sparse_scale{scale_tag}.pt'
-    scale_adapter_checkpoint(base_dir / 'dense.pt', base_dense_s, args.fixed_checkpoint_scale)
-    scale_adapter_checkpoint(base_dir / 'dense_sparse.pt', base_sparse_s, args.fixed_checkpoint_scale)
+    allow_resume = bool(getattr(args, 'resume', True))
+    _ensure_scaled_adapter_checkpoint(
+        base_dir / 'dense.pt', base_dense_s, args.fixed_checkpoint_scale, resume=allow_resume,
+    )
+    _ensure_scaled_adapter_checkpoint(
+        base_dir / 'dense_sparse.pt', base_sparse_s, args.fixed_checkpoint_scale, resume=allow_resume,
+    )
 
     variants: list[tuple[str, Path, Path]] = [
         ('baseline_m2_unscaled', base_dir / 'dense.pt', base_dir / 'dense_sparse.pt'),
