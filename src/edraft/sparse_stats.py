@@ -26,32 +26,136 @@ def unpack_keys(keys, vocab_size):
 
 
 class SparseAccessRecorder:
-    def __init__(self, directory, identity, vocab_size):
+    def __init__(self, directory, identity, vocab_size, *, flush_every: int = 1):
         self.directory = Path(directory) / identity
         self.directory.mkdir(parents=True, exist_ok=True)
         self.vocab_size = vocab_size
+        self.flush_every = max(1, int(flush_every))
+        self._buf_gpu: list[torch.Tensor] = []
+        self._buf_cpu: list[np.ndarray] = []
+        self._buf_events: int = 0
+        self._buf_first_epoch: int | None = None
+        self._buf_first_batch: int | None = None
+        self._buf_last_epoch: int | None = None
+        self._buf_last_batch: int | None = None
+        self._buf_batches: int = 0
 
-    def write_batch(self, packed_keys, epoch, batch):
+    def _write_table_chunk(
+        self,
+        unique: np.ndarray,
+        counts: np.ndarray,
+        events: int,
+        epoch: int,
+        batch: int,
+        *,
+        end_epoch: int | None = None,
+        end_batch: int | None = None,
+    ) -> dict:
         import pyarrow as pa
         import pyarrow.parquet as pq
 
-        values = packed_keys.detach().cpu().numpy().astype(np.int64, copy=False)
-        unique, counts = np.unique(values, return_counts=True)
-        path = self.directory / f'epoch{epoch:03d}-batch{batch:08d}.parquet'
+        if end_epoch is not None and end_batch is not None and (end_epoch != epoch or end_batch != batch):
+            fname = f'epoch{epoch:03d}-batch{batch:08d}_to_epoch{end_epoch:03d}-batch{end_batch:08d}.parquet'
+        else:
+            fname = f'epoch{epoch:03d}-batch{batch:08d}.parquet'
+        path = self.directory / fname
         fd, temporary = tempfile.mkstemp(prefix=path.name + '.', suffix='.tmp', dir=path.parent)
         os.close(fd)
         try:
-            pq.write_table(pa.table({'packed_key': unique, 'frequency': counts.astype(np.uint64)}), temporary,
-                           compression='zstd')
+            pq.write_table(
+                pa.table({'packed_key': unique, 'frequency': counts.astype(np.uint64)}),
+                temporary,
+                compression='zstd',
+            )
             with open(temporary, 'rb') as stream:
                 os.fsync(stream.fileno())
             os.replace(temporary, path)
         finally:
             if os.path.exists(temporary):
                 os.unlink(temporary)
-        return {'path': str(path.resolve()), 'events': len(values), 'unique_batch_keys': len(unique),
-                'epoch': epoch, 'batch': batch,
-                'sha256': hashlib.sha256(path.read_bytes()).hexdigest()}
+        out = {
+            'path': str(path.resolve()),
+            'events': int(events),
+            'unique_batch_keys': int(len(unique)),
+            'epoch': int(epoch),
+            'batch': int(batch),
+            'sha256': hashlib.sha256(path.read_bytes()).hexdigest(),
+        }
+        if end_epoch is not None and end_batch is not None and (end_epoch != epoch or end_batch != batch):
+            out['end_epoch'] = int(end_epoch)
+            out['end_batch'] = int(end_batch)
+        return out
+
+    def write_batch(self, packed_keys, epoch, batch):
+        if packed_keys.is_cuda and packed_keys.numel() > 0:
+            u_t, c_t = torch.unique(packed_keys.detach(), sorted=True, return_counts=True)
+            unique = u_t.cpu().numpy().astype(np.int64, copy=False)
+            counts = c_t.cpu().numpy().astype(np.uint64, copy=False)
+            events = int(packed_keys.numel())
+        else:
+            values = packed_keys.detach().cpu().numpy().astype(np.int64, copy=False)
+            unique, counts = np.unique(values, return_counts=True)
+            events = len(values)
+        return self._write_table_chunk(unique, counts, events, epoch, batch)
+
+    def record_batch(self, packed_keys, epoch: int, batch: int) -> list[dict]:
+        if self.flush_every <= 1:
+            return [self.write_batch(packed_keys, epoch, batch)]
+        ev = int(packed_keys.numel())
+        if self._buf_batches == 0:
+            self._buf_first_epoch = int(epoch)
+            self._buf_first_batch = int(batch)
+        self._buf_last_epoch = int(epoch)
+        self._buf_last_batch = int(batch)
+        self._buf_batches += 1
+        self._buf_events += ev
+        if ev > 0:
+            if packed_keys.is_cuda:
+                self._buf_gpu.append(packed_keys.detach().reshape(-1))
+            else:
+                self._buf_cpu.append(packed_keys.detach().cpu().numpy().astype(np.int64, copy=True).reshape(-1))
+        if self._buf_batches >= self.flush_every:
+            return self.flush()
+        return []
+
+    def flush(self) -> list[dict]:
+        if self._buf_batches == 0:
+            return []
+        assert self._buf_first_epoch is not None and self._buf_first_batch is not None
+        assert self._buf_last_epoch is not None and self._buf_last_batch is not None
+        if not self._buf_gpu and not self._buf_cpu:
+            unique = np.empty(0, dtype=np.int64)
+            counts = np.empty(0, dtype=np.uint64)
+        elif self._buf_gpu and not self._buf_cpu:
+            cat_gpu = self._buf_gpu[0] if len(self._buf_gpu) == 1 else torch.cat(self._buf_gpu)
+            u_t, c_t = torch.unique(cat_gpu, sorted=True, return_counts=True)
+            unique = u_t.cpu().numpy().astype(np.int64, copy=False)
+            counts = c_t.cpu().numpy().astype(np.uint64, copy=False)
+        else:
+            parts = list(self._buf_cpu)
+            if self._buf_gpu:
+                parts.extend(t.cpu().numpy().astype(np.int64, copy=False) for t in self._buf_gpu)
+            cat_cpu = parts[0] if len(parts) == 1 else np.concatenate(parts)
+            unique, c_raw = np.unique(cat_cpu, return_counts=True)
+            counts = c_raw.astype(np.uint64, copy=False)
+        chunk = self._write_table_chunk(
+            unique,
+            counts,
+            self._buf_events,
+            self._buf_first_epoch,
+            self._buf_first_batch,
+            end_epoch=self._buf_last_epoch,
+            end_batch=self._buf_last_batch,
+        )
+        self._buf_gpu.clear()
+        self._buf_cpu.clear()
+        self._buf_events = 0
+        self._buf_first_epoch = None
+        self._buf_first_batch = None
+        self._buf_last_epoch = None
+        self._buf_last_batch = None
+        self._buf_batches = 0
+        return [chunk]
 
     def finalize(self, chunks, sparse, *, memory_limit='512MB', benchmark_entries=1_000_000,
                  benchmark_queries=4096, seed=2026):

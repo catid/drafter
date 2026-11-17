@@ -669,3 +669,97 @@ def test_io_bug_2_m0_gate_atomic_bundle_no_split_brain(tmp_path, monkeypatch):
     )
     with pytest.raises(RuntimeError, match="token reproduction gate"):
         check_reference_gates(args_partial)
+
+
+def test_fused_live_block_diagnostics_compact_and_buffered_sparse_recorder_parity(tmp_path):
+    from edraft.diagnose import live_block_diagnostics
+    from edraft.sparse import SignedHash
+    from edraft.sparse_stats import SparseAccessRecorder
+    from edraft.traces import compact_block, validate_block
+
+    gen = torch.Generator().manual_seed(453)
+    K, V, p_dim, hidden = 6, 128, 8, 16
+    draft_logits = torch.randn((K, V), generator=gen, dtype=torch.bfloat16)
+    target_logits = torch.randn((K, V), generator=gen, dtype=torch.bfloat16)
+    l_unit = draft_logits.float().log_softmax(-1)
+    h_raw_bf16 = torch.randn((K, hidden), generator=gen, dtype=torch.bfloat16)
+    h = torch.randn((K, p_dim), generator=gen, dtype=torch.float32)
+    meta = {
+        "prompt_id": "p0", "split": "train", "condition": "standard_nonthinking",
+        "seed": 2026, "scale": "full", "model_pair": ["a", "b"],
+        "projection_metadata": {"dim": p_dim}, "history_depth": 4,
+    }
+    specials = [120, 121, 122]
+
+    for T, warp in [
+        (0.0, {"top_k": 0, "top_p": 1.0, "min_p": 0.0}),
+        (0.7, {"top_k": 12, "top_p": 0.8, "min_p": 0.0}),
+        (1.0, {"top_k": 0, "top_p": 1.0, "min_p": 0.0}),
+    ]:
+        rec = {
+            "round_idx": 1,
+            "draft_tokens": [int(i * 3 + 1) for i in range(K)],
+            "draft_logits": draft_logits,
+            "l_unit": l_unit,
+            "target_logits": target_logits,
+            "h_raw_bf16": h_raw_bf16,
+            "h": h,
+            "draft_lm_head": {
+                "artifact_id": "x", "revision": "y", "dtype": "torch.bfloat16",
+                "tied_weights": False, "bias": False, "shape": [V, hidden], "hook": "draft_lm_head",
+            },
+            "collection_temperature": T,
+            "loss_temperature": 1.0,
+            "verification_rule": "greedy" if T == 0 else "ratio",
+            "sampling_warp_config": warp,
+            "absolute_output_offset": 0,
+            "input_context_length": 16,
+            "verified_prefix_tail": [1, 2, 3, 4],
+            "physical_to_logical": {"anchor_physical_index": 0, "logical_to_physical": list(range(1, K + 1))},
+            "accepted_length": 2,
+            "first_rejection_index": 2,
+            "replacement_token": 17,
+            "adapter_version": 0,
+        }
+        d_std = live_block_diagnostics(dict(rec), seed=99)
+        c_std = compact_block(dict(rec, diagnostics=d_std), meta, special_tokens=specials, _trust_l_unit=True)
+        d_fus, p_sh = live_block_diagnostics(dict(rec), seed=99, _return_shared=True)
+        c_fus = compact_block(
+            dict(rec, diagnostics=d_fus), meta, special_tokens=specials,
+            _trust_l_unit=True, _precomputed_p_train=p_sh, _prevalidated_collect=True,
+        )
+        validate_block(c_fus)
+        assert d_fus["target_rank"] == d_std["target_rank"]
+        assert d_fus["sampled_target_rank"] == d_std["sampled_target_rank"]
+        assert d_fus["sampled_target_rank_unwarped"] == d_std["sampled_target_rank_unwarped"]
+        assert d_fus["first_rejection"] == d_std["first_rejection"]
+        for ua, ub in zip(c_fus["union_ids"], c_std["union_ids"]):
+            assert torch.equal(ua, ub)
+        for la, lb in zip(c_fus["draft_l_unit_union"], c_std["draft_l_unit_union"]):
+            assert torch.equal(la, lb)
+        for pa, pb in zip(c_fus["target_probs_union"], c_std["target_probs_union"]):
+            assert torch.equal(pa, pb)
+        assert torch.equal(c_fus["target_rest_mass"], c_std["target_rest_mass"])
+
+    # Buffered SparseAccessRecorder(flush_every=8) + mid-stream checkpoint flush matches flush_every=1 bit-for-bit
+    batches = [torch.randint(0, 50_000, (512,), generator=gen, dtype=torch.int64) for _ in range(21)]
+    sp_tbl = SignedHash(4096)
+    r_ref = SparseAccessRecorder(tmp_path, "ref1", 128, flush_every=1)
+    ch_ref = [r_ref.write_batch(bk, 0, i) for i, bk in enumerate(batches)]
+    s_ref = r_ref.finalize(ch_ref, sp_tbl, memory_limit="256MB", benchmark_entries=1000, seed=2026)
+
+    r_buf = SparseAccessRecorder(tmp_path, "buf8", 128, flush_every=8)
+    ch_buf = []
+    for i, bk in enumerate(batches):
+        ch_buf.extend(r_buf.record_batch(bk, 0, i))
+        if i == 10:  # simulate mid-epoch checkpoint_every flush
+            ch_buf.extend(r_buf.flush())
+    ch_buf.extend(r_buf.flush())
+    assert len(ch_buf) == 4  # [0..7], [8..10], [11..18], [19..20]
+    s_buf = r_buf.finalize(ch_buf, sp_tbl, memory_limit="256MB", benchmark_entries=1000, seed=2026)
+    for k in (
+        "unique_observed_keys", "observed_lookup_events", "occupied_buckets",
+        "collision_count", "distinct_keys_in_collided_buckets", "frequency_weighted_collision_count",
+    ):
+        assert s_buf[k] == s_ref[k]
+

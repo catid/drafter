@@ -584,11 +584,16 @@ def collect(args, prompts=None, backend=None):
         blocks, live_count = [], 0
         def capture(block):
             nonlocal live_count
-            block["diagnostics"] = live_block_diagnostics(block, seed=job["seed"] + 10_000_000 + block["round_idx"])
+            diag, p_train_shared = live_block_diagnostics(
+                block, seed=job["seed"] + 10_000_000 + block["round_idx"], _return_shared=True
+            )
+            block["diagnostics"] = diag
             retain = (row["condition"] == "standard_nonthinking" and row["split"] in {"dev", "test"}
                       and live_blocks_written[row["split"]] < args.live_full_blocks)
             blocks.append(compact_block(block, metadata, special_tokens=backend.special_tokens,
-                                        retain_live_full=retain, _trust_l_unit=True))
+                                        retain_live_full=retain, _trust_l_unit=True,
+                                        _precomputed_p_train=p_train_shared,
+                                        _prevalidated_collect=True))
             live_blocks_written[row["split"]] += int(retain)
             live_count += int(retain)
         generated = backend.generate(row, job["max_new_tokens"], job["temperature"], job["warper"],

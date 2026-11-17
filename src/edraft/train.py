@@ -1624,7 +1624,11 @@ def fit(entries, index_report, E, head, bias, head_metadata, args, *, stop_after
                             'implementation_sha256': implementation,
                             'E_sha256': hashlib.sha256(E.detach().cpu().numpy().tobytes()).hexdigest()})
     stats_dir = args.output / ('m2_sparse_stats' if subdir in {'m2', 'm2_smoke'} else f'{subdir}_sparse_stats')
-    stats_recorder = SparseAccessRecorder(stats_dir, identity, len(E)) if is_main else None
+    stats_flush_every = 128 if E.is_cuda else 1
+    stats_recorder = (
+        SparseAccessRecorder(stats_dir, identity, len(E), flush_every=stats_flush_every)
+        if is_main else None
+    )
     references = {split: epoch_references(entries, split) for split in ['train', 'dev', 'test']}
     first = read_shard(entries[0].path)['blocks'][0]
     p = first['h'].shape[1]
@@ -1827,17 +1831,26 @@ def fit(entries, index_report, E, head, bias, head_metadata, args, *, stop_after
                             rank_keys = (torch.cat(local_observed_keys) if local_observed_keys
                                          else torch.empty(0, dtype=torch.long, device=E.device))
                             if use_dist:
-                                gathered_keys = _all_gather_1d(rank_keys, world_size, torch.device('cpu'))
-                                global_keys = torch.cat(gathered_keys) if gathered_keys else torch.empty(0, dtype=torch.long)
+                                gathered_keys = _all_gather_1d(rank_keys, world_size, E.device)
+                                global_keys = (
+                                    torch.cat(gathered_keys)
+                                    if gathered_keys
+                                    else torch.empty(0, dtype=torch.long, device=E.device)
+                                )
                             else:
                                 global_keys = rank_keys
                             if is_main:
-                                chunk = stats_recorder.write_batch(global_keys, epoch, batch_index)
-                                report.setdefault('sparse_statistics_chunks', []).append(chunk)
+                                new_chunks = stats_recorder.record_batch(global_keys, epoch, batch_index)
+                                if new_chunks:
+                                    report.setdefault('sparse_statistics_chunks', []).extend(new_chunks)
 
                     steps_this_run += 1
                     if steps_this_run % args.checkpoint_every == 0 or stop_after_steps == steps_this_run:
                         if is_main:
+                            if stats_recorder is not None:
+                                flushed = stats_recorder.flush()
+                                if flushed:
+                                    report.setdefault('sparse_statistics_chunks', []).extend(flushed)
                             atomic_torch_save(latest, checkpoint_payload(adapter, args, identity, stage, epoch, batch_index + 1,
                                                                          dense_optimizer, sparse_optimizer, report))
                         if use_dist:
@@ -1942,17 +1955,26 @@ def fit(entries, index_report, E, head, bias, head_metadata, args, *, stop_after
                             rank_keys = (torch.cat(local_observed_keys) if local_observed_keys
                                          else torch.empty(0, dtype=torch.long, device=E.device))
                             if use_dist:
-                                gathered_keys = _all_gather_1d(rank_keys, world_size, torch.device('cpu'))
-                                global_keys = torch.cat(gathered_keys) if gathered_keys else torch.empty(0, dtype=torch.long)
+                                gathered_keys = _all_gather_1d(rank_keys, world_size, E.device)
+                                global_keys = (
+                                    torch.cat(gathered_keys)
+                                    if gathered_keys
+                                    else torch.empty(0, dtype=torch.long, device=E.device)
+                                )
                             else:
                                 global_keys = rank_keys
                             if is_main:
-                                chunk = stats_recorder.write_batch(global_keys, epoch, batch_index)
-                                report.setdefault('sparse_statistics_chunks', []).append(chunk)
+                                new_chunks = stats_recorder.record_batch(global_keys, epoch, batch_index)
+                                if new_chunks:
+                                    report.setdefault('sparse_statistics_chunks', []).extend(new_chunks)
 
                     steps_this_run += 1
                     if steps_this_run % args.checkpoint_every == 0 or stop_after_steps == steps_this_run:
                         if is_main:
+                            if stats_recorder is not None:
+                                flushed = stats_recorder.flush()
+                                if flushed:
+                                    report.setdefault('sparse_statistics_chunks', []).extend(flushed)
                             atomic_torch_save(latest, checkpoint_payload(adapter, args, identity, stage, epoch, batch_index + 1,
                                                                          dense_optimizer, sparse_optimizer, report))
                         if use_dist:
@@ -1961,6 +1983,10 @@ def fit(entries, index_report, E, head, bias, head_metadata, args, *, stop_after
                         return {'status': 'interrupted_for_resume_test', 'checkpoint': str(latest)}
 
             start_batch = 0
+            if is_main and stats_recorder is not None:
+                flushed = stats_recorder.flush()
+                if flushed:
+                    report.setdefault('sparse_statistics_chunks', []).extend(flushed)
             if ema_eval_active and hasattr(dense_optimizer, 'use_ema_weights'):
                 with dense_optimizer.use_ema_weights():
                     dev = evaluate(adapter, references['dev'], head, bias, args, head_metadata,

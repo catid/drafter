@@ -35,6 +35,7 @@ _OPTIONAL_FIELDS = {"round_idx", "bonus_token", "decisions", "proposal_token_pro
 
 _CACHED_ROOT_GIT_COMMIT: str | None = None
 _ORIG_GIT_COMMIT = git_commit
+_SPECIALS_TENSOR_CACHE: dict[tuple[torch.device, tuple[int, ...]], torch.Tensor] = {}
 
 
 def _default_git_commit() -> str:
@@ -89,7 +90,9 @@ def _all_tensors_finite(tensors: Sequence[torch.Tensor]) -> bool:
 
 def compact_block(record: Mapping, metadata: Mapping, M_draft: int = 256, M_target: int = 64,
                   special_tokens: Sequence[int] = (), retain_live_full: bool = False,
-                  *, _trust_l_unit: bool = False) -> dict:
+                  *, _trust_l_unit: bool = False,
+                  _precomputed_p_train: torch.Tensor | None = None,
+                  _prevalidated_collect: bool = False) -> dict:
     """Build a canonical CPU trace from one live loop callback.
 
     Stored target probabilities are the unwarped T_train=1 full softmax values
@@ -115,38 +118,62 @@ def compact_block(record: Mapping, metadata: Mapping, M_draft: int = 256, M_targ
         if isinstance(l_in, torch.Tensor) and l_in.shape == draft_logits.shape and l_in.device == draft_logits.device
         else None
     )
-    finite_inputs = (draft_logits, target_logits) if reused_lu is None else (draft_logits, target_logits, reused_lu)
-    if not _all_tensors_finite(finite_inputs):
-        raise ValueError("training logits must be finite and unwarped; truncation masks are forbidden")
     K, V = draft_logits.shape
     if K < 1 or len(record["draft_tokens"]) != K:
         raise ValueError("one realized draft token is required per logical slot")
     specials = sorted(set(int(token) for token in special_tokens))
     if any(token < 0 or token >= V for token in specials):
         raise ValueError("special token outside vocabulary")
+    tokens_int = [int(token) for token in record["draft_tokens"]]
+    if any(token < 0 or token >= V for token in tokens_int):
+        raise ValueError("draft token outside vocabulary")
     # Match the live full training distribution; never use inference warpers.
     l_unit = draft_logits.log_softmax(-1) if reused_lu is None else reused_lu
-    P_train = target_logits.softmax(-1)
+    if (
+        _precomputed_p_train is not None
+        and _precomputed_p_train.shape == target_logits.shape
+        and _precomputed_p_train.device == target_logits.device
+    ):
+        P_train = _precomputed_p_train
+    else:
+        P_train = target_logits.softmax(-1)
     top_draft_vals, top_draft = draft_logits.topk(min(M_draft, V), dim=-1)
     top_target_vals, top_target = target_logits.topk(min(M_target, V), dim=-1)
     draft_log_normalizer = top_draft_vals[:, 0] - l_unit.gather(-1, top_draft[:, :1]).squeeze(-1)
     target_log_normalizer = top_target_vals[:, 0] - P_train.gather(-1, top_target[:, :1]).squeeze(-1).log()
-    tokens_int = [int(token) for token in record["draft_tokens"]]
-    if any(token < 0 or token >= V for token in tokens_int):
-        raise ValueError("draft token outside vocabulary")
+    tok_dev = torch.tensor(tokens_int, dtype=torch.long, device=draft_logits.device)[:, None]
     if specials:
-        extra_cpu = torch.tensor([[tok, *specials] for tok in tokens_int], dtype=torch.long)
+        sp_key = (draft_logits.device, tuple(specials))
+        sp_dev = _SPECIALS_TENSOR_CACHE.get(sp_key)
+        if sp_dev is None:
+            sp_dev = torch.tensor(specials, dtype=torch.long, device=draft_logits.device)
+            _SPECIALS_TENSOR_CACHE[sp_key] = sp_dev
+        cand_parts = [top_draft, top_target, tok_dev, sp_dev.unsqueeze(0).expand(K, -1)]
     else:
-        extra_cpu = torch.tensor(tokens_int, dtype=torch.long)[:, None]
-    cand_parts = [top_draft, top_target, extra_cpu.to(device=draft_logits.device)]
+        cand_parts = [top_draft, top_target, tok_dev]
     cands_sorted = torch.cat(cand_parts, dim=-1).sort(dim=-1).values
-    lp_and_p_cpu = torch.stack(
-        (l_unit.gather(-1, cands_sorted), P_train.gather(-1, cands_sorted)), dim=0
+    C = cands_sorted.shape[1]
+    float_pack_cpu = torch.cat(
+        (
+            l_unit.gather(-1, cands_sorted),
+            P_train.gather(-1, cands_sorted),
+            draft_log_normalizer[:, None],
+            target_log_normalizer[:, None],
+        ),
+        dim=-1,
     ).cpu()
-    l_gath_cpu, p_gath_cpu = lp_and_p_cpu[0], lp_and_p_cpu[1]
+    if not bool(torch.isfinite(float_pack_cpu).all()):
+        finite_inputs = (draft_logits, target_logits) if reused_lu is None else (draft_logits, target_logits, reused_lu)
+        if not _all_tensors_finite(finite_inputs):
+            raise ValueError("training logits must be finite and unwarped; truncation masks are forbidden")
+    finite_inputs = (draft_logits, target_logits) if reused_lu is None else (draft_logits, target_logits, reused_lu)
+    if not draft_logits.is_cuda and not _all_tensors_finite(finite_inputs):
+        raise ValueError("training logits must be finite and unwarped; truncation masks are forbidden")
+    l_gath_cpu = float_pack_cpu[:, :C]
+    p_gath_cpu = float_pack_cpu[:, C:2 * C]
+    draft_lse_cpu = float_pack_cpu[:, 2 * C].clone()
+    target_lse_cpu = float_pack_cpu[:, 2 * C + 1].clone()
     cands_cpu = cands_sorted.cpu()
-    lse_both_cpu = torch.stack((draft_log_normalizer, target_log_normalizer), dim=0).cpu()
-    draft_lse_cpu, target_lse_cpu = lse_both_cpu[0].clone(), lse_both_cpu[1].clone()
     uniq_mask = torch.ones_like(cands_cpu, dtype=torch.bool)
     if cands_cpu.shape[1] > 1:
         uniq_mask[:, 1:] = cands_cpu[:, 1:] != cands_cpu[:, :-1]
@@ -184,7 +211,13 @@ def compact_block(record: Mapping, metadata: Mapping, M_draft: int = 256, M_targ
         result["live_full"] = {"draft_l_unit": l_unit.detach().cpu().clone(),
                                "target_probs": P_train.detach().cpu().clone(),
                                "purpose": "heldout_grouped_gap_and_reconstruction_diagnostic"}
-    validate_block(result)
+    if retain_live_full or not _prevalidated_collect:
+        validate_block(result)
+    else:
+        for name in ("h", "h_raw_bf16"):
+            val = result[name]
+            if val.ndim != 2 or val.shape[0] != K or not _all_finite(val):
+                raise ValueError(f"invalid {name} tensor")
     return result
 
 

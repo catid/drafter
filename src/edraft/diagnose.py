@@ -15,12 +15,22 @@ import numpy as np
 import torch
 
 from .runtime import common_parser, parse_config, record_run, atomic_json, Manifest, fingerprint
-from .sampler import SamplingWarper, probabilities
+from .sampler import SamplingWarper, compact_probabilities, probabilities
 
 TOP_M = (1, 4, 16, 64, 256)
 OUTPUT_EDGES = (1024, 4096, 8192, 16384)
 OUTPUT_LABELS = ('0-1K', '1K-4K', '4K-8K', '8K-16K', '16K+')
 DEFAULT_CONTEXT_EDGES = (1024, 4096, 8192, 16384, 32768)
+_VOCAB_IDS_CACHE: dict[tuple[torch.device, int], torch.Tensor] = {}
+
+
+def _cached_vocab_ids(V: int, device: torch.device) -> torch.Tensor:
+    key = (device, int(V))
+    cached = _VOCAB_IDS_CACHE.get(key)
+    if cached is None:
+        cached = torch.arange(V, device=device, dtype=torch.long)
+        _VOCAB_IDS_CACHE[key] = cached
+    return cached
 
 
 def token_rank(scores, token_ids, *, _vocab_ids=None):
@@ -52,7 +62,7 @@ def multi_token_rank(scores: torch.Tensor, token_ids_2d: torch.Tensor, *, _vocab
 
 
 @torch.no_grad()
-def live_block_diagnostics(record: dict, seed: int) -> dict:
+def live_block_diagnostics(record: dict, seed: int, *, _return_shared: bool = False):
     """Compute before compacting; independent RNG never changes generation draws."""
     target = record['target_logits'].detach().float()
     l_unit = record.get('l_unit')
@@ -65,41 +75,74 @@ def live_block_diagnostics(record: dict, seed: int) -> dict:
         raise ValueError('live diagnostics require full K-by-V target and draft tensors')
     T = float(record['collection_temperature'])
     warper = SamplingWarper(**record['sampling_warp_config'])
-    p_train_log = target.log_softmax(-1)
-    p_train, q_train = p_train_log.exp(), l_unit.exp()
-    if T > 0:
-        P, q = probabilities(target, T, warper), probabilities(l_unit, T, warper)
-    else:
-        P = torch.zeros_like(target).scatter(-1, target.argmax(-1, keepdim=True), 1.)
-        q = torch.zeros_like(l_unit).scatter(-1, l_unit.argmax(-1, keepdim=True), 1.)
-    generator = torch.Generator(device=target.device).manual_seed(seed)
+    p_train = target.softmax(-1) if _return_shared else target.log_softmax(-1).exp()
+    q_train = l_unit.exp()
     target_ids = target.argmax(-1)
+    max_ids = torch.topk(l_unit, min(max(TOP_M), V), dim=-1).indices
+
+    use_compact_pq = (T > 0 and 0 < warper.top_k < V)
+    if T > 0:
+        if use_compact_pq:
+            p_sub, p_idx = compact_probabilities(target, T, warper)
+            q_sub, q_idx = compact_probabilities(l_unit, T, warper)
+            P = torch.zeros((K, V), dtype=p_sub.dtype, device=target.device).scatter_(-1, p_idx, p_sub)
+        else:
+            P, q = probabilities(target, T, warper), probabilities(l_unit, T, warper)
+            p_sub = p_idx = q_sub = q_idx = None
+    else:
+        P = torch.zeros_like(target).scatter_(-1, target_ids[:, None], 1.)
+        q = p_sub = p_idx = q_sub = q_idx = None
+
+    generator = torch.Generator(device=target.device).manual_seed(seed)
     sampled_ids = torch.multinomial(P, 1, generator=generator)[:, 0]
     sampled_train_ids = torch.multinomial(p_train, 1, generator=generator)[:, 0]
-    vocab_ids = torch.arange(V, device=l_unit.device) if l_unit.is_cuda else None
-    ranks_3 = multi_token_rank(
-        l_unit, torch.stack((target_ids, sampled_ids, sampled_train_ids), dim=-1), _vocab_ids=vocab_ids
-    )
-    zero_mass = (P * (q == 0)).sum(-1)
-    ce = -(P * q.clamp_min(torch.finfo(q.dtype).tiny).log()).sum(-1)
-    overlap_sampling = torch.minimum(P, q).sum(-1)
+    vocab_ids = _cached_vocab_ids(V, l_unit.device) if l_unit.is_cuda else None
+
+    first = int(record['first_rejection_index'])
+    replacement = record.get('replacement_token') if first < K else None
+    if replacement is not None:
+        repl_col = target_ids.clone()
+        repl_col[first] = int(replacement)
+        ranks_all = multi_token_rank(
+            l_unit,
+            torch.stack((target_ids, sampled_ids, sampled_train_ids, repl_col), dim=-1),
+            _vocab_ids=vocab_ids,
+        )
+        ranks_3 = ranks_all[:, :3]
+        replacement_rank_dev = ranks_all[first:first + 1, 3]
+    else:
+        ranks_3 = multi_token_rank(
+            l_unit, torch.stack((target_ids, sampled_ids, sampled_train_ids), dim=-1), _vocab_ids=vocab_ids
+        )
+        replacement_rank_dev = None
+
+    if T == 0:
+        same_top1 = (target_ids == max_ids[:, 0])
+        zero_mass = (~same_top1).to(target.dtype)
+        overlap_sampling = same_top1.to(target.dtype)
+        ce = torch.where(
+            same_top1,
+            torch.zeros_like(zero_mass),
+            torch.full_like(zero_mass, -math.log(torch.finfo(target.dtype).tiny)),
+        )
+    elif use_compact_pq:
+        eq = (p_idx[:, :, None] == q_idx[:, None, :])
+        q_at_p = (eq.to(q_sub.dtype) * q_sub[:, None, :]).sum(-1)
+        zero_mass = (p_sub * (q_at_p == 0)).sum(-1)
+        ce = -(p_sub * q_at_p.clamp_min(torch.finfo(q_sub.dtype).tiny).log()).sum(-1)
+        overlap_sampling = torch.minimum(p_sub, q_at_p).sum(-1)
+    else:
+        zero_mass = (P * (q == 0)).sum(-1)
+        ce = -(P * q.clamp_min(torch.finfo(q.dtype).tiny).log()).sum(-1)
+        overlap_sampling = torch.minimum(P, q).sum(-1)
+
     overlap_unwarped = torch.minimum(p_train, q_train).sum(-1)
     ce_unwarped = -(p_train * l_unit).sum(-1)
-    max_ids = torch.topk(l_unit, min(max(TOP_M), V), dim=-1).indices
     mass = P.gather(-1, max_ids).cumsum(-1)
     mass_train = p_train.gather(-1, max_ids).cumsum(-1)
     m_idx = torch.tensor([min(m, V) - 1 for m in TOP_M], device=l_unit.device, dtype=torch.long)
     mass_m = mass.index_select(-1, m_idx)
     mass_train_m = mass_train.index_select(-1, m_idx)
-
-    first = int(record['first_rejection_index'])
-    replacement_rank_dev = None
-    if first < K:
-        replacement = record.get('replacement_token')
-        if replacement is not None:
-            replacement_rank_dev = token_rank(
-                l_unit[first:first + 1], torch.tensor([replacement], device=l_unit.device), _vocab_ids=vocab_ids
-            )
 
     # Consolidate all device-to-host transfers into at most 2 CPU copies.
     float_bundle_cpu = torch.cat(
@@ -147,7 +190,7 @@ def live_block_diagnostics(record: dict, seed: int) -> dict:
     zero_mass_list = float_bundle_cpu[:, 4].tolist()
     infinite_list = [z > 0.0 for z in zero_mass_list]
     ce_list = float_bundle_cpu[:, 3].tolist()
-    return {'definition': 'plain_DFlash_full_vocabulary_live_diagnostics', 'diagnostic_rng_seed': seed,
+    out_diag = {'definition': 'plain_DFlash_full_vocabulary_live_diagnostics', 'diagnostic_rng_seed': seed,
             'sampled_target_distribution': 'condition_sampling_distribution',
             'target_rank': ranks_col0.tolist(), 'sampled_target_rank': ranks_col1.tolist(),
             'sampled_target_rank_unwarped': ranks_col2.tolist(),
@@ -159,6 +202,9 @@ def live_block_diagnostics(record: dict, seed: int) -> dict:
             'target_mass_on_zero_proposal': zero_mass_list,
             'top_m': m_metrics, 'first_rejection': rejection,
             'off_policy_teacher_positions': list(range(first + 1, K))}
+    if _return_shared:
+        return out_diag, p_train
+    return out_diag
 
 
 def _longest_periodic_run(tokens):
