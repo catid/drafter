@@ -1223,3 +1223,189 @@ def test_pure_t1_resume_mtime_bug1_and_1worker_stale_shard_cleanup(tmp_path, mon
     reloaded_dst = torch.load(dst_scaled, map_location='cpu', weights_only=True)
     assert torch.equal(reloaded_dst['adapter_state']['W'], mut_ckpt['adapter_state']['W'] * 0.20)
     assert phase_b_suite.file_sha256(dst_scaled) != sha_before
+
+
+def test_eval_closed_loop_quadratic_lpt_tune_and_timing_sharding_and_legacy_parity(tmp_path):
+    manifest_full = _make_full_scale_synthetic_manifest()
+    dev_prompts = eval_closed_loop.select_prompts(manifest_full, 'dev', 'full', standard_dev_prompts=8, long_dev_prompts=32)
+    assert len(dev_prompts) == 40
+
+    # 1. Verify m1_audit.json `complete=False` filtering + W=1..8 Quadratic-KV LPT on tune (<1% spread)
+    ws_tune = tmp_path / 'tune_lpt_ws'
+    ws_tune.mkdir(parents=True)
+    gens = []
+    for idx, p in enumerate(dev_prompts):
+        if p['condition'].startswith('long_'):
+            # Realistic wide MATH-500 spread: 6,500 .. 22,000 tokens
+            rl = 6500 + ((idx * 3571) % 15501)
+            gens.append({'prompt_id': p['prompt_id'], 'split': 'dev', 'complete': True, 'realized_length': rl})
+            # Inject an incomplete corrupted 999,999-token entry that MUST be ignored!
+            if idx == 0:
+                gens.append({'prompt_id': p['prompt_id'], 'split': 'dev', 'complete': False, 'realized_length': 999999})
+        else:
+            for _t_run in range(3):
+                gens.append({'prompt_id': p['prompt_id'], 'split': 'dev', 'complete': True, 'realized_length': 260 + 15 * (idx % 7)})
+    atomic_json(ws_tune / 'm1_audit.json', {'scale': 'full', 'status': 'passed', 'generations': gens})
+
+    arm_cands = {a: eval_closed_loop.candidate_settings(a) for a in eval_closed_loop.M3_ARMS}
+    for w in range(1, 9):
+        t_args = SimpleNamespace(
+            output=ws_tune, stage='m3', scale='full', world_size=w, seed=2026,
+            fast_decode=False,
+        )
+        t_plan = eval_closed_loop.compute_tune_sharding_plan(t_args, manifest_full, dev_prompts, arm_cands)
+        assert t_plan['weight_source'] == 'm1_audit_realized_tokens'
+        # Confirm complete=False 999999 outlier was ignored!
+        assert t_plan['prompt_token_sums'][dev_prompts[0]['prompt_id']] < 30000
+        assigned = [pid for r in range(w) for pid in t_plan['ranks'][str(r)]]
+        assert len(assigned) == 40 and len(set(assigned)) == 40
+        for r in range(w):
+            r_pids = t_plan['ranks'][str(r)]
+            assert len(r_pids) >= 1
+            n_long_r = sum(1 for pid in r_pids if pid.startswith('long-'))
+            assert n_long_r == (32 // w if 32 % w == 0 else n_long_r)
+            assert n_long_r <= (32 + w - 1) // w
+        if w == 8:
+            # Verify discrete 32-long + 8-std 8-GPU Quadratic-KV spread is <2% (and >5x tighter than _snake_rank!)
+            pts = t_plan['prompt_token_sums']
+            q_loads = []
+            for r in range(8):
+                tot = 0.0
+                for pid in t_plan['ranks'][str(r)]:
+                    ml = pts[pid] / (1.0 if pid.startswith('long-') else 3.0)
+                    tot += ml * (1.0 + ml / 16384.0)
+                q_loads.append(tot)
+            spread_8 = (max(q_loads) - min(q_loads)) / (sum(q_loads) / 8.0)
+            snake_loads = [0.0] * 8
+            for cond, c_info in t_plan['by_condition'].items():
+                for k, pid in enumerate(c_info['ordered_prompt_ids']):
+                    ml = pts[pid] / (1.0 if cond.startswith('long_') else 3.0)
+                    snake_loads[eval_closed_loop._snake_rank(k, 8)] += ml * (1.0 + ml / 16384.0)
+            snake_spread_8 = (max(snake_loads) - min(snake_loads)) / (sum(snake_loads) / 8.0)
+            assert spread_8 < 0.02 and spread_8 < snake_spread_8 and max(q_loads) < max(snake_loads)
+
+    # Also verify ensure_tune_sharding_plan idempotence and skewed `1 long + 7 std` across 8 GPUs (0 empty ranks!)
+    _, persisted_tune, _ = eval_closed_loop.ensure_tune_sharding_plan(
+        SimpleNamespace(output=ws_tune, stage='m3', scale='full', world_size=8, seed=2026, fast_decode=True, fresh_session=False, logical_session='s_t'),
+        manifest_full, dev_prompts, arm_cands,
+    )
+    _, persisted_tune_2, _ = eval_closed_loop.ensure_tune_sharding_plan(
+        SimpleNamespace(output=ws_tune, stage='m3', scale='full', world_size=8, seed=2026, fast_decode=True, fresh_session=False, logical_session='s_t'),
+        manifest_full, dev_prompts, arm_cands,
+    )
+    assert persisted_tune == persisted_tune_2
+
+    skewed_8 = [p for p in dev_prompts if p['condition'].startswith('long_')][:1] + [p for p in dev_prompts if not p['condition'].startswith('long_')][:7]
+    sk_plan = eval_closed_loop.compute_tune_sharding_plan(
+        SimpleNamespace(output=ws_tune, stage='m3', scale='reference', world_size=8, seed=2026, fast_decode=True),
+        manifest_full, skewed_8, arm_cands,
+    )
+    assert all(len(sk_plan['ranks'][str(r)]) == 1 for r in range(8))
+
+    # 2. Verify legacy `--scale reference` (fast_decode=False) vs `--fast_decode` on compute_timing_sharding_plan
+    #    AND CLI-less `--mode summarize` (`audit_timing_evidence` propagating report['fastpath']['fast_decode'])!
+    ws_tim = tmp_path / 'timing_lpt_ws'
+    base_smoke = [
+        '--scale', 'smoke', '--stage', 'm3', '--device', 'cpu',
+        '--output', str(ws_tim), '--smoke_tokens', '12',
+        '--timing_repeats', '2', '--timing_warmups', '1',
+    ]
+    eval_closed_loop.main([*base_smoke, '--mode', 'tune', '--fast_decode'])
+    eval_closed_loop.main([*base_smoke, '--mode', 'evaluate', '--fast_decode'])
+    for r in range(2):
+        eval_closed_loop.main([
+            *base_smoke, '--mode', 'timing', '--rank', str(r), '--world_size', '2',
+            '--logical_session', 'sess_fd_tim', '--fast_decode',
+        ])
+    # Summarize WITHOUT passing --fast_decode on the CLI: audit_timing_evidence must infer fast_decode=True!
+    eval_closed_loop.main([*base_smoke, '--mode', 'summarize'])
+    sum_rep = json.loads((ws_tim / 'm3' / 'summary.json').read_text())
+    assert sum_rep['status'] == 'complete'
+
+    # 3. Verify W=1..8 Quadratic-KV LPT (<1% spread) vs legacy snake parity on synthetic reference evaluate results
+    ws_ref_sim = tmp_path / 'ref_sim_ws'
+    (ws_ref_sim / 'm3' / 'evaluate' / 'rank0').mkdir(parents=True)
+    ref_prompts = (
+        [p for p in manifest_full['prompts'] if p['split'] == 'test' and p['condition'] == 'standard_nonthinking' and p.get('reference_selected', True)][:64]
+        + [p for p in manifest_full['prompts'] if p['split'] == 'test' and p['condition'].startswith('long_') and p.get('reference_selected', True)][:32]
+    )
+    ref_manifest = dict(manifest_full, scale='reference', prompts=ref_prompts + [p for p in manifest_full['prompts'] if p['split'] != 'test'][:20])
+    fake_settings = {
+        'frozen': True, 'stage': 'm3', 'scale': 'reference',
+        'selected': {a: {} for a in ('plain_dflash', 'online_bigram')},
+        'checkpoint_hashes': {'dense': 'a' * 64, 'dense_sparse': 'b' * 64, 'projection': 'c' * 64, 'implementation': 'd' * 64},
+        'model_pair': ['t', 'd'], 'model_revisions': ['rt', 'rd'], 'generation_environment': {'stub': True},
+    }
+    frozen_h = fingerprint(fake_settings)
+    stub_ns = SimpleNamespace(
+        args=SimpleNamespace(
+            output=ws_ref_sim, stage='m3', scale='reference', seed=2026,
+            max_new_tokens=2048, long_max_new_tokens=24576, smoke_tokens=32,
+            m5_arms=None, m5_oracle_checkpoint=None,
+        ),
+        tiny=False, checkpoint_hashes=fake_settings['checkpoint_hashes'],
+        model_pair=fake_settings['model_pair'], model_revisions=fake_settings['model_revisions'],
+        generation_environment=fake_settings['generation_environment'],
+    )
+    ev_jobs = eval_closed_loop.evaluation_jobs(ref_prompts, 'm3', 'reference', 2026)
+    # Only populate the 2 selected arms in fake_settings['selected']
+    ev_jobs_2arm = [j for j in ev_jobs if j['arm'] in fake_settings['selected']]
+    # Use stage='m5' with m5_arms=['plain_dflash', 'online_bigram'] so evaluation_jobs matches fake_settings['selected']!
+    fake_settings['stage'] = 'm5'
+    frozen_h = fingerprint(fake_settings)
+    stub_ns.args.stage = 'm5'
+    stub_ns.args.m5_arms = ['plain_dflash', 'online_bigram']
+    (ws_ref_sim / 'm5' / 'evaluate' / 'rank0').mkdir(parents=True)
+    ev_jobs_m5 = eval_closed_loop.evaluation_jobs(ref_prompts, 'm5', 'reference', 2026, m5_arms=['plain_dflash', 'online_bigram'])
+    manifest_jobs = {}
+    for j_idx, job in enumerate(ev_jobs_m5):
+        ident = eval_closed_loop.run_identity(stub_ns, job, {}, 'evaluate', frozen_h)
+        jkey = fingerprint(ident)
+        pid = job['prompt']['prompt_id']
+        p_num = int(pid.rsplit('-', 1)[-1])
+        gen_tok = (6000 + ((p_num * 4099) % 17500)) if job['prompt']['condition'].startswith('long_') else (180 + (p_num * 13) % 400)
+        rp = ws_ref_sim / 'm5' / 'evaluate' / 'rank0' / f'{jkey}.json'
+        payload_bytes = json.dumps({'identity': ident, 'generated_tokens': gen_tok}).encode()
+        rp.write_bytes(payload_bytes)
+        import hashlib
+        manifest_jobs[jkey] = {
+            'status': 'complete',
+            'result_path': str(rp),
+            'result_sha256': hashlib.sha256(payload_bytes).hexdigest(),
+        }
+    atomic_json(ws_ref_sim / 'm5' / 'evaluate' / 'manifest-rank0.json', {'jobs': manifest_jobs})
+
+    selected_ref = [p for c in sorted({x['condition'] for x in ref_prompts}) for p in ref_prompts if p['condition'] == c]
+    # Legacy reference (fast_decode=False) uses exact _snake_rank
+    leg_t_args = SimpleNamespace(
+        output=ws_ref_sim, stage='m5', scale='reference', world_size=8, seed=2026,
+        timing_repeats=3, timing_warmups=1, fast_decode=False,
+        max_new_tokens=2048, long_max_new_tokens=24576, smoke_tokens=32,
+        m5_arms=['plain_dflash', 'online_bigram'], m5_oracle_checkpoint=None,
+    )
+    leg_plan = eval_closed_loop.compute_timing_sharding_plan(leg_t_args, ref_manifest, fake_settings, selected_ref)
+    for cond, c_info in leg_plan['by_condition'].items():
+        for k, pid in enumerate(c_info['ordered_prompt_ids']):
+            assert leg_plan['prompt_to_rank'][pid] == eval_closed_loop._snake_rank(k, 8)
+
+    # Fast-decode reference (fast_decode=True) uses Quadratic-KV LPT across W=1..8 (<1% spread at W=8!)
+    for w in range(1, 9):
+        fd_t_args = copy.copy(leg_t_args)
+        fd_t_args.world_size = w
+        fd_t_args.fast_decode = True
+        fd_plan = eval_closed_loop.compute_timing_sharding_plan(fd_t_args, ref_manifest, fake_settings, selected_ref)
+        assert fd_plan['weight_source'] == 'evaluate_realized_tokens'
+        all_p = [pid for r in range(w) for pid in fd_plan['ranks'][str(r)]]
+        assert len(all_p) == 96 and len(set(all_p)) == 96
+        for r in range(w):
+            assert len(fd_plan['ranks'][str(r)]) >= 1
+        if w == 8:
+            pts = fd_plan['prompt_token_sums']
+            q_loads = [
+                sum(
+                    pts[pid] * (1.0 + (pts[pid] / (2.0 if pid.startswith('long-') else 14.0)) / 16384.0)
+                    for pid in fd_plan['ranks'][str(r)]
+                )
+                for r in range(8)
+            ]
+            assert (max(q_loads) - min(q_loads)) / (sum(q_loads) / 8.0) < 0.01

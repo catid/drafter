@@ -465,6 +465,75 @@ def _cli_or_env_fast_decode(args) -> bool:
     return bool(getattr(args, 'fast_decode', False) or os.environ.get('EDRAFT_FAST_DECODE', '0') == '1')
 
 
+def _use_quadratic_lpt_sharding(args) -> bool:
+    if getattr(args, 'scale', None) == 'full':
+        return True
+    audit_override = getattr(args, '_audit_fast_decode', None)
+    if audit_override is not None:
+        return bool(audit_override)
+    return _cli_or_env_fast_decode(args)
+
+
+def _assign_quadratic_lpt_ranks(
+    ordered_by_condition: dict[str, list[dict]],
+    conditions_sorted: list[str],
+    world_size: int,
+    cost_by_pid: dict[str, float],
+    manifest_order: dict[str, int],
+) -> dict[str, int]:
+    loads = [0.0] * world_size
+    rank_counts = [0] * world_size
+    prompt_to_rank: dict[str, int] = {}
+    if all(len(ordered_by_condition[c]) >= world_size for c in conditions_sorted):
+        for cond in conditions_sorted:
+            c_prompts = sorted(
+                ordered_by_condition[cond],
+                key=lambda p: (-cost_by_pid[p['prompt_id']], manifest_order[p['prompt_id']], p['prompt_id']),
+            )
+            cond_counts = [0] * world_size
+            max_per_rank = (
+                math.ceil(len(c_prompts) / world_size)
+                if str(cond).startswith('long_')
+                else len(c_prompts)
+            )
+            for p in c_prompts:
+                pid = p['prompt_id']
+                need_nonempty = any(c == 0 for c in rank_counts)
+                best_r = min(
+                    range(world_size),
+                    key=lambda r: (
+                        1 if (need_nonempty and rank_counts[r] > 0) else 0,
+                        1 if cond_counts[r] >= max_per_rank else 0,
+                        loads[r],
+                        r,
+                    ),
+                )
+                prompt_to_rank[pid] = best_r
+                rank_counts[best_r] += 1
+                cond_counts[best_r] += 1
+                loads[best_r] += float(cost_by_pid[pid])
+    else:
+        flat = sorted(
+            [p for cond in conditions_sorted for p in ordered_by_condition[cond]],
+            key=lambda p: (-cost_by_pid[p['prompt_id']], manifest_order[p['prompt_id']], p['prompt_id']),
+        )
+        for p in flat:
+            pid = p['prompt_id']
+            need_nonempty = any(c == 0 for c in rank_counts)
+            best_r = min(
+                range(world_size),
+                key=lambda r: (
+                    1 if (need_nonempty and rank_counts[r] > 0) else 0,
+                    loads[r],
+                    r,
+                ),
+            )
+            prompt_to_rank[pid] = best_r
+            rank_counts[best_r] += 1
+            loads[best_r] += float(cost_by_pid[pid])
+    return prompt_to_rank
+
+
 class EvaluationRunner:
     def __init__(self, args):
         self.args = args
@@ -1336,8 +1405,9 @@ def _select_from_dev_observations(active_arms, arm_candidates, observations):
 
 
 def compute_tune_sharding_plan(args, prompt_manifest, prompts, arm_candidates):
-    """Condition-stratified token-balanced snake assignment of dev prompts across `1..8` sharded tune ranks."""
+    """Condition-stratified token-balanced assignment of dev prompts across `1..8` sharded tune ranks."""
     token_sums = defaultdict(int)
+    run_counts = defaultdict(int)
     weight_source = 'prompt_manifest_order_fallback'
     has_weights = False
     target_pids = {p['prompt_id'] for p in prompts}
@@ -1349,6 +1419,7 @@ def compute_tune_sharding_plan(args, prompt_manifest, prompts, arm_candidates):
         if not mpaths:
             continue
         stage_sums = defaultdict(int)
+        stage_runs = defaultdict(int)
         seen_pids = set()
         seen_job_keys = set()
         for mpath in mpaths:
@@ -1369,9 +1440,11 @@ def compute_tune_sharding_plan(args, prompt_manifest, prompts, arm_candidates):
                 if pid in target_pids:
                     seen_job_keys.add(jkey)
                     stage_sums[pid] += int(row.get('generated_tokens', 0))
+                    stage_runs[pid] += 1
                     seen_pids.add(pid)
         if target_pids and target_pids <= seen_pids:
             token_sums = stage_sums
+            run_counts = stage_runs
             weight_source = f'{prior_stage}_tune_realized_tokens'
             has_weights = True
             break
@@ -1381,14 +1454,19 @@ def compute_tune_sharding_plan(args, prompt_manifest, prompts, arm_candidates):
             try:
                 m1_data = json.loads(m1_audit_path.read_text())
                 m1_sums = defaultdict(int)
+                m1_runs = defaultdict(int)
                 seen_m1 = set()
                 for gen in m1_data.get('generations', []):
+                    if not isinstance(gen, dict) or not gen.get('complete', True):
+                        continue
                     pid = gen.get('prompt_id')
                     if pid in target_pids and gen.get('realized_length') is not None:
                         m1_sums[pid] += int(gen['realized_length'])
+                        m1_runs[pid] += 1
                         seen_m1.add(pid)
                 if target_pids and target_pids <= seen_m1:
                     token_sums = m1_sums
+                    run_counts = m1_runs
                     weight_source = 'm1_audit_realized_tokens'
                     has_weights = True
             except (OSError, ValueError, TypeError):
@@ -1411,15 +1489,26 @@ def compute_tune_sharding_plan(args, prompt_manifest, prompts, arm_candidates):
             cond_prompts = [p for p in prompts if p['condition'] == cond]
             ordered_by_condition[cond] = sorted(cond_prompts, key=lambda p: (manifest_order[p['prompt_id']], p['prompt_id']))
 
-    prompt_to_rank = {}
-    if all(len(cond_prompts) >= args.world_size for cond_prompts in ordered_by_condition.values()):
-        for cond in conditions_sorted:
-            for k, p in enumerate(ordered_by_condition[cond]):
-                prompt_to_rank[p['prompt_id']] = _snake_rank(k, args.world_size)
+    use_quad_lpt = _use_quadratic_lpt_sharding(args)
+    if use_quad_lpt and has_weights:
+        tune_costs = {}
+        for p in prompts:
+            pid = p['prompt_id']
+            mean_len = max(0.0, float(prompt_token_sums[pid])) / max(1.0, float(run_counts[pid]))
+            tune_costs[pid] = mean_len * (1.0 + mean_len / 16384.0)
+        prompt_to_rank = _assign_quadratic_lpt_ranks(
+            ordered_by_condition, conditions_sorted, int(args.world_size), tune_costs, manifest_order,
+        )
     else:
-        flat = [p for cond in conditions_sorted for p in ordered_by_condition[cond]]
-        for k, p in enumerate(flat):
-            prompt_to_rank[p['prompt_id']] = _snake_rank(k, args.world_size)
+        prompt_to_rank = {}
+        if all(len(cond_prompts) >= args.world_size for cond_prompts in ordered_by_condition.values()):
+            for cond in conditions_sorted:
+                for k, p in enumerate(ordered_by_condition[cond]):
+                    prompt_to_rank[p['prompt_id']] = _snake_rank(k, args.world_size)
+        else:
+            flat = [p for cond in conditions_sorted for p in ordered_by_condition[cond]]
+            for k, p in enumerate(flat):
+                prompt_to_rank[p['prompt_id']] = _snake_rank(k, args.world_size)
 
     rank_prompts = {
         r: [p['prompt_id'] for p in prompts if prompt_to_rank[p['prompt_id']] == r]
@@ -2201,6 +2290,7 @@ def compute_timing_sharding_plan(args, prompt_manifest, settings, selected):
         include_long_oracle=bool(getattr(args, 'm5_oracle_checkpoint', None)),
     )
     token_sums = defaultdict(int)
+    eval_job_counts = defaultdict(int)
     eval_complete = bool(eval_jobs)
     for job in eval_jobs:
         identity = run_identity(stub, job, settings['selected'][job['arm']], 'evaluate', frozen_hash)
@@ -2218,7 +2308,9 @@ def compute_timing_sharding_plan(args, prompt_manifest, settings, selected):
         row = json.loads(payload)
         if row.get('identity') != identity:
             raise ValueError(f'evaluate result identity mismatch while building timing sharding plan: {rpath}')
-        token_sums[job['prompt']['prompt_id']] += int(row['generated_tokens'])
+        pid_job = job['prompt']['prompt_id']
+        token_sums[pid_job] += int(row['generated_tokens'])
+        eval_job_counts[pid_job] += 1
 
     manifest_order = {p['prompt_id']: idx for idx, p in enumerate(prompt_manifest['prompts'])}
     conditions_sorted = sorted({p['condition'] for p in selected})
@@ -2239,15 +2331,27 @@ def compute_timing_sharding_plan(args, prompt_manifest, settings, selected):
             cond_prompts = [p for p in selected if p['condition'] == cond]
             ordered_by_condition[cond] = sorted(cond_prompts, key=lambda p: (manifest_order[p['prompt_id']], p['prompt_id']))
 
-    prompt_to_rank = {}
-    if all(len(cond_prompts) >= args.world_size for cond_prompts in ordered_by_condition.values()):
-        for cond in conditions_sorted:
-            for k, p in enumerate(ordered_by_condition[cond]):
-                prompt_to_rank[p['prompt_id']] = _snake_rank(k, args.world_size)
+    use_quad_lpt = _use_quadratic_lpt_sharding(args)
+    if use_quad_lpt and eval_complete:
+        timing_costs = {}
+        for p in selected:
+            pid = p['prompt_id']
+            tot_tok = max(0.0, float(prompt_token_sums[pid]))
+            mean_len = tot_tok / max(1.0, float(eval_job_counts[pid]))
+            timing_costs[pid] = tot_tok * (1.0 + mean_len / 16384.0)
+        prompt_to_rank = _assign_quadratic_lpt_ranks(
+            ordered_by_condition, conditions_sorted, int(args.world_size), timing_costs, manifest_order,
+        )
     else:
-        flat = [p for cond in conditions_sorted for p in ordered_by_condition[cond]]
-        for k, p in enumerate(flat):
-            prompt_to_rank[p['prompt_id']] = _snake_rank(k, args.world_size)
+        prompt_to_rank = {}
+        if all(len(cond_prompts) >= args.world_size for cond_prompts in ordered_by_condition.values()):
+            for cond in conditions_sorted:
+                for k, p in enumerate(ordered_by_condition[cond]):
+                    prompt_to_rank[p['prompt_id']] = _snake_rank(k, args.world_size)
+        else:
+            flat = [p for cond in conditions_sorted for p in ordered_by_condition[cond]]
+            for k, p in enumerate(flat):
+                prompt_to_rank[p['prompt_id']] = _snake_rank(k, args.world_size)
 
     rank_prompts = {
         r: [p['prompt_id'] for p in selected if prompt_to_rank[p['prompt_id']] == r]
@@ -2675,6 +2779,7 @@ def audit_timing_evidence(runner, prompt_manifest, settings, report):
         plan_args.timing_repeats = repeats
         plan_args.timing_warmups = warmups
         plan_args.timing_prompts = 0
+        plan_args._audit_fast_decode = bool(expected_fp_opt.get('fast_decode', False)) if expected_fp_opt is not None else False
         expected_plan = compute_timing_sharding_plan(plan_args, prompt_manifest, settings, selected)
         for key in ('stage', 'scale', 'world_size', 'sharding_mode', 'frozen_settings_hash',
                     'prompt_manifest_hash', 'selected_prompt_ids', 'repeats', 'warmups', 'seed',
