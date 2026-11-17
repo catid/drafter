@@ -1,0 +1,160 @@
+{
+  "results": {
+    "base_sparse": {
+      "checkpoint": "/home/catid/drafter/artifacts/m2/dense_sparse.pt",
+      "stage": "dense_sparse",
+      "checkpoint_scale": 1.0,
+      "sparse_backend": "signed_feature_hash",
+      "collision_count": 88666459,
+      "overflow_events": null,
+      "dropped_unique_keys": null,
+      "counterfactual_signed_hash_collision_count": null,
+      "dev": {
+        "loss_mode": "union_rest_grouped",
+        "weighted_mean_kl": 2.060249466823536,
+        "weighted_kl_sum": 74140.78493118286,
+        "weight_sum": 35986.314339637756,
+        "logical_slots": 102975,
+        "union_overlap_lower_bound": 0.4822480798031387,
+        "grouped_overlap_upper_bound": 0.48432259558765434,
+        "live_full_diagnostic": {
+          "logical_slots": 120,
+          "mean_overlap": 0.43273561795552573,
+          "top1_agreement": 0.45,
+          "weighted_mean_full_kl": 2.190845650419084,
+          "weighted_mean_grouped_kl": 2.188882437212017,
+          "full_minus_grouped_kl": 0.0019632132070669444,
+          "proposal_source": "same reconstructed full-vocabulary q for both objectives"
+        },
+        "T_train": 1.0,
+        "beta_train": 1.0,
+        "warpers_used_for_training": false
+      },
+      "test": {
+        "loss_mode": "union_rest_grouped",
+        "weighted_mean_kl": 3.0154879492845845,
+        "weighted_kl_sum": 100280.75595474243,
+        "weight_sum": 33255.23352813721,
+        "logical_slots": 95160,
+        "union_overlap_lower_bound": 0.3537139789129401,
+        "grouped_overlap_upper_bound": 0.35552996712662654,
+        "live_full_diagnostic": {
+          "logical_slots": 120,
+          "mean_overlap": 0.20259249409039815,
+          "top1_agreement": 0.2,
+          "weighted_mean_full_kl": 4.098733169924206,
+          "weighted_mean_grouped_kl": 4.0977745376123895,
+          "full_minus_grouped_kl": 0.0009586323118170706,
+          "proposal_source": "same reconstructed full-vocabulary q for both objectives"
+        },
+        "T_train": 1.0,
+        "beta_train": 1.0,
+        "warpers_used_for_training": false
+      }
+    },
+    "pl_sparse": {
+      "checkpoint": "/home/catid/drafter/artifacts/post_m4_suite/m5_eval_ws_9343c88a80db/m5_two_sided_pl/dense_sparse.pt",
+      "stage": "dense_sparse",
+      "checkpoint_scale": 1.0,
+      "sparse_backend": "signed_feature_hash",
+      "collision_count": 132989841,
+      "overflow_events": null,
+      "dropped_unique_keys": null,
+      "counterfactual_signed_hash_collision_count": null,
+      "dev": {
+        "loss_mode": "union_rest_grouped",
+        "weighted_mean_kl": 3.586505699095252,
+        "weighted_kl_sum": 129065.121468544,
+        "weight_sum": 35986.314339637756,
+        "logical_slots": 102975,
+        "union_overlap_lower_bound": 0.4006831644026734,
+        "grouped_overlap_upper_bound": 0.4033202718915622,
+        "live_full_diagnostic": {
+          "logical_slots": 120,
+          "mean_overlap": 0.3690298438072205,
+          "top1_agreement": 0.4166666666666667,
+          "weighted_mean_full_kl": 3.558328798739155,
+          "weighted_mean_grouped_kl": 3.554974609001547,
+          "full_minus_grouped_kl": 0.0033541897376084596,
+          "proposal_source": "same reconstructed full-vocabulary q for both objectives"
+        },
+        "T_train": 1.0,
+        "beta_train": 1.0,
+        "warpers_used_for_training": false
+      },
+      "test": {
+        "loss_mode": "union_rest_grouped",
+        "weighted_mean_kl": 6.172778877383643,
+        "weighted_kl_sum": 205277.20308494568,
+        "weight_sum": 33255.23352813721,
+        "logical_slots": 95160,
+        "union_overlap_lower_bound": 0.24584250371009023,
+        "grouped_overlap_upper_bound": 0.24780419214476285,
+        "live_full_diagnostic": {
+          "logical_slots": 120,
+          "mean_overlap": 0.1049378901720047,
+          "top1_agreement": 0.075,
+          "weighted_mean_full_kl": 6.6755974521129575,
+          "weighted_mean_grouped_kl": 6.673805627918036,
+          "full_minus_grouped_kl": 0.0017918241949207816,
+          "proposal_source": "same reconstructed full-vocabulary q for both objectives"
+        },
+        "T_train": 1.0,
+        "beta_train": 1.0,
+        "warpers_used_for_training": false
+      }
+    },
+    "exact_sparse": {
+      "checkpoint": "/home/catid/drafter/artifacts/post_m4_suite/m5_eval_ws_9343c88a80db/m5_exact_pairs/dense_sparse.pt",
+      "stage": "dense_sparse",
+      "checkpoint_scale": 1.0,
+      "sparse_backend": "exact_observed_pairs",
+      "collision_count": 0,
+      "overflow_events": 0,
+      "dropped_unique_keys": 0,
+      "counterfactual_signed_hash_collision_count": 88666347,
+      "dev": {
+        "loss_mode": "union_rest_grouped",
+        "weighted_mean_kl": 2.060274624712986,
+        "weighted_kl_sum": 74141.69027090073,
+        "weight_sum": 35986.314339637756,
+        "logical_slots": 102975,
+        "union_overlap_lower_bound": 0.48224684291748326,
+        "grouped_overlap_upper_bound": 0.4843213501732975,
+        "live_full_diagnostic": {
+          "logical_slots": 120,
+          "mean_overlap": 0.4327380617459615,
+          "top1_agreement": 0.45,
+          "weighted_mean_full_kl": 2.19086233108523,
+          "weighted_mean_grouped_kl": 2.1888992202135378,
+          "full_minus_grouped_kl": 0.0019631108716918156,
+          "proposal_source": "same reconstructed full-vocabulary q for both objectives"
+        },
+        "T_train": 1.0,
+        "beta_train": 1.0,
+        "warpers_used_for_training": false
+      },
+      "test": {
+        "loss_mode": "union_rest_grouped",
+        "weighted_mean_kl": 3.0155524725057243,
+        "weighted_kl_sum": 100282.90168952942,
+        "weight_sum": 33255.23352813721,
+        "logical_slots": 95160,
+        "union_overlap_lower_bound": 0.353708586224655,
+        "grouped_overlap_upper_bound": 0.35552458485889626,
+        "live_full_diagnostic": {
+          "logical_slots": 120,
+          "mean_overlap": 0.202590670188268,
+          "top1_agreement": 0.2,
+          "weighted_mean_full_kl": 4.098903001164531,
+          "weighted_mean_grouped_kl": 4.097944414335103,
+          "full_minus_grouped_kl": 0.0009585868294281245,
+          "proposal_source": "same reconstructed full-vocabulary q for both objectives"
+        },
+        "T_train": 1.0,
+        "beta_train": 1.0,
+        "warpers_used_for_training": false
+      }
+    }
+  }
+}
