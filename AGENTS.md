@@ -20,6 +20,11 @@ Before running any experiment, benchmark, training job, or evaluation:
   parallel across active branches, launch/driver scripts, validators, and live
   experiment artifacts/manifests to catch subtle numerical, state, concurrency,
   provenance, or schema bugs early.
+- **Standing 20-Minute Bug-Hunt Rotation**: While any long-running GPU
+  training, evaluation, or benchmark job is active, run an independent
+  multi-angle parallel bug-hunt and artifact/manifest conformance check every
+  20 minutes across active driver processes, output shards, validators, and
+  staged next-phase code so defects are caught and fixed before GPU transitions.
 
 After each round of work:
 

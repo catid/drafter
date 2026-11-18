@@ -1,11 +1,11 @@
 # Research status
 
-As of 2026-11-16, **all mandatory reference milestones M0, M1-pre, M1a, M1b, M2, M3, and M4 have passed** at `--scale reference` on the pinned `Qwen/Qwen3-8B` + `z-lab/Qwen3-8B-DFlash-b16` pair, backed bychecksummed raw traces, closed-loop evaluation trajectories, matched-bundle timing and CUDA-event phase profiles, and independent validators (`45,158,121` M3 checks and `18,983,686` M4 checks with zero failures).
+As of 2026-11-16, the historical M0–M4 run passed its recorded validators. Later review found a bigram sampling defect and extra M4 snapshot copies. The [reference bigram correction](#reference-bigram-correction) identifies the affected requests. These experiments ran at `--scale reference` on the pinned `Qwen/Qwen3-8B` + `z-lab/Qwen3-8B-DFlash-b16` pair, backed by checksummed raw traces, closed-loop evaluation trajectories, matched-bundle timing and CUDA-event phase profiles, and independent validators (`45,158,121` M3 checks and `18,983,686` M4 checks with zero failures).
 
 **Summary of empirical findings (`M0–M4`, `--scale reference`):**
-- **Offline fitting (`M2`) produced a negative quality result under the predeclared constant-LR AdamW schedule:** dense (`+72.7%` dev grouped KL) and dense+bias+sparse (`+76.3%` dev grouped KL) worsened grouped KL on train, dev, and test; extra epochs stopped under the `<1%` dev-improvement rule. A read-only post-hoc 1D ray check (`alpha * dense.pt`) showed that the fitted direction itself reduces sampled M1 dev grouped KL by `-11.2%` (`1.1483 -> 1.0202`) at `alpha = 0.20`, diagnosing ~5x parameter-norm overshoot from non-i.i.d. shard-sequential mini-batching under undecayed `AdamW(lr=1e-3)`. Gated M2 checkpoints were **not** modified or rescaled in M3 or M4.
-- **Closed-loop static adapters (`M3`) did not improve acceptance or net speed:** at dev-selected `beta = 0.5`, static `dense` and `dense_sparse` reduced mean accepted length relative to `plain_dflash` across all four conditions (`4.125` and `4.041` vs `5.136` on standard `T=0.7`; `2.102` and `1.972` vs `2.476` on OOD `long_thinking` `T=0.6`) and reduced single-GPU throughput (`0.57x–0.81x` of `plain_dflash`). The normalized committed-transition `online_bigram` baseline (`alpha=1.0, lambda_tr=0.2`) modestly increased mean accepted length across every condition (`5.195` vs `5.136` at `T=0.7`; `2.651` vs `2.476`, `+7.07%` on primary `long_thinking`), reducing `target_verification` time on `long_thinking` (`79.8s` vs `87.2s`), but eager full-vocabulary host/sampling overhead left net `tokens/sec` below `plain_dflash` (`0.86x–0.96x`).
-- **Closed-loop synchronous online adaptation (`M4`) recovered and surpassed `plain_dflash` acceptance on out-of-distribution `long_thinking`, proving dense `dW, dA` adaptation is critical under `h[i]` covariate shift, while incurring net wall-clock slowdown in uncompiled eager M0–M4:** on primary `long_thinking` (`T=0.6`, where M1b documented substantial draft hidden-feature `h[i]` shift: coordinate-mean norm `11.302 -> 8.314`, variance ratio `1.347 -> 0.851`), full-adapter `offline_online_stride1` (`beta=1.0, lr=1e-4, stride=1, exponential`) lifted mean accepted length to **`2.574 [2.424, 2.730]`** (`+30.5%` over `offline_static` `1.972 [1.876, 2.068]` and **`+3.94%` above `plain_dflash` `2.476 [2.289, 2.654]`**, cutting `target_verification` median time from `87.89s` to `80.22s`), whereas bias+sparse-only `online_dbS` (`dW=0, dA=0`) collapsed to **`1.435 [1.354, 1.524]`**. On shorter in-distribution `standard_nonthinking` (`~300` tokens, `~72` updates), `offline_online_stride1` (`3.172` at `T=0.7`) did not overcome the overshot M2 initialization within a single request. Across all 20 M4 condition/arm groups, eager full-vocabulary scoring, sparse gathering, and per-round autograd `L_full` backward (`118.2s` median `online_update` on `long_thinking`) exceeded verification savings (`0.20x–0.42x` of `plain_dflash` `tokens/sec`; `throughput_gain_supported_by_95_ci = false` everywhere).
+- **Offline fitting (`M2`) produced a negative quality result under the predeclared constant-LR AdamW schedule:** dense (`+72.7%` dev grouped KL) and dense+bias+sparse (`+76.3%` dev grouped KL) worsened grouped KL on train, dev, and test; extra epochs stopped under the `<1%` dev-improvement rule. A read-only post-hoc 1D ray check (`alpha * dense.pt`) showed that the fitted direction itself reduces sampled M1 dev grouped KL by `-11.2%` (`1.1483 -> 1.0202`) at `alpha = 0.20`, showing lower sampled dev loss at one-fifth of the saved scale. The fit used shard-sequential batches and constant-LR `AdamW(lr=1e-3)`. Gated M2 checkpoints were **not** modified or rescaled in M3 or M4.
+- **Closed-loop static adapters (`M3`) did not improve acceptance or net speed:** at dev-selected `beta = 0.5`, static `dense` and `dense_sparse` reduced mean accepted length relative to `plain_dflash` across all four conditions (`4.125` and `4.041` vs `5.136` on standard `T=0.7`; `2.102` and `1.972` vs `2.476` on OOD `long_thinking` `T=0.6`) and reduced single-GPU throughput (`0.57x–0.81x` of `plain_dflash`). The normalized committed-transition `online_bigram` baseline (`alpha=1.0, lambda_tr=0.2`) had a higher per-arm mean accepted length in every condition using each arm’s eligible prompts (`5.195` vs `5.136` at `T=0.7`; `2.651` vs `2.476`, `+7.07%` on primary `long_thinking`), reducing `target_verification` time on `long_thinking` (`79.8s` vs `87.2s`), but eager full-vocabulary host/sampling overhead left net `tokens/sec` below `plain_dflash` (`0.86x–0.96x`).
+- **Closed-loop synchronous online adaptation (`M4`) had a higher mean accepted length than `plain_dflash` when each arm was summarized on its own eligible prompts (paired 95% interval spans zero) on out-of-distribution `long_thinking`, with higher mean acceptance for the full online update than for the bias-and-sparse update, while incurring net wall-clock slowdown in uncompiled eager M0–M4:** on primary `long_thinking` (`T=0.6`, where M1b documented substantial draft hidden-feature `h[i]` shift: coordinate-mean norm `11.302 -> 8.314`, variance ratio `1.347 -> 0.851`), full-adapter `offline_online_stride1` (`beta=1.0, lr=1e-4, stride=1, exponential`) lifted mean accepted length to **`2.574 [2.424, 2.730]`** (`+30.5%` over `offline_static` `1.972 [1.876, 2.068]` and **`+3.94%` above `plain_dflash` `2.476 [2.289, 2.654]`**, cutting `target_verification` median time from `87.89s` to `80.22s`), whereas bias+sparse-only `online_dbS` (`dW=0, dA=0`) collapsed to **`1.435 [1.354, 1.524]`**. On shorter in-distribution `standard_nonthinking` (`~300` tokens, `~72` updates), `offline_online_stride1` (`3.172` at `T=0.7`) did not overcome the overshot M2 initialization within a single request. Across all 20 M4 condition/arm groups, eager full-vocabulary scoring, sparse gathering, and per-round autograd `L_full` backward (`118.2s` median `online_update` on `long_thinking`) exceeded verification savings (`0.20x–0.42x` of `plain_dflash` `tokens/sec`; `throughput_gain_supported_by_95_ci = false` everywhere).
 
 The repetition detector checks exact cycles of any eligible length while preserving the four-cycle minimum and 50% dominance threshold. Corrected M1 reports exclude one pathological long-test output (`math500-long-0346`), and M3/M4 recompute exact-cycle repetition flags from stored output tokens on every long generation. See the [confirmed evidence](../artifacts/repetition_detector_review/evidence.json) and [correction validation](../artifacts/repetition_detector_review/m1_correction_validation.json).
 
@@ -15,9 +15,9 @@ The repetition detector checks exact cycles of any eligible length while preserv
 | M1-pre | passed | 64 train calibration prompts; 22,377 hidden vectors; frozen `[256, 4096]` `P_h` and `[151936, 64]` token PCA |
 | M1a | passed | 2,184 checksummed shards; 501,510 primary train tokens (`250,790` greedy + `250,720` `T=0.7`); all 12 audit gates pass |
 | M1b | passed | 128 corrected diagnostic groups across all 2,184 shards; `h[i]` covariate shift & top-256 coverage headroom quantified |
-| M2 | passed | Complete dense & dense+bias+sparse fit + 32 GB exact sparse accounting; negative dev KL (`-72.7%` / `-76.3%`) from norm overshoot |
-| M3 | passed | `140` dev, `1,920` eval + `64` greedy target-only, `5,760` 1-GPU timed + `1,920` profile runs (`45,158,121` validator checks); static M2 adapters hurt acceptance & speed |
-| M4 | passed | `180` dev, `2,400` eval, `60` 1-GPU calibration + `7,200` 8-GPU NUMA/core-pinned timed + `2,400` profile runs (`18,983,686` validator checks); `offline_online_stride1` recovers OOD `long_thinking` acceptance (`2.574` vs `2.476` `plain_dflash`, `1.435` `online_dbS`), no net `tokens/sec` gain in eager M0–M4 |
+| M2 | passed | Complete dense & dense+bias+sparse fit + 32 GB exact sparse accounting; dev grouped KL increased by 72.7% for dense and 76.3% for dense+bias+sparse versus the zero adapter |
+| M3 | Historical validator pass ([bigram qualification](#reference-bigram-correction)) | `140` dev, `1,920` eval + `64` greedy target-only, `5,760` 1-GPU timed + `1,920` profile runs (`45,158,121` validator checks); static M2 adapters hurt acceptance & speed |
+| M4 | Historical validator pass (bigram sampling and sparse snapshot qualifications) | `180` dev, `2,400` eval, `60` 1-GPU calibration + `7,200` 8-GPU NUMA/core-pinned timed + `2,400` profile runs (`18,983,686` validator checks); on 31 jointly retained `long_thinking` prompts, `offline_online_stride1` minus `plain_dflash` mean accepted length was +0.089 tokens per block (paired 95% interval −0.150 to +0.294), no net `tokens/sec` gain in eager M0–M4 |
 
 The authoritative status snapshot is
 [milestones.json](../artifacts/milestones.json). The
@@ -27,8 +27,7 @@ gates are in [README](../README.md#reference-execution-m0m4).
 
 The reference pair is Qwen/Qwen3-8B and z-lab/Qwen3-8B-DFlash-b16. Standard
 non-thinking sampling defaults come from the target model card; thinking defaults
-come from the pinned `generation_config.json`. The mandatory ratio verifier was used for
-stochastic comparisons. Upstream and local matched on all 20 prompts at each of
+come from the pinned `generation_config.json`. Stochastic comparisons used the recorded ratio verifier. Its Section 8 precision qualification appears below. Upstream and local matched on all 20 prompts at each of
 greedy, warped T=0.7 and pure T=1: 0/7,128 mismatched output-token positions.
 Both differed from target-only greedy on 8/20 sequences and 607/2,388 token
 positions. Same-prefix investigation reproduced all eight first divergences and
@@ -154,15 +153,16 @@ code, sign, standardization, or grouped-KL denominator defects (`b['h']` vs
 `standardize(P_h @ h_raw_bf16)` max difference `0.0`; `union_rest_grouped` vs
 `L_full` gradient cosine `1.000000` on `W, A, b`). A read-only post-hoc 1D ray
 diagnostic (`alpha * checkpoint`, zero retraining, evaluated on sampled M1 dev
-shards) established parameter-norm overshoot as the mechanism: scaling `alpha = -0.10`
+shards) measured sensitivity to checkpoint scale. Scaling `alpha = -0.10`
 worsens sampled dev grouped KL from `1.1483` (`alpha = 0`) to `1.2987` (confirming
 the `-E_corr` sign is right), **`alpha = +0.20 * dense.pt` reduces sampled dev
 grouped KL to `1.0202` (`-0.1281` nats, `-11.2%` below zero-adapter DFlash;
 `0.20 * dense_sparse.pt` gives `1.0578`, `-7.9%`)**, whereas the saved `alpha = 1.00`
-checkpoint overshoots ~5x in norm (`1.7091` on the sampled check) due to non-i.i.d.
-shard-sequential mini-batching (`~50` blocks/shard, ~6 consecutive steps per prompt)
-under undecayed `AdamW(lr=1e-3)` without iterate averaging or cosine LR decay across
-`10,539` steps. In strict adherence to the protocol, gated M2 checkpoints were
+checkpoint gave `1.7091` on the same sample. The fit used shard-sequential
+mini-batches (about 50 blocks per shard and six consecutive steps per prompt) and
+constant-LR `AdamW(lr=1e-3)` for 10,539 steps. The later refit shuffled blocks within windows of 32 shards
+and raised AdamW weight decay on `W, A` from 0.0001 to 0.01 together.
+This comparison measures their combined effect. In strict adherence to the protocol, gated M2 checkpoints were
 **never** modified or rescaled in M3 or M4 (where `beta = 0.5` was the smallest
 predeclared static candidate).
 
@@ -343,7 +343,7 @@ Bins with `< 8` primary prompts (`16K+` output offset and `16384-32768` input co
 
 ### M3 Standard Greedy (`T_sample=0, beta=1`) Output Exactness & BF16 Tie Report
 
-Every M3 arm matches `plain_dflash` bit-for-bit across all 64 greedy prompts (`0 / 19,081` token mismatches). All four arms exhibit the identical `42 / 64` (`0.656`) sequence mismatch rate and `6,662 / 19,437` (`0.3427`) token mismatch rate against `target_only` caused by 16-token block vs 1-token autoregressive BF16 maximum-logit ties (the same phenomenon verified on 20 prompts in M0).
+Every M3 arm matches `plain_dflash` bit-for-bit across all 64 greedy prompts (`0 / 19,081` token mismatches). All four arms exhibit the identical `42 / 64` (`0.656`) sequence mismatch rate and `6,662 / 19,437` (`0.3427`) token mismatch rate against `target_only`. The discrepancies are consistent with the BF16 tie sensitivity diagnosed separately in M0.
 
 | Arm | Reference | Compared prompts | Mismatched seqs (rate) | Mismatched tokens / compared (rate) | Length-diff seqs |
 | --- | --- | ---: | ---: | ---: | ---: |
@@ -499,7 +499,7 @@ Notice how `offline_online_stride1` steadily **increases** accepted block length
 
 ### M4 Standard Greedy (`T_sample=0, beta=1`) Output Exactness & BF16 Tie Report
 
-All five M4 arms (including `offline_online_stride1` and `online_dbS`) match `plain_dflash` bit-for-bit across all 64 greedy prompts (`0 / 19,081` token mismatches) and share the identical `42 / 64` (`0.656`) BF16 tie sequence difference rate against `target_only`.
+All five M4 arms (including `offline_online_stride1` and `online_dbS`) match `plain_dflash` bit-for-bit across all 64 greedy prompts (`0 / 19,081` token mismatches) and share the identical `42 / 64` (`0.656`) sequence difference rate against `target_only`. The discrepancies are consistent with the BF16 tie sensitivity diagnosed separately in M0.
 
 | Arm | Reference | Compared prompts | Mismatched seqs (rate) | Mismatched tokens / compared (rate) | Length-diff seqs |
 | --- | --- | ---: | ---: | ---: | ---: |
@@ -560,7 +560,7 @@ On `standard_nonthinking` (`4` prompts, `8` 1-GPU runs vs `12` 8-GPU runs per ar
 
 ### M4 Separate Phase-Profile Median Durations (ms/request; `lookahead_iterations = 0.0 ms [disabled in M0-M4]`)
 
-On `long_thinking` (`T=0.6`), `offline_online_stride1` reduces `target_verification` median duration by **`7.68s`** vs `plain_dflash` (`80,216.4 ms` vs `87,892.8 ms`) and by **`14.95s`** vs `offline_static` (`95,162.9 ms`), directly reflecting its higher acceptance (`2.574` vs `2.476` and `1.972`). However, in uncompiled eager M0–M4 (`09a5469`), `online_update` (`118,227.7 ms`), `sparse_lookup` (`36,643.7 ms`), and full-vocabulary `sequential_sampling` (`18,656.5 ms`) dominate request latency.
+On `long_thinking` (`T=0.6`), `offline_online_stride1` reduces `target_verification` median duration by **`7.68s`** vs `plain_dflash` (`80,216.4 ms` vs `87,892.8 ms`) and by **`14.95s`** vs `offline_static` (`95,162.9 ms`). Mean accepted lengths on each arm’s eligible prompts were `2.574`, `2.476` and `1.972`, respectively. However, in uncompiled eager M0–M4 (`09a5469`), `online_update` (`118,227.7 ms`), `sparse_lookup` (`36,643.7 ms`), and full-vocabulary `sequential_sampling` (`18,656.5 ms`) dominate request latency.
 
 | Condition | Arm | Target feat | DFlash draft | Dense score | Sparse lookup | Seq sample | Target verify | Online update* | Lookahead iters |
 | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
@@ -619,6 +619,427 @@ Paired from checksummed [diagnostic_reference.json](../artifacts/diagnostic_refe
 
 ## Verification, scope boundaries, and external baselines
 
-All CPU unit and integration tests pass, including all 25 required tests in `prompt.md` Section 12, verified M3->M4 baseline reuse, direct greedy comparisons, matched-bundle timing resume integrity, lazy sparse L1 norms, version boundaries, feature-context linkage, and NUMA/core-pinned sharded timing reconciliation. Synthetic fitting and reference-sized random-tensor microbenchmarks (`bench_adapter`) are implementation checks only; all empirical conclusions above come strictly from the completed `Qwen/Qwen3-8B` + `z-lab/Qwen3-8B-DFlash-b16` `--scale reference` experiments. Operational notes and artifact SHA256s are recorded in [NOTES.md](../NOTES.md).
+The reference run passed the Section 12 CPU tests then present. A later sampler check found a counterexample to test 24 for an unseen transition in a populated bigram table. Additional tests verified M3->M4 baseline reuse, direct greedy comparisons, matched-bundle timing resume integrity, lazy sparse L1 norms, version boundaries, feature-context linkage, and NUMA/core-pinned sharded timing reconciliation. Synthetic fitting and reference-sized random-tensor microbenchmarks (`bench_adapter`) are implementation checks only; all empirical conclusions above come strictly from the completed `Qwen/Qwen3-8B` + `z-lab/Qwen3-8B-DFlash-b16` `--scale reference` experiments. Operational notes and artifact SHA256s are recorded in [NOTES.md](../NOTES.md).
 
 **External baselines not run in M0–M4:** full tree-based Token Recycling, Test-Time Speculation, and SharpDraft. The required normalized committed-transition `online_bigram` baseline was evaluated across all M3 and M4 reference conditions and timing sessions above (never labeled as full Token Recycling). Optional `--scale full` experiments and optional M5 extensions (lookahead belief propagation in closed loop, exact collision-free sparse tables, two-sided pseudolikelihood, and systems/kernel fastpaths) are outside the mandatory M0–M4 reference scope reported here.
+
+## Paired long-thinking throughput at reference scale
+
+At T = 0.6, top-k = 20 and top-p = 0.95, the zero-offline online-only adapter delivered 0.8728× plain DFlash throughput over whole requests (95% CI 0.7876–0.9550, 31 prompts). In the 8K–16K output bin it accepted +1.1617 more tokens per round (95% CI 0.4787–1.9615, 20 prompts). The isolated throughput ratio in that bin was 1.1571× (95% CI 0.9343–1.4420, 20 prompts). The overall interval lies below 1 and the deep-bin interval includes 1.
+
+The table shows whole-request ratios from joint isolated timing bundles. Ratios are paired within each prompt, seed and repeat, then averaged by seed and prompt. The bootstrap resamples prompt IDs. Both arms must pass the repetition filter.
+
+| Arm | Comparison | Mean throughput ratio | 95% CI | Prompts |
+| --- | --- | ---: | ---: | ---: |
+| `online_dbS_zero_init` | `plain_dflash` | 0.7606× | 0.6877–0.8340 | 32 |
+| `online_bigram_count_gated` | `online_bigram` | 1.0285× | 0.9339–1.1288 | 32 |
+| `lookahead_static_candidate` | `dense_candidate` | 1.2468× | 1.1567–1.3540 | 32 |
+| `lookahead_rerelax_candidate` | `dense_candidate` | 1.0807× | 0.9901–1.1719 | 32 |
+| `exact_observed_pairs_online` | `signed_feature_hash_online` | 0.9465× | 0.9076–0.9922 | 32 |
+| `online_buffered_stride5` | `offline_online_stride5` | 0.8500× | 0.8099–0.8882 | 32 |
+
+## Paired M4 accepted lengths on long-thinking prompts
+
+For each pair, the means below average the within-prompt difference on the jointly repetition-filtered population. Positive values favor the synchronous full-adapter update.
+
+| Reference arm | Extra accepted slots per block | 95% prompt-bootstrap CI | Prompts |
+| --- | ---: | ---: | ---: |
+| `plain_dflash` | +0.0893 | -0.1502 to +0.2943 | 31 |
+| `online_dbS` | +1.1323 | +0.9748 to +1.2820 | 31 |
+| `offline_static` | +0.6144 | +0.4801 to +0.7468 | 31 |
+| `online_bigram` | -0.0431 | -0.2618 to +0.1379 | 30 |
+
+The full-adapter mean was higher than plain DFlash, with a paired interval spanning zero. Its acceptance advantage over the bias-and-sparse update was positive throughout the paired interval. See `artifacts/logs/resume_audit/reference_m4_long_acceptance_pairs.json`.
+
+## Proposal scoring and snapshot qualifications
+
+The post-M4 compact bigram scoring path can choose a different candidate after FP32 rounding at a greedy tie or a positive-temperature top-k cutoff. Phase A comparisons involving optimized bigram arms describe the implementation that produced these measurements. The frozen M0–M4 reference used full-vocabulary scoring before warping. For a previously unseen predecessor in a populated bigram table, an FP32-normalized near-tie can select a different greedy token from the plain raw-logit path.
+
+In the Phase A candidate-masked lookahead implementation, applying native top-k to a reduced candidate vector can retain different IDs at an exact cutoff tie than applying it to the same scores masked on the full vocabulary. A synthetic tied-input differential demonstrated different proposal supports. Its frequency in the reported requests has not been measured.
+
+In the frozen M4 implementation at `09a5469`, each lazy signed-hash snapshot copied the active bucket IDs, values and timestamps. The immutable snapshots preserved the numerical L1 update while exceeding Section 9’s per-round copy budget for untouched buckets. The post-M4 implementation used copy-on-write for snapshots, while a positive-L1 CUDA sweep still read the full table. The later dirty-bucket implementation at `ba14428` addresses that read cost.
+
+## Reference timing corrections
+
+All 28 median bootstrap intervals in `artifacts/adapter_benchmark_reference.json` used the lower middle observation for each 30-sample resample. The corrected intervals average the two middle observations. The point medians, p95 values, generation traces and token throughput retain their recorded values. The eight odd-sample grouped benchmark intervals agree with the recomputation. See `artifacts/logs/resume_audit/reference_benchmark_median_intervals.json`.
+
+Across 16 stored requests and 53,773 blocks, CPU offset-bin aggregation ran 8.58× faster with exactly equal output. This measures offline analysis time. See `artifacts/logs/resume_audit/offset_aggregation_cpu.json`.
+
+## Reference timing and single-GPU calibration
+
+Online head-to-head (4,800 timed requests) and M5 extensions (9,600 timed requests) used eight prompt-sharded GPU workers. Each worker timed one arm at a time. The historical timing files include a generic single-GPU calibration label. Neither of these two suites executed that calibration. The separate M4 and fastpath calibration measurements apply to their own prompt subsets and execution settings.
+
+## Reference bigram correction
+
+All 480 reference M3 bigram requests visited a predecessor with zero count in a populated table, across 230,450 of 1,826,049 draft slots. M4 reused the same histories. On BF16 test inputs, the sampler at `09a5469` produced a different greedy token and a different stochastic support from plain DFlash. The archived blocks contain draft and committed tokens. They omit the raw logits and full probability vectors needed to estimate the effect on the published results. The original M3 and M4 bigram comparisons describe that historical implementation. The Phase B reference bigram experiment uses fresh joint timing for the corrected comparisons. See `artifacts/logs/resume_audit/reference_bigram_empty_row_parity.json`.
+
+### Section 8 verifier precision in the frozen reference
+
+The Phase A verifier at `b92f0fb` can make a different accept/reject decision at a floating-point boundary. In a two-token native softmax example with seed 2026, the normalized masses required acceptance on uniform 0.15248114, and the implementation rejected. Separate fixtures reproduced a rounded FP32 product rejection and acceptance at zero target mass on this revision. On the same tiny-proposal fixture, earlier sources `09a5469` and `dfe72a0` raised a residual error. The archived tests for Section 12 items 11–13 passed on their original toy fixtures. At 00:45:45 UTC on 18 November 2026, the selected probabilities and decisions obeyed the checked forced-accept and forced-reject bounds across 4,668,128 reached slots in 4,160 stochastic M5 evaluation requests and 10,159,785 reached slots in 1,451 stochastic timing requests. The stored traces omit acceptance uniforms and full probability vectors, leaving counterfactual effects on recorded outputs unknown. Buffered stride-five timing and evaluation emitted different tokens in 91/154 same-seed comparisons in this snapshot. The first recorded probability differences appeared in the proposal immediately after its first online update, and the traces do not establish a verifier cause. The original measurements and M0 comparison remain attributed to their recorded source commits.
+
+The original M1a traces include 1,208 stochastic requests and 855,171 reached decisions. The archived verifier mishandled constructed inputs with the same source bytes used for collection. Among the observed decisions, 74,107 had a raw target-to-proposal probability ratio between zero and one. The archive omits the acceptance uniforms and paired row totals needed to replay borderline decisions. Checks of the recorded scalars found no demonstrably wrong stochastic decision. The historical primary M2 fit used 501,510 generated training tokens. The new ten-arm reference comparison uses these historical weights. Phase B also schedules a fresh reference M1 collection, primary M2 fit and matched M3/M4 evaluation with the corrected verifier, alongside its full-scale study.
+
+## Offline refit comparisons on reference prompts
+
+Each row compares a dense-plus-sparse fit with a baseline on the same requests. Seed 2026 was held fixed across 2 timing repeats. Values are prompt means with 95% percentile intervals from 2,000 prompt resamples. Long requests enter a comparison only when both outputs pass the repetition filter.
+
+| Fit | Condition | Temperature | Baseline | Prompts | Eligible / excluded repeats | Accepted-length difference | Throughput ratio |
+| --- | --- | ---: | --- | ---: | ---: | ---: | ---: |
+| Dev-calibrated | long_thinking | 0.6 | Plain DFlash | 31 | 62 / 2 | -0.126 [-0.341, 0.066] | 0.845 [0.752, 0.947] |
+| Dev-calibrated | standard_nonthinking | 0.7 | Plain DFlash | 64 | 128 / 0 | -0.225 [-0.402, -0.052] | 0.688 [0.668, 0.707] |
+| Fixed scale 0.20 | long_thinking | 0.6 | Plain DFlash | 32 | 64 / 0 | 0.091 [-0.128, 0.310] | 0.936 [0.844, 1.036] |
+| Fixed scale 0.20 | standard_nonthinking | 0.7 | Plain DFlash | 64 | 128 / 0 | -0.051 [-0.246, 0.144] | 0.712 [0.689, 0.737] |
+| Dev-calibrated | long_thinking | 0.6 | Original M2 | 30 | 60 / 4 | 0.848 [0.727, 0.966] | 1.406 [1.339, 1.475] |
+| Dev-calibrated | standard_nonthinking | 0.7 | Original M2 | 64 | 128 / 0 | 2.658 [2.472, 2.863] | 1.801 [1.731, 1.875] |
+| Dev-calibrated | long_thinking | 0.6 | Same fit before calibration | 31 | 62 / 2 | 0.749 [0.616, 0.870] | 1.286 [1.229, 1.347] |
+| Dev-calibrated | standard_nonthinking | 0.7 | Same fit before calibration | 64 | 128 / 0 | 1.916 [1.727, 2.115] | 1.473 [1.418, 1.541] |
+
+### Same-seed M5 output replay
+
+Each cell counts identical full output-token sequences over paired requests. Each pair shares its prompt, seed, sampling temperature, warper and arm. Repeats 0 and 1 are isolated timing runs. Profiles collect CUDA phase timings. Per arm, the greedy group covers 64 standard prompts. The stochastic group covers 64 standard prompts at two temperatures with three seeds each and 32 long-thinking prompts with one seed each.
+
+| Arm | Sampling | Repeat 0 vs evaluation | Repeat 1 vs evaluation | Profile vs evaluation | Repeat 0 vs repeat 1 |
+|---|---|---:|---:|---:|---:|
+| `plain_dflash` | greedy | 64/64 | 64/64 | 64/64 | 64/64 |
+| `plain_dflash` | stochastic | 416/416 | 416/416 | 416/416 | 416/416 |
+| `dense_candidate` | greedy | 64/64 | 64/64 | 64/64 | 64/64 |
+| `dense_candidate` | stochastic | 416/416 | 416/416 | 416/416 | 416/416 |
+| `lookahead_static_candidate` | greedy | 64/64 | 64/64 | 64/64 | 64/64 |
+| `lookahead_static_candidate` | stochastic | 416/416 | 416/416 | 416/416 | 416/416 |
+| `lookahead_rerelax_candidate` | greedy | 64/64 | 64/64 | 64/64 | 64/64 |
+| `lookahead_rerelax_candidate` | stochastic | 416/416 | 416/416 | 416/416 | 416/416 |
+| `online_two_sided_pl` | greedy | 64/64 | 64/64 | 64/64 | 64/64 |
+| `online_two_sided_pl` | stochastic | 416/416 | 416/416 | 416/416 | 416/416 |
+| `signed_feature_hash_online` | greedy | 64/64 | 64/64 | 64/64 | 64/64 |
+| `signed_feature_hash_online` | stochastic | 415/416 | 415/416 | 414/416 | 416/416 |
+| `exact_observed_pairs_online` | greedy | 64/64 | 64/64 | 64/64 | 64/64 |
+| `exact_observed_pairs_online` | stochastic | 414/416 | 414/416 | 415/416 | 413/416 |
+| `offline_online_stride1` | greedy | 64/64 | 64/64 | 64/64 | 64/64 |
+| `offline_online_stride1` | stochastic | 415/416 | 414/416 | 415/416 | 413/416 |
+| `offline_online_stride5` | greedy | 64/64 | 64/64 | 64/64 | 64/64 |
+| `offline_online_stride5` | stochastic | 416/416 | 416/416 | 416/416 | 416/416 |
+| `online_buffered_stride5` | greedy | 64/64 | 64/64 | 64/64 | 64/64 |
+| `online_buffered_stride5` | stochastic | 340/416 | 345/416 | 336/416 | 344/416 |
+
+The complete auditor receipt is `artifacts/logs/resume_audit/20261118T140229.316629Z-m5-terminal.json` (SHA-256 `6c0c4362d1e61c1c241163ca8155bc8043404a0cf6358001f816101cc090ce22`).
+
+## Workload differences in the reference fastpath comparison
+
+With prompt, arm, seed and repeat fixed, at least two of the three execution modes generated different output lengths in 393 of 960 comparisons (87/640 standard nonthinking and 306/320 long thinking). After the joint repetition filter, lengths still differed in 379 of 946 comparisons. Within a single mode, the two repeats generated different lengths in 6 of 1,440 prompt–arm–mode pairs, all in `offline_online_stride1` across five prompts. The benchmark retained lengths, mean accepted lengths and repetition flags. Its saved summaries omit the generated token IDs.
+
+On long-thinking prompts, the mean compiled/eager throughput ratio for `offline_online_stride1` was 1.0356× (95% prompt-bootstrap interval 1.0008–1.0713, 31 prompts). Excluding the 4 long prompts with within-mode repeat differences gave 1.0334× (95% prompt-bootstrap interval 0.9953–1.0715, 27 prompts). The intervals describe whole requests under each mode. Variation in generated workloads limits what these ratios establish about compiler acceleration. The fixed-shape measurements are available in the [fastpath benchmark](../artifacts/post_m4_suite/fastpath_bench.json).
+
+<!-- BEGIN POST_M4_M5_SUMMARY -->
+---
+
+## Post-M4 Ablations, Fastpath Benchmarks & Optional M5 Extensions (`scale=reference`)
+
+Completed at `2026-11-18T14:02:00.466399+00:00` on commit `b92f0fbfc685ad92034e8da1f54072f7a18ae8be` via `edraft.post_m4_suite` without modifying any frozen M0–M4 reference artifact (`27` upstream M0–M4 files SHA256-verified intact; `197948` `audit_post_m4_suite.py` checks across `28937` files with `0` failures).
+
+**Headline Post-M4 & M5 empirical findings:**
+- **M2 offline refit and calibration** (`m2_refit_calibration`). Dev calibration selected dense β=0.35 and dense+sparse β=0.3. The dense+sparse grid used full-vocabulary KL on 120 of 102,975 dev slots. The dev-calibrated dense+sparse refit had held-out test grouped KL 1.191370. The lowest observed test grouped KL among the reported dense+sparse variants was 1.164154 (refit_shuf_wd_scale_0p20).
+- **Zero-init online & count-gated bigram head-to-head (`online_head_to_head`):** evaluated `plain_dflash`, `online_bigram`, `online_bigram_count_gated` (`kappa=12.0`), `online_dbS_zero_init`, and `zero_offline_online_only` under `8-GPU` NUMA/core-pinned sharded timing (`sharded_8gpu`). All `5` `< 8`-prompt long-output offset bins are explicitly flagged **SPARSE / EMPTY (`conclusion unavailable`)**.
+- **Optional M5 offline & closed-loop extensions (`m5_eval`):** capacity-matched `ExactObservedPairs` verified **`collision_count = 0`** (held-out test grouped KL `3.015552`, `Δ = 0.000065` vs `SignedHash` `3.015488`); `two_sided_pseudolikelihood` reached test grouped KL `6.172779`. Closed-loop candidate-masked lookahead (`lookahead_static_candidate`, `lookahead_rerelax_candidate`) shared exact frozen `C0[j]` (`beta_relax=1.0`) with causal `dense_candidate` and recorded positive `lookahead_iterations` CUDA-event durations on every active profile row; `online_buffered_stride5` accumulated all intermediate rounds (`acc + pend == blocks`) against single-round `offline_online_stride5` and `offline_online_stride1`.
+- **Fastpath mode comparison (`fastpath_bench`).** Across the measured mix of prompts, mean paired whole-request throughput ratios relative to `eager_pre_round3` were `plain_dflash` `1.06x` compact / `1.02x` compile, `online_bigram` `0.95x` compact / `0.96x` compile, `offline_static` `1.00x` compact / `0.99x` compile, `offline_online_stride1` `1.08x` compact / `1.05x` compile, `online_dbS` `1.06x` compact / `1.06x` compile. The compact-mode estimate for 8 GPU ranks was 476.50 tok/s, using all generated tokens divided by the largest rank's summed request time (3736566 tokens, 7841.68 s). Separate per-arm calibration rates use a selected prompt subset and filter flagged long outputs within each run. The measured runner saved each fastpath rank only after all its requests finished. Recovery before the complete suite report could repeat all ranks and the subsequent single-GPU calibration.
+- **Net closed-loop speed & unrun external baselines:** Across closed-loop M5 and online head-to-head suites, **no adapter or lookahead arm established a 95%-CI-supported net end-to-end `tokens/sec` speedup over `plain_dflash`** once proposal, lookahead, or online update latency is included. **External baselines still not run:** full tree-based Token Recycling, Test-Time Speculation, SharpDraft (`online_bigram` and `online_bigram_count_gated` remain smoothed committed-transition priors, not tree-based Token Recycling).
+
+**Checksummed `post_m4_suite` artifact manifest:**
+- `artifacts/post_m4_suite/m2_refit_calibration.json`: `3a311f848645c653b8f1f240d39d3f57c06c1b90a118b0c5e8769c5a758611dc`
+- `artifacts/post_m4_suite/online_head_to_head.json`: `53d62acf3119ed039876ce6433eff2d8ecde3633814b43a00a320d984d6344a3`
+- `artifacts/post_m4_suite/m5_eval.json`: `5d335fd2b8541d0b5b626ba9d042a27799e2311d2f9549cbf0ba32c89c1cae5c`
+- `artifacts/post_m4_suite/fastpath_bench.json`: `6a9b401d80c6894aa2b1be777056e02429e16ae52ceb0205caf156e826e87b20`
+- `artifacts/post_m4_suite/post_m4_suite_summary.json`: `f35cfe864b6ee716ce695c22f20c6cf160807d822789a4039c1c3404dbb8a04d`
+
+> Generated strictly from verified `post_m4_suite` raw artifacts and sidecars (`0` manual transcription).
+
+### 1. M2 Offline Refit & Post-Hoc Calibration (`m2_refit_calibration`)
+
+- Status: **`complete`** | Dev-calibrated `beta*`: dense `0.35`, dense+sparse `0.3`
+
+| Variant | Dense Dev KL | Dense Test KL | Sparse Dev KL | Sparse Test KL | CL Dense Acc (`Δ vs plain`) | CL Sparse Acc (`Δ vs plain`) | CL Sparse `tok/s` (`ratio`) |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| `baseline_m2_unscaled` | 2.0181 | 2.8588 | 2.0602 | 3.0155 | 2.257 (`-2.041`) | 2.051 (`-2.262`) | 69.74 (`0.456x`) |
+| `baseline_m2_scale_0p20` | 1.0893 | 1.1976 | 1.0936 | 1.1913 | 4.167 (`-0.153`) | 4.157 (`-0.141`) | 118.39 (`0.742x`) |
+| `refit_shuf_wd_uncalibrated` | 1.5735 | 2.3298 | 1.5877 | 2.2224 | 2.493 (`-1.805`) | 2.581 (`-1.717`) | 82.63 (`0.535x`) |
+| `refit_shuf_wd_dev_calibrated` | 1.0723 | 1.2500 | 1.0610 | 1.1914 | 3.978 (`-0.333`) | 4.124 (`-0.193`) | 117.64 (`0.739x`) |
+| `refit_shuf_wd_scale_0p20` | 1.0721 | 1.1820 | 1.0662 | 1.1642 | 4.173 (`-0.124`) | 4.294 (`-0.004`) | 122.58 (`0.787x`) |
+
+#### Suite 1 Closed-Loop Breakdown by Condition (`plain_dflash`: `std = 5.209` / `204.40 tok/s`; `long_thinking = 2.476` / `95.41 tok/s`)
+
+| Variant | `std` Dense Acc (`tok/s`) | `std` Sparse Acc (`tok/s`) | `long_thinking` Dense Acc (`tok/s`) | `long_thinking` Sparse Acc (`tok/s`) |
+| --- | ---: | ---: | ---: | ---: |
+| `baseline_m2_unscaled` | 2.671 (`100.37`) | 2.325 (`78.73`) | 1.428 (`56.46`) | 1.486 (`51.18`) |
+| `baseline_m2_scale_0p20` | 5.005 (`162.81`) | 5.062 (`142.18`) | 2.438 (`84.06`) | 2.346 (`70.82`) |
+| `refit_shuf_wd_uncalibrated` | 2.936 (`106.83`) | 3.067 (`95.99`) | 1.606 (`65.75`) | 1.607 (`55.90`) |
+| `refit_shuf_wd_dev_calibrated` | 4.779 (`156.78`) | 4.983 (`140.06`) | 2.326 (`82.43`) | 2.349 (`71.36`) |
+| `refit_shuf_wd_scale_0p20` | 5.002 (`162.20`) | 5.157 (`144.28`) | 2.516 (`88.31`) | 2.568 (`79.18`) |
+
+### 2. Online Zero-Init & Count-Gated Bigram Head-to-Head (`online_head_to_head`)
+
+- Status: **`complete`** | `world_size=8` (`sharded_8gpu`) | `bigram_count_gate_kappa=12.0`
+
+#### Overall Held-Out Acceptance & Sharded Matched-Bundle Throughput
+
+| Condition | Arm | Primary / Total | Mean accepted len [95% CI] | Target fwds/tok [95% CI] | Sharded `tok/s` [95% CI] | Paired ratio vs `plain` [95% CI] |
+| --- | --- | ---: | ---: | ---: | ---: | ---: |
+| Long thinking (T=0.6, top-k=20, top-p=0.95) | `online_bigram` | 32/32 | 2.524 [2.355, 2.704] | 0.2889 [0.2764, 0.3017] | 76.22 [70.86, 82.19] | 0.8768 [0.7883, 0.9745] |
+| Long thinking (T=0.6, top-k=20, top-p=0.95) | `online_bigram_count_gated` | 32/32 | 2.522 [2.354, 2.696] | 0.2895 [0.2762, 0.3029] | 75.45 [69.96, 80.81] | 0.8564 [0.7810, 0.9340] |
+| Long thinking (T=0.6, top-k=20, top-p=0.95) | `online_dbS_zero_init` | 32/32 | 2.579 [2.369, 2.806] | 0.2876 [0.2706, 0.3050] | 67.11 [61.80, 72.29] | 0.7606 [0.6877, 0.8340] |
+| Long thinking (T=0.6, top-k=20, top-p=0.95) | `plain_dflash` | 32/32 | 2.476 [2.289, 2.654] | 0.2944 [0.2792, 0.3115] | 92.90 [84.61, 101.13] | 1.0000 [1.0000, 1.0000] |
+| Long thinking (T=0.6, top-k=20, top-p=0.95) | `zero_offline_online_only` | 31/32 | 3.029 [2.851, 3.234] | 0.2526 [0.2408, 0.2634] | 77.08 [72.48, 82.08] | 0.8728 [0.7876, 0.9550] |
+| Standard non-thinking greedy (T=0) | `online_bigram` | 64/64 | 5.311 [5.081, 5.545] | 0.1665 [0.1605, 0.1729] | 184.26 [177.56, 191.35] | 0.8492 [0.8403, 0.8589] |
+| Standard non-thinking greedy (T=0) | `online_bigram_count_gated` | 64/64 | 5.295 [5.066, 5.533] | 0.1670 [0.1610, 0.1735] | 183.34 [176.83, 190.31] | 0.8450 [0.8353, 0.8551] |
+| Standard non-thinking greedy (T=0) | `online_dbS_zero_init` | 64/64 | 5.325 [5.090, 5.565] | 0.1663 [0.1601, 0.1729] | 166.66 [160.18, 173.39] | 0.7674 [0.7575, 0.7776] |
+| Standard non-thinking greedy (T=0) | `plain_dflash` | 64/64 | 5.285 [5.057, 5.519] | 0.1672 [0.1612, 0.1737] | 217.50 [209.29, 226.28] | 1.0000 [1.0000, 1.0000] |
+| Standard non-thinking greedy (T=0) | `zero_offline_online_only` | 64/64 | 5.011 [4.784, 5.233] | 0.1747 [0.1680, 0.1821] | 145.08 [139.51, 150.90] | 0.6692 [0.6556, 0.6824] |
+| Standard recommended (T=0.7, top-k=20, top-p=0.8) | `online_bigram` | 192/192 | 5.119 [4.915, 5.324] | 0.1723 [0.1662, 0.1789] | 157.96 [152.62, 163.42] | 0.7839 [0.7683, 0.7983] |
+| Standard recommended (T=0.7, top-k=20, top-p=0.8) | `online_bigram_count_gated` | 192/192 | 5.116 [4.905, 5.321] | 0.1724 [0.1661, 0.1790] | 157.97 [152.42, 163.42] | 0.7842 [0.7673, 0.7999] |
+| Standard recommended (T=0.7, top-k=20, top-p=0.8) | `online_dbS_zero_init` | 192/192 | 5.124 [4.905, 5.334] | 0.1725 [0.1663, 0.1793] | 136.23 [131.38, 141.05] | 0.6744 [0.6633, 0.6850] |
+| Standard recommended (T=0.7, top-k=20, top-p=0.8) | `plain_dflash` | 192/192 | 5.136 [4.922, 5.346] | 0.1714 [0.1655, 0.1778] | 203.20 [195.98, 210.39] | 1.0000 [1.0000, 1.0000] |
+| Standard recommended (T=0.7, top-k=20, top-p=0.8) | `zero_offline_online_only` | 192/192 | 4.931 [4.703, 5.143] | 0.1782 [0.1712, 0.1858] | 128.52 [123.65, 133.46] | 0.6368 [0.6235, 0.6492] |
+| Standard pure-T=1 diagnostic | `online_bigram` | 192/192 | 4.388 [4.190, 4.590] | 0.1959 [0.1887, 0.2037] | 163.55 [157.54, 169.79] | 0.9183 [0.8930, 0.9438] |
+| Standard pure-T=1 diagnostic | `online_bigram_count_gated` | 192/192 | 4.392 [4.189, 4.594] | 0.1959 [0.1882, 0.2038] | 163.87 [157.58, 169.86] | 0.9199 [0.8949, 0.9456] |
+| Standard pure-T=1 diagnostic | `online_dbS_zero_init` | 192/192 | 4.406 [4.217, 4.598] | 0.1953 [0.1882, 0.2026] | 136.61 [131.81, 141.45] | 0.7660 [0.7486, 0.7840] |
+| Standard pure-T=1 diagnostic | `plain_dflash` | 192/192 | 4.297 [4.124, 4.477] | 0.1987 [0.1917, 0.2064] | 180.37 [174.63, 186.82] | 1.0000 [1.0000, 1.0000] |
+| Standard pure-T=1 diagnostic | `zero_offline_online_only` | 192/192 | 4.157 [3.949, 4.352] | 0.2058 [0.1972, 0.2153] | 124.17 [119.01, 128.95] | 0.6950 [0.6773, 0.7116] |
+
+#### Long-Output Offset-Bin Trajectory (`0-1K`..`16K+`, Sparsity Gate Enforced)
+
+| Arm | Offset Bin | Reaching Reqs (`n`) | Accepted Len [95% CI] | Sharded Round `tok/s` [95% CI] | Gate Status |
+| --- | --- | ---: | ---: | ---: | --- |
+| `online_bigram` | `0-1K` | 32 | 2.793 [2.561, 3.030] | 94.39 [87.13, 102.00] | usable |
+| `online_bigram` | `1K-4K` | 32 | 2.877 [2.596, 3.211] | 96.46 [88.16, 105.61] | usable |
+| `online_bigram` | `4K-8K` | 32 | 2.777 [2.502, 3.105] | 86.72 [79.33, 96.06] | usable |
+| `online_bigram` | `8K-16K` | 29 | 1.974 [1.736, 2.232] | 54.10 [49.55, 58.80] | usable |
+| `online_bigram` | `16K+` | 2 | 1.794 [1.556, 2.033] | 31.66 [30.06, 33.27] | **SPARSE (`n=2 < 8`; conclusion unavailable)** |
+| `online_bigram_count_gated` | `0-1K` | 32 | 2.761 [2.535, 2.993] | 93.96 [86.64, 101.44] | usable |
+| `online_bigram_count_gated` | `1K-4K` | 32 | 2.796 [2.511, 3.144] | 94.46 [85.62, 105.07] | usable |
+| `online_bigram_count_gated` | `4K-8K` | 32 | 2.697 [2.479, 2.920] | 84.47 [78.36, 90.34] | usable |
+| `online_bigram_count_gated` | `8K-16K` | 27 | 2.207 [1.903, 2.641] | 58.15 [51.09, 68.39] | usable |
+| `online_bigram_count_gated` | `16K+` | 2 | 3.721 [1.507, 5.935] | 50.04 [28.01, 72.06] | **SPARSE (`n=2 < 8`; conclusion unavailable)** |
+| `online_dbS_zero_init` | `0-1K` | 32 | 2.867 [2.603, 3.129] | 81.91 [75.19, 88.52] | usable |
+| `online_dbS_zero_init` | `1K-4K` | 32 | 2.958 [2.658, 3.317] | 84.17 [76.69, 92.90] | usable |
+| `online_dbS_zero_init` | `4K-8K` | 30 | 2.803 [2.581, 3.048] | 76.02 [71.39, 80.74] | usable |
+| `online_dbS_zero_init` | `8K-16K` | 23 | 2.055 [1.681, 2.500] | 48.64 [43.02, 54.66] | usable |
+| `online_dbS_zero_init` | `16K+` | 6 | 1.758 [0.971, 3.194] | 29.14 [21.61, 42.72] | **SPARSE (`n=6 < 8`; conclusion unavailable)** |
+| `plain_dflash` | `0-1K` | 32 | 2.863 [2.629, 3.101] | 121.56 [112.51, 130.43] | usable |
+| `plain_dflash` | `1K-4K` | 32 | 2.750 [2.494, 3.084] | 118.45 [107.93, 131.53] | usable |
+| `plain_dflash` | `4K-8K` | 32 | 2.879 [2.568, 3.239] | 110.36 [100.54, 120.95] | usable |
+| `plain_dflash` | `8K-16K` | 25 | 1.826 [1.642, 2.008] | 59.77 [55.22, 64.45] | usable |
+| `plain_dflash` | `16K+` | 6 | 1.431 [1.031, 1.816] | 33.97 [28.17, 39.24] | **SPARSE (`n=6 < 8`; conclusion unavailable)** |
+| `zero_offline_online_only` | `0-1K` | 31 | 3.018 [2.717, 3.349] | 84.03 [76.45, 91.90] | usable |
+| `zero_offline_online_only` | `1K-4K` | 31 | 3.042 [2.814, 3.297] | 84.81 [78.80, 91.55] | usable |
+| `zero_offline_online_only` | `4K-8K` | 28 | 3.147 [2.863, 3.462] | 81.60 [75.21, 88.55] | usable |
+| `zero_offline_online_only` | `8K-16K` | 23 | 2.909 [2.418, 3.535] | 63.66 [55.07, 74.93] | usable |
+| `zero_offline_online_only` | `16K+` | 2 | 7.069 [1.240, 12.898] | 82.77 [28.14, 137.40] | **SPARSE (`n=2 < 8`; conclusion unavailable)** |
+
+#### Paired Long-Context Head-to-Head Horizon Crossover (`0-1K`..`16K+`, Sparsity Gate Enforced)
+
+| Pair (`arm` vs `ref`) | Offset Bin | Paired Reqs (`n`) | Paired `ΔE[τ]` [95% CI] | Paired Sharded `tok/s` Ratio [95% CI] | Gate Status |
+| --- | --- | ---: | ---: | ---: | --- |
+| `online_bigram_count_gated` vs `plain_dflash` | `0-1K` | 32 | -0.1026 [-0.3317, 0.1331] | 0.7913 [0.7328, 0.8535] | usable (`n_tps=32`) |
+| `online_bigram_count_gated` vs `plain_dflash` | `1K-4K` | 32 | 0.0455 [-0.1216, 0.2320] | 0.8085 [0.7647, 0.8544] | usable (`n_tps=32`) |
+| `online_bigram_count_gated` vs `plain_dflash` | `4K-8K` | 32 | -0.1816 [-0.5954, 0.1771] | 0.8009 [0.7363, 0.8626] | usable (`n_tps=32`) |
+| `online_bigram_count_gated` vs `plain_dflash` | `8K-16K` | 21 | 0.2325 [-0.0180, 0.4764] | 0.9442 [0.8451, 1.0573] | usable (`n_tps=21`) |
+| `online_bigram_count_gated` vs `plain_dflash` | `16K+` | 0 | — | — | **EMPTY (conclusion unavailable)** |
+| `zero_offline_online_only` vs `plain_dflash` | `0-1K` | 31 | 0.1712 [-0.0537, 0.4211] | 0.7018 [0.6614, 0.7473] | usable (`n_tps=31`) |
+| `zero_offline_online_only` vs `plain_dflash` | `1K-4K` | 31 | 0.2867 [0.0945, 0.4867] | 0.7370 [0.6964, 0.7840] | usable (`n_tps=31`) |
+| `zero_offline_online_only` vs `plain_dflash` | `4K-8K` | 28 | 0.2774 [-0.1713, 0.7055] | 0.7738 [0.7031, 0.8460] | usable (`n_tps=28`) |
+| `zero_offline_online_only` vs `plain_dflash` | `8K-16K` | 20 | 1.1617 [0.4787, 1.9615] | 1.1571 [0.9343, 1.4420] | usable (`n_tps=20`) |
+| `zero_offline_online_only` vs `plain_dflash` | `16K+` | 1 | 0.1074 [0.1074, 0.1074] | 0.8025 [0.8025, 0.8025] | **SPARSE (`n=1 < 8`; conclusion unavailable)** |
+| `online_dbS_zero_init` vs `plain_dflash` | `0-1K` | 32 | 0.0038 [-0.1495, 0.1586] | 0.6856 [0.6487, 0.7262] | usable (`n_tps=32`) |
+| `online_dbS_zero_init` vs `plain_dflash` | `1K-4K` | 32 | 0.2074 [0.0148, 0.4206] | 0.7275 [0.6846, 0.7760] | usable (`n_tps=32`) |
+| `online_dbS_zero_init` vs `plain_dflash` | `4K-8K` | 30 | -0.0783 [-0.4847, 0.2857] | 0.7164 [0.6648, 0.7723] | usable (`n_tps=30`) |
+| `online_dbS_zero_init` vs `plain_dflash` | `8K-16K` | 20 | 0.3060 [-0.0947, 0.7568] | 0.8645 [0.7471, 0.9839] | usable (`n_tps=20`) |
+| `online_dbS_zero_init` vs `plain_dflash` | `16K+` | 3 | 0.8457 [-0.7374, 3.4194] | 0.9745 [0.6234, 1.6340] | **SPARSE (`n=3 < 8`; conclusion unavailable)** |
+| `online_bigram_count_gated` vs `online_bigram` | `0-1K` | 32 | -0.0324 [-0.1740, 0.1145] | 1.0067 [0.9544, 1.0617] | usable (`n_tps=32`) |
+| `online_bigram_count_gated` vs `online_bigram` | `1K-4K` | 32 | -0.0808 [-0.2329, 0.0727] | 0.9840 [0.9375, 1.0305] | usable (`n_tps=32`) |
+| `online_bigram_count_gated` vs `online_bigram` | `4K-8K` | 32 | -0.0803 [-0.4475, 0.2159] | 1.0092 [0.9380, 1.0826] | usable (`n_tps=32`) |
+| `online_bigram_count_gated` vs `online_bigram` | `8K-16K` | 24 | 0.1611 [-0.2702, 0.6572] | 1.0852 [0.9225, 1.2756] | usable (`n_tps=24`) |
+| `online_bigram_count_gated` vs `online_bigram` | `16K+` | 0 | — | — | **EMPTY (conclusion unavailable)** |
+| `zero_offline_online_only` vs `online_dbS_zero_init` | `0-1K` | 31 | 0.1693 [-0.0130, 0.3695] | 1.0340 [0.9836, 1.0867] | usable (`n_tps=31`) |
+| `zero_offline_online_only` vs `online_dbS_zero_init` | `1K-4K` | 31 | 0.0731 [-0.1916, 0.3063] | 1.0261 [0.9690, 1.0819] | usable (`n_tps=31`) |
+| `zero_offline_online_only` vs `online_dbS_zero_init` | `4K-8K` | 28 | 0.3521 [0.0518, 0.6904] | 1.0897 [1.0142, 1.1772] | usable (`n_tps=28`) |
+| `zero_offline_online_only` vs `online_dbS_zero_init` | `8K-16K` | 18 | 0.7867 [0.1038, 1.6272] | 1.3489 [1.1379, 1.6172] | usable (`n_tps=18`) |
+| `zero_offline_online_only` vs `online_dbS_zero_init` | `16K+` | 1 | 0.2524 [0.2524, 0.2524] | 1.2158 [1.2158, 1.2158] | **SPARSE (`n=1 < 8`; conclusion unavailable)** |
+
+### 3. Optional M5 Extensions (`m5_eval`)
+
+- Status: **`complete`** | `world_size=8` (`sharded_8gpu`) | Matched `C0[j]` `beta_relax = 1.0` | `ExactObservedPairs` `collision_count = 0`
+
+#### M5 Offline Objectives & Collision-Free Exact Sparse Table vs Signed Hash
+
+| Offline Checkpoint | Sparse Backend | Collisions | Dev Grouped KL | Test Grouped KL | `Δ` Test KL vs SignedHash |
+| --- | --- | ---: | ---: | ---: | ---: |
+| `baseline_signed_hash` | `signed_feature_hash` | 88666459 | 2.060249 | 3.015488 | 0.000000 |
+| `two_sided_pseudolikelihood` | `signed_feature_hash` | 132989841 | 3.586506 | 6.172779 | — |
+| `exact_observed_pairs` (`freeze_new`) | `exact_observed_pairs` | **0** | 2.060275 | 3.015552 | 0.000065 |
+
+#### M5 Closed-Loop Acceptance, Throughput & Lookahead Phase Duration
+
+| Condition | Arm | Primary / Total | Mean accepted len [95% CI] | Sharded `tok/s` [95% CI] | Paired ratio vs `plain` [95% CI] | `lookahead_iterations` med ms |
+| --- | --- | ---: | ---: | ---: | ---: | ---: |
+| Long thinking (T=0.6, top-k=20, top-p=0.95) | `dense_candidate` | 32/32 | 1.980 [1.889, 2.066] | 61.15 [57.60, 64.40] | 0.6673 [0.6106, 0.7342] | 0.00 |
+| Long thinking (T=0.6, top-k=20, top-p=0.95) | `exact_observed_pairs_online` | 32/32 | 2.465 [2.322, 2.624] | 62.45 [59.87, 65.38] | 0.6931 [0.6308, 0.7602] | 0.00 |
+| Long thinking (T=0.6, top-k=20, top-p=0.95) | `lookahead_rerelax_candidate` | 32/32 | 2.257 [2.090, 2.427] | 64.33 [60.00, 69.16] | 0.6998 [0.6382, 0.7644] | 32882.38 |
+| Long thinking (T=0.6, top-k=20, top-p=0.95) | `lookahead_static_candidate` | 32/32 | 2.230 [2.083, 2.384] | 74.91 [69.72, 80.16] | 0.8200 [0.7404, 0.9091] | 7486.34 |
+| Long thinking (T=0.6, top-k=20, top-p=0.95) | `offline_online_stride1` | 32/32 | 2.492 [2.342, 2.660] | 70.26 [67.27, 73.45] | 0.7836 [0.7142, 0.8601] | 0.00 |
+| Long thinking (T=0.6, top-k=20, top-p=0.95) | `offline_online_stride5` | 32/32 | 2.044 [1.914, 2.174] | 61.47 [58.75, 64.33] | 0.6755 [0.6163, 0.7427] | 0.00 |
+| Long thinking (T=0.6, top-k=20, top-p=0.95) | `online_buffered_stride5` | 30/32 | 1.661 [1.554, 1.779] | 51.54 [48.99, 54.12] | 0.5663 [0.5175, 0.6218] | 0.00 |
+| Long thinking (T=0.6, top-k=20, top-p=0.95) | `online_two_sided_pl` | 32/32 | 2.141 [2.022, 2.271] | 48.69 [47.04, 50.35] | 0.5412 [0.4913, 0.5949] | 0.00 |
+| Long thinking (T=0.6, top-k=20, top-p=0.95) | `plain_dflash` | 32/32 | 2.476 [2.289, 2.654] | 96.80 [88.59, 105.01] | 1.0000 [1.0000, 1.0000] | 0.00 |
+| Long thinking (T=0.6, top-k=20, top-p=0.95) | `signed_feature_hash_online` | 32/32 | 2.495 [2.345, 2.662] | 67.30 [64.01, 71.06] | 0.7438 [0.6747, 0.8185] | 0.00 |
+| Standard non-thinking greedy (T=0) | `dense_candidate` | 64/64 | 2.284 [2.146, 2.418] | 91.47 [87.58, 95.46] | 0.4265 [0.4147, 0.4379] | 0.00 |
+| Standard non-thinking greedy (T=0) | `exact_observed_pairs_online` | 64/64 | 3.196 [3.043, 3.350] | 90.26 [87.03, 93.53] | 0.4214 [0.4133, 0.4294] | 0.00 |
+| Standard non-thinking greedy (T=0) | `lookahead_rerelax_candidate` | 64/64 | 2.298 [2.164, 2.425] | 82.74 [79.22, 86.18] | 0.3860 [0.3751, 0.3962] | 873.29 |
+| Standard non-thinking greedy (T=0) | `lookahead_static_candidate` | 64/64 | 2.522 [2.367, 2.667] | 106.20 [101.53, 110.79] | 0.4950 [0.4813, 0.5081] | 223.25 |
+| Standard non-thinking greedy (T=0) | `offline_online_stride1` | 64/64 | 3.196 [3.043, 3.350] | 99.67 [96.01, 103.42] | 0.4650 [0.4565, 0.4736] | 0.00 |
+| Standard non-thinking greedy (T=0) | `offline_online_stride5` | 64/64 | 2.744 [2.595, 2.886] | 93.39 [89.46, 97.12] | 0.4349 [0.4250, 0.4443] | 0.00 |
+| Standard non-thinking greedy (T=0) | `online_buffered_stride5` | 64/64 | 1.498 [1.354, 1.643] | 60.32 [56.74, 63.96] | 0.2800 [0.2679, 0.2914] | 0.00 |
+| Standard non-thinking greedy (T=0) | `online_two_sided_pl` | 64/64 | 2.862 [2.718, 3.009] | 67.31 [65.39, 69.28] | 0.3155 [0.3096, 0.3215] | 0.00 |
+| Standard non-thinking greedy (T=0) | `plain_dflash` | 64/64 | 5.285 [5.057, 5.519] | 215.41 [207.06, 223.89] | 1.0000 [1.0000, 1.0000] | 0.00 |
+| Standard non-thinking greedy (T=0) | `signed_feature_hash_online` | 64/64 | 3.196 [3.043, 3.350] | 98.96 [95.25, 102.68] | 0.4617 [0.4525, 0.4709] | 0.00 |
+| Standard recommended (T=0.7, top-k=20, top-p=0.8) | `dense_candidate` | 192/192 | 4.049 [3.859, 4.234] | 117.16 [112.86, 121.36] | 0.5840 [0.5722, 0.5966] | 0.00 |
+| Standard recommended (T=0.7, top-k=20, top-p=0.8) | `exact_observed_pairs_online` | 192/192 | 3.190 [3.042, 3.334] | 81.42 [78.53, 84.16] | 0.4062 [0.3977, 0.4144] | 0.00 |
+| Standard recommended (T=0.7, top-k=20, top-p=0.8) | `lookahead_rerelax_candidate` | 192/192 | 3.942 [3.779, 4.104] | 106.23 [102.63, 109.70] | 0.5313 [0.5201, 0.5432] | 614.98 |
+| Standard recommended (T=0.7, top-k=20, top-p=0.8) | `lookahead_static_candidate` | 192/192 | 4.086 [3.910, 4.263] | 133.45 [128.94, 138.11] | 0.6670 [0.6514, 0.6826] | 155.53 |
+| Standard recommended (T=0.7, top-k=20, top-p=0.8) | `offline_online_stride1` | 192/192 | 3.190 [3.042, 3.334] | 88.88 [85.72, 91.87] | 0.4434 [0.4340, 0.4524] | 0.00 |
+| Standard recommended (T=0.7, top-k=20, top-p=0.8) | `offline_online_stride5` | 192/192 | 2.777 [2.640, 2.911] | 83.91 [80.88, 86.83] | 0.4188 [0.4090, 0.4287] | 0.00 |
+| Standard recommended (T=0.7, top-k=20, top-p=0.8) | `online_buffered_stride5` | 192/192 | 1.476 [1.336, 1.620] | 53.34 [50.27, 56.51] | 0.2647 [0.2539, 0.2752] | 0.00 |
+| Standard recommended (T=0.7, top-k=20, top-p=0.8) | `online_two_sided_pl` | 192/192 | 2.871 [2.733, 3.004] | 61.95 [60.25, 63.57] | 0.3103 [0.3041, 0.3170] | 0.00 |
+| Standard recommended (T=0.7, top-k=20, top-p=0.8) | `plain_dflash` | 192/192 | 5.136 [4.922, 5.346] | 201.96 [194.87, 208.76] | 1.0000 [1.0000, 1.0000] | 0.00 |
+| Standard recommended (T=0.7, top-k=20, top-p=0.8) | `signed_feature_hash_online` | 192/192 | 3.190 [3.042, 3.334] | 88.80 [85.62, 91.80] | 0.4430 [0.4335, 0.4520] | 0.00 |
+| Standard pure-T=1 diagnostic | `dense_candidate` | 192/192 | 3.699 [3.533, 3.859] | 121.01 [116.95, 125.05] | 0.6859 [0.6674, 0.7050] | 0.00 |
+| Standard pure-T=1 diagnostic | `exact_observed_pairs_online` | 192/192 | 2.877 [2.742, 3.010] | 83.14 [80.31, 86.08] | 0.4704 [0.4595, 0.4817] | 0.00 |
+| Standard pure-T=1 diagnostic | `lookahead_rerelax_candidate` | 192/192 | 3.721 [3.545, 3.901] | 111.04 [106.91, 115.24] | 0.6275 [0.6114, 0.6444] | 642.19 |
+| Standard pure-T=1 diagnostic | `lookahead_static_candidate` | 192/192 | 3.800 [3.624, 3.974] | 136.04 [131.21, 141.00] | 0.7677 [0.7512, 0.7842] | 170.39 |
+| Standard pure-T=1 diagnostic | `offline_online_stride1` | 192/192 | 2.877 [2.742, 3.010] | 91.32 [88.20, 94.54] | 0.5168 [0.5047, 0.5294] | 0.00 |
+| Standard pure-T=1 diagnostic | `offline_online_stride5` | 192/192 | 2.522 [2.413, 2.631] | 87.21 [84.46, 89.92] | 0.4954 [0.4834, 0.5079] | 0.00 |
+| Standard pure-T=1 diagnostic | `online_buffered_stride5` | 192/192 | 1.365 [1.239, 1.484] | 56.54 [53.61, 59.46] | 0.3194 [0.3057, 0.3328] | 0.00 |
+| Standard pure-T=1 diagnostic | `online_two_sided_pl` | 192/192 | 2.626 [2.508, 2.743] | 63.84 [62.23, 65.39] | 0.3629 [0.3549, 0.3707] | 0.00 |
+| Standard pure-T=1 diagnostic | `plain_dflash` | 192/192 | 4.297 [4.124, 4.477] | 179.03 [173.19, 185.31] | 1.0000 [1.0000, 1.0000] | 0.00 |
+| Standard pure-T=1 diagnostic | `signed_feature_hash_online` | 192/192 | 2.877 [2.742, 3.010] | 91.19 [88.09, 94.31] | 0.5158 [0.5043, 0.5280] | 0.00 |
+
+#### M5 Matched-Support Paired Comparisons (`C0[j]`, Exact vs SignedHash, Buffered Stride-5)
+
+| Condition | Arm vs Reference | Support Family | Pairs (`rep_excl`) | `Δ` Accepted Len [95% CI] | Timing `tok/s` Ratio |
+| --- | --- | --- | ---: | ---: | ---: |
+| Long thinking (T=0.6, top-k=20, top-p=0.95) | `lookahead_static_candidate` vs `dense_candidate` | `frozen_C0_candidate_masked` | 32 (0) | 0.2501 [0.1061, 0.3980] | 1.2252 |
+| Standard non-thinking greedy (T=0) | `lookahead_static_candidate` vs `dense_candidate` | `frozen_C0_candidate_masked` | 64 (0) | 0.2385 [0.1948, 0.2794] | 1.1611 |
+| Standard recommended (T=0.7, top-k=20, top-p=0.8) | `lookahead_static_candidate` vs `dense_candidate` | `frozen_C0_candidate_masked` | 192 (0) | 0.0367 [-0.0735, 0.1409] | 1.1391 |
+| Standard pure-T=1 diagnostic | `lookahead_static_candidate` vs `dense_candidate` | `frozen_C0_candidate_masked` | 192 (0) | 0.1001 [-0.0086, 0.2077] | 1.1242 |
+| Long thinking (T=0.6, top-k=20, top-p=0.95) | `lookahead_rerelax_candidate` vs `dense_candidate` | `frozen_C0_candidate_masked` | 32 (0) | 0.2767 [0.1097, 0.4410] | 1.0521 |
+| Standard non-thinking greedy (T=0) | `lookahead_rerelax_candidate` vs `dense_candidate` | `frozen_C0_candidate_masked` | 64 (0) | 0.0144 [-0.0324, 0.0561] | 0.9046 |
+| Standard recommended (T=0.7, top-k=20, top-p=0.8) | `lookahead_rerelax_candidate` vs `dense_candidate` | `frozen_C0_candidate_masked` | 192 (0) | -0.1067 [-0.2107, -0.0028] | 0.9067 |
+| Standard pure-T=1 diagnostic | `lookahead_rerelax_candidate` vs `dense_candidate` | `frozen_C0_candidate_masked` | 192 (0) | 0.0213 [-0.1004, 0.1428] | 0.9176 |
+| Long thinking (T=0.6, top-k=20, top-p=0.95) | `exact_observed_pairs_online` vs `signed_feature_hash_online` | `online_sparse_representation` | 32 (0) | -0.0301 [-0.0564, -0.0020] | 0.9279 |
+| Standard non-thinking greedy (T=0) | `exact_observed_pairs_online` vs `signed_feature_hash_online` | `online_sparse_representation` | 64 (0) | 0.0000 [0.0000, 0.0000] | 0.9121 |
+| Standard recommended (T=0.7, top-k=20, top-p=0.8) | `exact_observed_pairs_online` vs `signed_feature_hash_online` | `online_sparse_representation` | 192 (0) | 0.0000 [0.0000, 0.0000] | 0.9169 |
+| Standard pure-T=1 diagnostic | `exact_observed_pairs_online` vs `signed_feature_hash_online` | `online_sparse_representation` | 192 (0) | 0.0000 [0.0000, 0.0000] | 0.9118 |
+| Long thinking (T=0.6, top-k=20, top-p=0.95) | `online_buffered_stride5` vs `offline_online_stride5` | `online_stride5_update_mode` | 30 (2) | -0.4041 [-0.5154, -0.2921] | 0.8385 |
+| Standard non-thinking greedy (T=0) | `online_buffered_stride5` vs `offline_online_stride5` | `online_stride5_update_mode` | 64 (0) | -1.2462 [-1.3531, -1.1407] | 0.6459 |
+| Standard recommended (T=0.7, top-k=20, top-p=0.8) | `online_buffered_stride5` vs `offline_online_stride5` | `online_stride5_update_mode` | 192 (0) | -1.3011 [-1.3911, -1.2159] | 0.6357 |
+| Standard pure-T=1 diagnostic | `online_buffered_stride5` vs `offline_online_stride5` | `online_stride5_update_mode` | 192 (0) | -1.1574 [-1.2322, -1.0852] | 0.6484 |
+
+#### M5 Long-Output Offset-Bin Trajectory (`0-1K`..`16K+`, Sparsity Gate Enforced)
+
+| Arm | Offset Bin | Reaching Reqs (`n`) | Accepted Len [95% CI] | Sharded Round `tok/s` [95% CI] | Gate Status |
+| --- | --- | ---: | ---: | ---: | --- |
+| `dense_candidate` | `0-1K` | 32 | 2.331 [2.115, 2.539] | 77.06 [71.48, 82.58] | usable |
+| `dense_candidate` | `1K-4K` | 32 | 2.233 [2.055, 2.423] | 74.78 [69.91, 79.74] | usable |
+| `dense_candidate` | `4K-8K` | 32 | 2.206 [2.108, 2.305] | 69.58 [66.67, 72.36] | usable |
+| `dense_candidate` | `8K-16K` | 28 | 1.392 [1.242, 1.532] | 42.10 [39.40, 44.92] | usable |
+| `dense_candidate` | `16K+` | 3 | 1.623 [1.134, 2.507] | 29.45 [24.29, 39.02] | **SPARSE (`n=3 < 8`; conclusion unavailable)** |
+| `exact_observed_pairs_online` | `0-1K` | 32 | 2.017 [1.855, 2.190] | 59.09 [55.80, 62.55] | usable |
+| `exact_observed_pairs_online` | `1K-4K` | 32 | 2.428 [2.227, 2.662] | 67.21 [63.08, 72.03] | usable |
+| `exact_observed_pairs_online` | `4K-8K` | 32 | 2.994 [2.731, 3.293] | 74.68 [69.31, 80.64] | usable |
+| `exact_observed_pairs_online` | `8K-16K` | 27 | 2.123 [1.810, 2.424] | 48.59 [44.51, 52.60] | usable |
+| `exact_observed_pairs_online` | `16K+` | 3 | 1.662 [1.472, 1.834] | 25.99 [19.08, 32.78] | **SPARSE (`n=3 < 8`; conclusion unavailable)** |
+| `lookahead_rerelax_candidate` | `0-1K` | 32 | 2.234 [2.007, 2.466] | 69.51 [64.28, 75.03] | usable |
+| `lookahead_rerelax_candidate` | `1K-4K` | 32 | 2.490 [2.236, 2.822] | 75.13 [68.90, 82.96] | usable |
+| `lookahead_rerelax_candidate` | `4K-8K` | 32 | 2.569 [2.263, 2.953] | 72.87 [65.77, 82.13] | usable |
+| `lookahead_rerelax_candidate` | `8K-16K` | 27 | 1.744 [1.482, 2.044] | 46.41 [41.87, 52.01] | usable |
+| `lookahead_rerelax_candidate` | `16K+` | 2 | 2.743 [1.733, 3.753] | 40.08 [33.18, 46.98] | **SPARSE (`n=2 < 8`; conclusion unavailable)** |
+| `lookahead_static_candidate` | `0-1K` | 32 | 2.413 [2.212, 2.634] | 88.41 [82.37, 94.74] | usable |
+| `lookahead_static_candidate` | `1K-4K` | 32 | 2.300 [2.119, 2.503] | 86.12 [80.78, 91.91] | usable |
+| `lookahead_static_candidate` | `4K-8K` | 31 | 2.515 [2.313, 2.722] | 85.57 [79.44, 91.58] | usable |
+| `lookahead_static_candidate` | `8K-16K` | 26 | 1.794 [1.437, 2.162] | 54.42 [47.26, 61.89] | usable |
+| `lookahead_static_candidate` | `16K+` | 3 | 1.548 [1.034, 2.463] | 31.09 [25.40, 37.27] | **SPARSE (`n=3 < 8`; conclusion unavailable)** |
+| `offline_online_stride1` | `0-1K` | 32 | 2.017 [1.854, 2.190] | 65.44 [61.52, 69.51] | usable |
+| `offline_online_stride1` | `1K-4K` | 32 | 2.418 [2.217, 2.658] | 74.68 [70.10, 80.11] | usable |
+| `offline_online_stride1` | `4K-8K` | 32 | 2.939 [2.691, 3.215] | 81.50 [76.20, 87.26] | usable |
+| `offline_online_stride1` | `8K-16K` | 27 | 2.371 [1.950, 2.840] | 58.07 [51.14, 66.04] | usable |
+| `offline_online_stride1` | `16K+` | 1 | 1.807 [1.807, 1.807] | 37.61 [37.61, 37.61] | **SPARSE (`n=1 < 8`; conclusion unavailable)** |
+| `offline_online_stride5` | `0-1K` | 32 | 1.771 [1.595, 1.942] | 60.56 [56.44, 64.69] | usable |
+| `offline_online_stride5` | `1K-4K` | 32 | 2.192 [1.991, 2.420] | 70.11 [65.06, 75.80] | usable |
+| `offline_online_stride5` | `4K-8K` | 31 | 2.257 [2.049, 2.479] | 67.65 [63.22, 72.61] | usable |
+| `offline_online_stride5` | `8K-16K` | 26 | 1.871 [1.548, 2.249] | 49.62 [44.39, 55.54] | usable |
+| `offline_online_stride5` | `16K+` | 2 | 1.512 [0.440, 2.584] | 31.48 [16.96, 46.00] | **SPARSE (`n=2 < 8`; conclusion unavailable)** |
+| `online_buffered_stride5` | `0-1K` | 30 | 1.661 [1.494, 1.841] | 56.79 [53.49, 60.10] | usable |
+| `online_buffered_stride5` | `1K-4K` | 30 | 1.872 [1.657, 2.141] | 63.59 [57.21, 70.81] | usable |
+| `online_buffered_stride5` | `4K-8K` | 30 | 1.914 [1.731, 2.130] | 58.34 [54.39, 62.26] | usable |
+| `online_buffered_stride5` | `8K-16K` | 24 | 1.327 [1.065, 1.644] | 38.79 [35.46, 42.05] | usable |
+| `online_buffered_stride5` | `16K+` | 4 | 1.440 [1.163, 1.616] | 22.28 [20.08, 24.60] | **SPARSE (`n=4 < 8`; conclusion unavailable)** |
+| `online_two_sided_pl` | `0-1K` | 32 | 1.915 [1.707, 2.142] | 49.23 [46.18, 52.44] | usable |
+| `online_two_sided_pl` | `1K-4K` | 32 | 2.239 [2.044, 2.440] | 53.68 [50.74, 56.71] | usable |
+| `online_two_sided_pl` | `4K-8K` | 32 | 2.370 [2.144, 2.607] | 52.85 [49.99, 55.84] | usable |
+| `online_two_sided_pl` | `8K-16K` | 24 | 1.963 [1.701, 2.224] | 40.56 [37.42, 43.47] | usable |
+| `online_two_sided_pl` | `16K+` | 1 | 1.986 [1.986, 1.986] | 27.20 [27.20, 27.20] | **SPARSE (`n=1 < 8`; conclusion unavailable)** |
+| `plain_dflash` | `0-1K` | 32 | 2.863 [2.629, 3.101] | 126.14 [118.28, 134.09] | usable |
+| `plain_dflash` | `1K-4K` | 32 | 2.750 [2.494, 3.084] | 123.31 [113.27, 135.38] | usable |
+| `plain_dflash` | `4K-8K` | 32 | 2.879 [2.568, 3.239] | 116.36 [106.06, 127.99] | usable |
+| `plain_dflash` | `8K-16K` | 25 | 1.826 [1.642, 2.008] | 63.01 [58.47, 67.46] | usable |
+| `plain_dflash` | `16K+` | 6 | 1.431 [1.031, 1.816] | 35.91 [29.22, 43.03] | **SPARSE (`n=6 < 8`; conclusion unavailable)** |
+| `signed_feature_hash_online` | `0-1K` | 32 | 2.017 [1.854, 2.190] | 63.67 [59.77, 67.91] | usable |
+| `signed_feature_hash_online` | `1K-4K` | 32 | 2.418 [2.217, 2.658] | 72.21 [67.03, 77.79] | usable |
+| `signed_feature_hash_online` | `4K-8K` | 32 | 2.940 [2.694, 3.216] | 78.38 [73.36, 84.43] | usable |
+| `signed_feature_hash_online` | `8K-16K` | 27 | 2.383 [1.959, 2.861] | 55.85 [48.90, 64.30] | usable |
+| `signed_feature_hash_online` | `16K+` | 2 | 1.753 [1.698, 1.807] | 31.57 [28.70, 34.44] | **SPARSE (`n=2 < 8`; conclusion unavailable)** |
+
+### 4. Fastpath & Multi-GPU Scaling Benchmark (`fastpath_bench`)
+
+- Status: **`complete`** | Device: `cuda:0` | Assigned device indices: `[0, 1, 2, 3, 4, 5, 6, 7]`
+
+#### Matched whole-request throughput under eager, compact and compile modes
+
+The three mode means use each mode's eligible requests. Ratios average matched prompt/repeat observations and exclude a long match when any mode flags repetition.
+The frozen fastpath runner used the primary positive-temperature settings and saved scalar request summaries and producer repetition flags. These rows omit the output tokens needed for token parity or independent repetition detection. Separate M5 evaluation and timing records retain output tokens and verification blocks for trajectory and repetition checks.
+
+| Arm | Matched pairs (excluded) | Eager mean tok/s | Compact mean tok/s (paired ratio to eager) | Compile mean tok/s (paired ratio to eager) |
+| --- | ---: | ---: | ---: | ---: |
+| `plain_dflash` | 188 (4) | 166.23 | 167.67 (**`1.062x`**) | 165.86 (**`1.020x`**) |
+| `online_bigram` | 190 (2) | 136.33 | 128.68 (**`0.947x`**) | 129.82 (**`0.963x`**) |
+| `offline_static` | 190 (2) | 102.73 | 102.74 (**`1.003x`**) | 101.64 (**`0.994x`**) |
+| `offline_online_stride1` | 190 (2) | 77.47 | 83.50 (**`1.079x`**) | 81.72 (**`1.052x`**) |
+| `online_dbS` | 188 (4) | 60.16 | 63.55 (**`1.055x`**) | 63.36 (**`1.057x`**) |
+
+#### Paired throughput by generation condition
+
+Each ratio averages matched prompt/repeat measurements within one condition. The table above pools the measured workload. The reference workload uses one sampling seed and two measured repeats per prompt.
+
+| Condition | Arm | Eligible pairs | Compact / eager | Compile / compact | Compile / eager |
+| --- | --- | ---: | ---: | ---: | ---: |
+| `long_thinking` | `plain_dflash` | 60 | 1.217 | 0.977 | 1.099 |
+| `standard_nonthinking` | `plain_dflash` | 128 | 0.989 | 0.997 | 0.982 |
+| `long_thinking` | `online_bigram` | 62 | 0.934 | 1.073 | 0.987 |
+| `standard_nonthinking` | `online_bigram` | 128 | 0.953 | 0.998 | 0.952 |
+| `long_thinking` | `offline_static` | 62 | 1.010 | 0.961 | 0.968 |
+| `standard_nonthinking` | `offline_static` | 128 | 0.999 | 1.008 | 1.007 |
+| `long_thinking` | `offline_online_stride1` | 62 | 1.092 | 0.951 | 1.036 |
+| `standard_nonthinking` | `offline_online_stride1` | 128 | 1.073 | 0.988 | 1.060 |
+| `long_thinking` | `online_dbS` | 60 | 1.046 | 1.045 | 1.088 |
+| `standard_nonthinking` | `online_dbS` | 128 | 1.060 | 0.984 | 1.043 |
+
+#### Single-rank and 8-rank calibration in compact mode
+
+Across 8 ranks, all compact-mode requests produced 3736566 tokens. Dividing this count by the largest rank's summed request time (7841.68 s) gives an estimated **476.50 tok/s**. This aggregate includes long requests flagged for repetition.
+The per-arm calibration rates use a selected prompt subset and exclude flagged long requests within each dataset. The final column multiplies the sharded/single-rank rate ratio by the rank count.
+
+| Arm | Single-rank calibration tok/s | Sharded calibration tok/s per rank | Sharded / single-rank | Sum of rank means tok/s | Estimated cluster / single-rank ratio |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| `plain_dflash` | 136.12 | 141.80 | 1.0417 | 1341.32 | `8.33x` |
+| `online_bigram` | 111.94 | 115.41 | 1.0309 | 1029.48 | `8.25x` |
+| `offline_static` | 88.76 | 89.48 | 1.0081 | 821.85 | `8.06x` |
+| `offline_online_stride1` | 73.37 | 74.28 | 1.0125 | 667.98 | `8.10x` |
+| `online_dbS` | 56.31 | 56.36 | 1.0008 | 508.27 | `8.01x` |
+<!-- END POST_M4_M5_SUMMARY -->

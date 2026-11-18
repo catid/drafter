@@ -354,4 +354,21 @@ All six handoff completion items above have been executed and independently veri
    - `artifacts/m3_validation_reference.json` (`sha256: 0a72610194f74ff06de6f553a5c455b985e4ddaffdf546d9d22f8a99841a53d6`): `status == "passed"`, `45,158,121` checks.
    - `artifacts/m4_validation_reference.json` (`sha256: 742c2867a5fd3f8e5d50a998d83e4b404dd5e30b95440e32cf4b6ed3a2412cf4`): `status == "passed"`, `18,983,686` checks.
 3. **Empirical Reporting & Milestone Status Finalized (`0` Drift vs Raw Artifacts):**
-   - Updated `artifacts/milestones.json` (`M0` through `M4` all `"passed"`), `reports/SUMMARY.md`, `README.md`, and `NOTES.md` with complete M0–M4 reference tables, SHA256s, M2 overshoot diagnosis (`0.20 * dense.pt` `-11.2%` sampled dev KL while keeping gated M2 checkpoints unmodified), 8-GPU sharded + 1-GPU calibration disclosures, `16K+` sparse-bin `conclusion unavailable` flags, `lookahead_iterations = 0.0 ms [disabled in M0-M4]`, greedy BF16 tie rates (`0/64` vs `plain_dflash`, `42/64` vs `target_only`), M1b `h[i]` covariate-shift pairing (`feature_context.json`), and external baselines not run.
+   - Updated `artifacts/milestones.json` (`M0` through `M4` all `"passed"`), `reports/SUMMARY.md`, `README.md`, and `NOTES.md` with complete M0–M4 reference tables, SHA256s, M2 sampled checkpoint-scale diagnostic (`0.20 * dense.pt` `-11.2%` sampled dev KL while keeping gated M2 checkpoints unmodified), 8-GPU sharded + 1-GPU calibration disclosures, `16K+` sparse-bin `conclusion unavailable` flags, `lookahead_iterations = 0.0 ms [disabled in M0-M4]`, greedy sequence differences (`0/64` vs `plain_dflash`, `42/64` vs `target_only`), M1b `h[i]` covariate-shift pairing (`feature_context.json`), and external baselines not run.
+
+<!-- BEGIN POST_M4_M5_PROGRESS -->
+---
+
+## Phase-A Post-M4 & Optional M5 Completion Update (`2026-11-18T14:02:00.466399+00:00` — `scale=reference`)
+
+1. **All Four `post_m4_suite` Suites Completed (`commit b92f0fbfc685ad92034e8da1f54072f7a18ae8be`):**
+   - `artifacts/post_m4_suite/m2_refit_calibration.json` (`sha256: 3a311f848645c653b8f1f240d39d3f57c06c1b90a118b0c5e8769c5a758611dc`)
+   - `artifacts/post_m4_suite/online_head_to_head.json` (`sha256: 53d62acf3119ed039876ce6433eff2d8ecde3633814b43a00a320d984d6344a3`)
+   - `artifacts/post_m4_suite/m5_eval.json` (`sha256: 5d335fd2b8541d0b5b626ba9d042a27799e2311d2f9549cbf0ba32c89c1cae5c`)
+   - `artifacts/post_m4_suite/fastpath_bench.json` (`sha256: 6a9b401d80c6894aa2b1be777056e02429e16ae52ceb0205caf156e826e87b20`)
+   - `artifacts/post_m4_suite/post_m4_suite_summary.json` (`sha256: f35cfe864b6ee716ce695c22f20c6cf160807d822789a4039c1c3404dbb8a04d`)
+2. **Zero-Drift Independent Verification Passed (`197948` Checks, `0` Failures):**
+   - `audit_post_m4_suite.py --scale reference --require_complete --check_implementation_audit` verified all raw shards, session manifests, matched `C0[j]` lookahead invariants, `ExactObservedPairs` `collision_count == 0`, 1-GPU vs sharded calibration ratios, `<8`-prompt sparse-bin disclosures, and `27` frozen M0–M4 reference artifacts.
+3. **Milestones, Implementation Audit & Documentation Synchronized:**
+   - `artifacts/milestones.json` (`M5.status = "passed"`), `artifacts/implementation_audit.json` (`status = "reference_m0_m5_complete_verified"`, `optional_m5 = "implemented_verified"`), `reports/SUMMARY.md`, `README.md`, `NOTES.md`, and `AGENTS.md` updated atomically and re-verified.
+<!-- END POST_M4_M5_PROGRESS -->
